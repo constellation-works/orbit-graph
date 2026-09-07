@@ -477,6 +477,8 @@ fn validate_case(
     } else {
         false
     };
+    let known_delivery_not_after_cutoff =
+        held_out.delivered_at.status == TemporalStatus::Known && !delivered_after_cutoff;
     let prospective_after_cutoff = case
         .prospective_delivery_lower_bound
         .as_ref()
@@ -485,7 +487,14 @@ fn validate_case(
         .map(|value| parse_timestamp("prospective delivery lower bound", value))
         .transpose()?
         .is_some_and(|time| time > cutoff);
-    if !delivered_after_cutoff && !prospective_after_cutoff {
+    // A known delivery time is authoritative. If it predates (or equals) the
+    // cutoff, reject even when a prospective lower bound claims a later start —
+    // that combination is contradictory chronology, not proof of post-cutoff
+    // delivery. Prospective lower bounds only admit cases whose landing time is
+    // uncertain/unknown.
+    if known_delivery_not_after_cutoff && prospective_after_cutoff {
+        exclusions.push("contradictory_delivery_chronology".to_string());
+    } else if !delivered_after_cutoff && !prospective_after_cutoff {
         exclusions.push("held_out_delivery_not_proven_after_cutoff".to_string());
     }
     if !held_out

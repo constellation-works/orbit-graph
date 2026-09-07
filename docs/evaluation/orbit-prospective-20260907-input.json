@@ -14,7 +14,7 @@
     {
       "id": "ORB-11483@2026-09-07T04:15:17Z",
       "target_revision": "4d84b3b7a61aa8d3a6035a6fe92bd4526b746679",
-      "cutoff": "2026-09-07T04:15:17.000000001Z",
+      "cutoff": "2026-09-07T04:15:18Z",
       "task_snapshot": {
         "task_id": "ORB-11483",
         "title": "Recommend current files and symbols from task and co-change evidence",
@@ -117,7 +117,7 @@
     {
       "id": "ORB-11484@2026-09-07T04:15:21Z",
       "target_revision": "4d84b3b7a61aa8d3a6035a6fe92bd4526b746679",
-      "cutoff": "2026-09-07T04:15:21.000000001Z",
+      "cutoff": "2026-09-07T04:15:22Z",
       "task_snapshot": {
         "task_id": "ORB-11484",
         "title": "Integrate Orbit recommendation plugin and chronological backtesting",

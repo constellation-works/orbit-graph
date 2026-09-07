@@ -13,6 +13,9 @@ declared corpus deliveries and its graph is built from the immutable target
 tree, so neither operational index contamination nor later HEAD structure can
 affect non-latency results. Held-out truth must be verified and proven later
 than the cutoff by a known landing time or an explicit prospective lower bound.
+A known landing time that predates the cutoff is authoritative and rejects the
+case even when a prospective lower bound claims a later start (contradictory
+chronology). Prospective lower bounds only admit uncertain/unknown landing times.
 Hybrid hits likewise require pre-cutoff observation provenance. Added files and
 symbols, unsupported languages, and unresolved pre-target identities remain in
 the report as omitted truth coverage rather than disappearing from denominators.
@@ -26,7 +29,10 @@ an engine returning fewer results does not receive artificial credit.
 
 [`orbit-prospective-20260907-input.json`](orbit-prospective-20260907-input.json)
 is derived from two public `orbit.task.show` observations captured before
-execution at 2026-09-07 04:15:17 and 04:15:21 UTC. Their immutable observed Git revision is
+execution at 2026-09-07 04:15:17 and 04:15:21 UTC (seconds-resolution wall times).
+Conservative evaluation cutoffs are therefore `2026-09-07T04:15:18Z` and
+`2026-09-07T04:15:22Z` — one second after each observation — rather than invented
+nanosecond offsets. Their immutable observed Git revision is
 `4d84b3b7a61aa8d3a6035a6fe92bd4526b746679`. The later ORB-11483 delivery chain
 is attested by successful public run outputs for `jrun-20260907-0441-3`,
 `jrun-20260907-0500-3`, and `jrun-20260907-0516-3`, whose verified commit
@@ -55,7 +61,7 @@ evidence. Across both cases, truth coverage reports 13 eligible and 18 omitted
 file changes, plus 14 eligible and 200 omitted symbol changes, with every
 omission class retained per case. This tiny cohort has no attested earlier
 training task text. Its corpus digest is
-`37694846ac22e2b0a9b4c78fdb8fe940e511d12655eefc4e0d069e044ed65d03`.
+`dce41885bec60a107416630ff205809dd4d806ed40ca0f53263ee8f9c20bf7e2`.
 The result supports no ranking-superiority claim.
 
 Reproduce from a checkout containing the named commits:

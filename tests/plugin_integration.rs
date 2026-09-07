@@ -283,6 +283,8 @@ fn evaluation_rejects_unverified_pre_cutoff_and_unattested_hybrid_truth() {
     let target = git_stdout(fixture.path(), ["rev-parse", "HEAD~2"]);
     let mut pre_cutoff = fixture_delivery(fixture.path(), "held-out");
     pre_cutoff["delivered_at"]["timestamp"] = json!("unix:10");
+    let mut contradictory = fixture_delivery(fixture.path(), "held-out");
+    contradictory["delivered_at"]["timestamp"] = json!("unix:10");
     let mut git_only = fixture_delivery(fixture.path(), "held-out");
     git_only["delivery_id"] = json!("fixture:git-only-held-out");
     git_only["evidence"] = json!("git_only");
@@ -302,6 +304,19 @@ fn evaluation_rejects_unverified_pre_cutoff_and_unattested_hybrid_truth() {
                 "cutoff": "unix:20",
                 "task_snapshot": task_snapshot("TASK-TARGET", "parser", 15),
                 "held_out_delivery": pre_cutoff,
+                "source": {"system": "test"}
+            },
+            {
+                "id": "contradictory-chronology",
+                "target_revision": target.clone(),
+                "cutoff": "unix:20",
+                "task_snapshot": task_snapshot("TASK-TARGET", "parser", 15),
+                "held_out_delivery": contradictory,
+                "prospective_delivery_lower_bound": {
+                    "status": "known",
+                    "timestamp": "unix:25",
+                    "source": {"system": "test", "record_id": "run-start"}
+                },
                 "source": {"system": "test"}
             },
             {
@@ -337,9 +352,10 @@ fn evaluation_rejects_unverified_pre_cutoff_and_unattested_hybrid_truth() {
     let report: Value = serde_json::from_slice(&output.stdout).expect("evaluation JSON");
     assert_eq!(report["coverage"]["cases_evaluated"], 0);
     assert!(case_exclusions(&report, 0).contains(&"held_out_delivery_not_proven_after_cutoff"));
-    assert!(case_exclusions(&report, 1).contains(&"held_out_delivery_not_verified"));
+    assert!(case_exclusions(&report, 1).contains(&"contradictory_delivery_chronology"));
+    assert!(case_exclusions(&report, 2).contains(&"held_out_delivery_not_verified"));
     assert!(
-        case_exclusions(&report, 2).contains(&"hybrid_hits_not_attested_strictly_before_cutoff")
+        case_exclusions(&report, 3).contains(&"hybrid_hits_not_attested_strictly_before_cutoff")
     );
 }
 

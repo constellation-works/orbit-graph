@@ -360,8 +360,9 @@ IDs and historical task text without an attested capture remains excluded.
 The versioned evaluation corpus separates the query-time task snapshot and
 target revision from a held-out delivery envelope. The evaluator validates the
 snapshot strictly predates the cutoff, requires verified held-out evidence with
-a proven post-cutoff time/lower bound, and rejects held-out boundaries declared
-in training. Every case uses a disposable clone, corpus-only history index, and
+a proven post-cutoff time/lower bound, rejects contradictory chronology where a
+known delivery predates the cutoff despite a later prospective lower bound, and
+rejects held-out boundaries declared in training. Every case uses a disposable clone, corpus-only history index, and
 graph synced at the exact target revision; it never opens the operational
 history/graph. It previews the held-out Git diff without writing it, and maps
 truth only to destinations live at the target revision while reporting added,
