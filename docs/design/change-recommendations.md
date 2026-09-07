@@ -178,15 +178,19 @@ inside a second source of truth and must be replayed by their producer afterward
 
 ## CLI contract
 
-All successful commands emit one JSON value on stdout. Failures emit the normal
-JSON error object on stderr and exit nonzero.
+The default terminal form is human output (a table on a TTY and lossless,
+tab-separated plain rows when redirected). Programs consuming this contract
+must request `--format json`, which emits one stable JSON document on stdout.
+`--format ndjson` emits the documented record units one per line. Failures keep
+stdout empty, exit nonzero, and emit the JSON error object on stderr in either
+explicit machine mode.
 
 ```text
-orbit-graph history import --input delivery.json
-orbit-graph history import --input -
-orbit-graph history sync --branch main [--limit 1000]
-orbit-graph history status --branch main
-orbit-graph history rebuild --branch main [--limit 1000]
+orbit-graph --format json history import --input delivery.json
+orbit-graph --format json history import --input -
+orbit-graph --format json history sync --branch main [--limit 1000]
+orbit-graph --format json history status --branch main
+orbit-graph --format json history rebuild --branch main [--limit 1000]
 ```
 
 `status` reports repository/branch, database path, versions, cursor, total
@@ -236,13 +240,13 @@ give the engine access to that system's database. With no supplied hits, the
 engine uses deterministic token-overlap retrieval over eligible historical
 task title, description, and acceptance-criteria snapshots.
 
-The standalone JSON CLI mirrors the contract:
+The standalone CLI's machine-mode invocations mirror the contract:
 
 ```text
-orbit-graph recommend --query "repair parser cache" --level file --limit 10
-orbit-graph recommend --task-id TASK-123 --level symbol --revision HEAD~1
-orbit-graph recommend --task-id TASK-NEW --task-snapshot task.json --level file
-orbit-graph recommend --query "repair parser cache" --hybrid-hits hits.json
+orbit-graph --format json recommend --query "repair parser cache" --level file --limit 10
+orbit-graph --format json recommend --task-id TASK-123 --level symbol --revision HEAD~1
+orbit-graph --format json recommend --task-id TASK-NEW --task-snapshot task.json --level file
+orbit-graph --format json recommend --query "repair parser cache" --hybrid-hits hits.json
 ```
 
 Exactly one of `--query` and `--task-id` is required. `--branch` selects the
