@@ -309,6 +309,80 @@ fn real_binary_rejects_invalid_history_timestamps_without_partial_import() {
     assert_eq!(status["deliveries"], 0);
 }
 
+#[test]
+fn real_binary_rejects_signed_rfc3339_components_without_changing_history_state() {
+    let fixture = fixture_repository();
+    fs::write(
+        fixture.path().join("src/lib.rs"),
+        "pub fn helper() -> i32 { 2 }\n",
+    )
+    .expect("edit fixture source");
+    run_git(fixture.path(), ["add", "."]);
+    run_git(fixture.path(), ["commit", "-m", "second"]);
+    let after = git_stdout(fixture.path(), ["rev-parse", "HEAD"]);
+    let before = git_stdout(fixture.path(), ["rev-parse", "HEAD~1"]);
+    let repository = fixture
+        .path()
+        .canonicalize()
+        .expect("canonical fixture")
+        .to_string_lossy()
+        .into_owned();
+    let valid = serde_json::json!({
+        "schema_version": 2, "repository": repository, "landing_branch": "main",
+        "before_revision": before, "after_revision": after,
+        "delivery_id": "valid-time", "evidence": "verified_delivery",
+        "source": {"system": "test"},
+        "delivered_at": {
+            "status": "known", "timestamp": "unix:1788739200",
+            "source": {"system": "test_clock"}
+        },
+        "captured_at": "2026-09-07T04:00:00.123+02:30", "tasks": []
+    });
+    let envelope_path = fixture.path().join("time.json");
+    fs::write(
+        &envelope_path,
+        serde_json::to_vec(&valid).expect("encode valid envelope"),
+    )
+    .expect("write valid envelope");
+    let envelope_arg = envelope_path.to_string_lossy();
+    let imported = run_json(
+        fixture.path(),
+        ["history", "import", "--input", envelope_arg.as_ref()],
+    );
+    assert_eq!(imported["inserted"], true);
+
+    for (index, captured_at) in [
+        "2026-+9-07T04:00:00Z",
+        "2026-09-+7T04:00:00Z",
+        "2026-09-07T+4:00:00Z",
+        "2026-09-07T04:+0:00Z",
+        "2026-09-07T04:00:+0Z",
+        "2026-09-07T04:00:00+9:00",
+        "2026-09-07T04:00:00+00:+9",
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let mut invalid = valid.clone();
+        invalid["delivery_id"] = serde_json::json!(format!("invalid-time-{index}"));
+        invalid["captured_at"] = serde_json::json!(captured_at);
+        fs::write(
+            &envelope_path,
+            serde_json::to_vec(&invalid).expect("encode invalid envelope"),
+        )
+        .expect("write invalid envelope");
+        let output = run(
+            fixture.path(),
+            ["history", "import", "--input", envelope_arg.as_ref()],
+        );
+        assert!(!output.status.success(), "accepted {captured_at}");
+    }
+
+    let status = run_json(fixture.path(), ["history", "status", "--branch", "main"]);
+    assert_eq!(status["deliveries"], 1);
+    assert_eq!(status["cursor"], Value::Null);
+}
+
 fn run_json<const N: usize>(cwd: &Path, args: [&str; N]) -> Value {
     let output = run(cwd, args);
     assert!(

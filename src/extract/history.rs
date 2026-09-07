@@ -538,19 +538,20 @@ fn validate_timestamp(field: &str, timestamp: &str) -> Result<(), GraphError> {
     {
         return Err(invalid_timestamp(field, timestamp));
     }
-    let number = |start: usize, end: usize| -> Option<u32> {
-        std::str::from_utf8(bytes.get(start..end)?)
-            .ok()?
-            .parse()
-            .ok()
+    let number = |digits: &[u8]| -> Option<u32> {
+        if digits.is_empty() || !digits.iter().all(|byte| byte.is_ascii_digit()) {
+            return None;
+        }
+        std::str::from_utf8(digits).ok()?.parse().ok()
     };
+    let component = |start: usize, end: usize| number(bytes.get(start..end)?);
     let (Some(year), Some(month), Some(day), Some(hour), Some(minute), Some(second)) = (
-        number(0, 4),
-        number(5, 7),
-        number(8, 10),
-        number(11, 13),
-        number(14, 16),
-        number(17, 19),
+        component(0, 4),
+        component(5, 7),
+        component(8, 10),
+        component(11, 13),
+        component(14, 16),
+        component(17, 19),
     ) else {
         return Err(invalid_timestamp(field, timestamp));
     };
@@ -581,12 +582,8 @@ fn validate_timestamp(field: &str, timestamp: &str) -> Result<(), GraphError> {
         Some(b'+') | Some(b'-')
             if cursor + 6 == bytes.len() && bytes.get(cursor + 3) == Some(&b':') =>
         {
-            let offset_hour = std::str::from_utf8(&bytes[cursor + 1..cursor + 3])
-                .ok()
-                .and_then(|value| value.parse::<u32>().ok());
-            let offset_minute = std::str::from_utf8(&bytes[cursor + 4..cursor + 6])
-                .ok()
-                .and_then(|value| value.parse::<u32>().ok());
+            let offset_hour = number(&bytes[cursor + 1..cursor + 3]);
+            let offset_minute = number(&bytes[cursor + 4..cursor + 6]);
             if offset_hour.is_some_and(|value| value <= 23)
                 && offset_minute.is_some_and(|value| value <= 59)
             {
