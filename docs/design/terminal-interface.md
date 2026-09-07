@@ -201,3 +201,39 @@ exits 2, command failures exit 1, and stdout stays empty on failure.
 A closed stdout pipe is a successful, silent stop. Both direct I/O errors and
 broken pipes reported through JSON serialization are recognized at the process
 boundary. A closed stderr is not reclassified as a successful command.
+
+## Executable compatibility matrix
+
+`tests/cli_smoke.rs` runs the built `orbit-graph` executable against disposable
+Git fixtures. Its command-inventory assertion keeps this table synchronized
+with Clap registration; adding a command requires both an inventory entry and
+real-workflow coverage. The plugin boundary is exercised separately by
+`tests/plugin_integration.rs` with `ORBIT_TOOL_NAME` and JSON stdin.
+
+| Registered path | Executable behavior covered |
+| --- | --- |
+| `sync` | Full indexing; plain summary, JSON document, and one NDJSON detail record. |
+| `history` | Namespace help and the missing-subcommand usage error. |
+| `history import` | Valid import plus malformed, repository-mismatched, and invalid-time failures. |
+| `history sync` | Git-only first-parent synchronization, human summary, JSON, and NDJSON. |
+| `history status` | Cursor/evidence counts in human, JSON, and NDJSON output. |
+| `history rebuild` | Atomic rebuild summary in human, JSON, and NDJSON output. |
+| `recommend` | File and symbol results, invalid inputs, empty state, table, JSON, and record-stream output. |
+| `evaluate` | Isolated chronological evaluation, human summary, JSON, and metric/case NDJSON records. |
+| `search` | Match, empty state, plain, table, JSON, and per-match NDJSON output. |
+| `show` | Resolved source/detail output, malformed-selector failure, JSON, and one detail record. |
+| `refs` | Filtered references, missing-argument failure, table, JSON, and context/reference NDJSON output. |
+| `callees` | Returned calls and empty-state behavior in all three output formats. |
+| `impact` | Bounded traversal in table, JSON, and context/impact NDJSON output. |
+| `trace` | Discovered command traversal, missing-argument failure, and lossless root record. |
+| `overview` | Summary/full views and the root output-format versus local detail-format compatibility rule. |
+| `implementors` | Implementations and empty-state behavior in table, JSON, and NDJSON output. |
+| `deps` | Import edges in table, JSON, and context/import NDJSON output. |
+| `db-path` | Human, JSON, and one NDJSON detail record. |
+| `clean` | Deleted-database records, human summary, and empty diagnostic routing. |
+| `version` | Environment/explicit mode precedence, color controls, JSON, and one NDJSON detail record. |
+
+The same suite also checks top-level and nested help, no-argument help,
+unknown-command and usage exits, TTY width adaptation, redirected plain output,
+color suppression, and a closed stdout pipe. These are representative fixture
+workflows rather than assertions against private live state.

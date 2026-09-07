@@ -67,7 +67,7 @@ The result supports no ranking-superiority claim.
 Reproduce from a checkout containing the named commits:
 
 ```sh
-orbit-graph evaluate \
+orbit-graph --format json evaluate \
   --input docs/evaluation/orbit-prospective-20260907-input.json
 ```
 

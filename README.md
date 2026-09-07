@@ -1,7 +1,7 @@
 # orbit-graph
 
 `orbit-graph` builds a local SQLite index of a source tree and exposes graph
-queries through a Rust library and a JSON-only command-line interface. It is a
+queries through a Rust library and a terminal command-line interface. It is a
 standalone recovery of Orbit's historical graph implementation: it does not
 need an Orbit checkout, runtime, configuration, or private dependency.
 
@@ -53,19 +53,23 @@ mkdir -p "$fixture/src"
 printf 'pub fn helper() -> i32 { 1 }\npub fn entry() -> i32 { helper() }\n' > "$fixture/src/lib.rs"
 
 cd "$fixture"
-orbit-graph sync --full
-orbit-graph search helper --kind symbol --limit 5
-orbit-graph show 'symbol:src/lib.rs#entry:function' --max-bytes 1024
-orbit-graph refs 'symbol:src/lib.rs#helper:function' --confidence fuzzy --kind call
-orbit-graph callees 'symbol:src/lib.rs#entry:function'
+orbit-graph --format json sync --full
+orbit-graph --format json search helper --kind symbol --limit 5
+orbit-graph --format json show 'symbol:src/lib.rs#entry:function' --max-bytes 1024
+orbit-graph --format json refs 'symbol:src/lib.rs#helper:function' --confidence fuzzy --kind call
+orbit-graph --format json callees 'symbol:src/lib.rs#entry:function'
 ```
 
-Every successful data command writes one JSON value to stdout; `--help` uses
-conventional text help. Failures return a nonzero status and write a JSON
+The default is deliberately human-oriented: a terminal receives a headed table
+and a redirected command receives lossless, tab-separated plain rows. Scripts
+must select the stable machine contract explicitly with `--format json`; use
+`--format ndjson` for one complete JSON record per line. `--help` remains
+conventional text help. Failures return a nonzero status, keep stdout empty,
+and write either a readable diagnostic or, in explicit JSON/NDJSON mode, a JSON
 object with `error.code` and `error.message` to stderr. Set `RUST_LOG` to enable
 diagnostic tracing on stderr.
 
-The grouped help layout, stream contracts, styling rules, and future output
+The grouped help layout, stream contracts, styling rules, and compatibility
 boundaries are documented in [the terminal-interface design](docs/design/terminal-interface.md).
 
 ## Index lifecycle and location

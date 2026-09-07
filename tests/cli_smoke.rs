@@ -213,6 +213,57 @@ fn real_binary_help_succeeds() {
 }
 
 #[test]
+fn registered_command_inventory_matches_the_compatibility_matrix() {
+    const MATRIX_PATHS: &[&str] = &[
+        "sync",
+        "history",
+        "history import",
+        "history sync",
+        "history status",
+        "history rebuild",
+        "recommend",
+        "evaluate",
+        "search",
+        "show",
+        "refs",
+        "callees",
+        "impact",
+        "trace",
+        "overview",
+        "implementors",
+        "deps",
+        "db-path",
+        "clean",
+        "version",
+    ];
+
+    fn collect_paths(command: &clap::Command, prefix: &str, paths: &mut Vec<String>) {
+        for subcommand in command.get_subcommands() {
+            let path = if prefix.is_empty() {
+                subcommand.get_name().to_owned()
+            } else {
+                format!("{prefix} {}", subcommand.get_name())
+            };
+            paths.push(path.clone());
+            collect_paths(subcommand, path.as_str(), paths);
+        }
+    }
+
+    let mut registered = Vec::new();
+    collect_paths(&Cli::command(), "", &mut registered);
+    registered.sort();
+    let mut matrix = MATRIX_PATHS
+        .iter()
+        .map(ToString::to_string)
+        .collect::<Vec<_>>();
+    matrix.sort();
+    assert_eq!(
+        matrix, registered,
+        "update the executable compatibility matrix"
+    );
+}
+
+#[test]
 fn real_binary_unknown_command_keeps_json_error_protocol() {
     let fixture = fixture_repository();
     let output = run_explicit_json(fixture.path(), ["not-a-command"]);
@@ -1669,7 +1720,7 @@ fn fixture_repository() -> TempDir {
 fn run_in_pty(cwd: &Path, args: &[&str], columns: u16) -> (String, String) {
     let mut master = -1;
     let mut slave = -1;
-    let size = libc::winsize {
+    let mut size = libc::winsize {
         ws_row: 24,
         ws_col: columns,
         ws_xpixel: 0,
@@ -1681,8 +1732,8 @@ fn run_in_pty(cwd: &Path, args: &[&str], columns: u16) -> (String, String) {
             &raw mut master,
             &raw mut slave,
             std::ptr::null_mut(),
-            std::ptr::null(),
-            &raw const size,
+            std::ptr::null_mut(),
+            &raw mut size,
         )
     };
     assert_eq!(result, 0, "openpty failed");
