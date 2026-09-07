@@ -1,0 +1,58 @@
+[package]
+name = "orbit-graph"
+version = "0.9.2"
+edition = "2024"
+rust-version = "1.89"
+license = "MIT"
+description = "Standalone source-code graph index and JSON CLI"
+repository = "https://github.com/constellation-works/orbit-graph"
+readme = "README.md"
+keywords = ["code-graph", "tree-sitter", "sqlite"]
+categories = ["command-line-utilities", "development-tools"]
+
+[[bin]]
+name = "orbit-graph"
+path = "src/main.rs"
+
+[lints.clippy]
+await_holding_lock = "deny"
+dbg_macro = "deny"
+expect_used = "warn"
+print_stderr = "warn"
+print_stdout = "warn"
+unwrap_used = "warn"
+
+[lints.rust]
+missing_docs = "warn"
+
+[dependencies]
+blake3 = "1"
+clap = { version = "4.5", features = ["derive"] }
+fs2 = "0.4"
+git2 = { version = "0.20", default-features = false }
+ignore = "0.4.25"
+notify = "8"
+rayon = "1.12.0"
+rusqlite = { version = "0.31", features = ["bundled"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+serde_yaml = "0.9"
+thiserror = "2"
+toml = "0.8"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
+tree-sitter = "0.26"
+tree-sitter-c = "0.24.2"
+tree-sitter-c-sharp = "0.23.5"
+tree-sitter-go = "0.25.0"
+tree-sitter-java = "0.23.5"
+tree-sitter-javascript = "0.25.0"
+tree-sitter-kotlin-ng = "1.1.0"
+tree-sitter-python = "0.25"
+tree-sitter-ruby = "0.23.1"
+tree-sitter-rust = "0.24"
+tree-sitter-typescript = "0.23.2"
+
+[dev-dependencies]
+serde_json = "1"
+tempfile = "3"

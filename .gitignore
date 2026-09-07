@@ -4,3 +4,5 @@
 !.orbit/routines/
 !.orbit/config.toml
 .orbit/**/*.lock
+target/
+.orbit-graph/
