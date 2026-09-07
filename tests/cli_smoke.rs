@@ -103,6 +103,11 @@ fn real_binary_help_succeeds() {
     assert!(output.status.success());
     assert!(String::from_utf8_lossy(&output.stdout).contains("Usage: orbit-graph <COMMAND>"));
     assert!(output.stderr.is_empty());
+
+    let bare = run(fixture.path(), []);
+    assert!(bare.status.success());
+    assert_eq!(bare.stdout, output.stdout);
+    assert!(bare.stderr.is_empty());
 }
 
 #[test]

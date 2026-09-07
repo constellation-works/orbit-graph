@@ -20,7 +20,11 @@ fn main() -> ExitCode {
         return run_external_tool(tool_name.as_str());
     }
 
-    let cli = match Cli::try_parse() {
+    let mut args: Vec<_> = std::env::args_os().collect();
+    if args.len() == 1 {
+        args.push("--help".into());
+    }
+    let cli = match Cli::try_parse_from(args) {
         Ok(cli) => cli,
         Err(error) if error.exit_code() == 0 => {
             let _ = error.print();
