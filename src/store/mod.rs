@@ -1,5 +1,6 @@
 //! SQLite connection setup for the graph store.
 
+pub(crate) mod history;
 pub(crate) mod schema;
 
 use std::fs;

@@ -26,6 +26,16 @@ mod store;
 mod sync;
 
 pub use extract::Selector;
+pub use extract::history::{
+    CHANGE_EXTRACTOR_VERSION, CurrentRevisionResolution, CurrentSymbolStatus,
+    DEFAULT_HISTORY_SYNC_LIMIT, DELIVERY_IMPORT_SCHEMA_VERSION, DeliveredChange, DeliveryEvidence,
+    DeliveryImport, FileChange, FileChangeKind, FileFallbackReason, Provenance, RevisionSide,
+    SymbolAttribution, SymbolChange, SymbolIdentity, SymbolMatchConfidence, TaskAssociation,
+};
+pub use store::history::{
+    HISTORY_INDEX_SCHEMA_VERSION, HistoryImportReport, HistoryIndex, HistoryRebuildReport,
+    HistoryStatus, HistorySyncReport,
+};
 
 pub use query::{
     DEFAULT_SEARCH_LIMIT, DEFAULT_SHOW_MAX_BYTES, Match, NodeMetadata, NodeView, SearchKind,

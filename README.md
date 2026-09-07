@@ -62,11 +62,21 @@ The scanner respects Git ignore rules and optional `.orbitignore` files. The
 latter is a source-scanning ignore format retained for compatibility; it is not
 an Orbit runtime configuration dependency.
 
+Delivered-change history is a separate rebuildable index at
+`.orbit-graph/change-history.1.sqlite3`. It learns only from immutable Git tree
+differences supplied by the public delivery contract or from explicitly weaker
+first-parent Git sync evidence. It never reads task `context_files` or Orbit
+private state. See [the design and v1 contract](docs/design/change-recommendations.md).
+
 ## Commands
 
 | Command | Purpose |
 | --- | --- |
 | `sync [--full]` | Incrementally update or fully rebuild the index. |
+| `history import --input <path\|->` | Import a validated v1 delivery JSON envelope. |
+| `history sync --branch <name> [--limit <n>]` | Atomically index new first-parent commits as Git-only evidence. |
+| `history status --branch <name>` | Report history versions, cursor, evidence, and association counts. |
+| `history rebuild --branch <name> [--limit <n>]` | Atomically recreate one scope from Git-only history. |
 | `search <query> [--kind symbol|string|config] [--lang <id>] [--limit <n>]` | Full-text search indexed definitions, strings, or config keys. |
 | `show <selector> [--max-bytes <n>]` | Return metadata and a bounded source slice. |
 | `refs <symbol> [--confidence <level>] [--kind <kind>]` | Return inbound references and relations. |
@@ -109,7 +119,9 @@ archive, font, PDF, and lock files are skipped.
 ## Library
 
 The crate exposes `Graph`, `Selector`, synchronization policies, and typed query
-results. A minimal manual-sync embedding looks like:
+results. It also exposes `HistoryIndex`, the v1 import/provenance and extracted
+change types, current-symbol resolution, and independent schema/extractor
+version constants. A minimal manual-sync embedding looks like:
 
 ```rust,no_run
 use std::path::Path;

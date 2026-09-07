@@ -8,6 +8,7 @@ use std::path::Path;
 
 /// Raw extraction rows emitted for one source file.
 pub mod extracted;
+pub(crate) mod history;
 /// Language-specific extractor implementations.
 pub mod languages;
 /// Stable selector parser shared by graph callers and extractors.

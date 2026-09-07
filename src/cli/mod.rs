@@ -14,6 +14,7 @@ mod callees;
 mod clean;
 mod db_path;
 mod deps;
+mod history;
 mod impact;
 mod implementors;
 mod overview;
@@ -61,6 +62,7 @@ impl Command {
             Command::Refs(command) => command.run(context),
             Command::Callees(command) => command.run(context),
             Command::Impact(command) => command.run(context),
+            Command::History(command) => command.run(context),
             Command::Trace(command) => command.run(context),
             Command::Overview(command) => command.run(context),
             Command::Implementors(command) => command.run(context),
@@ -80,6 +82,7 @@ pub enum Command {
     Refs(refs::RefsCommand),
     Callees(callees::CalleesCommand),
     Impact(impact::ImpactCommand),
+    History(history::HistoryCommand),
     Trace(trace::TraceCommand),
     Overview(overview::OverviewCommand),
     Implementors(implementors::ImplementorsCommand),
@@ -113,6 +116,10 @@ impl CommandContext {
 
     pub(crate) fn open_graph(&self) -> Result<Graph, CliError> {
         Graph::open(self.worktree_root.as_path(), SyncPolicy::Manual).map_err(CliError::Graph)
+    }
+
+    pub(crate) fn worktree_root(&self) -> &std::path::Path {
+        self.worktree_root.as_path()
     }
 }
 
