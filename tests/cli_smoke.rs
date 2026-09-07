@@ -167,6 +167,258 @@ fn real_binary_recommends_in_file_and_symbol_modes_and_validates_top_k() {
 }
 
 #[test]
+fn real_binary_expands_corpus_cochanges_without_temporal_or_duplicate_leakage() {
+    let fixture = TempDir::new().expect("create recommendation fixture");
+    run_git(fixture.path(), ["init", "-b", "main"]);
+    run_git(
+        fixture.path(),
+        ["config", "user.email", "graph@example.invalid"],
+    );
+    run_git(fixture.path(), ["config", "user.name", "Graph Test"]);
+    fs::write(fixture.path().join("a.rs"), "pub fn alpha() -> i32 { 0 }\n").expect("write a");
+    fs::write(fixture.path().join("b.rs"), "pub fn beta() -> i32 { 0 }\n").expect("write b");
+    run_git(fixture.path(), ["add", "."]);
+    run_git(fixture.path(), ["commit", "-m", "base"]);
+
+    let before_one = git_stdout(fixture.path(), ["rev-parse", "HEAD"]);
+    fs::write(fixture.path().join("a.rs"), "pub fn alpha() -> i32 { 1 }\n").expect("edit a one");
+    run_git(fixture.path(), ["add", "."]);
+    run_git(fixture.path(), ["commit", "-m", "one"]);
+    let after_one = git_stdout(fixture.path(), ["rev-parse", "HEAD"]);
+
+    fs::write(fixture.path().join("a.rs"), "pub fn alpha() -> i32 { 2 }\n").expect("edit a two");
+    fs::write(fixture.path().join("b.rs"), "pub fn beta() -> i32 { 2 }\n").expect("edit b two");
+    run_git(fixture.path(), ["add", "."]);
+    run_git(fixture.path(), ["commit", "-m", "two"]);
+    let after_two = git_stdout(fixture.path(), ["rev-parse", "HEAD"]);
+
+    fs::write(fixture.path().join("a.rs"), "pub fn alpha() -> i32 { 3 }\n").expect("edit a three");
+    fs::write(fixture.path().join("b.rs"), "pub fn beta() -> i32 { 3 }\n").expect("edit b three");
+    run_git(fixture.path(), ["add", "."]);
+    run_git(fixture.path(), ["commit", "-m", "three"]);
+    let after_three = git_stdout(fixture.path(), ["rev-parse", "HEAD"]);
+
+    fs::write(fixture.path().join("b.rs"), "pub fn beta() -> i32 { 4 }\n").expect("edit b future");
+    run_git(fixture.path(), ["add", "."]);
+    run_git(fixture.path(), ["commit", "-m", "future"]);
+    let after_future = git_stdout(fixture.path(), ["rev-parse", "HEAD"]);
+
+    import_cli_delivery(
+        fixture.path(),
+        &before_one,
+        &after_one,
+        "D1",
+        "TASK-1",
+        "needle",
+        "2000-01-01T00:00:01Z",
+        "1999-12-31T00:00:00Z",
+    );
+    import_cli_delivery(
+        fixture.path(),
+        &after_one,
+        &after_two,
+        "D2",
+        "TASK-2",
+        "unrelated",
+        "2000-01-01T00:00:02Z",
+        "1999-12-31T00:00:00Z",
+    );
+    import_cli_delivery(
+        fixture.path(),
+        &after_one,
+        &after_two,
+        "D2-ALIAS",
+        "TASK-2",
+        "unrelated",
+        "2000-01-01T00:00:02Z",
+        "1999-12-31T00:00:00Z",
+    );
+    import_cli_delivery(
+        fixture.path(),
+        &after_two,
+        &after_three,
+        "D3",
+        "TASK-3",
+        "unrelated",
+        "2000-01-01T00:00:03Z",
+        "1999-12-31T00:00:00Z",
+    );
+    import_cli_delivery(
+        fixture.path(),
+        &after_three,
+        &after_future,
+        "D-FUTURE",
+        "PENDING",
+        "futuresecret",
+        "2001-01-01T00:00:00.900Z",
+        "2000-12-31T00:00:00Z",
+    );
+
+    let cutoff = "2001-01-01T00:00:00.100Z";
+    let result = run_json(
+        fixture.path(),
+        [
+            "recommend",
+            "--query",
+            "needle",
+            "--level",
+            "file",
+            "--cutoff",
+            cutoff,
+        ],
+    );
+    let beta = result["recommendations"]
+        .as_array()
+        .and_then(|items| items.iter().find(|item| item["selector"] == "file:b.rs"))
+        .expect("co-change destination b");
+    assert_eq!(beta["association"]["support"], 2);
+    assert_eq!(beta["association"]["source_count"], 3);
+    assert_eq!(beta["association"]["destination_count"], 2);
+    assert_eq!(beta["association"]["lift"], 1.0);
+    assert_eq!(beta["counts"]["eligible_history_deliveries"], 3);
+    assert!(beta["reasons"].as_array().is_some_and(|reasons| {
+        reasons.iter().any(|reason| {
+            reason["kind"] == "directional_cochange"
+                && reason["explanation"]
+                    .as_str()
+                    .is_some_and(|text| text.contains("D2") && text.contains("D2-ALIAS"))
+        })
+    }));
+
+    let future = run_json(
+        fixture.path(),
+        ["recommend", "--query", "futuresecret", "--cutoff", cutoff],
+    );
+    assert!(
+        future["recommendations"]
+            .as_array()
+            .is_some_and(Vec::is_empty)
+    );
+    let future_text = run_json(
+        fixture.path(),
+        ["recommend", "--query", "futuretext", "--cutoff", cutoff],
+    );
+    assert!(
+        future_text["recommendations"]
+            .as_array()
+            .is_some_and(Vec::is_empty)
+    );
+
+    let _ = run_json(
+        fixture.path(),
+        ["history", "sync", "--branch", "main", "--limit", "20"],
+    );
+    let snapshot_path = fixture.path().join("pending-snapshot.json");
+    let snapshot = serde_json::json!({
+        "task_id": "PENDING",
+        "title": "needle",
+        "description": "pending work before any delivery",
+        "acceptance_criteria": ["recommend likely files"],
+        "source": {"system": "task_service", "record_id": "PENDING@1"},
+        "created_at": {
+            "status": "known", "timestamp": "1999-12-30T00:00:00Z",
+            "source": {"system": "task_service"}
+        },
+        "snapshot_available_at": {
+            "status": "known", "timestamp": "1999-12-31T00:00:00Z",
+            "source": {"system": "task_service", "record_id": "PENDING@1"}
+        },
+        "text_availability": "known_pre_execution",
+        "captured_at": "1999-12-31T00:00:00Z"
+    });
+    fs::write(
+        &snapshot_path,
+        serde_json::to_vec(&snapshot).expect("encode snapshot"),
+    )
+    .expect("write snapshot");
+    let snapshot_arg = snapshot_path.to_string_lossy();
+    for level in ["file", "symbol"] {
+        let pending = run_json(
+            fixture.path(),
+            [
+                "recommend",
+                "--task-id",
+                "PENDING",
+                "--task-snapshot",
+                snapshot_arg.as_ref(),
+                "--level",
+                level,
+            ],
+        );
+        assert_eq!(
+            pending["recommendations"][0]["counts"]["eligible_history_deliveries"],
+            3
+        );
+        assert!(pending["recommendations"].as_array().is_some_and(|items| {
+            items.iter().all(|item| {
+                item["supporting_delivery_ids"]
+                    .as_array()
+                    .is_some_and(|ids| ids.iter().all(|id| id != "D-FUTURE"))
+            })
+        }));
+        assert!(pending["recommendations"].as_array().is_some_and(|items| {
+            items.iter().any(|item| {
+                item["selector"]
+                    .as_str()
+                    .is_some_and(|selector| selector.contains("a.rs"))
+            })
+        }));
+    }
+}
+
+#[test]
+fn real_binary_filters_deleted_destinations_from_stale_structure() {
+    let fixture = TempDir::new().expect("create stale structure fixture");
+    run_git(fixture.path(), ["init", "-b", "main"]);
+    run_git(
+        fixture.path(),
+        ["config", "user.email", "graph@example.invalid"],
+    );
+    run_git(fixture.path(), ["config", "user.name", "Graph Test"]);
+    fs::write(
+        fixture.path().join("caller.rs"),
+        "mod removed;\npub fn keeper() -> i32 { removed::gone() }\n",
+    )
+    .expect("write caller");
+    fs::write(
+        fixture.path().join("removed.rs"),
+        "pub fn gone() -> i32 { 1 }\n",
+    )
+    .expect("write removed");
+    run_git(fixture.path(), ["add", "."]);
+    run_git(fixture.path(), ["commit", "-m", "base"]);
+    let _ = run_json(fixture.path(), ["sync", "--full"]);
+
+    fs::write(
+        fixture.path().join("caller.rs"),
+        "pub fn keeper() -> i32 { 1 }\n",
+    )
+    .expect("remove call");
+    fs::remove_file(fixture.path().join("removed.rs")).expect("delete callee");
+    run_git(fixture.path(), ["add", "."]);
+    run_git(fixture.path(), ["commit", "-m", "delete callee"]);
+
+    for level in ["file", "symbol"] {
+        let result = run_json(
+            fixture.path(),
+            ["recommend", "--query", "keeper", "--level", level],
+        );
+        assert!(result["recommendations"].as_array().is_some_and(|items| {
+            items.iter().all(|item| {
+                !item["selector"].as_str().is_some_and(|selector| {
+                    selector.contains("removed.rs") || selector.contains("gone")
+                })
+            })
+        }));
+        assert!(result["fallbacks"].as_array().is_some_and(|items| {
+            items
+                .iter()
+                .any(|item| item["kind"] == "stale_structure_excluded")
+        }));
+    }
+}
+
+#[test]
 fn real_binary_imports_syncs_reports_and_rebuilds_history() {
     let fixture = fixture_repository();
     let before = git_stdout(fixture.path(), ["rev-parse", "HEAD"]);
@@ -480,6 +732,85 @@ fn run_json<const N: usize>(cwd: &Path, args: [&str; N]) -> Value {
         String::from_utf8_lossy(&output.stderr)
     );
     serde_json::from_slice(&output.stdout).expect("JSON command output")
+}
+
+#[allow(clippy::too_many_arguments)]
+fn import_cli_delivery(
+    root: &Path,
+    before: &str,
+    after: &str,
+    delivery_id: &str,
+    task_id: &str,
+    title: &str,
+    delivered_at: &str,
+    snapshot_available_at: &str,
+) {
+    let repository = root
+        .canonicalize()
+        .expect("canonical fixture")
+        .to_string_lossy()
+        .into_owned();
+    let mut tasks = vec![serde_json::json!({
+        "task_id": task_id,
+        "title": title,
+        "description": "neutral delivery description",
+        "acceptance_criteria": [],
+        "source": {"system": "task_service", "record_id": task_id},
+        "created_at": {
+            "status": "known", "timestamp": "1999-01-01T00:00:00Z",
+            "source": {"system": "task_service", "record_id": task_id}
+        },
+        "snapshot_available_at": {
+            "status": "known", "timestamp": snapshot_available_at,
+            "source": {"system": "task_service", "record_id": task_id}
+        },
+        "text_availability": "known_pre_execution",
+        "captured_at": "2002-01-01T00:00:00Z"
+    })];
+    if delivery_id == "D1" {
+        tasks.push(serde_json::json!({
+            "task_id": "FUTURE-TEXT",
+            "title": "futuretext",
+            "description": "must not be visible before its snapshot cutoff",
+            "acceptance_criteria": [],
+            "source": {"system": "task_service", "record_id": "FUTURE-TEXT"},
+            "created_at": {
+                "status": "known", "timestamp": "1999-01-01T00:00:00Z",
+                "source": {"system": "task_service"}
+            },
+            "snapshot_available_at": {
+                "status": "known", "timestamp": "2001-01-01T00:00:00.900Z",
+                "source": {"system": "task_service"}
+            },
+            "text_availability": "known_pre_execution",
+            "captured_at": "2002-01-01T00:00:00Z"
+        }));
+    }
+    let envelope = serde_json::json!({
+        "schema_version": 2,
+        "repository": repository,
+        "landing_branch": "main",
+        "before_revision": before,
+        "after_revision": after,
+        "delivery_id": delivery_id,
+        "evidence": "verified_delivery",
+        "source": {"system": "cli_test", "record_id": delivery_id},
+        "delivered_at": {
+            "status": "known", "timestamp": delivered_at,
+            "source": {"system": "delivery_service", "record_id": delivery_id}
+        },
+        "captured_at": "2002-01-01T00:00:00Z",
+        "tasks": tasks
+    });
+    let path = root.join(format!("{delivery_id}.json"));
+    fs::write(
+        &path,
+        serde_json::to_vec(&envelope).expect("encode delivery"),
+    )
+    .expect("write delivery");
+    let path_arg = path.to_string_lossy();
+    let imported = run_json(root, ["history", "import", "--input", path_arg.as_ref()]);
+    assert_eq!(imported["inserted"], true);
 }
 
 fn run<const N: usize>(cwd: &Path, args: [&str; N]) -> Output {

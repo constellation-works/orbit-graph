@@ -1,9 +1,10 @@
 //! Explainable destination recommendations learned from verified change history.
 //!
 //! The engine consumes only delivered changes from [`HistoryIndex`](crate::HistoryIndex).
-//! Planned task context is deliberately absent from the request contract. Callers may
-//! inject ranked task hits from an external hybrid retriever; standalone callers get a
-//! deterministic lexical baseline over the same historical task snapshots.
+//! Planned context-file selectors are deliberately absent from the request contract.
+//! Callers may supply the target task's pre-execution text or ranked task hits from an
+//! external hybrid retriever; standalone callers get a deterministic lexical baseline
+//! over eligible historical task snapshots.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
@@ -16,7 +17,7 @@ use serde::{Deserialize, Serialize};
 use crate::extract::RawSymbol;
 use crate::extract::history::{
     DeliveredChange, DeliveryEvidence, FileChange, SymbolIdentity, TaskAssociation,
-    TaskTextAvailability, TemporalStatus,
+    TaskTextAvailability, TemporalStatus, Timestamp, parse_timestamp, validate_task_association,
 };
 use crate::extract::languages;
 use crate::{Graph, GraphError, HistoryIndex, SyncPolicy};
@@ -69,10 +70,15 @@ pub struct RecommendationRequest {
     /// Git revision expression to resolve. Defaults to the current checkout commit.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub target_revision: Option<String>,
-    /// Optional chronological cutoff (RFC 3339 or `unix:<seconds>`). Unknown delivery
-    /// times fail closed when this is present.
+    /// Optional chronological cutoff (RFC 3339 or `unix:<seconds>`). Evidence must be
+    /// strictly earlier; unknown delivery times fail closed when this is present.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub cutoff: Option<String>,
+    /// Optional authoritative pre-execution snapshot for a target task that has not
+    /// delivered yet. This is independent of delivery history and is valid only with
+    /// [`RecommendationInput::TaskId`].
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub task_snapshot: Option<TaskAssociation>,
     /// Optional externally ranked historical tasks. Local lexical retrieval remains active
     /// for tasks not present in this list.
     #[serde(default)]
@@ -232,13 +238,13 @@ impl RecommendationEngine {
             .cutoff
             .clone()
             .unwrap_or_else(|| format!("unix:{}", target_commit.time().seconds()));
-        let cutoff_seconds = parse_timestamp(effective_cutoff.as_str())?;
+        let cutoff = parse_timestamp("recommendation cutoff", effective_cutoff.as_str())?;
         let index = HistoryIndex::open(self.repo_root.as_path(), self.landing_branch.as_str())?;
         let status = index.status()?;
         let freshness = freshness(&repo, status.cursor, target);
         let deliveries = index.deliveries()?;
         let mut resolver = TargetTree::load(&repo, target)?;
-        let query = resolve_query(&deliveries, request, cutoff_seconds, &repo, target)?;
+        let query = resolve_query(&deliveries, request, &cutoff, &repo, target)?;
         let hybrid = normalized_hybrid_hits(request.hybrid_hits.as_slice())?;
         let target_task = match &request.input {
             RecommendationInput::TaskId(id) => Some(id.as_str()),
@@ -255,7 +261,7 @@ impl RecommendationEngine {
             &repo,
             deliveries,
             target,
-            cutoff_seconds,
+            &cutoff,
             request.cutoff.is_some(),
             target_task,
             &mut fallbacks,
@@ -267,7 +273,7 @@ impl RecommendationEngine {
             query.as_str(),
             &hybrid,
             request.level,
-            target,
+            &cutoff,
         )?;
 
         add_lexical_baseline(&resolver, query.as_str(), request.level, &mut scored);
@@ -276,21 +282,35 @@ impl RecommendationEngine {
             .ok()
             .and_then(|head| head.peel_to_commit().ok())
             .map(|c| c.id());
-        let structure_applied = if checkout_head == Some(target) {
-            add_current_structure(self.repo_root.as_path(), request.level, &mut scored)?
+        let structure = if checkout_head == Some(target) {
+            add_current_structure(
+                self.repo_root.as_path(),
+                request.level,
+                &resolver,
+                &mut scored,
+            )?
         } else {
-            false
+            StructureEvidence::default()
         };
         if checkout_head != Some(target) {
             fallbacks.push(RecommendationFallback {
                 kind: "structure_unavailable_for_revision".to_string(),
                 reason: "bounded structural expansion was skipped because the target is not the current checkout; HEAD structure was not reused".to_string(),
             });
-        } else if !structure_applied {
+        } else if !structure.applied {
             fallbacks.push(RecommendationFallback {
                 kind: "structure_unavailable".to_string(),
                 reason: "the current graph index contained no usable structural neighbors"
                     .to_string(),
+            });
+        }
+        if structure.stale_destinations > 0 {
+            fallbacks.push(RecommendationFallback {
+                kind: "stale_structure_excluded".to_string(),
+                reason: format!(
+                    "{} cached structural destination(s) were absent from the requested Git tree and excluded",
+                    structure.stale_destinations
+                ),
             });
         }
         if eligible.is_empty() {
@@ -313,7 +333,7 @@ impl RecommendationEngine {
             resolved_target_revision: target.to_string(),
             effective_cutoff,
             source_freshness: freshness,
-            structure_applied,
+            structure_applied: structure.applied,
             fallbacks,
             recommendations,
         })
@@ -338,7 +358,28 @@ fn validate_request(request: &RecommendationRequest) -> Result<(), GraphError> {
         ));
     }
     if let Some(cutoff) = request.cutoff.as_deref() {
-        let _ = parse_timestamp(cutoff)?;
+        let _ = parse_timestamp("recommendation cutoff", cutoff)?;
+    }
+    if let Some(snapshot) = request.task_snapshot.as_ref() {
+        validate_task_association(snapshot)?;
+        match &request.input {
+            RecommendationInput::TaskId(task_id) if task_id == &snapshot.task_id => {}
+            RecommendationInput::TaskId(task_id) => {
+                return Err(GraphError::invalid_data(
+                    "validate recommendation task snapshot",
+                    format!(
+                        "snapshot task ID {} does not match requested task {task_id}",
+                        snapshot.task_id
+                    ),
+                ));
+            }
+            RecommendationInput::Query(_) => {
+                return Err(GraphError::invalid_data(
+                    "validate recommendation task snapshot",
+                    "a supplied task snapshot requires task-ID input",
+                ));
+            }
+        }
     }
     Ok(())
 }
@@ -392,7 +433,7 @@ fn freshness(repo: &Repository, cursor: Option<String>, target: Oid) -> Recommen
 fn resolve_query(
     deliveries: &[DeliveredChange],
     request: &RecommendationRequest,
-    cutoff: i64,
+    cutoff: &Timestamp,
     repo: &Repository,
     target: Oid,
 ) -> Result<String, GraphError> {
@@ -402,6 +443,17 @@ fn resolve_query(
     let RecommendationInput::TaskId(task_id) = &request.input else {
         unreachable!()
     };
+    if let Some(snapshot) = request.task_snapshot.as_ref() {
+        if !task_is_eligible(snapshot, cutoff) {
+            return Err(GraphError::invalid_data(
+                "resolve recommendation task query",
+                format!(
+                    "supplied snapshot for task {task_id} was not known strictly before the cutoff"
+                ),
+            ));
+        }
+        return Ok(task_text(snapshot));
+    }
     let mut snapshots = deliveries
         .iter()
         .filter_map(|delivery| {
@@ -425,7 +477,7 @@ fn resolve_query(
         Err(GraphError::invalid_data(
             "resolve recommendation task query",
             format!(
-                "task {task_id} has no known pre-execution text at or before the cutoff and no hybrid hits were supplied"
+                "task {task_id} has no known pre-execution text strictly before the cutoff and no hybrid hits were supplied"
             ),
         ))
     }
@@ -457,23 +509,14 @@ fn eligible_deliveries(
     repo: &Repository,
     deliveries: Vec<DeliveredChange>,
     target: Oid,
-    cutoff: i64,
+    cutoff: &Timestamp,
     explicit_cutoff: bool,
     target_task: Option<&str>,
     fallbacks: &mut Vec<RecommendationFallback>,
-) -> Result<Vec<DeliveredChange>, GraphError> {
-    let mut unique = BTreeMap::new();
+) -> Result<Vec<EligibleDelivery>, GraphError> {
+    let mut grouped: BTreeMap<(String, String), Vec<DeliveredChange>> = BTreeMap::new();
     let mut excluded_unknown_time = 0;
     for delivery in deliveries {
-        if target_task.is_some_and(|task_id| {
-            delivery
-                .delivery
-                .tasks
-                .iter()
-                .any(|task| task.task_id == task_id)
-        }) {
-            continue;
-        }
         let after = Oid::from_str(delivery.delivery.after_revision.as_str())
             .map_err(git_error("parse indexed delivery revision"))?;
         if after != target
@@ -493,15 +536,15 @@ fn eligible_deliveries(
                 excluded_unknown_time += 1;
                 continue;
             };
-            if parse_timestamp(timestamp)? > cutoff {
+            if parse_timestamp("indexed delivery timestamp", timestamp)? >= *cutoff {
                 continue;
             }
         }
         let key = (
-            delivery.delivery.delivery_id.clone(),
+            delivery.delivery.before_revision.clone(),
             delivery.delivery.after_revision.clone(),
         );
-        unique.entry(key).or_insert(delivery);
+        grouped.entry(key).or_default().push(delivery);
     }
     if excluded_unknown_time > 0 {
         fallbacks.push(RecommendationFallback {
@@ -509,7 +552,47 @@ fn eligible_deliveries(
             reason: format!("{excluded_unknown_time} delivery record(s) with uncertain or unavailable landing time were excluded at the explicit cutoff"),
         });
     }
-    Ok(unique.into_values().collect())
+    let mut unique = Vec::new();
+    for (_, mut equivalent) in grouped {
+        if target_task.is_some_and(|task_id| {
+            equivalent.iter().any(|delivery| {
+                delivery
+                    .delivery
+                    .tasks
+                    .iter()
+                    .any(|task| task.task_id == task_id)
+            })
+        }) {
+            continue;
+        }
+        equivalent.sort_by(|left, right| {
+            evidence_rank(right.delivery.evidence)
+                .cmp(&evidence_rank(left.delivery.evidence))
+                .then_with(|| left.delivery.delivery_id.cmp(&right.delivery.delivery_id))
+        });
+        let source_delivery_ids = equivalent
+            .iter()
+            .map(|delivery| delivery.delivery.delivery_id.clone())
+            .collect();
+        unique.push(EligibleDelivery {
+            change: equivalent.remove(0),
+            source_delivery_ids,
+        });
+    }
+    Ok(unique)
+}
+
+fn evidence_rank(evidence: DeliveryEvidence) -> u8 {
+    match evidence {
+        DeliveryEvidence::VerifiedDelivery => 1,
+        DeliveryEvidence::GitOnly => 0,
+    }
+}
+
+#[derive(Debug, Clone)]
+struct EligibleDelivery {
+    change: DeliveredChange,
+    source_delivery_ids: BTreeSet<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -522,6 +605,7 @@ struct DeliveryLocations {
     ambiguity: f64,
     breadth: f64,
     locations: BTreeMap<String, LocationMeta>,
+    source_delivery_ids: BTreeSet<String>,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -544,22 +628,24 @@ struct Accumulator {
 fn score_history(
     repo: &Repository,
     resolver: &mut TargetTree,
-    deliveries: &[DeliveredChange],
+    deliveries: &[EligibleDelivery],
     query: &str,
     hybrid: &BTreeMap<String, f64>,
     level: RecommendationLevel,
-    target: Oid,
+    cutoff: &Timestamp,
 ) -> Result<BTreeMap<String, Accumulator>, GraphError> {
     let mut rows = Vec::new();
-    for delivery in deliveries {
+    for eligible in deliveries {
+        let delivery = &eligible.change;
         let mut similarity = 0.0_f64;
         let mut task_ids = BTreeSet::new();
-        for task in delivery
+        let eligible_tasks = delivery
             .delivery
             .tasks
             .iter()
-            .filter(|task| task_is_eligible(task, i64::MAX))
-        {
+            .filter(|task| task_is_eligible(task, cutoff))
+            .collect::<Vec<_>>();
+        for task in &eligible_tasks {
             let local = lexical_similarity(query, task_text(task).as_str());
             let relevance = f64::max(
                 local,
@@ -578,7 +664,7 @@ fn score_history(
             repo,
             Oid::from_str(delivery.delivery.after_revision.as_str())
                 .map_err(git_error("parse delivery revision for recency"))?,
-            target,
+            resolver.revision,
         );
         rows.push(DeliveryLocations {
             delivery_id: delivery.delivery.delivery_id.clone(),
@@ -590,9 +676,10 @@ fn score_history(
                 0.55
             },
             recency: 0.5_f64.powf(distance as f64 / 50.0),
-            ambiguity: 1.0 / (delivery.delivery.tasks.len().max(1) as f64).sqrt(),
+            ambiguity: 1.0 / (eligible_tasks.len().max(1) as f64).sqrt(),
             breadth: 1.0 / (delivery.files.len().max(1) as f64).sqrt(),
             locations,
+            source_delivery_ids: eligible.source_delivery_ids.clone(),
         });
     }
     let mut prevalence: BTreeMap<String, usize> = BTreeMap::new();
@@ -636,7 +723,7 @@ fn score_history(
             entry.reasons.push(RecommendationReason {
                 kind: "historical_change".to_string(),
                 contribution,
-                explanation: format!("task similarity {:.3}, actual-change evidence {:.2}, recency {:.3}, broad/ambiguous/ubiquity/artifact discounts applied", row.similarity, row.evidence_weight, row.recency),
+                explanation: format!("task similarity {:.3}, actual-change evidence {:.2}, recency {:.3}, broad/ambiguous/ubiquity/artifact discounts applied; equivalent source IDs: {}", row.similarity, row.evidence_weight, row.recency, row.source_delivery_ids.iter().cloned().collect::<Vec<_>>().join(", ")),
             });
             direct_strength
                 .entry(selector.clone())
@@ -666,7 +753,7 @@ fn add_associations(
         .filter(|(_, score)| **score > 0.0)
         .collect::<Vec<_>>();
     for (destination, destination_count) in prevalence {
-        let mut best: Option<(f64, RecommendationAssociation)> = None;
+        let mut best: Option<(f64, RecommendationAssociation, String)> = None;
         for (source, source_score) in &seeds {
             if *source == destination {
                 continue;
@@ -675,15 +762,23 @@ fn add_associations(
             if source_count == 0 {
                 continue;
             }
-            let support = rows
+            let supporting_rows = rows
                 .iter()
                 .filter(|row| {
                     row.locations.contains_key(*source) && row.locations.contains_key(destination)
                 })
-                .count();
+                .collect::<Vec<_>>();
+            let support = supporting_rows.len();
             if support == 0 {
                 continue;
             }
+            let supporting_source_ids = supporting_rows
+                .iter()
+                .flat_map(|row| row.source_delivery_ids.iter().cloned())
+                .collect::<BTreeSet<_>>()
+                .into_iter()
+                .collect::<Vec<_>>()
+                .join(", ");
             let confidence = support as f64 / source_count as f64;
             let lift = confidence / (*destination_count as f64 / history_total as f64);
             let contribution = **source_score * confidence * lift.ln_1p() * 0.25;
@@ -695,25 +790,26 @@ fn add_associations(
                 confidence,
                 lift,
             };
-            if best.as_ref().is_none_or(|(score, current)| {
+            if best.as_ref().is_none_or(|(score, current, _)| {
                 contribution > *score
                     || (contribution == *score && association.from_selector < current.from_selector)
             }) {
-                best = Some((contribution, association));
+                best = Some((contribution, association, supporting_source_ids));
             }
         }
-        if let Some((contribution, association)) = best {
+        if let Some((contribution, association, supporting_source_ids)) = best {
             let entry = scored.entry(destination.clone()).or_default();
             entry.score += contribution;
             entry.reasons.push(RecommendationReason {
                 kind: "directional_cochange".to_string(),
                 contribution,
                 explanation: format!(
-                    "{} predicts this destination with support {}, confidence {:.3}, lift {:.3}",
+                    "{} predicts this destination with support {}, confidence {:.3}, lift {:.3}; source delivery IDs: {}",
                     association.from_selector,
                     association.support,
                     association.confidence,
-                    association.lift
+                    association.lift,
+                    supporting_source_ids
                 ),
             });
             entry.association = Some(association);
@@ -746,8 +842,9 @@ fn add_lexical_baseline(
 fn add_current_structure(
     repo_root: &Path,
     level: RecommendationLevel,
+    resolver: &TargetTree,
     scored: &mut BTreeMap<String, Accumulator>,
-) -> Result<bool, GraphError> {
+) -> Result<StructureEvidence, GraphError> {
     let graph = Graph::open(repo_root, SyncPolicy::Manual)?;
     let seeds = scored
         .iter()
@@ -756,7 +853,7 @@ fn add_current_structure(
         .map(|(selector, score)| (selector.clone(), score.score))
         .collect::<Vec<_>>();
     if seeds.is_empty() {
-        return Ok(false);
+        return Ok(StructureEvidence::default());
     }
     let mut additions = Vec::new();
     graph.with_read_connection(|conn| {
@@ -799,8 +896,13 @@ fn add_current_structure(
         }
         Ok(())
     })?;
-    let applied = !additions.is_empty();
+    let mut evidence = StructureEvidence::default();
     for (destination, contribution, source) in additions {
+        if !resolver.selector_is_live(destination.as_str()) {
+            evidence.stale_destinations += 1;
+            continue;
+        }
+        evidence.applied = true;
         let entry = scored.entry(destination).or_default();
         entry.score += contribution;
         entry.reasons.push(RecommendationReason {
@@ -809,7 +911,13 @@ fn add_current_structure(
             explanation: format!("bounded caller/callee neighbor of {source}"),
         });
     }
-    Ok(applied)
+    Ok(evidence)
+}
+
+#[derive(Debug, Clone, Copy, Default)]
+struct StructureEvidence {
+    applied: bool,
+    stale_destinations: usize,
 }
 
 fn finalize(scored: BTreeMap<String, Accumulator>, total: usize) -> Vec<Recommendation> {
@@ -868,15 +976,15 @@ fn weighted_change_score(
     similarity * evidence * recency * ambiguity * breadth * ubiquity * artifact
 }
 
-fn task_is_eligible(task: &TaskAssociation, cutoff: i64) -> bool {
+fn task_is_eligible(task: &TaskAssociation, cutoff: &Timestamp) -> bool {
     task.text_availability == TaskTextAvailability::KnownPreExecution
         && task.snapshot_available_at.status == TemporalStatus::Known
         && task
             .snapshot_available_at
             .timestamp
             .as_deref()
-            .and_then(|value| parse_timestamp(value).ok())
-            .is_some_and(|value| value <= cutoff)
+            .and_then(|value| parse_timestamp("task snapshot timestamp", value).ok())
+            .is_some_and(|value| value < *cutoff)
 }
 
 fn task_text(task: &TaskAssociation) -> String {
@@ -1024,6 +1132,20 @@ impl TargetTree {
                 })
                 .collect(),
         }
+    }
+
+    fn selector_is_live(&self, selector: &str) -> bool {
+        if let Some(path) = selector.strip_prefix("file:") {
+            return self.files.contains_key(path);
+        }
+        let Some((path, qualified, kind)) = split_symbol_selector(selector) else {
+            return false;
+        };
+        self.symbols.get(path).is_some_and(|symbols| {
+            symbols
+                .iter()
+                .any(|symbol| symbol.qualified == qualified && symbol.kind == kind)
+        })
     }
 
     fn locations_for_delivery(
@@ -1182,70 +1304,6 @@ fn split_symbol_selector(selector: &str) -> Option<(&str, &str, &str)> {
     Some((path, qualified, kind))
 }
 
-fn parse_timestamp(value: &str) -> Result<i64, GraphError> {
-    if let Some(seconds) = value.strip_prefix("unix:") {
-        return seconds.parse::<i64>().map_err(|error| {
-            GraphError::invalid_data("parse recommendation cutoff", error.to_string())
-        });
-    }
-    parse_rfc3339(value).ok_or_else(|| {
-        GraphError::invalid_data(
-            "parse recommendation cutoff",
-            format!("invalid RFC 3339 or unix timestamp: {value}"),
-        )
-    })
-}
-
-fn parse_rfc3339(value: &str) -> Option<i64> {
-    let (date, time_zone) = value.split_once('T')?;
-    let mut date_parts = date.split('-');
-    let year = date_parts.next()?.parse::<i64>().ok()?;
-    let month = date_parts.next()?.parse::<i64>().ok()?;
-    let day = date_parts.next()?.parse::<i64>().ok()?;
-    let zone_index = time_zone
-        .find(['Z', '+'])
-        .or_else(|| time_zone.get(1..)?.find('-').map(|index| index + 1))?;
-    let (time, zone) = time_zone.split_at(zone_index);
-    let mut time_parts = time.split(':');
-    let hour = time_parts.next()?.parse::<i64>().ok()?;
-    let minute = time_parts.next()?.parse::<i64>().ok()?;
-    let second = time_parts.next()?.split('.').next()?.parse::<i64>().ok()?;
-    if !(1..=12).contains(&month)
-        || !(1..=31).contains(&day)
-        || hour > 23
-        || minute > 59
-        || second > 60
-    {
-        return None;
-    }
-    let offset = if zone == "Z" {
-        0
-    } else {
-        let sign = if zone.starts_with('+') {
-            1
-        } else if zone.starts_with('-') {
-            -1
-        } else {
-            return None;
-        };
-        let mut parts = zone[1..].split(':');
-        let hours = parts.next()?.parse::<i64>().ok()?;
-        let minutes = parts.next()?.parse::<i64>().ok()?;
-        sign * (hours * 3600 + minutes * 60)
-    };
-    Some(days_from_civil(year, month, day) * 86_400 + hour * 3600 + minute * 60 + second - offset)
-}
-
-fn days_from_civil(year: i64, month: i64, day: i64) -> i64 {
-    let year = year - i64::from(month <= 2);
-    let era = if year >= 0 { year } else { year - 399 } / 400;
-    let yoe = year - era * 400;
-    let adjusted_month = month + if month > 2 { -3 } else { 9 };
-    let doy = (153 * adjusted_month + 2) / 5 + day - 1;
-    let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
-    era * 146_097 + doe - 719_468
-}
-
 fn git_error(operation: &'static str) -> impl FnOnce(git2::Error) -> GraphError {
     move |error| GraphError::invalid_data(operation, error.to_string())
 }
@@ -1343,11 +1401,30 @@ mod tests {
 
     #[test]
     fn cutoff_parser_handles_offsets_and_unix() {
-        assert_eq!(parse_timestamp("unix:0").expect("unix"), 0);
         assert_eq!(
-            parse_timestamp("1970-01-01T01:00:00+01:00").expect("offset"),
-            0
+            parse_timestamp("test", "unix:0").expect("unix"),
+            parse_timestamp("test", "1970-01-01T01:00:00+01:00").expect("offset")
         );
+        assert!(
+            parse_timestamp("test", "2001-01-01T00:00:00.900Z").expect("later")
+                > parse_timestamp("test", "2001-01-01T00:00:00.100Z").expect("earlier")
+        );
+        assert_eq!(
+            parse_timestamp("test", "2001-01-01T02:30:00.100+02:30").expect("offset"),
+            parse_timestamp("test", "2001-01-01T00:00:00.100Z").expect("utc")
+        );
+        for invalid in [
+            "2026-02-30T00:00:00Z",
+            "2026-01-01T00:00:00Zjunk",
+            "2026-01-01T00:00:00+24:00",
+            "unix:01",
+            "unix:9223372036854775808",
+        ] {
+            assert!(
+                parse_timestamp("test", invalid).is_err(),
+                "accepted {invalid}"
+            );
+        }
     }
 
     #[test]
@@ -1447,6 +1524,7 @@ mod tests {
                 limit: Some(10),
                 target_revision: Some(target_revision.clone()),
                 cutoff: None,
+                task_snapshot: None,
                 hybrid_hits: Vec::new(),
             })
             .expect("recommend target");
@@ -1493,6 +1571,7 @@ mod tests {
                 limit: Some(10),
                 target_revision: Some(target_revision),
                 cutoff: None,
+                task_snapshot: None,
                 hybrid_hits: Vec::new(),
             })
             .expect("recommend symbols");
@@ -1508,6 +1587,7 @@ mod tests {
                 limit: Some(20),
                 target_revision: Some(future_revision),
                 cutoff: Some("unix:15".to_string()),
+                task_snapshot: None,
                 hybrid_hits: Vec::new(),
             })
             .expect("recommend current");
@@ -1532,6 +1612,7 @@ mod tests {
                 .iter()
                 .map(|value| ((*value).to_string(), LocationMeta::default()))
                 .collect(),
+            source_delivery_ids: BTreeSet::from(["d".to_string()]),
         }
     }
 

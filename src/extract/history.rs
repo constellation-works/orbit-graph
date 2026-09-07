@@ -9,6 +9,145 @@ use serde::{Deserialize, Serialize};
 use super::{RawSymbol, languages};
 use crate::GraphError;
 
+/// Comparable instant used by history validation and chronological consumers.
+///
+/// The fractional component retains every supplied RFC 3339 digit so cutoff
+/// comparisons never collapse distinct instants within one second.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct Timestamp {
+    seconds: i64,
+    fraction: Vec<u8>,
+}
+
+impl Ord for Timestamp {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.seconds.cmp(&other.seconds).then_with(|| {
+            let width = self.fraction.len().max(other.fraction.len());
+            (0..width)
+                .map(|index| self.fraction.get(index).copied().unwrap_or(b'0'))
+                .cmp((0..width).map(|index| other.fraction.get(index).copied().unwrap_or(b'0')))
+        })
+    }
+}
+
+impl PartialOrd for Timestamp {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+/// Parse the timestamp contract once for import validation and cutoff ordering.
+pub(crate) fn parse_timestamp(field: &str, timestamp: &str) -> Result<Timestamp, GraphError> {
+    if let Some(seconds) = timestamp.strip_prefix("unix:") {
+        if let Ok(value) = seconds.parse::<i64>()
+            && seconds == value.to_string()
+        {
+            return Ok(Timestamp {
+                seconds: value,
+                fraction: Vec::new(),
+            });
+        }
+        return Err(invalid_timestamp(field, timestamp));
+    }
+
+    parse_rfc3339(timestamp).ok_or_else(|| invalid_timestamp(field, timestamp))
+}
+
+fn parse_rfc3339(timestamp: &str) -> Option<Timestamp> {
+    let bytes = timestamp.as_bytes();
+    if bytes.len() < 20
+        || bytes.get(4) != Some(&b'-')
+        || bytes.get(7) != Some(&b'-')
+        || !matches!(bytes.get(10), Some(b'T') | Some(b't'))
+        || bytes.get(13) != Some(&b':')
+        || bytes.get(16) != Some(&b':')
+    {
+        return None;
+    }
+    let number = |digits: &[u8]| -> Option<i64> {
+        if digits.is_empty() || !digits.iter().all(u8::is_ascii_digit) {
+            return None;
+        }
+        std::str::from_utf8(digits).ok()?.parse().ok()
+    };
+    let component = |start: usize, end: usize| number(bytes.get(start..end)?);
+    let (year, month, day, hour, minute, second) = (
+        component(0, 4)?,
+        component(5, 7)?,
+        component(8, 10)?,
+        component(11, 13)?,
+        component(14, 16)?,
+        component(17, 19)?,
+    );
+    let leap = year % 4 == 0 && (year % 100 != 0 || year % 400 == 0);
+    let days_in_month = match month {
+        1 | 3 | 5 | 7 | 8 | 10 | 12 => 31,
+        4 | 6 | 9 | 11 => 30,
+        2 if leap => 29,
+        2 => 28,
+        _ => return None,
+    };
+    if day == 0 || day > days_in_month || hour > 23 || minute > 59 || second > 60 {
+        return None;
+    }
+
+    let mut cursor = 19;
+    let mut fraction = Vec::new();
+    if bytes.get(cursor) == Some(&b'.') {
+        cursor += 1;
+        let start = cursor;
+        while bytes.get(cursor).is_some_and(u8::is_ascii_digit) {
+            fraction.push(bytes[cursor]);
+            cursor += 1;
+        }
+        if cursor == start {
+            return None;
+        }
+        while fraction.last() == Some(&b'0') {
+            fraction.pop();
+        }
+    }
+
+    let offset = match bytes.get(cursor) {
+        Some(b'Z') | Some(b'z') if cursor + 1 == bytes.len() => 0,
+        Some(sign @ (b'+' | b'-'))
+            if cursor + 6 == bytes.len() && bytes.get(cursor + 3) == Some(&b':') =>
+        {
+            let offset_hour = number(&bytes[cursor + 1..cursor + 3])?;
+            let offset_minute = number(&bytes[cursor + 4..cursor + 6])?;
+            if offset_hour > 23 || offset_minute > 59 {
+                return None;
+            }
+            let value = offset_hour
+                .checked_mul(3_600)?
+                .checked_add(offset_minute * 60)?;
+            if *sign == b'+' { value } else { -value }
+        }
+        _ => return None,
+    };
+    let seconds = days_from_civil(year, month, day)
+        .checked_mul(86_400)?
+        .checked_add(hour.checked_mul(3_600)?)?
+        .checked_add(minute.checked_mul(60)?)?
+        .checked_add(second)?
+        .checked_sub(offset)?;
+    Some(Timestamp { seconds, fraction })
+}
+
+fn days_from_civil(year: i64, month: i64, day: i64) -> i64 {
+    let year = year - i64::from(month <= 2);
+    let era = if year >= 0 { year } else { year - 399 } / 400;
+    let yoe = year - era * 400;
+    let adjusted_month = month + if month > 2 { -3 } else { 9 };
+    let doy = (153 * adjusted_month + 2) / 5 + day - 1;
+    let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
+    era * 146_097 + doe - 719_468
+}
+
+fn validate_timestamp(field: &str, timestamp: &str) -> Result<(), GraphError> {
+    parse_timestamp(field, timestamp).map(drop)
+}
+
 /// Version of the public delivery import JSON contract.
 pub const DELIVERY_IMPORT_SCHEMA_VERSION: u32 = 2;
 
@@ -516,83 +655,6 @@ fn validate_temporal_fact(field: &str, fact: &TemporalFact) -> Result<(), GraphE
             "validate temporal fact",
             format!("{field} is unavailable but supplies a timestamp"),
         )),
-    }
-}
-
-fn validate_timestamp(field: &str, timestamp: &str) -> Result<(), GraphError> {
-    if let Some(seconds) = timestamp.strip_prefix("unix:") {
-        if let Ok(value) = seconds.parse::<i64>()
-            && seconds == value.to_string()
-        {
-            return Ok(());
-        }
-        return Err(invalid_timestamp(field, timestamp));
-    }
-    let bytes = timestamp.as_bytes();
-    if bytes.len() < 20
-        || bytes.get(4) != Some(&b'-')
-        || bytes.get(7) != Some(&b'-')
-        || !matches!(bytes.get(10), Some(b'T') | Some(b't'))
-        || bytes.get(13) != Some(&b':')
-        || bytes.get(16) != Some(&b':')
-    {
-        return Err(invalid_timestamp(field, timestamp));
-    }
-    let number = |digits: &[u8]| -> Option<u32> {
-        if digits.is_empty() || !digits.iter().all(|byte| byte.is_ascii_digit()) {
-            return None;
-        }
-        std::str::from_utf8(digits).ok()?.parse().ok()
-    };
-    let component = |start: usize, end: usize| number(bytes.get(start..end)?);
-    let (Some(year), Some(month), Some(day), Some(hour), Some(minute), Some(second)) = (
-        component(0, 4),
-        component(5, 7),
-        component(8, 10),
-        component(11, 13),
-        component(14, 16),
-        component(17, 19),
-    ) else {
-        return Err(invalid_timestamp(field, timestamp));
-    };
-    let leap = year % 4 == 0 && (year % 100 != 0 || year % 400 == 0);
-    let days = match month {
-        1 | 3 | 5 | 7 | 8 | 10 | 12 => 31,
-        4 | 6 | 9 | 11 => 30,
-        2 if leap => 29,
-        2 => 28,
-        _ => 0,
-    };
-    if day == 0 || day > days || hour > 23 || minute > 59 || second > 60 {
-        return Err(invalid_timestamp(field, timestamp));
-    }
-    let mut cursor = 19;
-    if bytes.get(cursor) == Some(&b'.') {
-        cursor += 1;
-        let fraction_start = cursor;
-        while bytes.get(cursor).is_some_and(u8::is_ascii_digit) {
-            cursor += 1;
-        }
-        if cursor == fraction_start {
-            return Err(invalid_timestamp(field, timestamp));
-        }
-    }
-    match bytes.get(cursor) {
-        Some(b'Z') | Some(b'z') if cursor + 1 == bytes.len() => Ok(()),
-        Some(b'+') | Some(b'-')
-            if cursor + 6 == bytes.len() && bytes.get(cursor + 3) == Some(&b':') =>
-        {
-            let offset_hour = number(&bytes[cursor + 1..cursor + 3]);
-            let offset_minute = number(&bytes[cursor + 4..cursor + 6]);
-            if offset_hour.is_some_and(|value| value <= 23)
-                && offset_minute.is_some_and(|value| value <= 59)
-            {
-                Ok(())
-            } else {
-                Err(invalid_timestamp(field, timestamp))
-            }
-        }
-        _ => Err(invalid_timestamp(field, timestamp)),
     }
 }
 

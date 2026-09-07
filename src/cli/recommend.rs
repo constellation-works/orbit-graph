@@ -5,7 +5,7 @@ use clap::{Args, ValueEnum};
 
 use crate::{
     GraphError, HybridTaskHit, RecommendationEngine, RecommendationInput, RecommendationLevel,
-    RecommendationRequest,
+    RecommendationRequest, TaskAssociation,
 };
 
 use super::{CliError, CommandContext, json_value};
@@ -39,6 +39,9 @@ pub struct RecommendCommand {
     /// Chronological evidence cutoff (RFC 3339 or unix:seconds).
     #[arg(long)]
     cutoff: Option<String>,
+    /// JSON file containing the target task's authoritative pre-execution snapshot.
+    #[arg(long, requires = "task_id")]
+    task_snapshot: Option<PathBuf>,
     /// JSON file containing an array of externally ranked hybrid task hits.
     #[arg(long)]
     hybrid_hits: Option<PathBuf>,
@@ -80,11 +83,35 @@ impl RecommendCommand {
             limit: self.limit,
             target_revision: self.revision.clone(),
             cutoff: self.cutoff.clone(),
+            task_snapshot: self
+                .task_snapshot
+                .as_ref()
+                .map(|path| read_json::<TaskAssociation>(path, "task snapshot"))
+                .transpose()?,
             hybrid_hits,
         };
         let engine = RecommendationEngine::open(context.worktree_root(), self.branch.as_str())?;
         json_value(engine.recommend(&request)?)
     }
+}
+
+fn read_json<T: serde::de::DeserializeOwned>(
+    path: &std::path::Path,
+    description: &str,
+) -> Result<T, CliError> {
+    let bytes = fs::read(path).map_err(|source| {
+        CliError::Graph(GraphError::io(
+            "read recommendation JSON input",
+            path,
+            source,
+        ))
+    })?;
+    serde_json::from_slice(bytes.as_slice()).map_err(|error| {
+        CliError::Graph(GraphError::invalid_data(
+            "decode recommendation JSON input",
+            format!("invalid {description}: {error}"),
+        ))
+    })
 }
 
 #[derive(Debug, Clone, Copy, ValueEnum)]

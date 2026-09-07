@@ -225,7 +225,12 @@ after-tree destinations without consulting planned context files.
 The library exposes `RecommendationEngine`, `RecommendationRequest`, and the
 serializable result types re-exported from the crate root. A request uses the
 `RecommendationInput` enum, so query text and a task ID are structurally
-mutually exclusive. `HybridTaskHit` is the narrow adapter seam for ranked hits
+mutually exclusive. Task-ID requests may carry a `task_snapshot` using the
+public `TaskAssociation` contract. That snapshot is supplied independently of
+delivery history, must match the requested ID, and must be proven available
+strictly before the cutoff. This supports recommendations for new/pending tasks
+and chronological backtests whose held-out delivery must remain excluded.
+`HybridTaskHit` is the narrow adapter seam for ranked hits
 from another task search system; scores are normalized per request and do not
 give the engine access to that system's database. With no supplied hits, the
 engine uses deterministic token-overlap retrieval over eligible historical
@@ -236,6 +241,7 @@ The standalone JSON CLI mirrors the contract:
 ```text
 orbit-graph recommend --query "repair parser cache" --level file --limit 10
 orbit-graph recommend --task-id TASK-123 --level symbol --revision HEAD~1
+orbit-graph recommend --task-id TASK-NEW --task-snapshot task.json --level file
 orbit-graph recommend --query "repair parser cache" --hybrid-hits hits.json
 ```
 
@@ -243,7 +249,9 @@ Exactly one of `--query` and `--task-id` is required. `--branch` selects the
 history scope (default `main`), `--revision` is resolved to a full commit
 (default: current checkout), and `--cutoff` accepts RFC 3339 or
 `unix:<seconds>`. The hybrid-hit file is a JSON array of objects with `task_id`
-and a finite non-negative `score`.
+and a finite non-negative `score`. `--task-snapshot` accepts one
+`TaskAssociation` JSON object and requires `--task-id`; it is never inserted
+into the history index.
 
 Ranking counts each delivery once and each file once per delivery. It combines
 the strongest task relevance in a delivery with verified-versus-Git-only
@@ -252,12 +260,23 @@ location prevalence, generated/lockfile discounts, directional co-change, and
 bounded current structure. Scores are additive relevance scores, not
 probabilities. `reasons` exposes every contribution; `association` exposes the
 directional support, source/destination counts, confidence, and lift.
+Association support and prevalence use the complete eligible corpus, including
+deliveries whose tasks do not match the query; relevance chooses seed
+destinations. Imports with the same repository/branch before-and-after boundary
+count as one delivered change even when distinct source IDs or Git-only and
+verified evidence coexist. The deterministic representative prefers verified
+evidence, while explanation text retains equivalent source IDs without adding
+votes or task memberships.
 
 Only delivery revisions on the requested revision's ancestry are eligible.
 An explicit chronological cutoff additionally excludes evidence whose landing
-time is uncertain or unavailable. Task-ID mode reads only snapshots proven
-available before execution and excludes every delivery associated with the
-target task. Historical paths are followed through Git rename detection;
+time is uncertain or unavailable. All comparisons use the same strict RFC
+3339/`unix:<seconds>` parser, preserve arbitrary fractional-second ordering,
+normalize offsets, and fail on invalid dates, trailing input, and arithmetic
+overflow. Delivery and task-snapshot evidence must be strictly before the
+cutoff; equality is excluded. Task-ID mode reads only snapshots proven available
+before execution and excludes every equivalent delivery boundary associated
+with the target task. Historical paths are followed through Git rename detection;
 symbols must resolve uniquely by current qualified identity or conservative
 signature identity. Deleted and ambiguous symbols are omitted. Symbol mode
 uses a `file:` selector only when history has file-only or unresolvable symbol
@@ -267,6 +286,9 @@ evidence, and marks it with `file_fallback` and `fallback_reason`.
 `fallbacks` make stale/cold-start limitations explicit. Current-tree lexical
 matching remains useful with empty history. Structural expansion is used only
 when the requested revision is the current checkout; a non-HEAD request never
-silently reuses HEAD graph structure. These seams let Stage 3 run chronological
+silently reuses HEAD graph structure. Every cached structural destination is
+also resolved against the requested Git tree, so a graph synced before a later
+committed deletion cannot return the removed file or symbol; skipped stale rows
+are explicit in `fallbacks`. These seams let Stage 3 run chronological
 backtests by setting both `target_revision` and `cutoff`, then comparing the
 ranked selectors to held-out delivered destinations.
