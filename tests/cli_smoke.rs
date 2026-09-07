@@ -728,20 +728,27 @@ fn real_binary_renders_recommendation_and_index_views_with_complete_record_bound
 
     let old_db = fixture.path().join(".orbit-graph/main.1.db");
     fs::write(&old_db, b"stale").expect("write obsolete database");
+    let expected_old_db_path = old_db.canonicalize().expect("canonical obsolete database");
     let clean = run(fixture.path(), ["--format", "ndjson", "clean"]);
     assert!(clean.status.success());
     let clean = parse_ndjson(&clean.stdout);
     assert_eq!(clean[0]["record_type"], "clean_context");
     assert_eq!(clean[1]["record_type"], "deleted_database");
-    assert_eq!(clean[1]["path"], old_db.to_string_lossy().as_ref());
+    assert_eq!(
+        clean[1]["path"],
+        expected_old_db_path.to_string_lossy().as_ref()
+    );
 
     let other_old_db = fixture.path().join(".orbit-graph/main.2.db");
     fs::write(&other_old_db, b"stale").expect("write second obsolete database");
+    let expected_other_old_db_path = other_old_db
+        .canonicalize()
+        .expect("canonical second obsolete database");
     let clean_human = run(fixture.path(), ["clean"]);
     assert!(clean_human.status.success());
     let clean_human = String::from_utf8_lossy(&clean_human.stdout);
     assert!(clean_human.contains("\t1\n"));
-    assert!(clean_human.contains(other_old_db.to_string_lossy().as_ref()));
+    assert!(clean_human.contains(expected_other_old_db_path.to_string_lossy().as_ref()));
 }
 
 #[test]
