@@ -1340,7 +1340,7 @@ fn plugin_json_with_tty_stdout(repository: &Path, tool: &str, input: Value) -> V
     };
     assert_eq!(opened, 0, "open plugin stdout pseudo-terminal");
     // SAFETY: successful `openpty` returned distinct, owned descriptors.
-    let mut master = unsafe { fs::File::from_raw_fd(master_fd) };
+    let master = unsafe { fs::File::from_raw_fd(master_fd) };
     // SAFETY: successful `openpty` returned distinct, owned descriptors.
     let slave = unsafe { OwnedFd::from_raw_fd(slave_fd) };
     let mut child = Command::new(env!("CARGO_BIN_EXE_orbit-graph"))
@@ -1362,22 +1362,33 @@ fn plugin_json_with_tty_stdout(repository: &Path, tool: &str, input: Value) -> V
             .expect("write plugin input");
     }
     drop(child.stdin.take());
+    // A PTY has a finite kernel buffer. Drain it while the plugin is still
+    // running so a larger JSON response cannot block the child before it
+    // exits. Keeping the master in the reader also keeps the PTY alive until
+    // the slave closes after the child has finished writing.
+    let stdout_reader = std::thread::spawn(move || {
+        let mut master = master;
+        let mut stdout = Vec::new();
+        let mut buffer = [0_u8; 4096];
+        loop {
+            match master.read(&mut buffer) {
+                Ok(0) => return Ok(stdout),
+                Ok(count) => stdout.extend_from_slice(&buffer[..count]),
+                Err(error) if error.raw_os_error() == Some(libc::EIO) => return Ok(stdout),
+                Err(error) => return Err(error),
+            }
+        }
+    });
     let output = child.wait_with_output().expect("wait for TTY plugin");
     assert!(
         output.status.success(),
         "TTY plugin failed: {}",
         String::from_utf8_lossy(&output.stderr)
     );
-    let mut stdout = Vec::new();
-    let mut buffer = [0_u8; 4096];
-    loop {
-        match master.read(&mut buffer) {
-            Ok(0) => break,
-            Ok(count) => stdout.extend_from_slice(&buffer[..count]),
-            Err(error) if error.raw_os_error() == Some(libc::EIO) => break,
-            Err(error) => panic!("read plugin pseudo-terminal: {error}"),
-        }
-    }
+    let stdout = stdout_reader
+        .join()
+        .expect("TTY stdout reader panicked")
+        .expect("read plugin pseudo-terminal");
     serde_json::from_slice(&stdout).expect("TTY plugin JSON")
 }
 
