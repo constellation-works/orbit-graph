@@ -1,0 +1,8 @@
+[workflow]
+base_branch = "agent-main"
+default_crew = "terra"
+system_crew = "terra"
+
+[crews.system]
+provider = "codex"
+model = "gpt-5.6-terra"
