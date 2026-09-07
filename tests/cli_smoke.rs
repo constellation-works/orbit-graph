@@ -105,6 +105,68 @@ fn real_binary_help_succeeds() {
 }
 
 #[test]
+fn real_binary_recommends_in_file_and_symbol_modes_and_validates_top_k() {
+    let fixture = fixture_repository();
+    let _ = run_json(fixture.path(), ["sync", "--full"]);
+
+    let files = run_json(
+        fixture.path(),
+        [
+            "recommend",
+            "--query",
+            "helper",
+            "--level",
+            "file",
+            "--limit",
+            "1",
+        ],
+    );
+    assert_eq!(
+        files["resolved_target_revision"],
+        git_stdout(fixture.path(), ["rev-parse", "HEAD"])
+    );
+    assert_eq!(files["recommendations"].as_array().map(Vec::len), Some(1));
+    assert_eq!(files["recommendations"][0]["selector"], "file:src/lib.rs");
+    assert!(files["source_freshness"]["status"].is_string());
+
+    let symbols = run_json(
+        fixture.path(),
+        [
+            "recommend",
+            "--query",
+            "helper",
+            "--level",
+            "symbol",
+            "--limit",
+            "2",
+        ],
+    );
+    assert!(symbols["recommendations"].as_array().is_some_and(|values| {
+        values.iter().any(|value| {
+            value["selector"]
+                .as_str()
+                .is_some_and(|selector| selector.contains("#helper:function"))
+        })
+    }));
+
+    let bad_limit = run(
+        fixture.path(),
+        ["recommend", "--query", "helper", "--limit", "0"],
+    );
+    assert!(!bad_limit.status.success());
+    let error: Value = serde_json::from_slice(&bad_limit.stderr).expect("JSON error");
+    assert_eq!(error["error"]["code"], "graph_error");
+
+    let both = run(
+        fixture.path(),
+        ["recommend", "--query", "helper", "--task-id", "TASK-1"],
+    );
+    assert!(!both.status.success());
+    let error: Value = serde_json::from_slice(&both.stderr).expect("JSON error");
+    assert_eq!(error["error"]["code"], "argument_error");
+}
+
+#[test]
 fn real_binary_imports_syncs_reports_and_rebuilds_history() {
     let fixture = fixture_repository();
     let before = git_stdout(fixture.path(), ["rev-parse", "HEAD"]);
@@ -202,6 +264,33 @@ fn real_binary_imports_syncs_reports_and_rebuilds_history() {
         ["history", "import", "--input", envelope_arg.as_ref()],
     );
     assert_eq!(duplicate["inserted"], false);
+
+    let recommended = run_json(
+        fixture.path(),
+        [
+            "recommend",
+            "--query",
+            "history CLI import contract",
+            "--level",
+            "symbol",
+            "--limit",
+            "3",
+        ],
+    );
+    assert!(
+        recommended["recommendations"]
+            .as_array()
+            .is_some_and(|items| {
+                items.iter().any(|item| {
+                    item["selector"]
+                        .as_str()
+                        .is_some_and(|selector| selector.contains("src/lib.rs#helper:function"))
+                        && item["supporting_delivery_ids"]
+                            .as_array()
+                            .is_some_and(|ids| ids.iter().any(|id| id == "verified-cli-1"))
+                })
+            })
+    );
 
     let synced = run_json(
         fixture.path(),

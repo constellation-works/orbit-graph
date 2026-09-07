@@ -22,6 +22,7 @@ pub mod cli;
 /// Pure extraction contracts and language-specific extractors.
 mod extract;
 mod query;
+mod recommend;
 mod store;
 mod sync;
 
@@ -41,6 +42,12 @@ pub use store::history::{
 pub use query::{
     DEFAULT_SEARCH_LIMIT, DEFAULT_SHOW_MAX_BYTES, Match, NodeMetadata, NodeView, SearchKind,
     SearchQuery, SearchResult, SourceSpan,
+};
+pub use recommend::{
+    DEFAULT_RECOMMENDATION_LIMIT, HybridTaskHit, Recommendation, RecommendationAssociation,
+    RecommendationCounts, RecommendationEngine, RecommendationFallback, RecommendationFreshness,
+    RecommendationFreshnessStatus, RecommendationInput, RecommendationLevel, RecommendationReason,
+    RecommendationRequest, RecommendationResult,
 };
 
 #[cfg(test)]

@@ -219,3 +219,54 @@ separately. Stage 3 evaluation should use
 held-out delivered changes, report unsupported/uncertain coverage, test duplicate
 delivery replay and history rebinds, and compare recommendations with actual
 after-tree destinations without consulting planned context files.
+
+## Stage 2 recommendation interface
+
+The library exposes `RecommendationEngine`, `RecommendationRequest`, and the
+serializable result types re-exported from the crate root. A request uses the
+`RecommendationInput` enum, so query text and a task ID are structurally
+mutually exclusive. `HybridTaskHit` is the narrow adapter seam for ranked hits
+from another task search system; scores are normalized per request and do not
+give the engine access to that system's database. With no supplied hits, the
+engine uses deterministic token-overlap retrieval over eligible historical
+task title, description, and acceptance-criteria snapshots.
+
+The standalone JSON CLI mirrors the contract:
+
+```text
+orbit-graph recommend --query "repair parser cache" --level file --limit 10
+orbit-graph recommend --task-id TASK-123 --level symbol --revision HEAD~1
+orbit-graph recommend --query "repair parser cache" --hybrid-hits hits.json
+```
+
+Exactly one of `--query` and `--task-id` is required. `--branch` selects the
+history scope (default `main`), `--revision` is resolved to a full commit
+(default: current checkout), and `--cutoff` accepts RFC 3339 or
+`unix:<seconds>`. The hybrid-hit file is a JSON array of objects with `task_id`
+and a finite non-negative `score`.
+
+Ranking counts each delivery once and each file once per delivery. It combines
+the strongest task relevance in a delivery with verified-versus-Git-only
+evidence, commit-distance recency, delivery breadth, multi-task ambiguity,
+location prevalence, generated/lockfile discounts, directional co-change, and
+bounded current structure. Scores are additive relevance scores, not
+probabilities. `reasons` exposes every contribution; `association` exposes the
+directional support, source/destination counts, confidence, and lift.
+
+Only delivery revisions on the requested revision's ancestry are eligible.
+An explicit chronological cutoff additionally excludes evidence whose landing
+time is uncertain or unavailable. Task-ID mode reads only snapshots proven
+available before execution and excludes every delivery associated with the
+target task. Historical paths are followed through Git rename detection;
+symbols must resolve uniquely by current qualified identity or conservative
+signature identity. Deleted and ambiguous symbols are omitted. Symbol mode
+uses a `file:` selector only when history has file-only or unresolvable symbol
+evidence, and marks it with `file_fallback` and `fallback_reason`.
+
+`source_freshness`, `resolved_target_revision`, `effective_cutoff`, and
+`fallbacks` make stale/cold-start limitations explicit. Current-tree lexical
+matching remains useful with empty history. Structural expansion is used only
+when the requested revision is the current checkout; a non-HEAD request never
+silently reuses HEAD graph structure. These seams let Stage 3 run chronological
+backtests by setting both `target_revision` and `cutoff`, then comparing the
+ranked selectors to held-out delivered destinations.

@@ -18,6 +18,7 @@ mod history;
 mod impact;
 mod implementors;
 mod overview;
+mod recommend;
 mod refs;
 mod search;
 mod show;
@@ -62,6 +63,7 @@ impl Command {
             Command::Refs(command) => command.run(context),
             Command::Callees(command) => command.run(context),
             Command::Impact(command) => command.run(context),
+            Command::Recommend(command) => command.run(context),
             Command::History(command) => command.run(context),
             Command::Trace(command) => command.run(context),
             Command::Overview(command) => command.run(context),
@@ -82,6 +84,8 @@ pub enum Command {
     Refs(refs::RefsCommand),
     Callees(callees::CalleesCommand),
     Impact(impact::ImpactCommand),
+    /// Recommend current change destinations from historical evidence.
+    Recommend(recommend::RecommendCommand),
     History(history::HistoryCommand),
     Trace(trace::TraceCommand),
     Overview(overview::OverviewCommand),

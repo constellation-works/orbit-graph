@@ -153,6 +153,11 @@ impl HistoryIndex {
         self.db_path.as_path()
     }
 
+    /// Canonical repository root backing this history scope.
+    pub(crate) fn repo_root(&self) -> &Path {
+        self.repo_root.as_path()
+    }
+
     /// Atomically validate, extract, and import one versioned delivery envelope.
     pub fn import(&self, mut delivery: DeliveryImport) -> Result<HistoryImportReport, GraphError> {
         normalize_tasks(&mut delivery.tasks)?;
