@@ -1,13 +1,19 @@
 [workflow]
 base_branch = "agent-main"
 default_crew = "terra"
-system_crew = "terra"
+system_crew = "luna"
 
 [crews.system]
+backend = "cli"
+model = "gpt-5.6-luna"
 provider = "codex"
-model = "gpt-5.6-terra"
 
 [crews.terra]
 backend = "cli"
 model = "gpt-5.6-terra"
+provider = "codex"
+
+[crews.luna]
+backend = "cli"
+model = "gpt-5.6-luna"
 provider = "codex"
