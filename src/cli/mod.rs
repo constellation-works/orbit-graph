@@ -10,6 +10,8 @@ use serde::Serialize;
 use serde_json::Value;
 use thiserror::Error;
 
+use self::output::CommandOutput;
+
 mod callees;
 mod clean;
 mod db_path;
@@ -18,6 +20,7 @@ mod evaluate;
 mod history;
 mod impact;
 mod implementors;
+pub mod output;
 mod overview;
 mod recommend;
 mod refs;
@@ -87,8 +90,8 @@ pub struct Cli {
 }
 
 impl Cli {
-    pub fn run(&self) -> Result<Value, CliError> {
-        self.command.run()
+    pub fn run(&self) -> Result<CommandOutput, CliError> {
+        self.command.run().map(CommandOutput::document)
     }
 }
 
@@ -214,6 +217,8 @@ pub enum CliError {
     Json(serde_json::Error),
     #[error("failed to write JSON to stdout: {0}")]
     Stdout(std::io::Error),
+    #[error("failed to write diagnostics to stderr: {0}")]
+    Stderr(std::io::Error),
 }
 
 impl CliError {
@@ -226,6 +231,7 @@ impl CliError {
             Self::Selector(_) => "selector_parse_error",
             Self::Json(_) => "json_error",
             Self::Stdout(_) => "stdout_error",
+            Self::Stderr(_) => "stderr_error",
         }
     }
 
@@ -236,6 +242,15 @@ impl CliError {
             Self::Graph(GraphError::Sqlite { reason, .. }) => Some(reason.as_str()),
             Self::Graph(GraphError::Unimplemented) => None,
             _ => None,
+        }
+    }
+
+    /// Whether this error is a closed stdout pipe, which is a successful stop.
+    pub fn is_broken_pipe(&self) -> bool {
+        match self {
+            Self::Json(error) => error.io_error_kind() == Some(std::io::ErrorKind::BrokenPipe),
+            Self::Stdout(error) => error.kind() == std::io::ErrorKind::BrokenPipe,
+            _ => false,
         }
     }
 }
