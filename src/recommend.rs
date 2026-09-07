@@ -2,9 +2,10 @@
 //!
 //! The engine consumes only delivered changes from [`HistoryIndex`](crate::HistoryIndex).
 //! Planned context-file selectors are deliberately absent from the request contract.
-//! Callers may supply the target task's pre-execution text or ranked task hits from an
-//! external hybrid retriever; standalone callers get a deterministic lexical baseline
-//! over eligible historical task snapshots.
+//! Callers may supply the target task's observed text or ranked task hits from an
+//! external hybrid retriever; strict replay requires attested pre-execution text,
+//! while live calls may use honestly labeled current observations. Standalone callers
+//! get a deterministic lexical baseline over eligible historical task snapshots.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
@@ -93,9 +94,9 @@ pub struct RecommendationRequest {
     /// strictly earlier; unknown delivery times fail closed when this is present.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub cutoff: Option<String>,
-    /// Optional authoritative pre-execution snapshot for a target task that has not
-    /// delivered yet. This is independent of delivery history and is valid only with
-    /// [`RecommendationInput::TaskId`].
+    /// Optional authoritative task observation, valid only with
+    /// [`RecommendationInput::TaskId`]. Explicit-cutoff replay requires attested
+    /// pre-execution text; live calls may use honestly labeled current observations.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub task_snapshot: Option<TaskAssociation>,
     /// Optional externally ranked historical tasks. Local lexical retrieval remains active
@@ -262,7 +263,8 @@ impl RecommendationEngine {
         let freshness = freshness(&repo, status.cursor, target);
         let deliveries = index.deliveries()?;
         let mut resolver = TargetTree::load(&repo, target)?;
-        let query = resolve_query(&deliveries, request, &cutoff, &repo, target)?;
+        let strict_replay = request.cutoff.is_some();
+        let query = resolve_query(&deliveries, request, &cutoff, strict_replay, &repo, target)?;
         let hybrid = normalized_hybrid_hits(request.hybrid_hits.as_slice())?;
         let target_task = match &request.input {
             RecommendationInput::TaskId(id) => Some(id.as_str()),
@@ -293,6 +295,7 @@ impl RecommendationEngine {
                 hybrid: &hybrid,
                 level: request.level,
                 cutoff: &cutoff,
+                strict_replay,
                 variant: request.variant,
             },
         )?;
@@ -510,6 +513,7 @@ fn resolve_query(
     deliveries: &[DeliveredChange],
     request: &RecommendationRequest,
     cutoff: &Timestamp,
+    strict_replay: bool,
     repo: &Repository,
     target: Oid,
 ) -> Result<String, GraphError> {
@@ -520,11 +524,11 @@ fn resolve_query(
         unreachable!()
     };
     if let Some(snapshot) = request.task_snapshot.as_ref() {
-        if !task_is_eligible(snapshot, cutoff) {
+        if !task_is_eligible(snapshot, cutoff, strict_replay) {
             return Err(GraphError::invalid_data(
                 "resolve recommendation task query",
                 format!(
-                    "supplied snapshot for task {task_id} was not known strictly before the cutoff"
+                    "supplied snapshot for task {task_id} was not observable before the request cutoff under the selected live/replay policy"
                 ),
             ));
         }
@@ -537,11 +541,9 @@ fn resolve_query(
             if after != target && !repo.graph_descendant_of(target, after).ok()? {
                 return None;
             }
-            delivery
-                .delivery
-                .tasks
-                .iter()
-                .find(|task| task.task_id == *task_id && task_is_eligible(task, cutoff))
+            delivery.delivery.tasks.iter().find(|task| {
+                task.task_id == *task_id && task_is_eligible(task, cutoff, strict_replay)
+            })
         })
         .collect::<Vec<_>>();
     snapshots.sort_by(|left, right| left.captured_at.cmp(&right.captured_at));
@@ -706,6 +708,7 @@ struct HistoryScoreRequest<'a> {
     hybrid: &'a BTreeMap<String, f64>,
     level: RecommendationLevel,
     cutoff: &'a Timestamp,
+    strict_replay: bool,
     variant: RecommendationVariant,
 }
 
@@ -724,7 +727,7 @@ fn score_history(
             .delivery
             .tasks
             .iter()
-            .filter(|task| task_is_eligible(task, request.cutoff))
+            .filter(|task| task_is_eligible(task, request.cutoff, request.strict_replay))
             .collect::<Vec<_>>();
         for task in &eligible_tasks {
             let local = lexical_similarity(request.query, task_text(task).as_str());
@@ -1088,8 +1091,8 @@ fn weighted_change_score(
     similarity * evidence * recency * ambiguity * breadth * ubiquity * artifact
 }
 
-fn task_is_eligible(task: &TaskAssociation, cutoff: &Timestamp) -> bool {
-    task.text_availability == TaskTextAvailability::KnownPreExecution
+fn task_is_eligible(task: &TaskAssociation, cutoff: &Timestamp, strict_replay: bool) -> bool {
+    (!strict_replay || task.text_availability == TaskTextAvailability::KnownPreExecution)
         && task.snapshot_available_at.status == TemporalStatus::Known
         && task
             .snapshot_available_at

@@ -1,19 +1,23 @@
 //! Leakage-safe chronological evaluation over versioned public delivery data.
 
 use std::collections::{BTreeMap, BTreeSet};
-use std::path::Path;
+use std::fs;
+use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Instant;
 
 use git2::{Oid, Repository};
 use serde::{Deserialize, Serialize};
 
-use crate::extract::history::{parse_timestamp, validate_task_association};
+use crate::extract::history::{parse_timestamp, repository_identity, validate_task_association};
 use crate::recommend::selector_is_live_at;
 use crate::{
-    DeliveryImport, GraphError, HistoryIndex, HybridTaskHit, Provenance, RecommendationEngine,
-    RecommendationInput, RecommendationLevel, RecommendationRequest, RecommendationVariant,
-    TaskAssociation, TemporalStatus,
+    DeliveryEvidence, DeliveryImport, Graph, GraphError, HistoryIndex, HybridTaskHit, Provenance,
+    RecommendationEngine, RecommendationInput, RecommendationLevel, RecommendationRequest,
+    RecommendationVariant, SyncMode, SyncPolicy, TaskAssociation, TemporalFact, TemporalStatus,
 };
+
+static EVALUATION_SEQUENCE: AtomicU64 = AtomicU64::new(0);
 
 /// Version of the chronological evaluation JSON contract.
 pub const EVALUATION_SCHEMA_VERSION: u32 = 1;
@@ -58,9 +62,18 @@ pub struct EvaluationCase {
     /// Later delivery used only to derive truth; never imported into training.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub held_out_delivery: Option<DeliveryImport>,
+    /// Trustworthy lower bound proving the delivery happened after the query cutoff.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub prospective_delivery_lower_bound: Option<TemporalFact>,
     /// Optional ranked task-search hits captured before the same cutoff.
     #[serde(default)]
     pub hybrid_hits: Vec<HybridTaskHit>,
+    /// Public observation time shared by supplied hybrid hits.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub hybrid_hits_observed_at: Option<TemporalFact>,
+    /// Public retriever/export provenance for supplied hybrid hits.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub hybrid_hits_source: Option<Provenance>,
     /// Provenance for the task observation and delivery association.
     pub source: Provenance,
 }
@@ -101,8 +114,10 @@ pub struct EvaluationCoverage {
     pub cases_excluded: usize,
     /// Number of supplied training envelopes.
     pub training_deliveries_supplied: usize,
-    /// Number newly inserted into the derived history index.
+    /// Number loaded into each evaluated case's fresh derived history index.
     pub training_deliveries_inserted: usize,
+    /// Evaluation never opened or mutated the caller's operational indexes.
+    pub isolated_indexes: bool,
 }
 
 /// Aggregate metrics for one ranking variant and destination level.
@@ -145,8 +160,32 @@ pub struct EvaluationCaseResult {
     pub target_revision: String,
     /// Held-out delivery identifier when available.
     pub held_out_delivery_id: Option<String>,
+    /// Frozen target-tree graph provenance used by graph-bearing variants.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub graph_snapshot: Option<Provenance>,
+    /// Whether each graph-bearing query level actually applied frozen structure.
+    pub graph_structure_applied: BTreeMap<String, bool>,
+    /// Honest denominator and omission accounting for held-out truth.
+    pub truth_coverage: TruthCoverage,
     /// Case provenance.
     pub source: Provenance,
+}
+
+/// Held-out truth eligibility and explicit omission reasons by destination level.
+#[derive(Debug, Clone, Default, Serialize)]
+pub struct TruthCoverage {
+    /// Changed files represented by the held-out delivery.
+    pub file_changes_total: usize,
+    /// Existing target-tree files used in the file recall denominator.
+    pub file_truth_eligible: usize,
+    /// Changed files omitted from the denominator, by reason.
+    pub file_truth_omitted: BTreeMap<String, usize>,
+    /// Symbol changes or file-level symbol-attribution gaps represented in truth.
+    pub symbol_changes_total: usize,
+    /// Existing target-tree symbols used in the symbol recall denominator.
+    pub symbol_truth_eligible: usize,
+    /// Symbol truth omitted from the denominator, by reason.
+    pub symbol_truth_omitted: BTreeMap<String, usize>,
 }
 
 #[derive(Debug, Default)]
@@ -165,14 +204,16 @@ pub fn evaluate_corpus(
     corpus: &EvaluationCorpus,
 ) -> Result<EvaluationReport, GraphError> {
     validate_corpus(corpus)?;
-    let index = HistoryIndex::open(repo_root, corpus.landing_branch.as_str())?;
-    if index.repository() != corpus.repository {
+    let source_repo = Repository::open(repo_root).map_err(|error| {
+        GraphError::invalid_data("open evaluation repository", error.to_string())
+    })?;
+    let routed_identity = repository_identity(&source_repo)?;
+    if routed_identity != corpus.repository {
         return Err(GraphError::invalid_data(
             "validate evaluation repository routing",
             format!(
                 "corpus repository {:?} does not match routed repository {:?}",
-                corpus.repository,
-                index.repository()
+                corpus.repository, routed_identity
             ),
         ));
     }
@@ -185,72 +226,95 @@ pub fn evaluate_corpus(
     )
     .to_hex()
     .to_string();
-    let mut inserted = 0;
-    for delivery in &corpus.training_deliveries {
-        let report = index.import(delivery.clone())?;
-        inserted += usize::from(report.inserted);
-    }
-
-    let existing = index.deliveries()?;
-    let engine = RecommendationEngine::open(repo_root, corpus.landing_branch.as_str())?;
     let mut aggregates: BTreeMap<(u8, u8), MetricAccumulator> = BTreeMap::new();
     let mut case_results = Vec::new();
     for case in &corpus.cases {
-        let mut exclusions = validate_case(repo_root, &index, &existing, case)?;
+        let mut exclusions = validate_case(repo_root, corpus, case)?;
         let mut truth = BTreeMap::new();
+        let mut truth_coverage = TruthCoverage::default();
+        let mut graph_structure_applied = BTreeMap::new();
+        let mut graph_snapshot = None;
         if exclusions.is_empty() {
+            let workspace = EvaluationWorkspace::create(
+                repo_root,
+                corpus.repository.as_str(),
+                corpus.landing_branch.as_str(),
+                case.target_revision.as_str(),
+            )?;
+            let index = HistoryIndex::open(workspace.path(), corpus.landing_branch.as_str())?;
+            for delivery in &corpus.training_deliveries {
+                index.import(delivery.clone())?;
+            }
+            Graph::open(workspace.path(), SyncPolicy::Manual)?.sync(SyncMode::Full)?;
+            graph_snapshot = Some(Provenance {
+                system: "git.detached_target_tree+isolated_orbit_graph".to_string(),
+                record_id: Some(case.target_revision.clone()),
+            });
             if let Some(held_out) = case.held_out_delivery.clone() {
                 let extracted = index.preview(held_out)?;
-                truth = held_out_truth(repo_root, case.target_revision.as_str(), &extracted)?;
+                let outcome =
+                    held_out_truth(workspace.path(), case.target_revision.as_str(), &extracted)?;
+                truth = outcome.truth;
+                truth_coverage = outcome.coverage;
             }
             if truth.values().all(std::collections::BTreeSet::is_empty) {
                 exclusions.push("held_out_delivery_has_no_target-resolvable_truth".to_string());
-            }
-        }
-        let evaluated = exclusions.is_empty();
-        if evaluated {
-            for variant in variants() {
-                for level in levels() {
-                    let started = Instant::now();
-                    let result = engine.recommend(&RecommendationRequest {
-                        input: RecommendationInput::TaskId(case.task_snapshot.task_id.clone()),
-                        level,
-                        variant,
-                        limit: Some(corpus.k),
-                        target_revision: Some(case.target_revision.clone()),
-                        cutoff: Some(case.cutoff.clone()),
-                        task_snapshot: Some(case.task_snapshot.clone()),
-                        hybrid_hits: case.hybrid_hits.clone(),
-                    })?;
-                    let elapsed = started.elapsed().as_micros();
-                    let expected = truth.get(&level_key(level)).ok_or_else(|| {
-                        GraphError::invalid_data(
-                            "evaluate held-out truth",
-                            "missing initialized destination level",
-                        )
-                    })?;
-                    let accumulator = aggregates
-                        .entry((variant_key(variant), level_key(level)))
-                        .or_default();
-                    accumulator.cases += 1;
-                    accumulator.relevant += expected.len();
-                    accumulator.latency_micros.push(elapsed);
-                    for recommendation in &result.recommendations {
-                        accumulator.predictions += 1;
-                        if expected.contains(recommendation.selector.as_str()) {
-                            accumulator.true_positives += 1;
+            } else {
+                let engine =
+                    RecommendationEngine::open(workspace.path(), corpus.landing_branch.as_str())?;
+                for variant in variants() {
+                    for level in levels() {
+                        let started = Instant::now();
+                        let result = engine.recommend(&RecommendationRequest {
+                            input: RecommendationInput::TaskId(case.task_snapshot.task_id.clone()),
+                            level,
+                            variant,
+                            limit: Some(corpus.k),
+                            target_revision: Some(case.target_revision.clone()),
+                            cutoff: Some(case.cutoff.clone()),
+                            task_snapshot: Some(case.task_snapshot.clone()),
+                            hybrid_hits: case.hybrid_hits.clone(),
+                        })?;
+                        if matches!(
+                            variant,
+                            RecommendationVariant::Combined | RecommendationVariant::GraphOnly
+                        ) {
+                            graph_structure_applied.insert(
+                                format!("{}:{}", variant_name(variant), level_name(level)),
+                                result.structure_applied,
+                            );
                         }
-                        if !selector_is_live_at(
-                            repo_root,
-                            case.target_revision.as_str(),
-                            recommendation.selector.as_str(),
-                        )? {
-                            accumulator.stale += 1;
+                        let elapsed = started.elapsed().as_micros();
+                        let expected = truth.get(&level_key(level)).ok_or_else(|| {
+                            GraphError::invalid_data(
+                                "evaluate held-out truth",
+                                "missing initialized destination level",
+                            )
+                        })?;
+                        let accumulator = aggregates
+                            .entry((variant_key(variant), level_key(level)))
+                            .or_default();
+                        accumulator.cases += 1;
+                        accumulator.relevant += expected.len();
+                        accumulator.latency_micros.push(elapsed);
+                        for recommendation in &result.recommendations {
+                            accumulator.predictions += 1;
+                            if expected.contains(recommendation.selector.as_str()) {
+                                accumulator.true_positives += 1;
+                            }
+                            if !selector_is_live_at(
+                                workspace.path(),
+                                case.target_revision.as_str(),
+                                recommendation.selector.as_str(),
+                            )? {
+                                accumulator.stale += 1;
+                            }
                         }
                     }
                 }
             }
         }
+        let evaluated = exclusions.is_empty();
         case_results.push(EvaluationCaseResult {
             id: case.id.clone(),
             evaluated,
@@ -260,6 +324,9 @@ pub fn evaluate_corpus(
                 .held_out_delivery
                 .as_ref()
                 .map(|delivery| delivery.delivery_id.clone()),
+            graph_snapshot,
+            graph_structure_applied,
+            truth_coverage,
             source: case.source.clone(),
         });
     }
@@ -292,10 +359,7 @@ pub fn evaluate_corpus(
             });
         }
     }
-    let repo = Repository::open(repo_root).map_err(|error| {
-        GraphError::invalid_data("open evaluation repository", error.to_string())
-    })?;
-    let revision = repo
+    let revision = source_repo
         .head()
         .and_then(|head| head.peel_to_commit())
         .map(|commit| commit.id().to_string())
@@ -313,7 +377,12 @@ pub fn evaluate_corpus(
             cases_evaluated: evaluated,
             cases_excluded: corpus.cases.len() - evaluated,
             training_deliveries_supplied: corpus.training_deliveries.len(),
-            training_deliveries_inserted: inserted,
+            training_deliveries_inserted: if evaluated == 0 {
+                0
+            } else {
+                corpus.training_deliveries.len()
+            },
+            isolated_indexes: true,
         },
         metrics,
         cases: case_results,
@@ -346,8 +415,7 @@ fn validate_corpus(corpus: &EvaluationCorpus) -> Result<(), GraphError> {
 
 fn validate_case(
     repo_root: &Path,
-    index: &HistoryIndex,
-    existing: &[crate::DeliveredChange],
+    corpus: &EvaluationCorpus,
     case: &EvaluationCase,
 ) -> Result<Vec<String>, GraphError> {
     let mut exclusions = Vec::new();
@@ -367,13 +435,59 @@ fn validate_case(
         .transpose()?;
     if case.task_snapshot.snapshot_available_at.status != TemporalStatus::Known
         || snapshot_time.is_none_or(|time| time >= cutoff)
+        || case.task_snapshot.text_availability != crate::TaskTextAvailability::KnownPreExecution
     {
         exclusions.push("task_text_not_attested_strictly_before_cutoff".to_string());
+    }
+    if !case.hybrid_hits.is_empty() {
+        let observed = case
+            .hybrid_hits_observed_at
+            .as_ref()
+            .and_then(|fact| {
+                (fact.status == TemporalStatus::Known)
+                    .then_some(fact.timestamp.as_deref())
+                    .flatten()
+            })
+            .map(|value| parse_timestamp("hybrid hit observation", value))
+            .transpose()?;
+        if observed.is_none_or(|time| time >= cutoff)
+            || case
+                .hybrid_hits_source
+                .as_ref()
+                .is_none_or(|source| source.system.trim().is_empty())
+        {
+            exclusions.push("hybrid_hits_not_attested_strictly_before_cutoff".to_string());
+        }
     }
     let Some(held_out) = case.held_out_delivery.as_ref() else {
         exclusions.push("held_out_delivery_unavailable".to_string());
         return Ok(exclusions);
     };
+    if held_out.evidence != DeliveryEvidence::VerifiedDelivery {
+        exclusions.push("held_out_delivery_not_verified".to_string());
+    }
+    let delivered_after_cutoff = if held_out.delivered_at.status == TemporalStatus::Known {
+        held_out
+            .delivered_at
+            .timestamp
+            .as_deref()
+            .map(|value| parse_timestamp("held-out delivery timestamp", value))
+            .transpose()?
+            .is_some_and(|time| time > cutoff)
+    } else {
+        false
+    };
+    let prospective_after_cutoff = case
+        .prospective_delivery_lower_bound
+        .as_ref()
+        .filter(|fact| fact.status == TemporalStatus::Known)
+        .and_then(|fact| fact.timestamp.as_deref())
+        .map(|value| parse_timestamp("prospective delivery lower bound", value))
+        .transpose()?
+        .is_some_and(|time| time > cutoff);
+    if !delivered_after_cutoff && !prospective_after_cutoff {
+        exclusions.push("held_out_delivery_not_proven_after_cutoff".to_string());
+    }
     if !held_out
         .tasks
         .iter()
@@ -381,15 +495,14 @@ fn validate_case(
     {
         exclusions.push("held_out_delivery_task_mismatch".to_string());
     }
-    if existing.iter().any(|delivery| {
-        delivery.delivery.before_revision == held_out.before_revision
-            && delivery.delivery.after_revision == held_out.after_revision
+    if corpus.training_deliveries.iter().any(|delivery| {
+        delivery.before_revision == held_out.before_revision
+            && delivery.after_revision == held_out.after_revision
     }) {
         exclusions.push("target_delivery_already_present_in_training_index".to_string());
     }
-    if existing.iter().any(|delivery| {
+    if corpus.training_deliveries.iter().any(|delivery| {
         delivery
-            .delivery
             .tasks
             .iter()
             .any(|task| task.task_id == case.task_snapshot.task_id)
@@ -412,8 +525,9 @@ fn validate_case(
     {
         exclusions.push("target_revision_not_ancestor_of_held_out_base".to_string());
     }
-    if held_out.repository != index.repository()
-        || held_out.landing_branch.trim_start_matches("refs/heads/") != index.landing_branch()
+    if held_out.repository != corpus.repository
+        || held_out.landing_branch.trim_start_matches("refs/heads/")
+            != corpus.landing_branch.trim_start_matches("refs/heads/")
     {
         exclusions.push("held_out_delivery_scope_mismatch".to_string());
     }
@@ -424,17 +538,39 @@ fn held_out_truth(
     repo_root: &Path,
     target_revision: &str,
     delivery: &crate::DeliveredChange,
-) -> Result<BTreeMap<u8, BTreeSet<String>>, GraphError> {
+) -> Result<TruthOutcome, GraphError> {
     let mut files = BTreeSet::new();
     let mut symbols = BTreeSet::new();
+    let mut coverage = TruthCoverage::default();
     for file in &delivery.files {
+        coverage.file_changes_total += 1;
         if let Some(path) = file.old_path.as_deref() {
             let selector = format!("file:{path}");
             if selector_is_live_at(repo_root, target_revision, selector.as_str())? {
                 files.insert(selector);
+                coverage.file_truth_eligible += 1;
+            } else {
+                increment(
+                    &mut coverage.file_truth_omitted,
+                    "old_path_unresolvable_at_target",
+                );
             }
+        } else {
+            increment(
+                &mut coverage.file_truth_omitted,
+                "added_file_absent_at_target",
+            );
+        }
+        if file.symbols.is_empty() {
+            coverage.symbol_changes_total += 1;
+            let reason = file
+                .before_fallback
+                .map(|reason| format!("symbol_truth_unavailable_{}", reason.as_str()))
+                .unwrap_or_else(|| "symbol_truth_unavailable_no_attribution".to_string());
+            increment(&mut coverage.symbol_truth_omitted, reason.as_str());
         }
         for change in &file.symbols {
+            coverage.symbol_changes_total += 1;
             if let Some(before) = change.before.as_ref() {
                 let symbol = &before.symbol;
                 let selector = format!(
@@ -443,14 +579,37 @@ fn held_out_truth(
                 );
                 if selector_is_live_at(repo_root, target_revision, selector.as_str())? {
                     symbols.insert(selector);
+                    coverage.symbol_truth_eligible += 1;
+                } else {
+                    increment(
+                        &mut coverage.symbol_truth_omitted,
+                        "before_symbol_unresolvable_at_target",
+                    );
                 }
+            } else {
+                increment(
+                    &mut coverage.symbol_truth_omitted,
+                    "added_symbol_absent_at_target",
+                );
             }
         }
     }
-    Ok(BTreeMap::from([
-        (level_key(RecommendationLevel::File), files),
-        (level_key(RecommendationLevel::Symbol), symbols),
-    ]))
+    Ok(TruthOutcome {
+        truth: BTreeMap::from([
+            (level_key(RecommendationLevel::File), files),
+            (level_key(RecommendationLevel::Symbol), symbols),
+        ]),
+        coverage,
+    })
+}
+
+struct TruthOutcome {
+    truth: BTreeMap<u8, BTreeSet<String>>,
+    coverage: TruthCoverage,
+}
+
+fn increment(counts: &mut BTreeMap<String, usize>, reason: &str) {
+    *counts.entry(reason.to_string()).or_default() += 1;
 }
 
 fn variants() -> [RecommendationVariant; 4] {
@@ -482,10 +641,106 @@ fn level_key(level: RecommendationLevel) -> u8 {
     }
 }
 
+fn variant_name(variant: RecommendationVariant) -> &'static str {
+    match variant {
+        RecommendationVariant::Combined => "combined",
+        RecommendationVariant::TaskSearchOnly => "task_search_only",
+        RecommendationVariant::GraphOnly => "graph_only",
+        RecommendationVariant::Frequency => "frequency",
+    }
+}
+
+fn level_name(level: RecommendationLevel) -> &'static str {
+    match level {
+        RecommendationLevel::File => "file",
+        RecommendationLevel::Symbol => "symbol",
+    }
+}
+
 fn ratio(numerator: usize, denominator: usize) -> f64 {
     if denominator == 0 {
         0.0
     } else {
         numerator as f64 / denominator as f64
+    }
+}
+
+struct EvaluationWorkspace {
+    path: PathBuf,
+}
+
+impl EvaluationWorkspace {
+    fn create(
+        source: &Path,
+        repository_identity: &str,
+        landing_branch: &str,
+        target_revision: &str,
+    ) -> Result<Self, GraphError> {
+        let sequence = EVALUATION_SEQUENCE.fetch_add(1, Ordering::Relaxed);
+        let path = std::env::temp_dir().join(format!(
+            "orbit-graph-evaluation-{}-{sequence}",
+            std::process::id()
+        ));
+        let workspace = Self { path };
+        let source_text = source.to_str().ok_or_else(|| {
+            GraphError::invalid_data(
+                "clone evaluation repository",
+                "repository path is not UTF-8",
+            )
+        })?;
+        let repo = Repository::clone(source_text, workspace.path()).map_err(|error| {
+            GraphError::invalid_data("clone isolated evaluation repository", error.to_string())
+        })?;
+        Repository::remote_set_url(&repo, "origin", repository_identity).map_err(|error| {
+            GraphError::invalid_data("set isolated evaluation identity", error.to_string())
+        })?;
+        let source_repo = Repository::open(source).map_err(|error| {
+            GraphError::invalid_data("open evaluation source repository", error.to_string())
+        })?;
+        let branch = landing_branch.trim_start_matches("refs/heads/");
+        let branch_tip = source_repo
+            .revparse_single(format!("refs/heads/{branch}").as_str())
+            .and_then(|object| object.peel_to_commit())
+            .map(|commit| commit.id())
+            .map_err(|error| {
+                GraphError::invalid_data("resolve evaluation landing branch", error.to_string())
+            })?;
+        repo.reference(
+            format!("refs/heads/{branch}").as_str(),
+            branch_tip,
+            true,
+            "frozen evaluation landing branch",
+        )
+        .map_err(|error| {
+            GraphError::invalid_data("create isolated evaluation branch", error.to_string())
+        })?;
+        let target = Oid::from_str(target_revision).map_err(|error| {
+            GraphError::invalid_data("parse evaluation target revision", error.to_string())
+        })?;
+        let target_object = repo.find_object(target, None).map_err(|error| {
+            GraphError::invalid_data("load isolated evaluation target", error.to_string())
+        })?;
+        repo.set_head_detached(target).map_err(|error| {
+            GraphError::invalid_data("detach isolated evaluation HEAD", error.to_string())
+        })?;
+        let mut checkout = git2::build::CheckoutBuilder::new();
+        checkout.force().remove_untracked(true);
+        repo.checkout_tree(&target_object, Some(&mut checkout))
+            .map_err(|error| {
+                GraphError::invalid_data("materialize isolated target tree", error.to_string())
+            })?;
+        drop(target_object);
+        drop(repo);
+        Ok(workspace)
+    }
+
+    fn path(&self) -> &Path {
+        self.path.as_path()
+    }
+}
+
+impl Drop for EvaluationWorkspace {
+    fn drop(&mut self) {
+        let _ = fs::remove_dir_all(self.path.as_path());
     }
 }

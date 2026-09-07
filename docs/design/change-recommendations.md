@@ -279,9 +279,11 @@ time is uncertain or unavailable. All comparisons use the same strict RFC
 3339/`unix:<seconds>` parser, preserve arbitrary fractional-second ordering,
 normalize offsets, and fail on invalid dates, trailing input, and arithmetic
 overflow. Delivery and task-snapshot evidence must be strictly before the
-cutoff; equality is excluded. Task-ID mode reads only snapshots proven available
-before execution and excludes every equivalent delivery boundary associated
-with the target task. Historical paths are followed through Git rename detection;
+cutoff; equality is excluded. Strict replay reads only snapshots proven
+available before execution. Live mode may use current started/completed task
+observations that predate the request while preserving their honest
+`post_execution` label. Both modes exclude every equivalent delivery boundary
+associated with the target task. Historical paths are followed through Git rename detection;
 symbols must resolve uniquely by current qualified identity or conservative
 signature identity. Deleted and ambiguous symbols are omitted. Symbol mode
 uses a `file:` selector only when history has file-only or unresolvable symbol
@@ -293,8 +295,10 @@ omitted, `effective_cutoff` is the request observation time captured with
 subsecond precision for ordinary live recommendations; explicit cutoffs retain
 strictly-before historical replay semantics. Current-tree lexical matching
 remains useful with empty history. Structural expansion is used only when the
-requested revision is the current checkout; a non-HEAD request never silently
-reuses HEAD graph structure. Every cached structural destination is
+requested revision is the engine checkout; a non-HEAD operational request never
+silently reuses HEAD graph structure. Evaluation materializes the exact target
+tree in an isolated clone, so historical graph-only rows use a real frozen
+graph. Every cached structural destination is
 also resolved against the requested Git tree, so a graph synced before a later
 committed deletion cannot return the removed file or symbol; skipped stale rows
 are explicit in `fallbacks`. These seams let Stage 3 run chronological
@@ -311,7 +315,7 @@ and `ORBIT_TOOL_NAME`; the ordinary clap interface remains unchanged otherwise.
 
 Requests route the repository by an explicit absolute path. Authoritative task
 and hybrid reads additionally require an explicit Orbit workspace selector and
-optionally an explicit Orbit root. Cwd and `ORBIT_TOOL_WORKSPACE_ROOT` are never
+explicit Orbit root. Cwd and `ORBIT_TOOL_WORKSPACE_ROOT` are never
 interpreted as authority. The adapter shells only to the installed public Orbit
 CLI: registered `orbit.task.show`/`orbit.search` tools and detailed `orbit run
 show --format json`. It never reads SQLite, task bundles, or another private
@@ -319,16 +323,32 @@ store.
 
 An Orbit delivery is marked verified only when a successful public run exposes
 a committed step with exact base, commit, and task ID, and Git verifies both
-strict ancestry and landing-branch reachability. The run's finish time is an
+strict ancestry and landing-branch reachability. Public `workspace list` must
+match the requested workspace, authority root, and Git common repository; each
+run's public workspace path and task are checked even when a snapshot is
+supplied. Nested CLI calls have a hard timeout and combined output cap,
+kill/reap their process group, and clean their captures. The run's finish time is an
 uncertain landing-time proxy unless a future public feed attests exact delivery
 time. Current task text is `known_pre_execution` only when observed while the
 public lifecycle has no start and is still pending; otherwise it is explicitly
 post-execution or uncertain. Earlier versioned `TaskAssociation` observations
 can be supplied without becoming a second task authority.
 
+Orbit's public task tools route through the explicit registry `orbit_root`,
+while detailed run state is workspace-local in the current Orbit release. After
+validating the workspace against that authority, the adapter runs `run show`
+from the explicitly routed repository without a root override, then rejects the
+response unless its prepare workspace shares the selected workspace's Git
+common directory. Thus cwd participates only in locating the public run record;
+it never selects or substitutes the task authority.
+
 Bounded `orbit_sync` accepts explicit run IDs and task IDs (resolved only to
 their current public `job_run_id`). It is incrementally replayable through
-stable delivery IDs, but its response always says coverage is partial. The
+stable delivery IDs and preserves the first immutable observation on replay;
+genuinely changed Git boundaries still conflict. Its response always says
+coverage is partial. Bounded Git bootstrap records a frozen tip/frontier and
+advances over multiple requests without moving the complete cursor until the
+entire first-parent snapshot has been visited. The
 missing Orbit-side seam is precisely a cursor-paginated public delivery feed
 containing workspace, task ID, immutable base/landed commit, exact landing time
 with provenance, and an immutable pre-execution task snapshot or snapshot
@@ -339,9 +359,13 @@ IDs and historical task text without an attested capture remains excluded.
 
 The versioned evaluation corpus separates the query-time task snapshot and
 target revision from a held-out delivery envelope. The evaluator validates the
-snapshot strictly predates the cutoff, rejects held-out boundaries already in
-the history index, previews the held-out Git diff without writing it, and maps
-truth only to destinations live at the target revision. All indexed future or
+snapshot strictly predates the cutoff, requires verified held-out evidence with
+a proven post-cutoff time/lower bound, and rejects held-out boundaries declared
+in training. Every case uses a disposable clone, corpus-only history index, and
+graph synced at the exact target revision; it never opens the operational
+history/graph. It previews the held-out Git diff without writing it, and maps
+truth only to destinations live at the target revision while reporting added,
+unsupported, and otherwise unresolved truth omitted from each denominator. All declared future or
 uncertain-time deliveries pass through the same cutoff filter as production
 ranking.
 

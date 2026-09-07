@@ -141,6 +141,7 @@ orbit tool run orbit.graph.recommend --input '{
   "schema_version":1,
   "repository":"/work/widgets",
   "workspace":"ws_widgets",
+  "orbit_root":"/work/widgets/.orbit",
   "task_id":"TASK-123",
   "level":"symbol",
   "hybrid":true,
@@ -161,10 +162,13 @@ orbit tool run orbit.graph.status --input '{
 }' --full
 ```
 
-For a pending task, task-ID lookup uses the public `orbit.task.show` response
-and is eligible only when observed before execution. During or after execution,
-pass an attested earlier `task_snapshot`; the adapter labels a current read as
-post-execution instead of inventing historical availability. `hybrid: true`
+Live task-ID lookup uses the current public `orbit.task.show` response, honestly
+labels started/completed text as post-execution, and may use that current
+observation for a recommendation made afterward. An explicit `cutoff` switches
+to strict historical replay: only text attested `known_pre_execution` and
+strictly before that cutoff is eligible. A supplied snapshot on a live request
+still verifies the task, workspace, authority root, and repository through the
+public API. `hybrid: true`
 uses public `orbit.search`; failure is surfaced and local lexical fallback is
 named in `adapter.warnings`.
 The calling activity must also allow `orbit.task.show` for live lookup and
@@ -180,6 +184,7 @@ orbit tool run orbit.graph.maintain --input '{
   "operation":"orbit_sync",
   "repository":"/work/widgets",
   "workspace":"ws_widgets",
+  "orbit_root":"/work/widgets/.orbit",
   "branch":"main",
   "run_ids":["jrun-20260907-0339-3"],
   "limit":25
@@ -191,10 +196,14 @@ then verifies full commit objects, strict base ancestry, and landing-branch
 reachability in the explicitly routed Git repository. It reports partial
 coverage: current Orbit has no cursor-paginated detailed delivery feed, so only
 explicit run IDs and each requested task's current `job_run_id` are processed.
-Retrying or submitting omitted IDs is safe because delivery IDs are idempotent.
+Retrying or submitting omitted IDs is safe because the immutable first-observed
+envelope is preserved for a stable delivery ID; changed boundaries still fail.
 Run completion time remains `uncertain` delivery-time evidence when the public
-response does not attest the exact landing instant. `history_sync` is a bounded
-Git-only fallback; `import` accepts one public DeliveryImport v2 envelope.
+response does not attest the exact landing instant. `history_sync` is a bounded,
+resumable newest-first Git-only bootstrap: partial responses expose a frozen
+`snapshot_tip` and `resume_from`, keep the complete cursor unchanged, and reach
+a no-op caught-up state after repeated calls. `import` accepts one public
+DeliveryImport v2 envelope.
 
 The bundled agent guidance is in
 [`plugin/skills/orbit-graph/SKILL.md`](plugin/skills/orbit-graph/SKILL.md).
@@ -203,11 +212,16 @@ The bundled agent guidance is in
 
 `orbit-graph evaluate` consumes a versioned public corpus and runs combined,
 task-search-only, graph-only, and frequency ranking at file and symbol levels.
-Held-out delivery diffs are previewed as truth but never imported. Task text and
-training deliveries must be strictly before the cutoff; a target boundary
-already present in the index is excluded fail-closed. Reports include
+Each case runs in a disposable clone with an isolated history index and a graph
+materialized from the exact target tree; operational indexes and the caller
+checkout are never read or mutated. Held-out delivery diffs are previewed as
+truth but never imported. Task text and training deliveries must be strictly
+before the cutoff. Held-out evidence must be verified and proven after the
+cutoff by an exact time or an explicit trustworthy prospective lower bound.
+Reports include
 recall@K, precision@K, stale-result rate, mean/maximum latency, coverage,
-exclusions, source provenance, input digest, and exact revisions.
+per-level omitted-truth reasons, exclusions, source provenance, input digest,
+and exact graph revisions.
 
 The synthetic adversarial executable fixture runs in CI. The bounded real Orbit
 prospective input, measured result, and its no-superiority limitation are

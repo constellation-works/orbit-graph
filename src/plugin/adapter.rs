@@ -1,7 +1,15 @@
 use std::collections::BTreeMap;
 use std::env;
+use std::fs::{self, File};
+use std::io::Read;
 use std::path::{Path, PathBuf};
-use std::process::Command;
+use std::process::{Command, Stdio};
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::thread;
+use std::time::{Duration, Instant};
+
+#[cfg(unix)]
+use std::os::unix::process::CommandExt;
 
 use git2::{Oid, Repository};
 use serde_json::{Value, json};
@@ -13,6 +21,11 @@ use crate::{
 };
 
 use super::{json_error, string_field};
+
+const DEFAULT_ORBIT_TIMEOUT_SECONDS: u64 = 10;
+const MAX_ORBIT_TIMEOUT_SECONDS: u64 = 60;
+const ORBIT_OUTPUT_LIMIT: u64 = 1_048_576;
+static SUBPROCESS_SEQUENCE: AtomicU64 = AtomicU64::new(0);
 
 pub(super) struct OrbitAdapter<'a> {
     repository: &'a Path,
@@ -44,13 +57,63 @@ impl<'a> OrbitAdapter<'a> {
             })
     }
 
-    pub(super) fn task_show(&self, task_id: &str) -> Result<Value, GraphError> {
+    fn require_authority(&self) -> Result<AuthorityRoute, GraphError> {
         let workspace = self.require_workspace()?;
+        let root = self.orbit_root.ok_or_else(|| {
+            GraphError::invalid_data(
+                "route authoritative Orbit request",
+                "orbit_root is required for public Orbit calls; cwd and process defaults are not authority selectors",
+            )
+        })?;
+        let _root = root.canonicalize().map_err(|source| {
+            GraphError::io("canonicalize explicit Orbit authority root", root, source)
+        })?;
+        let value = self.orbit_json(&["workspace", "list", "--format", "json"])?;
+        let selected = value
+            .as_array()
+            .into_iter()
+            .flatten()
+            .find(|item| {
+                string_field(item, "id") == Some(workspace)
+                    || string_field(item, "name") == Some(workspace)
+            })
+            .ok_or_else(|| {
+                GraphError::invalid_data(
+                    "validate Orbit workspace authority",
+                    format!("workspace {workspace:?} is not registered in the explicit authority"),
+                )
+            })?;
+        let actual_id = required_string(selected, "id")?;
+        let checkout = selected
+            .get("repo_root")
+            .and_then(Value::as_str)
+            .ok_or_else(|| {
+                GraphError::invalid_data(
+                    "validate Orbit workspace repository",
+                    "workspace list omitted repo_root",
+                )
+            })?;
+        let checkout = PathBuf::from(checkout).canonicalize().map_err(|source| {
+            GraphError::io(
+                "canonicalize Orbit workspace repository",
+                Path::new(checkout),
+                source,
+            )
+        })?;
+        verify_same_repository(self.repository, checkout.as_path())?;
+        Ok(AuthorityRoute {
+            workspace_id: actual_id.to_string(),
+            repository_root: checkout,
+        })
+    }
+
+    pub(super) fn task_show(&self, task_id: &str) -> Result<Value, GraphError> {
+        let route = self.require_authority()?;
         self.tool_run(
             "orbit.task.show",
             json!({
                 "id": task_id,
-                "workspace": workspace,
+                "workspace": route.workspace_id,
                 "fields": ["id", "title", "description", "acceptance_criteria", "status", "created_at", "history", "job_run_id"],
                 "model": "codex",
             }),
@@ -99,8 +162,9 @@ impl<'a> OrbitAdapter<'a> {
         supplied_snapshots: &BTreeMap<String, TaskAssociation>,
         repository_identity: &str,
     ) -> Result<DeliveryImport, GraphError> {
-        self.require_workspace()?;
-        let run = self.orbit_json(&["run", "show", run_id, "--format", "json"])?;
+        let route = self.require_authority()?;
+        let run =
+            self.orbit_json_for_verified_workspace(&["run", "show", run_id, "--format", "json"])?;
         if run.pointer("/run/state").and_then(Value::as_str) != Some("success") {
             return Err(GraphError::invalid_data(
                 "verify Orbit delivery run",
@@ -128,10 +192,24 @@ impl<'a> OrbitAdapter<'a> {
         let before = required_string(commit, "base_sha")?;
         let after = required_string(commit, "commit_sha")?;
         verify_git_delivery(self.repository, branch, before, after)?;
+        verify_run_workspace(&run, &route)?;
+        let current_task = self.task_show(task_id)?;
+        if required_string(&current_task, "id")? != task_id {
+            return Err(GraphError::invalid_data(
+                "verify Orbit run task workspace",
+                "selected workspace returned a different task ID",
+            ));
+        }
         let task = if let Some(snapshot) = supplied_snapshots.get(task_id) {
+            if snapshot.task_id != task_id {
+                return Err(GraphError::invalid_data(
+                    "verify supplied task snapshot",
+                    "snapshot task_id does not match the verified run task",
+                ));
+            }
             snapshot.clone()
         } else {
-            task_snapshot_from_value(&self.task_show(task_id)?, self.require_workspace()?)?
+            task_snapshot_from_value(&current_task, route.workspace_id.as_str())?
         };
         let finished_at = run
             .pointer("/run/finished_at")
@@ -168,26 +246,222 @@ impl<'a> OrbitAdapter<'a> {
     }
 
     fn orbit_json(&self, args: &[&str]) -> Result<Value, GraphError> {
+        let root = self.orbit_root.ok_or_else(|| {
+            GraphError::invalid_data(
+                "route public Orbit CLI",
+                "orbit_root is required for authoritative calls",
+            )
+        })?;
+        self.orbit_json_at_root(args, root)
+    }
+
+    fn orbit_json_at_root(&self, args: &[&str], root: &Path) -> Result<Value, GraphError> {
+        self.orbit_json_command(args, Some(root))
+    }
+
+    fn orbit_json_for_verified_workspace(&self, args: &[&str]) -> Result<Value, GraphError> {
+        self.orbit_json_command(args, None)
+    }
+
+    fn orbit_json_command(&self, args: &[&str], root: Option<&Path>) -> Result<Value, GraphError> {
         let program = env::var("ORBIT_GRAPH_ORBIT_BIN").unwrap_or_else(|_| "orbit".to_string());
         let mut command = Command::new(program);
         command.current_dir(self.repository).args(args);
-        if let Some(root) = self.orbit_root {
+        if let Some(root) = root {
             command.arg("--root").arg(root);
         }
-        let output = command
-            .output()
+        let timeout = orbit_timeout()?;
+        let sequence = SUBPROCESS_SEQUENCE.fetch_add(1, Ordering::Relaxed);
+        let stem = format!("orbit-graph-{}-{sequence}", std::process::id());
+        let captures = CaptureFiles {
+            stdout: env::temp_dir().join(format!("{stem}.stdout")),
+            stderr: env::temp_dir().join(format!("{stem}.stderr")),
+        };
+        let stdout = File::create(captures.stdout.as_path()).map_err(|source| {
+            GraphError::io(
+                "create bounded Orbit stdout capture",
+                captures.stdout.as_path(),
+                source,
+            )
+        })?;
+        let stderr = File::create(captures.stderr.as_path()).map_err(|source| {
+            GraphError::io(
+                "create bounded Orbit stderr capture",
+                captures.stderr.as_path(),
+                source,
+            )
+        })?;
+        command
+            .stdout(Stdio::from(stdout))
+            .stderr(Stdio::from(stderr));
+        #[cfg(unix)]
+        unsafe {
+            command.pre_exec(|| {
+                if libc::setpgid(0, 0) != 0 {
+                    return Err(std::io::Error::last_os_error());
+                }
+                #[cfg(target_os = "linux")]
+                if libc::prctl(libc::PR_SET_PDEATHSIG, libc::SIGKILL) != 0 {
+                    return Err(std::io::Error::last_os_error());
+                }
+                Ok(())
+            });
+        }
+        let mut child = command
+            .spawn()
             .map_err(|source| GraphError::io("invoke public Orbit CLI", self.repository, source))?;
-        if !output.status.success() {
+        let started = Instant::now();
+        let status = loop {
+            if let Some(status) = child.try_wait().map_err(|source| {
+                GraphError::io("wait for public Orbit CLI", self.repository, source)
+            })? {
+                break status;
+            }
+            let output_bytes =
+                file_len(captures.stdout.as_path())? + file_len(captures.stderr.as_path())?;
+            if output_bytes > ORBIT_OUTPUT_LIMIT {
+                terminate_child(&mut child);
+                return Err(GraphError::invalid_data(
+                    "invoke public Orbit CLI",
+                    format!("combined stdout/stderr exceeded {ORBIT_OUTPUT_LIMIT} bytes"),
+                ));
+            }
+            if started.elapsed() >= timeout {
+                terminate_child(&mut child);
+                return Err(GraphError::invalid_data(
+                    "invoke public Orbit CLI",
+                    format!("timed out after {} seconds", timeout.as_secs()),
+                ));
+            }
+            thread::sleep(Duration::from_millis(10));
+        };
+        let stdout = read_capture(captures.stdout.as_path())?;
+        let stderr = read_capture(captures.stderr.as_path())?;
+        if stdout.len() as u64 + stderr.len() as u64 > ORBIT_OUTPUT_LIMIT {
+            return Err(GraphError::invalid_data(
+                "invoke public Orbit CLI",
+                format!("combined stdout/stderr exceeded {ORBIT_OUTPUT_LIMIT} bytes"),
+            ));
+        }
+        if !status.success() {
             return Err(GraphError::invalid_data(
                 "invoke public Orbit CLI",
                 format!(
                     "exit {}: {}",
-                    output.status.code().unwrap_or(1),
-                    bounded_text(output.stderr.as_slice())
+                    status.code().unwrap_or(1),
+                    bounded_text(stderr.as_slice())
                 ),
             ));
         }
-        serde_json::from_slice(output.stdout.as_slice()).map_err(json_error)
+        serde_json::from_slice(stdout.as_slice()).map_err(json_error)
+    }
+}
+
+struct AuthorityRoute {
+    workspace_id: String,
+    repository_root: PathBuf,
+}
+
+fn verify_same_repository(left: &Path, right: &Path) -> Result<(), GraphError> {
+    let left = Repository::discover(left).map_err(|error| {
+        GraphError::invalid_data("open routed Git repository", error.to_string())
+    })?;
+    let right = Repository::discover(right).map_err(|error| {
+        GraphError::invalid_data("open authority Git repository", error.to_string())
+    })?;
+    let left_common = left.commondir().canonicalize().map_err(|source| {
+        GraphError::io(
+            "canonicalize routed Git common directory",
+            left.commondir(),
+            source,
+        )
+    })?;
+    let right_common = right.commondir().canonicalize().map_err(|source| {
+        GraphError::io(
+            "canonicalize authority Git common directory",
+            right.commondir(),
+            source,
+        )
+    })?;
+    if left_common != right_common {
+        return Err(GraphError::invalid_data(
+            "validate Orbit workspace repository",
+            "configured workspace checkout and requested repository do not share Git object authority",
+        ));
+    }
+    Ok(())
+}
+
+fn verify_run_workspace(run: &Value, route: &AuthorityRoute) -> Result<(), GraphError> {
+    let path = run
+        .pointer("/pipeline_state/step_outputs/0/workspace_path")
+        .and_then(Value::as_str)
+        .ok_or_else(|| {
+            GraphError::invalid_data(
+                "verify Orbit run workspace",
+                "run omitted public prepare workspace_path",
+            )
+        })?;
+    verify_same_repository(Path::new(path), route.repository_root.as_path())
+}
+
+fn orbit_timeout() -> Result<Duration, GraphError> {
+    let seconds = match env::var("ORBIT_GRAPH_ORBIT_TIMEOUT_SECONDS") {
+        Ok(value) => value.parse::<u64>().map_err(|error| {
+            GraphError::invalid_data("parse Orbit subprocess timeout", error.to_string())
+        })?,
+        Err(env::VarError::NotPresent) => DEFAULT_ORBIT_TIMEOUT_SECONDS,
+        Err(error) => {
+            return Err(GraphError::invalid_data(
+                "read Orbit subprocess timeout",
+                error.to_string(),
+            ));
+        }
+    };
+    if seconds == 0 || seconds > MAX_ORBIT_TIMEOUT_SECONDS {
+        return Err(GraphError::invalid_data(
+            "validate Orbit subprocess timeout",
+            format!("timeout must be between 1 and {MAX_ORBIT_TIMEOUT_SECONDS} seconds"),
+        ));
+    }
+    Ok(Duration::from_secs(seconds))
+}
+
+fn file_len(path: &Path) -> Result<u64, GraphError> {
+    fs::metadata(path)
+        .map(|metadata| metadata.len())
+        .map_err(|source| GraphError::io("measure Orbit output capture", path, source))
+}
+
+fn read_capture(path: &Path) -> Result<Vec<u8>, GraphError> {
+    let file = File::open(path)
+        .map_err(|source| GraphError::io("open Orbit output capture", path, source))?;
+    let mut bytes = Vec::new();
+    file.take(ORBIT_OUTPUT_LIMIT + 1)
+        .read_to_end(&mut bytes)
+        .map_err(|source| GraphError::io("read Orbit output capture", path, source))?;
+    Ok(bytes)
+}
+
+fn terminate_child(child: &mut std::process::Child) {
+    #[cfg(unix)]
+    unsafe {
+        let pid = i32::try_from(child.id()).unwrap_or(i32::MAX);
+        let _ = libc::kill(-pid, libc::SIGKILL);
+    }
+    let _ = child.kill();
+    let _ = child.wait();
+}
+
+struct CaptureFiles {
+    stdout: PathBuf,
+    stderr: PathBuf,
+}
+
+impl Drop for CaptureFiles {
+    fn drop(&mut self) {
+        let _ = fs::remove_file(self.stdout.as_path());
+        let _ = fs::remove_file(self.stderr.as_path());
     }
 }
 

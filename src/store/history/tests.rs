@@ -111,7 +111,7 @@ fn sync_is_incremental_and_rejects_rebound_history_without_partial_writes() {
     write(repo.path(), "a.rs", "fn a() -> i32 { 3 }\n");
     commit(repo.path(), "replacement");
     let error = index.sync(Some(10)).expect_err("rebound cursor rejected");
-    assert!(error.to_string().contains("diverged or was rebound"));
+    assert!(error.to_string().contains("stored cursor is not on"));
     assert_eq!(
         index.status().expect("unchanged status").deliveries,
         original_count
@@ -119,7 +119,7 @@ fn sync_is_incremental_and_rejects_rebound_history_without_partial_writes() {
 }
 
 #[test]
-fn bounded_sync_and_failed_rebuild_leave_existing_scope_intact() {
+fn bounded_sync_resumes_and_failed_rebuild_leaves_existing_scope_intact() {
     let repo = fixture_repo();
     write(repo.path(), "a.rs", "fn a() {}\n");
     commit(repo.path(), "one");
@@ -128,15 +128,16 @@ fn bounded_sync_and_failed_rebuild_leave_existing_scope_intact() {
     write(repo.path(), "a.rs", "fn a() {  }\n");
     commit(repo.path(), "three");
     let index = HistoryIndex::open(repo.path(), "main").expect("open");
-    assert!(index.sync(Some(1)).is_err());
-    assert_eq!(
-        index
-            .status()
-            .expect("empty after bounded failure")
-            .deliveries,
-        0
-    );
-    index.sync(Some(10)).expect("full sync");
+    let partial = index.sync(Some(1)).expect("bounded partial sync");
+    assert!(!partial.complete);
+    assert!(partial.resume_from.is_some());
+    let partial_status = index.status().expect("partial status");
+    assert_eq!(partial_status.deliveries, 1);
+    assert_eq!(partial_status.cursor, None);
+    assert!(!partial_status.complete);
+    let completed = index.sync(Some(10)).expect("resumed full sync");
+    assert!(completed.complete);
+    assert_eq!(index.status().expect("complete status").deliveries, 2);
     let before = index.status().expect("before failed rebuild");
     assert!(index.rebuild(Some(1)).is_err());
     assert_eq!(

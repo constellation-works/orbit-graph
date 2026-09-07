@@ -130,11 +130,28 @@ fn recommend(input: RecommendToolInput) -> Result<Value, GraphError> {
         input.workspace.as_deref(),
         input.orbit_root.as_deref(),
     );
-    if snapshot.is_none()
-        && let RecommendationInput::TaskId(task_id) = &intent
-    {
-        snapshot = Some(adapter.task_snapshot(task_id)?);
-        task_text_source = "orbit.task.show_public_observation".to_string();
+    if let RecommendationInput::TaskId(task_id) = &intent {
+        if input.cutoff.is_none() {
+            let observed = adapter.task_snapshot(task_id)?;
+            if snapshot
+                .as_ref()
+                .is_some_and(|value| value.task_id != observed.task_id)
+            {
+                return Err(GraphError::invalid_data(
+                    "verify supplied task snapshot",
+                    "supplied task ID does not match the selected public workspace task",
+                ));
+            }
+            if snapshot.is_none() {
+                snapshot = Some(observed);
+                task_text_source = "orbit.task.show_public_observation".to_string();
+            } else {
+                task_text_source = "supplied_snapshot+verified_live_workspace".to_string();
+            }
+        } else if snapshot.is_none() {
+            snapshot = Some(adapter.task_snapshot(task_id)?);
+            task_text_source = "orbit.task.show_public_observation".to_string();
+        }
     }
     let query_text = match (&intent, snapshot.as_ref()) {
         (RecommendationInput::Query(query), _) => query.clone(),
@@ -260,12 +277,21 @@ fn maintain(input: MaintainToolInput) -> Result<Value, GraphError> {
                     "limit must be between 1 and 1000",
                 ));
             }
+            let result = index.sync(Some(limit))?;
             Ok(json!({
                 "schema_version": PLUGIN_SCHEMA_VERSION,
                 "operation": "history_sync",
                 "repository": repository,
-                "coverage": {"complete": true, "kind": "bounded_first_parent_git"},
-                "result": index.sync(Some(limit))?,
+                "coverage": {
+                    "complete": result.complete,
+                    "kind": "bounded_first_parent_git",
+                    "note": if result.complete {
+                        "caught up to the frozen snapshot tip"
+                    } else {
+                        "partial newest-first suffix; resubmit to continue from resume_from"
+                    },
+                },
+                "result": result,
             }))
         }
         MaintenanceOperation::Import => {
@@ -344,6 +370,20 @@ fn sync_orbit(
                     .iter()
                     .map(|task| task.task_id.clone())
                     .collect::<Vec<_>>();
+                let existing = index.delivery(delivery_id.as_str())?;
+                if existing.as_ref().is_some_and(|existing| {
+                    existing.delivery.before_revision == delivery.before_revision
+                        && existing.delivery.after_revision == delivery.after_revision
+                }) {
+                    outcomes.push(json!({
+                        "run_id": run_id,
+                        "delivery_id": delivery_id,
+                        "task_ids": task_ids,
+                        "status": "already_indexed",
+                        "reason": "preserved immutable first-observed delivery envelope",
+                    }));
+                    continue;
+                }
                 match index.import(delivery) {
                     Ok(report) => outcomes.push(json!({
                         "run_id": run_id,

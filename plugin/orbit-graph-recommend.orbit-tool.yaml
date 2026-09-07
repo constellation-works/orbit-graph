@@ -15,7 +15,7 @@ parameters:
   param_type: string
   required: false
 - name: orbit_root
-  description: Explicit Orbit authority root when the configured default is not intended.
+  description: Explicit Orbit authority root; required for live task-ID or hybrid public calls.
   param_type: string
   required: false
 - name: query
@@ -27,7 +27,7 @@ parameters:
   param_type: string
   required: false
 - name: task_snapshot
-  description: Versioned pre-execution TaskAssociation captured from a public authority response.
+  description: Versioned TaskAssociation; live use still verifies it against the configured public authority, while strict replay requires known_pre_execution evidence.
   param_type: object
   required: false
 - name: level

@@ -31,7 +31,7 @@ parameters:
   param_type: string
   required: false
 - name: orbit_root
-  description: Explicit Orbit authority root when the configured default is not intended.
+  description: Explicit Orbit authority root required for operation=orbit_sync.
   param_type: string
   required: false
 - name: task_ids

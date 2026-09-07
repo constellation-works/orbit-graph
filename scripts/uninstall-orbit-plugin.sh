@@ -16,7 +16,17 @@ esac
 orbit_root=""
 if [ "$#" -eq 2 ]; then
     orbit_root=$2
+    [ -n "$orbit_root" ] && [ -d "$orbit_root" ] || {
+        echo "Orbit root is not a directory: $orbit_root" >&2
+        exit 2
+    }
+    orbit_root=$(cd "$orbit_root" && pwd -P)
 fi
+
+command -v orbit >/dev/null 2>&1 || {
+    echo "orbit is not installed" >&2
+    exit 1
+}
 
 remove_tool() {
     name=$1

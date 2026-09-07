@@ -705,6 +705,7 @@ dependencies = [
  "fs2",
  "git2",
  "ignore",
+ "libc",
  "notify",
  "rayon",
  "rusqlite",

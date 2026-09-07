@@ -21,7 +21,7 @@ use crate::extract::history::{
 use crate::extract::languages;
 
 /// Version of the history SQLite schema.
-pub const HISTORY_INDEX_SCHEMA_VERSION: u32 = 2;
+pub const HISTORY_INDEX_SCHEMA_VERSION: u32 = 3;
 
 /// Handle to the repository-local, rebuildable delivery-history index.
 #[derive(Debug, Clone)]
@@ -54,8 +54,12 @@ pub struct HistorySyncReport {
     pub deliveries_inserted: usize,
     /// Cursor observed before the operation.
     pub cursor_before: Option<String>,
-    /// Branch tip installed atomically with the delivery rows.
-    pub cursor_after: String,
+    /// Complete branch tip installed atomically with the delivery rows, if caught up.
+    pub cursor_after: Option<String>,
+    /// Frozen branch tip whose first-parent chain is being bootstrapped.
+    pub snapshot_tip: String,
+    /// Oldest not-yet-visited commit for the next bounded request.
+    pub resume_from: Option<String>,
     /// True only when traversal reached the prior cursor or first parent root.
     pub complete: bool,
 }
@@ -75,6 +79,12 @@ pub struct HistoryStatus {
     pub extractor_version: u32,
     /// Last atomically indexed landing-branch tip.
     pub cursor: Option<String>,
+    /// Frozen tip of an in-progress bounded bootstrap.
+    pub bootstrap_tip: Option<String>,
+    /// Oldest not-yet-visited commit for the next bootstrap request.
+    pub bootstrap_resume_from: Option<String>,
+    /// False while only a suffix of the frozen first-parent history is indexed.
+    pub complete: bool,
     /// Total delivery rows in this scope.
     pub deliveries: usize,
     /// Deliveries backed by supplied verified delivery evidence.
@@ -92,6 +102,19 @@ pub struct HistoryRebuildReport {
     pub removed_deliveries: usize,
     /// Git-only first-parent rebuild result.
     pub sync: HistorySyncReport,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+struct HistoryScope {
+    cursor: Option<String>,
+    bootstrap_tip: Option<String>,
+    bootstrap_frontier: Option<String>,
+}
+
+struct PendingBatch {
+    commits: Vec<Oid>,
+    complete: bool,
+    resume_from: Option<Oid>,
 }
 
 impl HistoryIndex {
@@ -194,7 +217,7 @@ impl HistoryIndex {
 
     /// Incrementally index first-parent commits, bounded by `limit`.
     pub fn sync(&self, limit: Option<usize>) -> Result<HistorySyncReport, GraphError> {
-        self.sync_impl(limit.unwrap_or(DEFAULT_HISTORY_SYNC_LIMIT), false)
+        self.sync_impl(limit.unwrap_or(DEFAULT_HISTORY_SYNC_LIMIT))
     }
 
     /// Atomically clear this branch scope and rebuild it from first-parent Git history.
@@ -236,7 +259,9 @@ impl HistoryIndex {
                 commits_indexed: extracted.len(),
                 deliveries_inserted: extracted.len(),
                 cursor_before: None,
-                cursor_after: tip.to_string(),
+                cursor_after: Some(tip.to_string()),
+                snapshot_tip: tip.to_string(),
+                resume_from: None,
                 complete: true,
             },
         })
@@ -245,7 +270,7 @@ impl HistoryIndex {
     /// Read counts and the incremental cursor without consulting Orbit state.
     pub fn status(&self) -> Result<HistoryStatus, GraphError> {
         let conn = self.open_connection()?;
-        let cursor = read_cursor(
+        let scope = read_scope(
             &conn,
             self.repository.as_str(),
             self.landing_branch.as_str(),
@@ -262,13 +287,22 @@ impl HistoryIndex {
                 |row| row.get(0),
             )
             .map_err(|source| GraphError::sqlite("read history task status", source))?;
+        let repo = Repository::open(self.repo_root.as_path()).map_err(|error| {
+            GraphError::invalid_data("open repository for history status", error.to_string())
+        })?;
+        let tip = branch_tip(&repo, self.landing_branch.as_str())?.to_string();
+        let complete =
+            scope.bootstrap_tip.is_none() && scope.cursor.as_deref() == Some(tip.as_str());
         Ok(HistoryStatus {
             repository: self.repository.clone(),
             landing_branch: self.landing_branch.clone(),
             database_path: self.db_path.clone(),
             schema_version: HISTORY_INDEX_SCHEMA_VERSION,
             extractor_version: CHANGE_EXTRACTOR_VERSION,
-            cursor,
+            cursor: scope.cursor,
+            bootstrap_tip: scope.bootstrap_tip.clone(),
+            bootstrap_resume_from: scope.bootstrap_frontier,
+            complete,
             deliveries: usize_from_i64(deliveries, "delivery count")?,
             verified_deliveries: usize_from_i64(verified, "verified delivery count")?,
             git_only_deliveries: usize_from_i64(git_only, "Git-only delivery count")?,
@@ -296,6 +330,26 @@ impl HistoryIndex {
             })?);
         }
         Ok(deliveries)
+    }
+
+    /// Return an indexed delivery by its stable source boundary identifier.
+    pub fn delivery(&self, delivery_id: &str) -> Result<Option<DeliveredChange>, GraphError> {
+        let conn = self.open_connection()?;
+        let payload: Option<String> = conn
+            .query_row(
+                "SELECT payload_json FROM history_deliveries WHERE repository=?1 AND landing_branch=?2 AND delivery_id=?3",
+                params![self.repository, self.landing_branch, delivery_id],
+                |row| row.get(0),
+            )
+            .optional()
+            .map_err(|source| GraphError::sqlite("read history delivery by id", source))?;
+        payload
+            .map(|payload| {
+                serde_json::from_str(payload.as_str()).map_err(|error| {
+                    GraphError::invalid_data("decode indexed history delivery", error.to_string())
+                })
+            })
+            .transpose()
     }
 
     /// Resolve a historical identity against the current landing-branch tree.
@@ -402,7 +456,7 @@ impl HistoryIndex {
         Ok(current_resolution(historical, tip, status, matches, reason))
     }
 
-    fn sync_impl(&self, limit: usize, rebuild: bool) -> Result<HistorySyncReport, GraphError> {
+    fn sync_impl(&self, limit: usize) -> Result<HistorySyncReport, GraphError> {
         if limit == 0 {
             return Err(GraphError::invalid_data(
                 "sync history",
@@ -413,17 +467,14 @@ impl HistoryIndex {
             GraphError::invalid_data("open repository for history sync", error.to_string())
         })?;
         let conn = self.open_connection()?;
-        let cursor = if rebuild {
-            None
-        } else {
-            read_cursor(
-                &conn,
-                self.repository.as_str(),
-                self.landing_branch.as_str(),
-            )?
-        };
+        let scope = read_scope(
+            &conn,
+            self.repository.as_str(),
+            self.landing_branch.as_str(),
+        )?;
         drop(conn);
-        let cursor_oid = cursor
+        let cursor_oid = scope
+            .cursor
             .as_deref()
             .map(|value| {
                 Oid::from_str(value).map_err(|error| {
@@ -431,17 +482,38 @@ impl HistoryIndex {
                 })
             })
             .transpose()?;
-        let commits = self.pending_commits(&repo, cursor_oid, limit)?;
         let tip = branch_tip(&repo, self.landing_branch.as_str())?;
+        let snapshot_tip = scope
+            .bootstrap_tip
+            .as_deref()
+            .map(|value| Oid::from_str(value).map_err(git_error("parse history bootstrap tip")))
+            .transpose()?
+            .unwrap_or(tip);
+        if snapshot_tip != tip && !is_first_parent_ancestor(&repo, snapshot_tip, tip, limit)? {
+            return Err(GraphError::invalid_data(
+                "validate history bootstrap tip",
+                "landing branch diverged while a bounded bootstrap was in progress",
+            ));
+        }
+        let start = scope
+            .bootstrap_frontier
+            .as_deref()
+            .map(|value| {
+                Oid::from_str(value).map_err(git_error("parse history bootstrap frontier"))
+            })
+            .transpose()?
+            .unwrap_or(snapshot_tip);
+        let batch = self.pending_batch(&repo, cursor_oid, start, limit)?;
+        let commits = batch.commits;
         let extracted = self.extract_git_deliveries(&repo, commits.as_slice())?;
         let _lock = HistoryLock::acquire(self.db_path.as_path())?;
         let mut conn = self.open_connection()?;
         let tx = conn
             .transaction_with_behavior(TransactionBehavior::Immediate)
             .map_err(|source| GraphError::sqlite("begin history sync", source))?;
-        let current_cursor =
-            read_cursor(&tx, self.repository.as_str(), self.landing_branch.as_str())?;
-        if current_cursor != cursor {
+        let current_scope =
+            read_scope(&tx, self.repository.as_str(), self.landing_branch.as_str())?;
+        if current_scope != scope {
             return Err(GraphError::invalid_data(
                 "sync history cursor",
                 "history cursor changed concurrently; retry from fresh status",
@@ -460,21 +532,92 @@ impl HistoryIndex {
                 ));
             }
         }
-        write_cursor(
-            &tx,
-            self.repository.as_str(),
-            self.landing_branch.as_str(),
-            tip,
-        )?;
+        let cursor_after = if batch.complete {
+            write_scope(
+                &tx,
+                self.repository.as_str(),
+                self.landing_branch.as_str(),
+                Some(snapshot_tip),
+                None,
+                None,
+            )?;
+            Some(snapshot_tip.to_string())
+        } else {
+            write_scope(
+                &tx,
+                self.repository.as_str(),
+                self.landing_branch.as_str(),
+                cursor_oid,
+                Some(snapshot_tip),
+                batch.resume_from,
+            )?;
+            scope.cursor.clone()
+        };
         tx.commit()
             .map_err(|source| GraphError::sqlite("commit history sync", source))?;
         Ok(HistorySyncReport {
             commits_indexed: extracted.len(),
             deliveries_inserted: inserted,
-            cursor_before: cursor,
-            cursor_after: tip.to_string(),
-            complete: true,
+            cursor_before: scope.cursor,
+            cursor_after,
+            snapshot_tip: snapshot_tip.to_string(),
+            resume_from: batch.resume_from.map(|oid| oid.to_string()),
+            complete: batch.complete,
         })
+    }
+
+    fn pending_batch(
+        &self,
+        repo: &Repository,
+        cursor: Option<Oid>,
+        start: Oid,
+        limit: usize,
+    ) -> Result<PendingBatch, GraphError> {
+        if cursor == Some(start) {
+            return Ok(PendingBatch {
+                commits: Vec::new(),
+                complete: true,
+                resume_from: None,
+            });
+        }
+        let mut commits = Vec::new();
+        let mut current = repo
+            .find_commit(start)
+            .map_err(git_error("load history batch frontier"))?;
+        loop {
+            if Some(current.id()) == cursor {
+                return Ok(PendingBatch {
+                    commits,
+                    complete: true,
+                    resume_from: None,
+                });
+            }
+            if current.parent_count() == 0 {
+                if cursor.is_some() {
+                    return Err(GraphError::invalid_data(
+                        "validate history cursor",
+                        "stored cursor is not on the frozen landing-branch first-parent chain",
+                    ));
+                }
+                return Ok(PendingBatch {
+                    commits,
+                    complete: true,
+                    resume_from: None,
+                });
+            }
+            commits.push(current.id());
+            let parent = current
+                .parent(0)
+                .map_err(git_error("walk bounded first-parent history"))?;
+            if commits.len() == limit {
+                return Ok(PendingBatch {
+                    commits,
+                    complete: false,
+                    resume_from: Some(parent.id()),
+                });
+            }
+            current = parent;
+        }
     }
 
     fn pending_commits(
@@ -659,6 +802,7 @@ const HISTORY_SCHEMA: &str = r#"
 CREATE TABLE IF NOT EXISTS history_meta (key TEXT PRIMARY KEY, value TEXT NOT NULL) STRICT;
 CREATE TABLE IF NOT EXISTS history_scopes (
   repository TEXT NOT NULL, landing_branch TEXT NOT NULL, cursor TEXT,
+  bootstrap_tip TEXT, bootstrap_frontier TEXT,
   PRIMARY KEY(repository, landing_branch)
 ) STRICT;
 CREATE TABLE IF NOT EXISTS history_deliveries (
@@ -893,19 +1037,25 @@ fn current_resolution(
     }
 }
 
-fn read_cursor(
+fn read_scope(
     conn: &Connection,
     repository: &str,
     branch: &str,
-) -> Result<Option<String>, GraphError> {
+) -> Result<HistoryScope, GraphError> {
     conn.query_row(
-        "SELECT cursor FROM history_scopes WHERE repository=?1 AND landing_branch=?2",
+        "SELECT cursor,bootstrap_tip,bootstrap_frontier FROM history_scopes WHERE repository=?1 AND landing_branch=?2",
         params![repository, branch],
-        |row| row.get(0),
+        |row| {
+            Ok(HistoryScope {
+                cursor: row.get(0)?,
+                bootstrap_tip: row.get(1)?,
+                bootstrap_frontier: row.get(2)?,
+            })
+        },
     )
     .optional()
-    .map(|value| value.flatten())
-    .map_err(|source| GraphError::sqlite("read history cursor", source))
+    .map(Option::unwrap_or_default)
+    .map_err(|source| GraphError::sqlite("read history sync scope", source))
 }
 
 fn write_cursor(
@@ -919,6 +1069,54 @@ fn write_cursor(
         params![repository, branch, cursor.to_string()],
     ).map_err(|source| GraphError::sqlite("write history cursor", source))?;
     Ok(())
+}
+
+fn write_scope(
+    conn: &Connection,
+    repository: &str,
+    branch: &str,
+    cursor: Option<Oid>,
+    bootstrap_tip: Option<Oid>,
+    bootstrap_frontier: Option<Oid>,
+) -> Result<(), GraphError> {
+    conn.execute(
+        "INSERT INTO history_scopes(repository,landing_branch,cursor,bootstrap_tip,bootstrap_frontier) VALUES(?1,?2,?3,?4,?5) ON CONFLICT(repository,landing_branch) DO UPDATE SET cursor=excluded.cursor,bootstrap_tip=excluded.bootstrap_tip,bootstrap_frontier=excluded.bootstrap_frontier",
+        params![
+            repository,
+            branch,
+            cursor.map(|oid| oid.to_string()),
+            bootstrap_tip.map(|oid| oid.to_string()),
+            bootstrap_frontier.map(|oid| oid.to_string()),
+        ],
+    )
+    .map_err(|source| GraphError::sqlite("write history sync scope", source))?;
+    Ok(())
+}
+
+fn is_first_parent_ancestor(
+    repo: &Repository,
+    ancestor: Oid,
+    descendant: Oid,
+    limit: usize,
+) -> Result<bool, GraphError> {
+    let mut current = repo
+        .find_commit(descendant)
+        .map_err(git_error("load landing tip for first-parent validation"))?;
+    for _ in 0..=limit {
+        if current.id() == ancestor {
+            return Ok(true);
+        }
+        if current.parent_count() == 0 {
+            return Ok(false);
+        }
+        current = current
+            .parent(0)
+            .map_err(git_error("walk landing first-parent validation"))?;
+    }
+    Err(GraphError::invalid_data(
+        "validate history bootstrap tip",
+        format!("branch advanced beyond the bounded validation limit {limit}"),
+    ))
 }
 
 fn delete_scope(conn: &Connection, repository: &str, branch: &str) -> Result<usize, GraphError> {
