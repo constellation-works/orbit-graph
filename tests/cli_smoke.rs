@@ -292,7 +292,7 @@ fn real_binary_resolves_environment_modes_and_overview_format_without_ambiguity(
     );
     assert!(explicit_table.status.success());
     assert!(
-        String::from_utf8_lossy(&explicit_table.stdout).starts_with("{\n"),
+        String::from_utf8_lossy(&explicit_table.stdout).starts_with("CRATE VERSION"),
         "explicit mode did not outrank environment: {}",
         String::from_utf8_lossy(&explicit_table.stdout)
     );
@@ -415,6 +415,140 @@ fn real_binary_recommends_in_file_and_symbol_modes_and_validates_top_k() {
     assert!(!both.status.success());
     let error: Value = serde_json::from_slice(&both.stderr).expect("JSON error");
     assert_eq!(error["error"]["code"], "argument_error");
+}
+
+#[test]
+fn real_binary_renders_recommendation_and_index_views_with_complete_record_boundaries() {
+    let fixture = fixture_repository();
+    let sync = run(fixture.path(), ["sync", "--full"]);
+    assert!(sync.status.success());
+    let sync_fields = String::from_utf8(sync.stdout)
+        .expect("sync plain UTF-8")
+        .trim_end()
+        .split('\t')
+        .map(str::to_owned)
+        .collect::<Vec<_>>();
+    assert_eq!(sync_fields.len(), 4);
+    assert!(
+        sync_fields
+            .iter()
+            .all(|field| field.parse::<u128>().is_ok())
+    );
+    let sync_ndjson = run(fixture.path(), ["sync", "--format", "ndjson"]);
+    let sync_ndjson = parse_ndjson(&sync_ndjson.stdout);
+    assert_eq!(sync_ndjson.len(), 1);
+    assert!(sync_ndjson[0]["files_indexed"].is_number());
+
+    let plain = run(
+        fixture.path(),
+        [
+            "recommend",
+            "--query",
+            "helper",
+            "--level",
+            "file",
+            "--limit",
+            "1",
+        ],
+    );
+    assert!(plain.status.success());
+    assert!(plain.stderr.is_empty());
+    let fields = String::from_utf8(plain.stdout)
+        .expect("recommendation plain UTF-8")
+        .trim_end()
+        .split('\t')
+        .map(str::to_owned)
+        .collect::<Vec<_>>();
+    assert_eq!(fields.len(), 5);
+    assert_eq!(fields[0], "1");
+    assert_eq!(fields[1], "file:src/lib.rs");
+    assert!(fields[2].parse::<f64>().is_ok());
+    assert!(fields[3].contains("current destination text overlaps the query"));
+    assert!(fields[3].contains("cold_start"));
+    assert!(fields[4].contains("unavailable"));
+
+    let empty = run(
+        fixture.path(),
+        ["recommend", "--query", "definitely_absent_destination"],
+    );
+    assert!(empty.status.success());
+    assert!(empty.stdout.is_empty());
+    let empty_diagnostic = String::from_utf8_lossy(&empty.stderr);
+    assert!(empty_diagnostic.contains("no recommendations"));
+    assert!(empty_diagnostic.contains("cold_start"));
+
+    let table = run(
+        fixture.path(),
+        [
+            "--format",
+            "table",
+            "recommend",
+            "--query",
+            "helper",
+            "--limit",
+            "1",
+        ],
+    );
+    assert!(table.status.success());
+    let table = String::from_utf8_lossy(&table.stdout);
+    assert!(table.starts_with("RANK"));
+    assert!(table.contains("SELECTOR"));
+    assert!(table.contains("EVIDENCE"));
+    assert!(!table.contains('\u{1b}'));
+
+    let ndjson = run(
+        fixture.path(),
+        [
+            "--format",
+            "ndjson",
+            "recommend",
+            "--query",
+            "helper",
+            "--limit",
+            "1",
+        ],
+    );
+    assert!(ndjson.status.success());
+    let records = parse_ndjson(&ndjson.stdout);
+    assert_eq!(records.len(), 2);
+    assert_eq!(records[0]["record_type"], "recommendation_context");
+    assert!(records[0]["context"]["source_freshness"].is_object());
+    assert!(records[0]["context"]["fallbacks"].is_array());
+    assert!(records[0]["context"].get("recommendations").is_none());
+    assert_eq!(records[1]["record_type"], "recommendation");
+    assert_eq!(records[1]["recommendation"]["rank"], 1);
+    assert!(records[1]["recommendation"]["reasons"].is_array());
+
+    let version = run(fixture.path(), ["version"]);
+    assert!(version.status.success());
+    let version = String::from_utf8(version.stdout).expect("version plain UTF-8");
+    assert_eq!(version.trim_end().split('\t').count(), 2);
+
+    let db_path = run(fixture.path(), ["db-path"]);
+    assert!(db_path.status.success());
+    let db_path = String::from_utf8(db_path.stdout).expect("db-path plain UTF-8");
+    assert_eq!(db_path.trim_end().split('\t').count(), 3);
+    let db_path_ndjson = run(fixture.path(), ["db-path", "--format", "ndjson"]);
+    let db_path_ndjson = parse_ndjson(&db_path_ndjson.stdout);
+    assert_eq!(db_path_ndjson.len(), 1);
+    assert!(db_path_ndjson[0]["path"].is_string());
+
+    let old_db = fixture.path().join(".orbit-graph/main.1.db");
+    fs::write(&old_db, b"stale").expect("write obsolete database");
+    let clean = run(fixture.path(), ["--format", "ndjson", "clean"]);
+    assert!(clean.status.success());
+    let clean = parse_ndjson(&clean.stdout);
+    assert_eq!(clean[0]["record_type"], "clean_context");
+    assert_eq!(clean[1]["record_type"], "deleted_database");
+    assert_eq!(clean[1]["path"], old_db.to_string_lossy().as_ref());
+
+    let other_old_db = fixture.path().join(".orbit-graph/main.2.db");
+    fs::write(&other_old_db, b"stale").expect("write second obsolete database");
+    let clean_human = run(fixture.path(), ["clean"]);
+    assert!(clean_human.status.success());
+    let clean_human = String::from_utf8_lossy(&clean_human.stdout);
+    assert!(clean_human.contains("\t1\n"));
+    assert!(clean_human.contains(other_old_db.to_string_lossy().as_ref()));
 }
 
 #[test]
@@ -869,6 +1003,29 @@ fn real_binary_imports_syncs_reports_and_rebuilds_history() {
         ["history", "import", "--input", envelope_arg.as_ref()],
     );
     assert_eq!(duplicate["inserted"], false);
+    let imported_human = run(
+        fixture.path(),
+        ["history", "import", "--input", envelope_arg.as_ref()],
+    );
+    assert!(imported_human.status.success());
+    let imported_human = String::from_utf8_lossy(&imported_human.stdout);
+    assert!(imported_human.contains("operation\timport"));
+    assert!(imported_human.contains("delivery\tverified-cli-1"));
+    assert!(imported_human.contains("inserted\tfalse"));
+    let imported_ndjson = run(
+        fixture.path(),
+        [
+            "history",
+            "import",
+            "--input",
+            envelope_arg.as_ref(),
+            "--format",
+            "ndjson",
+        ],
+    );
+    let imported_ndjson = parse_ndjson(&imported_ndjson.stdout);
+    assert_eq!(imported_ndjson.len(), 1);
+    assert_eq!(imported_ndjson[0]["delivery_id"], "verified-cli-1");
 
     let recommended = run_json(
         fixture.path(),
@@ -896,18 +1053,63 @@ fn real_binary_imports_syncs_reports_and_rebuilds_history() {
                 })
             })
     );
+    let recommended_human = run(
+        fixture.path(),
+        [
+            "recommend",
+            "--query",
+            "history CLI import contract",
+            "--level",
+            "symbol",
+            "--limit",
+            "3",
+        ],
+    );
+    assert!(recommended_human.status.success());
+    let recommended_human = String::from_utf8_lossy(&recommended_human.stdout);
+    assert!(recommended_human.contains("src/lib.rs#helper:function"));
+    assert!(recommended_human.contains("history"));
 
     let synced = run_json(
         fixture.path(),
         ["history", "sync", "--branch", "main", "--limit", "10"],
     );
     assert_eq!(synced["complete"], true);
+    let synced_human = run(
+        fixture.path(),
+        ["history", "sync", "--branch", "main", "--limit", "10"],
+    );
+    assert!(synced_human.status.success());
+    let synced_human = String::from_utf8_lossy(&synced_human.stdout);
+    assert!(synced_human.contains("operation\tsync"));
+    assert!(synced_human.contains("commits indexed\t"));
+    let synced_ndjson = run(
+        fixture.path(),
+        ["history", "sync", "--branch", "main", "--format", "ndjson"],
+    );
+    let synced_ndjson = parse_ndjson(&synced_ndjson.stdout);
+    assert_eq!(synced_ndjson.len(), 1);
+    assert!(synced_ndjson[0]["complete"].is_boolean());
     let status = run_json(fixture.path(), ["history", "status", "--branch", "main"]);
     assert_eq!(status["schema_version"], 3);
     assert_eq!(status["extractor_version"], 2);
     assert_eq!(status["verified_deliveries"], 1);
     assert_eq!(status["git_only_deliveries"], 1);
     assert_eq!(status["task_associations"], 2);
+    let status_human = run(fixture.path(), ["history", "status", "--branch", "main"]);
+    assert!(status_human.status.success());
+    let status_human = String::from_utf8_lossy(&status_human.stdout);
+    assert!(status_human.contains("verified deliveries\t1"));
+    assert!(status_human.contains("complete\ttrue"));
+    let status_ndjson = run(
+        fixture.path(),
+        [
+            "history", "status", "--branch", "main", "--format", "ndjson",
+        ],
+    );
+    let status_ndjson = parse_ndjson(&status_ndjson.stdout);
+    assert_eq!(status_ndjson.len(), 1);
+    assert!(status_ndjson[0]["verified_deliveries"].is_number());
 
     let rebuilt = run_json(
         fixture.path(),
@@ -915,6 +1117,21 @@ fn real_binary_imports_syncs_reports_and_rebuilds_history() {
     );
     assert_eq!(rebuilt["removed_deliveries"], 2);
     assert_eq!(rebuilt["sync"]["deliveries_inserted"], 1);
+    let rebuilt_human = run(
+        fixture.path(),
+        ["history", "rebuild", "--branch", "main", "--limit", "10"],
+    );
+    assert!(rebuilt_human.status.success());
+    assert!(String::from_utf8_lossy(&rebuilt_human.stdout).contains("operation\trebuild"));
+    let rebuilt_ndjson = run(
+        fixture.path(),
+        [
+            "history", "rebuild", "--branch", "main", "--format", "ndjson",
+        ],
+    );
+    let rebuilt_ndjson = parse_ndjson(&rebuilt_ndjson.stdout);
+    assert_eq!(rebuilt_ndjson.len(), 1);
+    assert!(rebuilt_ndjson[0]["sync"].is_object());
 }
 
 #[test]
@@ -1085,6 +1302,13 @@ fn run_json<const N: usize>(cwd: &Path, args: [&str; N]) -> Value {
         String::from_utf8_lossy(&output.stderr)
     );
     serde_json::from_slice(&output.stdout).expect("JSON command output")
+}
+
+fn parse_ndjson(bytes: &[u8]) -> Vec<Value> {
+    String::from_utf8_lossy(bytes)
+        .lines()
+        .map(|line| serde_json::from_str(line).expect("NDJSON record"))
+        .collect()
 }
 
 #[allow(clippy::too_many_arguments)]

@@ -88,6 +88,43 @@ dependent command-group migrations add purposeful text and tables. New or
 migrated commands should not use `View::Document` merely to avoid defining a
 human view.
 
+The migrated recommendation, history, evaluation, and index commands use the
+following views:
+
+- `recommend` renders one row per destination with rank, selector, score,
+  concise score evidence and fallbacks, and history freshness. An empty result
+  explains its freshness and fallbacks on stderr.
+- `history import`, `history sync`, `history status`, and `history rebuild`
+  render field/value summaries. Status includes the cursor and bootstrap
+  coverage state plus verified, Git-only, and task-association counts.
+- `evaluate` renders corpus coverage, one row per variant/level metric, and one
+  admission row per case so exclusions remain visible.
+- `sync`, `clean`, `db-path`, and `version` render their counts, locations, and
+  versions through the same borderless table path. `clean` writes its empty
+  diagnostic to stderr.
+
+### Declared NDJSON records
+
+Commands without a declared stream continue to emit their complete JSON
+document as one NDJSON record. In particular, each `history` operation,
+`sync`, `db-path`, and `version` is one detail record.
+
+The commands with natural repeated records declare these boundaries:
+
+- `recommend`: one `recommendation_context` record containing every top-level
+  field except `recommendations`, followed by one full `recommendation` record
+  per ranked destination.
+- `evaluate`: one `evaluation_context` record containing every top-level field
+  except `metrics` and `cases`, followed by the full `evaluation_metric`
+  records and then the full `evaluation_case` records, in document order.
+- `clean`: one `clean_context` record containing `graph_dir`, followed by one
+  `deleted_database` record per deleted path.
+
+The wrapper's `record_type` identifies how to reconstruct the original list;
+the nested `context`, `recommendation`, `metric`, and `case` values retain the
+existing field names and types. A zero-item result still emits its context
+record, so provenance and coverage are never lost.
+
 ## Help, diagnostics, streams, and exits
 
 Top-level help is a human-readable Clap template in `src/cli/mod.rs`. It uses

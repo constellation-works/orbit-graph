@@ -3,10 +3,14 @@
 #![allow(clippy::expect_used)]
 
 use std::fs;
+#[cfg(unix)]
+use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 use std::time::{Duration, Instant};
 
+#[cfg(unix)]
+use std::os::fd::{FromRawFd, OwnedFd};
 #[cfg(unix)]
 use std::os::unix::fs::PermissionsExt;
 
@@ -38,6 +42,28 @@ fn no_argv_plugin_supports_status_and_query_and_task_id_both_levels() {
     );
     assert_eq!(status["operation"], "status");
     assert_eq!(status["status"]["verified_deliveries"], 1);
+    let status_with_mode_environment = plugin_output_with_env(
+        fixture.path(),
+        STATUS_TOOL_NAME,
+        json!({"schema_version": 1, "repository": repository, "branch": "main"}),
+        &[
+            ("ORBIT_GRAPH_FORMAT", std::ffi::OsStr::new("table")),
+            ("CLICOLOR_FORCE", std::ffi::OsStr::new("1")),
+        ],
+    );
+    assert!(status_with_mode_environment.status.success());
+    let status_with_mode_environment: Value =
+        serde_json::from_slice(&status_with_mode_environment.stdout).expect("plugin JSON");
+    assert_eq!(status_with_mode_environment, status);
+    #[cfg(unix)]
+    {
+        let status_with_tty = plugin_json_with_tty_stdout(
+            fixture.path(),
+            STATUS_TOOL_NAME,
+            json!({"schema_version": 1, "repository": repository, "branch": "main"}),
+        );
+        assert_eq!(status_with_tty, status);
+    }
 
     for level in ["file", "symbol"] {
         let query = plugin_json(
@@ -199,6 +225,51 @@ fn chronological_evaluation_reports_four_variants_both_levels_and_no_stale_resul
         report["cases"][0]["graph_structure_applied"]["graph_only:file"], true,
         "graph-only must use the frozen target graph rather than lexical-only fallback"
     );
+
+    let human = run_cli(
+        fixture.path(),
+        [
+            "--format",
+            "table",
+            "evaluate",
+            "--input",
+            corpus_path.to_string_lossy().as_ref(),
+        ],
+    );
+    assert!(human.status.success());
+    let human = String::from_utf8_lossy(&human.stdout);
+    assert!(human.contains("COVERAGE NOTE"));
+    assert!(human.contains("VARIANT"));
+    assert!(human.contains("EXCLUSIONS"));
+    assert!(human.contains("prospective-target"));
+
+    let ndjson = run_cli(
+        fixture.path(),
+        [
+            "--format",
+            "ndjson",
+            "evaluate",
+            "--input",
+            corpus_path.to_string_lossy().as_ref(),
+        ],
+    );
+    assert!(ndjson.status.success());
+    let records = String::from_utf8_lossy(&ndjson.stdout)
+        .lines()
+        .map(|line| serde_json::from_str::<Value>(line).expect("evaluation NDJSON record"))
+        .collect::<Vec<_>>();
+    assert_eq!(records.len(), 10);
+    assert_eq!(records[0]["record_type"], "evaluation_context");
+    assert_eq!(records[0]["context"]["coverage"]["cases_evaluated"], 1);
+    assert!(records[0]["context"].get("metrics").is_none());
+    assert!(records[0]["context"].get("cases").is_none());
+    assert!(
+        records[1..9]
+            .iter()
+            .all(|record| record["record_type"] == "evaluation_metric")
+    );
+    assert_eq!(records[9]["record_type"], "evaluation_case");
+    assert!(records[9]["case"]["truth_coverage"].is_object());
     let future = run(
         fixture.path(),
         [
@@ -357,6 +428,21 @@ fn evaluation_rejects_unverified_pre_cutoff_and_unattested_hybrid_truth() {
     assert!(
         case_exclusions(&report, 3).contains(&"hybrid_hits_not_attested_strictly_before_cutoff")
     );
+    let human = run_cli(
+        fixture.path(),
+        [
+            "--format",
+            "table",
+            "evaluate",
+            "--input",
+            path.to_string_lossy().as_ref(),
+        ],
+    );
+    assert!(human.status.success());
+    let human = String::from_utf8_lossy(&human.stdout);
+    assert!(human.contains("admission regression cases"));
+    assert!(human.contains("held_out_delivery_not_verified"));
+    assert!(human.contains("hybrid_hits_not_attested_strictly_before_cutoff"));
 }
 
 #[test]
@@ -1237,6 +1323,64 @@ fn plugin_output_with_env(
         .expect("run plugin")
 }
 
+#[cfg(unix)]
+fn plugin_json_with_tty_stdout(repository: &Path, tool: &str, input: Value) -> Value {
+    let mut master_fd = -1;
+    let mut slave_fd = -1;
+    // SAFETY: `openpty` initializes both descriptors on success; ownership is
+    // transferred immediately to standard library descriptor wrappers.
+    let opened = unsafe {
+        libc::openpty(
+            &raw mut master_fd,
+            &raw mut slave_fd,
+            std::ptr::null_mut(),
+            std::ptr::null(),
+            std::ptr::null(),
+        )
+    };
+    assert_eq!(opened, 0, "open plugin stdout pseudo-terminal");
+    // SAFETY: successful `openpty` returned distinct, owned descriptors.
+    let mut master = unsafe { fs::File::from_raw_fd(master_fd) };
+    // SAFETY: successful `openpty` returned distinct, owned descriptors.
+    let slave = unsafe { OwnedFd::from_raw_fd(slave_fd) };
+    let mut child = Command::new(env!("CARGO_BIN_EXE_orbit-graph"))
+        .current_dir(repository)
+        .env("ORBIT_TOOL_NAME", tool)
+        .env("ORBIT_GRAPH_FORMAT", "table")
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::from(slave))
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .expect("spawn plugin with TTY stdout");
+    {
+        use std::io::Write;
+        child
+            .stdin
+            .as_mut()
+            .expect("plugin stdin")
+            .write_all(input.to_string().as_bytes())
+            .expect("write plugin input");
+    }
+    drop(child.stdin.take());
+    let output = child.wait_with_output().expect("wait for TTY plugin");
+    assert!(
+        output.status.success(),
+        "TTY plugin failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let mut stdout = Vec::new();
+    let mut buffer = [0_u8; 4096];
+    loop {
+        match master.read(&mut buffer) {
+            Ok(0) => break,
+            Ok(count) => stdout.extend_from_slice(&buffer[..count]),
+            Err(error) if error.raw_os_error() == Some(libc::EIO) => break,
+            Err(error) => panic!("read plugin pseudo-terminal: {error}"),
+        }
+    }
+    serde_json::from_slice(&stdout).expect("TTY plugin JSON")
+}
+
 fn run<const N: usize>(repository: &Path, args: [&str; N]) -> Output {
     Command::new(env!("CARGO_BIN_EXE_orbit-graph"))
         .current_dir(repository)
@@ -1244,6 +1388,14 @@ fn run<const N: usize>(repository: &Path, args: [&str; N]) -> Output {
         .args(args)
         .output()
         .expect("run orbit-graph")
+}
+
+fn run_cli<const N: usize>(repository: &Path, args: [&str; N]) -> Output {
+    Command::new(env!("CARGO_BIN_EXE_orbit-graph"))
+        .current_dir(repository)
+        .args(args)
+        .output()
+        .expect("run orbit-graph CLI")
 }
 
 fn run_git<const N: usize>(repository: &Path, args: [&str; N]) {

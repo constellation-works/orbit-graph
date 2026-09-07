@@ -3,8 +3,10 @@ use std::time::Duration;
 use crate::SyncMode;
 use clap::Args;
 use serde::Serialize;
+use serde_json::Value;
 
-use super::{CliError, CommandContext, json_value};
+use super::output::{Column, CommandOutput, TableView, View, ViewBlock};
+use super::{CliError, CommandContext, display_value, json_value};
 
 #[derive(Debug, Args)]
 pub struct SyncCommand {
@@ -39,4 +41,20 @@ struct SyncOutput {
 
 fn duration_millis(duration: Duration) -> u128 {
     duration.as_millis()
+}
+
+pub(crate) fn output(document: Value) -> CommandOutput {
+    let mut table = TableView::new(vec![
+        Column::number("files indexed"),
+        Column::number("changed"),
+        Column::number("removed"),
+        Column::number("duration (ms)"),
+    ]);
+    table.push_row([
+        display_value(&document["files_indexed"]),
+        display_value(&document["files_changed"]),
+        display_value(&document["files_removed"]),
+        display_value(&document["duration_ms"]),
+    ]);
+    CommandOutput::with_view(document, View::Blocks(vec![ViewBlock::table(table)]))
 }
