@@ -248,8 +248,13 @@ orbit-graph recommend --query "repair parser cache" --hybrid-hits hits.json
 Exactly one of `--query` and `--task-id` is required. `--branch` selects the
 history scope (default `main`), `--revision` is resolved to a full commit
 (default: current checkout), and `--cutoff` accepts RFC 3339 or
-`unix:<seconds>`. The hybrid-hit file is a JSON array of objects with `task_id`
-and a finite non-negative `score`. `--task-snapshot` accepts one
+`unix:<seconds>`. Without `--cutoff`, a live request observes evidence as of
+the request time and reports an RFC 3339 `effective_cutoff` with subsecond
+precision; this avoids rejecting a newly captured task snapshot merely because
+it is later than the target commit. Explicit cutoffs remain reproducible
+historical replays with strictly-before evidence semantics. The hybrid-hit file
+is a JSON array of objects with `task_id` and a finite non-negative `score`.
+`--task-snapshot` accepts one
 `TaskAssociation` JSON object and requires `--task-id`; it is never inserted
 into the history index.
 
@@ -283,10 +288,13 @@ uses a `file:` selector only when history has file-only or unresolvable symbol
 evidence, and marks it with `file_fallback` and `fallback_reason`.
 
 `source_freshness`, `resolved_target_revision`, `effective_cutoff`, and
-`fallbacks` make stale/cold-start limitations explicit. Current-tree lexical
-matching remains useful with empty history. Structural expansion is used only
-when the requested revision is the current checkout; a non-HEAD request never
-silently reuses HEAD graph structure. Every cached structural destination is
+`fallbacks` make stale/cold-start limitations explicit. When `cutoff` is
+omitted, `effective_cutoff` is the request observation time captured with
+subsecond precision for ordinary live recommendations; explicit cutoffs retain
+strictly-before historical replay semantics. Current-tree lexical matching
+remains useful with empty history. Structural expansion is used only when the
+requested revision is the current checkout; a non-HEAD request never silently
+reuses HEAD graph structure. Every cached structural destination is
 also resolved against the requested Git tree, so a graph synced before a later
 committed deletion cannot return the removed file or symbol; skipped stale rows
 are explicit in `fallbacks`. These seams let Stage 3 run chronological

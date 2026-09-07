@@ -5,6 +5,7 @@
 use std::fs;
 use std::path::Path;
 use std::process::{Command, Output};
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde_json::Value;
 use tempfile::TempDir;
@@ -361,6 +362,108 @@ fn real_binary_expands_corpus_cochanges_without_temporal_or_duplicate_leakage() 
                 item["selector"]
                     .as_str()
                     .is_some_and(|selector| selector.contains("a.rs"))
+            })
+        }));
+    }
+}
+
+#[test]
+fn real_binary_live_default_cutoff_accepts_new_pending_snapshot() {
+    let fixture = fixture_repository();
+    let old_date = "2000-01-01T00:00:00Z";
+    let amended = Command::new("git")
+        .current_dir(fixture.path())
+        .env("GIT_AUTHOR_DATE", old_date)
+        .env("GIT_COMMITTER_DATE", old_date)
+        .args(["commit", "--amend", "--no-edit"])
+        .output()
+        .expect("amend old target commit");
+    assert!(
+        amended.status.success(),
+        "git amend failed: {}",
+        String::from_utf8_lossy(&amended.stderr)
+    );
+
+    let captured_seconds = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .expect("current time after Unix epoch")
+        .as_secs();
+    let snapshot_path = fixture.path().join("live-pending-snapshot.json");
+    let snapshot = serde_json::json!({
+        "task_id": "PENDING-LIVE",
+        "title": "helper",
+        "description": "new pending work captured after the old target commit",
+        "acceptance_criteria": ["recommend the helper destination"],
+        "source": {"system": "task_service", "record_id": "PENDING-LIVE@1"},
+        "created_at": {
+            "status": "known", "timestamp": "unix:0",
+            "source": {"system": "task_service"}
+        },
+        "snapshot_available_at": {
+            "status": "known", "timestamp": format!("unix:{captured_seconds}"),
+            "source": {"system": "task_service", "record_id": "PENDING-LIVE@1"}
+        },
+        "text_availability": "known_pre_execution",
+        "captured_at": format!("unix:{captured_seconds}")
+    });
+    fs::write(
+        &snapshot_path,
+        serde_json::to_vec(&snapshot).expect("encode live snapshot"),
+    )
+    .expect("write live snapshot");
+
+    let before_future = git_stdout(fixture.path(), ["rev-parse", "HEAD"]);
+    fs::write(
+        fixture.path().join("src/lib.rs"),
+        "pub fn helper() -> i32 { 2 }\n\npub fn entry() -> i32 { helper() }\n",
+    )
+    .expect("edit future delivery");
+    run_git(fixture.path(), ["add", "."]);
+    run_git(fixture.path(), ["commit", "-m", "pending delivery"]);
+    let after_future = git_stdout(fixture.path(), ["rev-parse", "HEAD"]);
+    import_cli_delivery(
+        fixture.path(),
+        &before_future,
+        &after_future,
+        "D-PENDING-LIVE",
+        "PENDING-LIVE",
+        "helper",
+        "2001-01-01T00:00:00Z",
+        "2000-01-01T00:00:00Z",
+    );
+
+    let snapshot_arg = snapshot_path.to_string_lossy();
+    for level in ["file", "symbol"] {
+        let result = run_json(
+            fixture.path(),
+            [
+                "recommend",
+                "--task-id",
+                "PENDING-LIVE",
+                "--task-snapshot",
+                snapshot_arg.as_ref(),
+                "--level",
+                level,
+            ],
+        );
+        let effective_cutoff = result["effective_cutoff"]
+            .as_str()
+            .expect("effective cutoff");
+        assert!(
+            effective_cutoff.contains('T') && effective_cutoff.contains('.'),
+            "live cutoff should preserve subsecond observation time: {effective_cutoff}"
+        );
+        assert!(
+            result["recommendations"]
+                .as_array()
+                .is_some_and(|items| !items.is_empty()),
+            "live recommendation should resolve in {level} mode: {result}"
+        );
+        assert!(result["recommendations"].as_array().is_some_and(|items| {
+            items.iter().all(|item| {
+                item["supporting_delivery_ids"]
+                    .as_array()
+                    .is_some_and(|ids| ids.iter().all(|id| id != "D-PENDING-LIVE"))
             })
         }));
     }

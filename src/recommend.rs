@@ -8,6 +8,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use git2::{
     DiffFindOptions, DiffOptions, ObjectType, Oid, Repository, TreeWalkMode, TreeWalkResult,
@@ -192,7 +193,7 @@ pub struct RecommendationResult {
     pub level: RecommendationLevel,
     /// Fully resolved immutable target commit.
     pub resolved_target_revision: String,
-    /// Explicit cutoff, or the target revision's Git timestamp when omitted.
+    /// Explicit cutoff, or the request observation time with subsecond precision when omitted.
     pub effective_cutoff: String,
     /// History source freshness.
     pub source_freshness: RecommendationFreshness,
@@ -231,13 +232,10 @@ impl RecommendationEngine {
             GraphError::invalid_data("open repository for recommendations", error.to_string())
         })?;
         let target = resolve_target(&repo, request.target_revision.as_deref())?;
-        let target_commit = repo
-            .find_commit(target)
-            .map_err(git_error("load recommendation target"))?;
         let effective_cutoff = request
             .cutoff
             .clone()
-            .unwrap_or_else(|| format!("unix:{}", target_commit.time().seconds()));
+            .map_or_else(current_observation_cutoff, Ok)?;
         let cutoff = parse_timestamp("recommendation cutoff", effective_cutoff.as_str())?;
         let index = HistoryIndex::open(self.repo_root.as_path(), self.landing_branch.as_str())?;
         let status = index.status()?;
@@ -338,6 +336,46 @@ impl RecommendationEngine {
             recommendations,
         })
     }
+}
+
+fn current_observation_cutoff() -> Result<String, GraphError> {
+    let elapsed = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_err(|error| {
+            GraphError::invalid_data("capture recommendation observation time", error.to_string())
+        })?;
+    let seconds = i64::try_from(elapsed.as_secs()).map_err(|error| {
+        GraphError::invalid_data("capture recommendation observation time", error.to_string())
+    })?;
+    let days = seconds.div_euclid(86_400);
+    let day_seconds = seconds.rem_euclid(86_400);
+    let (year, month, day) = civil_from_days(days);
+    let hour = day_seconds / 3_600;
+    let minute = (day_seconds % 3_600) / 60;
+    let second = day_seconds % 60;
+    Ok(format!(
+        "{year:04}-{month:02}-{day:02}T{hour:02}:{minute:02}:{second:02}.{:09}Z",
+        elapsed.subsec_nanos()
+    ))
+}
+
+fn civil_from_days(days_since_unix_epoch: i64) -> (i64, i64, i64) {
+    let shifted = days_since_unix_epoch + 719_468;
+    let era = if shifted >= 0 {
+        shifted
+    } else {
+        shifted - 146_096
+    } / 146_097;
+    let day_of_era = shifted - era * 146_097;
+    let year_of_era =
+        (day_of_era - day_of_era / 1_460 + day_of_era / 36_524 - day_of_era / 146_096) / 365;
+    let year = year_of_era + era * 400;
+    let day_of_year = day_of_era - (365 * year_of_era + year_of_era / 4 - year_of_era / 100);
+    let month_part = (5 * day_of_year + 2) / 153;
+    let day = day_of_year - (153 * month_part + 2) / 5 + 1;
+    let month = month_part + if month_part < 10 { 3 } else { -9 };
+    let year = year + i64::from(month <= 2);
+    (year, month, day)
 }
 
 fn validate_request(request: &RecommendationRequest) -> Result<(), GraphError> {
