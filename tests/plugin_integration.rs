@@ -1334,8 +1334,8 @@ fn plugin_json_with_tty_stdout(repository: &Path, tool: &str, input: Value) -> V
             &raw mut master_fd,
             &raw mut slave_fd,
             std::ptr::null_mut(),
-            std::ptr::null(),
-            std::ptr::null(),
+            std::ptr::null_mut(),
+            std::ptr::null_mut(),
         )
     };
     assert_eq!(opened, 0, "open plugin stdout pseudo-terminal");
