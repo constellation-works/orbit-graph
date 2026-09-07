@@ -1,12 +1,44 @@
 use clap::Args;
+use serde_json::Value;
 
 use crate::Selector;
 
+use super::output::{Column, CommandOutput, TableView, View, ViewBlock};
 use super::{CliError, CommandContext, json_value};
 
 #[derive(Debug, Args)]
 pub struct CalleesCommand {
     symbol: String,
+}
+
+pub(crate) fn output(document: Value) -> CommandOutput {
+    let callees = document["callees"].as_array().cloned().unwrap_or_default();
+    let mut table = TableView::new(vec![
+        Column::text("target"),
+        Column::text("call name"),
+        Column::fixed("confidence"),
+        Column::number("line"),
+    ]);
+    for edge in &callees {
+        table.push_row([
+            edge.get("target_qualified")
+                .filter(|value| !value.is_null())
+                .map_or_else(
+                    || super::display_value(&edge["target_name"]),
+                    super::display_value,
+                ),
+            super::display_value(&edge["target_name"]),
+            super::display_value(&edge["confidence"]),
+            super::display_value(&edge["line"]),
+        ]);
+    }
+    CommandOutput::with_view(
+        document,
+        View::Blocks(vec![ViewBlock::table(
+            table.with_empty_message("symbol has no outbound calls"),
+        )]),
+    )
+    .with_ndjson_records(callees)
 }
 
 impl CalleesCommand {

@@ -1,7 +1,9 @@
 use crate::Selector;
 use crate::{RefConfidence, RefKind, RefOpts};
 use clap::{Args, ValueEnum};
+use serde_json::{Value, json};
 
+use super::output::{Column, CommandOutput, TableView, View, ViewBlock};
 use super::{CliError, CommandContext, json_value};
 
 #[derive(Debug, Args)]
@@ -18,6 +20,97 @@ pub struct RefsCommand {
     confidence: ConfidenceArg,
     #[arg(long, value_enum)]
     kind: Option<RefKindArg>,
+}
+
+pub(crate) fn output(document: Value) -> CommandOutput {
+    let target = document["target"]
+        .get("qualified")
+        .filter(|value| !value.is_null())
+        .map_or_else(
+            || super::display_value(&document["target"]["name"]),
+            super::display_value,
+        );
+    let refs = document["refs"].as_array().cloned().unwrap_or_default();
+    let relations = document["relations"]
+        .as_array()
+        .cloned()
+        .unwrap_or_default();
+    let fallback_refs = document["fallback"]["refs"]
+        .as_array()
+        .cloned()
+        .unwrap_or_default();
+    let mut table = TableView::new(vec![
+        Column::fixed("record"),
+        Column::text("from"),
+        Column::path("file"),
+        Column::number("line"),
+        Column::fixed("kind"),
+        Column::fixed("confidence"),
+        Column::text("target"),
+    ]);
+    for entry in &refs {
+        push_ref_row(&mut table, "reference", entry, "-", target.as_str());
+    }
+    for entry in &relations {
+        push_ref_row(
+            &mut table,
+            "relation",
+            entry,
+            super::display_value(&entry["from"]).as_str(),
+            target.as_str(),
+        );
+    }
+    for entry in &fallback_refs {
+        push_ref_row(&mut table, "fallback", entry, "-", target.as_str());
+    }
+
+    let mut context = document.clone();
+    let mut fallback_context = None;
+    if let Some(object) = context.as_object_mut() {
+        object.remove("refs");
+        object.remove("relations");
+        fallback_context = object.remove("fallback").and_then(|mut fallback| {
+            fallback.as_object_mut()?.remove("refs");
+            Some(fallback)
+        });
+    }
+    let mut records = vec![json!({"record_type": "refs_context", "context": context})];
+    records.extend(
+        refs.into_iter()
+            .map(|entry| json!({"record_type": "reference", "reference": entry})),
+    );
+    records.extend(
+        relations
+            .into_iter()
+            .map(|entry| json!({"record_type": "relation", "relation": entry})),
+    );
+    if let Some(context) = fallback_context {
+        records.push(json!({"record_type": "refs_fallback_context", "context": context}));
+    }
+    records.extend(
+        fallback_refs
+            .into_iter()
+            .map(|entry| json!({"record_type": "fallback_reference", "reference": entry})),
+    );
+    CommandOutput::with_view(
+        document,
+        View::Blocks(vec![ViewBlock::table(table.with_empty_message(format!(
+            "no references or relations found for {target}"
+        )))]),
+    )
+    .with_ndjson_records(records)
+}
+
+fn push_ref_row(table: &mut TableView, record: &str, entry: &Value, from: &str, target: &str) {
+    table.push_row([
+        record.to_owned(),
+        from.to_owned(),
+        super::display_value(&entry["file"]),
+        super::display_value(&entry["line"]),
+        super::display_value(&entry["kind"]),
+        super::display_value(&entry["confidence"]),
+        target.to_owned(),
+    ]);
 }
 
 impl RefsCommand {

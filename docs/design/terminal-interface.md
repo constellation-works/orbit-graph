@@ -103,6 +103,44 @@ following views:
   versions through the same borderless table path. `clean` writes its empty
   diagnostic to stderr.
 
+The exploration and relationship commands use these views:
+
+- `overview` renders aggregate counts, language and symbol-kind counts, files,
+  and (for `--format full`) a file-contextual symbol list.
+- `search` renders one row per match with kind, complete match text, path, and
+  one-based source line. `show` renders resolved metadata followed by source;
+  non-UTF-8 source directs the reader to the byte-preserving JSON view.
+- `refs` combines textual references, structural relations, and explicitly
+  labelled fallback references without dropping any of the three sets.
+  `callees`, `implementors`, and `deps` render one row per returned edge or
+  implementation.
+- `trace` flattens every node in preorder with its depth and complete ancestor
+  traversal. `impact` labels primary and fallback traversal sets and preserves
+  their breadth-first order.
+
+Empty list results write a command-specific diagnostic to stderr and nothing to
+stdout. Full values for every potentially truncated field are available from
+the same invocation with `--format json`; source paths and symbol selectors can
+also be followed with `show file:PATH` or `show symbol:PATH#NAME:KIND`.
+
+## Shared table width and record safety
+
+Table widths use terminal display columns and extended grapheme boundaries, so
+wide characters, emoji, and combining sequences are padded and truncated
+without splitting a visible character. Numeric, status, kind, confidence, and
+other fixed columns do not shrink. Flexible prose shrinks at the tail and paths
+shrink through the middle with `…`; if all flexible columns reach eight display
+columns and the row still does not fit, flexible columns are omitted from the
+right and stderr names them. A terminal narrower than the remaining fixed
+columns receives a separate diagnostic; fixed values are still emitted in
+full.
+
+Table and plain cells are always one physical line. The renderer escapes `\\`
+as `\\\\`, tab as `\\t`, newline as `\\n`, carriage return as `\\r`, byte-sized
+controls as `\\xNN`, and other Unicode controls as `\\u{NNNN}`. This makes the
+tab separator in plain output unambiguous and reversible while leaving JSON and
+NDJSON values untouched.
+
 ### Declared NDJSON records
 
 Commands without a declared stream continue to emit their complete JSON
@@ -119,6 +157,26 @@ The commands with natural repeated records declare these boundaries:
   records and then the full `evaluation_case` records, in document order.
 - `clean`: one `clean_context` record containing `graph_dir`, followed by one
   `deleted_database` record per deleted path.
+- `overview`: one `overview_context` record containing every top-level field
+  except `files`, followed by one `overview_file` record per complete file
+  object (including its nested symbols).
+- `search`: one unchanged match object per result. An empty result emits no
+  records.
+- `show`: one unchanged detail document, including `null` for an unresolved
+  selector.
+- `refs`: one `refs_context`, then the unchanged textual-reference and
+  structural-relation records; an optional `refs_fallback_context` precedes the
+  unchanged fallback-reference records.
+- `callees`: one unchanged callee edge per record.
+- `implementors`: one `implementors_context` carrying `trait_name`, followed by
+  one complete `implementor` record per implementation.
+- `deps`: one `deps_context` carrying `scope`, followed by one complete
+  `import` record per source import.
+- `trace`: one `trace_context` carrying traversal counts and truncation,
+  followed, when present, by one complete `trace_root` record containing the
+  lossless nested tree.
+- `impact`: one `impact_context`, then the primary impact records; an optional
+  `impact_fallback_context` precedes the fallback impact records.
 
 The wrapper's `record_type` identifies how to reconstruct the original list;
 the nested `context`, `recommendation`, `metric`, and `case` values retain the
