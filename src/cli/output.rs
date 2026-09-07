@@ -11,6 +11,8 @@ use std::io::{self, IsTerminal, Write};
 use clap::{Arg, ArgMatches, Command, ValueEnum};
 use serde::Serialize;
 use serde_json::Value;
+use unicode_segmentation::UnicodeSegmentation;
+use unicode_width::UnicodeWidthStr;
 
 use super::CliError;
 
@@ -170,6 +172,8 @@ impl ViewBlock {
 pub struct Column {
     heading: String,
     alignment: Alignment,
+    width_policy: WidthPolicy,
+    truncation: Truncation,
 }
 
 impl Column {
@@ -178,6 +182,28 @@ impl Column {
         Self {
             heading: heading.into(),
             alignment: Alignment::Left,
+            width_policy: WidthPolicy::Flexible,
+            truncation: Truncation::Tail,
+        }
+    }
+
+    /// Construct a left-aligned column that is never shrunk or dropped.
+    pub fn fixed(heading: impl Into<String>) -> Self {
+        Self {
+            heading: heading.into(),
+            alignment: Alignment::Left,
+            width_policy: WidthPolicy::Fixed,
+            truncation: Truncation::Tail,
+        }
+    }
+
+    /// Construct a flexible path-like column truncated through the middle.
+    pub fn path(heading: impl Into<String>) -> Self {
+        Self {
+            heading: heading.into(),
+            alignment: Alignment::Left,
+            width_policy: WidthPolicy::Flexible,
+            truncation: Truncation::Middle,
         }
     }
 
@@ -186,6 +212,8 @@ impl Column {
         Self {
             heading: heading.into(),
             alignment: Alignment::Right,
+            width_policy: WidthPolicy::Fixed,
+            truncation: Truncation::Tail,
         }
     }
 }
@@ -194,6 +222,18 @@ impl Column {
 enum Alignment {
     Left,
     Right,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum WidthPolicy {
+    Fixed,
+    Flexible,
+}
+
+#[derive(Clone, Copy, Debug)]
+enum Truncation {
+    Tail,
+    Middle,
 }
 
 /// A borderless table whose redirected form is complete tab-separated records.
@@ -404,12 +444,32 @@ fn emit_table(
     }
     if sink.mode == OutputMode::Plain {
         for row in &table.rows {
-            writeln!(stdout, "{}", row.join("\t")).map_err(CliError::Stdout)?;
+            let cells = row.iter().map(|cell| escape_cell(cell)).collect::<Vec<_>>();
+            writeln!(stdout, "{}", cells.join("\t")).map_err(CliError::Stdout)?;
         }
         return Ok(());
     }
 
-    let widths = table_widths(table, sink.width);
+    let layout = table_layout(table, sink.width);
+    if !layout.dropped.is_empty() {
+        writeln!(
+            stderr,
+            "terminal width {}: omitted columns {} (use --format json for full values)",
+            sink.width,
+            layout.dropped.join(", ")
+        )
+        .map_err(CliError::Stderr)?;
+        stderr.flush().map_err(CliError::Stderr)?;
+    }
+    if let Some(required) = layout.fixed_width_required {
+        writeln!(
+            stderr,
+            "terminal width {} is narrower than the {required} columns required by fixed fields",
+            sink.width
+        )
+        .map_err(CliError::Stderr)?;
+        stderr.flush().map_err(CliError::Stderr)?;
+    }
     write_table_row(
         stdout,
         &table
@@ -418,77 +478,195 @@ fn emit_table(
             .map(|column| column.heading.to_uppercase())
             .collect::<Vec<_>>(),
         &table.columns,
-        &widths,
+        &layout,
     )?;
     for row in &table.rows {
-        write_table_row(stdout, row, &table.columns, &widths)?;
+        write_table_row(stdout, row, &table.columns, &layout)?;
     }
     Ok(())
 }
 
-fn table_widths(table: &TableView, sink_width: u16) -> Vec<usize> {
-    let mut widths = table
+#[derive(Debug, PartialEq, Eq)]
+struct TableLayout {
+    indices: Vec<usize>,
+    widths: Vec<usize>,
+    dropped: Vec<String>,
+    fixed_width_required: Option<usize>,
+}
+
+fn table_layout(table: &TableView, sink_width: u16) -> TableLayout {
+    let natural_widths = table
         .columns
         .iter()
         .enumerate()
         .map(|(index, column)| {
-            table
-                .rows
-                .iter()
-                .fold(display_width(&column.heading), |width, row| {
-                    width.max(display_width(&row[index]))
-                })
+            table.rows.iter().fold(
+                display_width(&escape_cell(&column.heading)),
+                |width, row| width.max(display_width(&escape_cell(&row[index]))),
+            )
         })
         .collect::<Vec<_>>();
-    if sink_width == 0 || widths.is_empty() {
-        return widths;
-    }
-    let gutters = 2 * widths.len().saturating_sub(1);
-    let available = usize::from(sink_width).saturating_sub(gutters);
-    while widths.iter().sum::<usize>() > available {
-        let Some(width) = widths
-            .iter_mut()
-            .filter(|width| **width > 8)
-            .max_by_key(|width| **width)
-        else {
-            break;
+    let mut indices = (0..natural_widths.len()).collect::<Vec<_>>();
+    let mut dropped = Vec::new();
+    if sink_width == 0 || natural_widths.is_empty() {
+        return TableLayout {
+            indices,
+            widths: natural_widths,
+            dropped,
+            fixed_width_required: None,
         };
-        *width -= 1;
     }
-    widths
+    let sink_width = usize::from(sink_width);
+    let widths = loop {
+        let mut widths = indices
+            .iter()
+            .map(|index| natural_widths[*index])
+            .collect::<Vec<_>>();
+        while rendered_width(&widths) > sink_width {
+            let Some((position, _)) = widths
+                .iter()
+                .enumerate()
+                .filter(|(position, width)| {
+                    table.columns[indices[*position]].width_policy == WidthPolicy::Flexible
+                        && **width > 8
+                })
+                .max_by_key(|(_, width)| **width)
+            else {
+                break;
+            };
+            widths[position] -= 1;
+        }
+        if rendered_width(&widths) <= sink_width {
+            break widths;
+        }
+        let Some(position) = indices
+            .iter()
+            .rposition(|index| table.columns[*index].width_policy == WidthPolicy::Flexible)
+        else {
+            break widths;
+        };
+        let index = indices.remove(position);
+        dropped.push(table.columns[index].heading.to_uppercase());
+    };
+    dropped.reverse();
+    let required = rendered_width(&widths);
+    TableLayout {
+        indices,
+        widths,
+        dropped,
+        fixed_width_required: (required > sink_width).then_some(required),
+    }
+}
+
+fn rendered_width(widths: &[usize]) -> usize {
+    widths.iter().sum::<usize>() + 2 * widths.len().saturating_sub(1)
 }
 
 fn write_table_row(
     writer: &mut dyn Write,
     cells: &[String],
     columns: &[Column],
-    widths: &[usize],
+    layout: &TableLayout,
 ) -> Result<(), CliError> {
-    for (index, ((cell, column), width)) in cells.iter().zip(columns).zip(widths).enumerate() {
-        if index > 0 {
+    for (position, (index, width)) in layout.indices.iter().zip(&layout.widths).enumerate() {
+        if position > 0 {
             writer.write_all(b"  ").map_err(CliError::Stdout)?;
         }
-        let cell = truncate(cell, *width);
+        let column = &columns[*index];
+        let escaped = escape_cell(&cells[*index]);
+        let cell = truncate(&escaped, *width, column.truncation);
+        let padding = " ".repeat(width.saturating_sub(display_width(&cell)));
         match column.alignment {
-            Alignment::Left => write!(writer, "{cell:<width$}").map_err(CliError::Stdout)?,
-            Alignment::Right => write!(writer, "{cell:>width$}").map_err(CliError::Stdout)?,
+            Alignment::Left => write!(writer, "{cell}{padding}").map_err(CliError::Stdout)?,
+            Alignment::Right => write!(writer, "{padding}{cell}").map_err(CliError::Stdout)?,
         }
     }
     writer.write_all(b"\n").map_err(CliError::Stdout)
 }
 
-fn truncate(value: &str, width: usize) -> String {
+fn truncate(value: &str, width: usize, strategy: Truncation) -> String {
     if display_width(value) <= width {
         return value.to_owned();
     }
     if width <= 1 {
         return "…".to_owned();
     }
-    value.chars().take(width - 1).collect::<String>() + "…"
+    match strategy {
+        Truncation::Tail => truncate_tail(value, width),
+        Truncation::Middle => truncate_middle(value, width),
+    }
 }
 
 fn display_width(value: &str) -> usize {
-    value.chars().count()
+    UnicodeWidthStr::width(value)
+}
+
+fn truncate_tail(value: &str, width: usize) -> String {
+    let mut rendered = String::new();
+    let mut used = 0;
+    for grapheme in value.graphemes(true) {
+        let grapheme_width = display_width(grapheme);
+        if used + grapheme_width > width - 1 {
+            break;
+        }
+        rendered.push_str(grapheme);
+        used += grapheme_width;
+    }
+    rendered.push('…');
+    rendered
+}
+
+fn truncate_middle(value: &str, width: usize) -> String {
+    let graphemes = value.graphemes(true).collect::<Vec<_>>();
+    let available = width - 1;
+    let left_limit = available.div_ceil(2);
+    let right_limit = available / 2;
+    let mut left = String::new();
+    let mut left_width = 0;
+    let mut split = 0;
+    for (index, grapheme) in graphemes.iter().enumerate() {
+        let grapheme_width = display_width(grapheme);
+        if left_width + grapheme_width > left_limit {
+            break;
+        }
+        left.push_str(grapheme);
+        left_width += grapheme_width;
+        split = index + 1;
+    }
+    let mut right = Vec::new();
+    let mut right_width = 0;
+    for grapheme in graphemes[split..].iter().rev() {
+        let grapheme_width = display_width(grapheme);
+        if right_width + grapheme_width > right_limit {
+            break;
+        }
+        right.push(*grapheme);
+        right_width += grapheme_width;
+    }
+    right.reverse();
+    format!("{left}…{}", right.concat())
+}
+
+fn escape_cell(value: &str) -> String {
+    let mut escaped = String::with_capacity(value.len());
+    for character in value.chars() {
+        match character {
+            '\\' => escaped.push_str("\\\\"),
+            '\t' => escaped.push_str("\\t"),
+            '\n' => escaped.push_str("\\n"),
+            '\r' => escaped.push_str("\\r"),
+            character if character.is_control() && u32::from(character) <= 0xff => {
+                use std::fmt::Write as _;
+                let _ = write!(escaped, "\\x{:02X}", u32::from(character));
+            }
+            character if character.is_control() => {
+                use std::fmt::Write as _;
+                let _ = write!(escaped, "\\u{{{:X}}}", u32::from(character));
+            }
+            character => escaped.push(character),
+        }
+    }
+    escaped
 }
 
 fn write_json(writer: &mut dyn Write, value: &Value, pretty: bool) -> Result<(), CliError> {
@@ -730,6 +908,124 @@ mod tests {
         let mut stdout = Vec::new();
         emit(&output, sink, &mut stdout, &mut Vec::new()).expect("render plain output");
         assert_eq!(stdout, b"a/very/long/path.rs\t12\n");
+    }
+
+    #[test]
+    fn plain_rows_escape_separators_and_controls_losslessly() {
+        let mut table = TableView::new(vec![Column::text("value"), Column::fixed("kind")]);
+        table.push_row(["line 1\nline\t2\\tail\u{7}", "text"]);
+        let output = CommandOutput::with_view(
+            json!({"records": [{"value": "line 1\nline\t2\\tail\u{7}"}]}),
+            View::Blocks(vec![ViewBlock::table(table)]),
+        );
+        let sink = OutputSink::resolve(false, &SinkEnvironment::default(), None, None);
+        let mut stdout = Vec::new();
+        emit(&output, sink, &mut stdout, &mut Vec::new()).expect("render escaped row");
+        assert_eq!(stdout, b"line 1\\nline\\t2\\\\tail\\x07\ttext\n");
+        assert_eq!(stdout.iter().filter(|byte| **byte == b'\n').count(), 1);
+    }
+
+    #[test]
+    fn unicode_width_and_padding_use_display_columns_and_graphemes() {
+        assert_eq!(display_width("e\u{301}"), 1);
+        assert_eq!(display_width("界"), 2);
+        assert_eq!(truncate("Ae\u{301}BC", 3, Truncation::Tail), "Ae\u{301}…");
+
+        let mut table = TableView::new(vec![Column::text("name"), Column::number("count")]);
+        table.push_row(["界", "2"]);
+        table.push_row(["e\u{301}", "10"]);
+        let output = CommandOutput::with_view(
+            json!({"records": []}),
+            View::Blocks(vec![ViewBlock::table(table)]),
+        );
+        let sink = OutputSink::resolve(
+            true,
+            &SinkEnvironment {
+                columns: Some("20".to_owned()),
+                ..SinkEnvironment::default()
+            },
+            None,
+            Some(FormatArg::Table),
+        );
+        let mut stdout = Vec::new();
+        emit(&output, sink, &mut stdout, &mut Vec::new()).expect("render Unicode table");
+        assert_eq!(
+            String::from_utf8(stdout).expect("UTF-8"),
+            "NAME  COUNT\n界        2\ne\u{301}        10\n"
+        );
+    }
+
+    #[test]
+    fn narrow_layout_preserves_fixed_columns_and_drops_flexible_from_the_right() {
+        let mut table = TableView::new(vec![
+            Column::fixed("id"),
+            Column::path("path"),
+            Column::text("description"),
+            Column::number("count"),
+        ]);
+        table.push_row([
+            "ORB-12345",
+            "crates/very/long/path/to/file.rs",
+            "a long human description",
+            "1234",
+        ]);
+        let layout = table_layout(&table, 33);
+        assert_eq!(layout.indices, vec![0, 1, 3]);
+        assert_eq!(layout.dropped, vec!["DESCRIPTION"]);
+        assert_eq!(layout.widths[0], 9);
+        assert_eq!(layout.widths[1], 15);
+        assert_eq!(layout.widths[2], 5);
+
+        let output = CommandOutput::with_view(
+            json!({"records": []}),
+            View::Blocks(vec![ViewBlock::table(table)]),
+        );
+        let sink = OutputSink::resolve(
+            true,
+            &SinkEnvironment {
+                columns: Some("33".to_owned()),
+                ..SinkEnvironment::default()
+            },
+            None,
+            Some(FormatArg::Table),
+        );
+        let mut stdout = Vec::new();
+        let mut stderr = Vec::new();
+        emit(&output, sink, &mut stdout, &mut stderr).expect("render narrow table");
+        let stdout = String::from_utf8(stdout).expect("UTF-8");
+        assert!(stdout.contains("crates/…file.rs"), "{stdout}");
+        assert_eq!(stdout.lines().count(), 2);
+        assert!(
+            String::from_utf8(stderr)
+                .expect("UTF-8")
+                .contains("omitted columns DESCRIPTION")
+        );
+    }
+
+    #[test]
+    fn terminal_narrower_than_fixed_fields_reports_the_required_width() {
+        let mut table = TableView::new(vec![Column::fixed("status"), Column::number("count")]);
+        table.push_row(["in-progress", "1234"]);
+        let output = CommandOutput::with_view(
+            json!({"records": []}),
+            View::Blocks(vec![ViewBlock::table(table)]),
+        );
+        let sink = OutputSink::resolve(
+            true,
+            &SinkEnvironment {
+                columns: Some("8".to_owned()),
+                ..SinkEnvironment::default()
+            },
+            None,
+            Some(FormatArg::Table),
+        );
+        let mut stderr = Vec::new();
+        emit(&output, sink, &mut Vec::new(), &mut stderr).expect("render fixed table");
+        assert!(
+            String::from_utf8(stderr)
+                .expect("UTF-8")
+                .contains("required by fixed fields")
+        );
     }
 
     #[test]

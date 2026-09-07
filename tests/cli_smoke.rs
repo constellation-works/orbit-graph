@@ -3,12 +3,14 @@
 #![allow(clippy::expect_used)]
 
 use std::fs;
+#[cfg(unix)]
+use std::io::Read;
 use std::path::Path;
 use std::process::{Command, Output, Stdio};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 #[cfg(unix)]
-use std::os::fd::OwnedFd;
+use std::os::fd::{FromRawFd, OwnedFd};
 #[cfg(unix)]
 use std::os::unix::net::UnixStream;
 
@@ -331,6 +333,146 @@ fn real_binary_resolves_environment_modes_and_overview_format_without_ambiguity(
         assert!(plain.status.success());
         assert!(!String::from_utf8_lossy(&plain.stdout).contains('\u{1b}'));
     }
+}
+
+#[test]
+fn real_binary_renders_exploration_views_and_lossless_record_units() {
+    let fixture = fixture_repository();
+    let _ = run_json(fixture.path(), ["sync", "--full"]);
+
+    let commands: &[(&[&str], &[&str])] = &[
+        (
+            &["overview", "--format", "full"],
+            &["FILES", "SYMBOLS", "src/lib.rs"],
+        ),
+        (&["search", "helper"], &["KIND", "MATCH", "PATH", "helper"]),
+        (
+            &["show", "symbol:src/lib.rs#entry:function"],
+            &["KIND", "FILE", "Source:", "pub fn entry"],
+        ),
+        (
+            &[
+                "refs",
+                "symbol:src/lib.rs#helper:function",
+                "--confidence",
+                "fuzzy",
+            ],
+            &["RECORD", "FILE", "CONFIDENCE", "src/lib.rs"],
+        ),
+        (
+            &["callees", "symbol:src/lib.rs#entry:function"],
+            &["TARGET", "CALL NAME", "helper"],
+        ),
+        (
+            &["implementors", "symbol:src/lib.rs#Renderer:trait"],
+            &["TYPE", "TRAIT", "Human", "Renderer"],
+        ),
+        (
+            &["deps", "file:src/lib.rs"],
+            &["FROM FILE", "TARGET PATH", "std::fmt"],
+        ),
+        (
+            &["trace", "command:ship", "--depth", "2"],
+            &["DEPTH", "TRAVERSAL", "ship", "helper"],
+        ),
+        (
+            &[
+                "impact",
+                "symbol:src/lib.rs#helper:function",
+                "--depth",
+                "2",
+                "--confidence",
+                "fuzzy",
+            ],
+            &["SET", "DISTANCE", "SYMBOL", "entry"],
+        ),
+    ];
+    for (args, expected) in commands {
+        let mut table_args = vec!["--format", "table"];
+        table_args.extend_from_slice(args);
+        let output = Command::new(env!("CARGO_BIN_EXE_orbit-graph"))
+            .current_dir(fixture.path())
+            .args(&table_args)
+            .output()
+            .expect("run human exploration view");
+        assert!(
+            output.status.success(),
+            "{args:?}: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        let human = String::from_utf8(output.stdout).expect("human view is UTF-8");
+        assert!(!human.trim_start().starts_with('{'), "{args:?}: {human}");
+        for needle in *expected {
+            assert!(
+                human.contains(needle),
+                "{args:?} missing {needle:?}: {human}"
+            );
+        }
+
+        let mut json_args = vec!["--format", "json"];
+        json_args.extend_from_slice(args);
+        let json = Command::new(env!("CARGO_BIN_EXE_orbit-graph"))
+            .current_dir(fixture.path())
+            .args(&json_args)
+            .output()
+            .expect("run exploration JSON");
+        assert!(json.status.success(), "{args:?}");
+        let document =
+            serde_json::from_slice::<Value>(&json.stdout).expect("lossless JSON document");
+
+        let mut ndjson_args = vec!["--format", "ndjson"];
+        ndjson_args.extend_from_slice(args);
+        let ndjson = Command::new(env!("CARGO_BIN_EXE_orbit-graph"))
+            .current_dir(fixture.path())
+            .args(&ndjson_args)
+            .output()
+            .expect("run exploration NDJSON");
+        assert!(ndjson.status.success(), "{args:?}");
+        let records = parse_ndjson(&ndjson.stdout);
+        assert!(!records.is_empty(), "{args:?} has no NDJSON record unit");
+        assert_exploration_record_units(args[0], &document, &records);
+    }
+
+    let plain = run(fixture.path(), ["search", "unicode_helper"]);
+    assert!(plain.status.success());
+    let plain = String::from_utf8(plain.stdout).expect("plain view is UTF-8");
+    assert!(!plain.starts_with("KIND"));
+    assert_eq!(plain.lines().count(), 1);
+    assert_eq!(plain.trim_end().split('\t').count(), 4);
+    assert!(plain.contains("界界"));
+    assert!(plain.contains("e\u{301}_very_long_component_name.rs"));
+
+    for args in [
+        vec!["search", "definitely_absent"],
+        vec!["callees", "symbol:src/lib.rs#helper:function"],
+        vec!["implementors", "symbol:src/lib.rs#Missing:trait"],
+    ] {
+        let output = Command::new(env!("CARGO_BIN_EXE_orbit-graph"))
+            .current_dir(fixture.path())
+            .args(args)
+            .output()
+            .expect("run empty exploration view");
+        assert!(output.status.success());
+        assert!(output.stdout.is_empty());
+        assert!(!output.stderr.is_empty());
+    }
+}
+
+#[cfg(unix)]
+#[test]
+fn real_binary_adapts_unicode_paths_to_narrow_terminals() {
+    let fixture = fixture_repository();
+    let _ = run_json(fixture.path(), ["sync", "--full"]);
+
+    let (wide, wide_stderr) = run_in_pty(fixture.path(), &["search", "unicode_helper"], 64);
+    assert!(wide.contains('…'), "{wide}");
+    assert!(wide.contains("界"), "{wide}");
+    assert_eq!(wide.lines().count(), 2, "{wide}");
+    assert!(wide_stderr.is_empty(), "{wide_stderr}");
+
+    let (narrow, narrow_stderr) = run_in_pty(fixture.path(), &["search", "unicode_helper"], 20);
+    assert_eq!(narrow.lines().count(), 2, "{narrow}");
+    assert!(narrow_stderr.contains("omitted columns"), "{narrow_stderr}");
 }
 
 #[cfg(unix)]
@@ -1311,6 +1453,86 @@ fn parse_ndjson(bytes: &[u8]) -> Vec<Value> {
         .collect()
 }
 
+fn assert_exploration_record_units(command: &str, document: &Value, records: &[Value]) {
+    let array = |field: &str| document[field].as_array().cloned().unwrap_or_default();
+    match command {
+        "search" => assert_eq!(records, array("matches")),
+        "show" => assert_eq!(records, std::slice::from_ref(document)),
+        "callees" => assert_eq!(records, array("callees")),
+        "overview" => {
+            let files = array("files");
+            assert_eq!(records.len(), files.len() + 1);
+            assert_eq!(records[0]["record_type"], "overview_context");
+            assert_eq!(
+                records[0]["context"]["total_files"],
+                document["total_files"]
+            );
+            for (record, file) in records[1..].iter().zip(files) {
+                assert_eq!(record["record_type"], "overview_file");
+                assert_eq!(record["file"], file);
+            }
+        }
+        "refs" => {
+            let refs = array("refs");
+            let relations = array("relations");
+            assert_eq!(records[0]["record_type"], "refs_context");
+            assert_eq!(records[0]["context"]["target"], document["target"]);
+            assert_eq!(
+                records
+                    .iter()
+                    .filter(|record| record["record_type"] == "reference")
+                    .count(),
+                refs.len()
+            );
+            assert_eq!(
+                records
+                    .iter()
+                    .filter(|record| record["record_type"] == "relation")
+                    .count(),
+                relations.len()
+            );
+        }
+        "implementors" => {
+            let implementors = array("implementors");
+            assert_eq!(records.len(), implementors.len() + 1);
+            assert_eq!(records[0]["context"]["trait_name"], document["trait_name"]);
+            for (record, implementor) in records[1..].iter().zip(implementors) {
+                assert_eq!(record["implementor"], implementor);
+            }
+        }
+        "deps" => {
+            let imports = array("imports");
+            assert_eq!(records.len(), imports.len() + 1);
+            assert_eq!(records[0]["context"]["scope"], document["scope"]);
+            for (record, import) in records[1..].iter().zip(imports) {
+                assert_eq!(record["import"], import);
+            }
+        }
+        "trace" => {
+            assert_eq!(
+                records[0]["context"]["visited_nodes"],
+                document["visited_nodes"]
+            );
+            assert_eq!(records[1]["root"], document["root"]);
+        }
+        "impact" => {
+            let touched = array("touched");
+            assert_eq!(
+                records[0]["context"]["visited_nodes"],
+                document["visited_nodes"]
+            );
+            assert_eq!(
+                records
+                    .iter()
+                    .filter(|record| record["record_type"] == "impact")
+                    .count(),
+                touched.len()
+            );
+        }
+        _ => panic!("unexpected exploration command {command}"),
+    }
+}
+
 #[allow(clippy::too_many_arguments)]
 fn import_cli_delivery(
     root: &Path,
@@ -1423,12 +1645,79 @@ fn fixture_repository() -> TempDir {
     fs::create_dir_all(fixture.path().join("src")).expect("create source directory");
     fs::write(
         fixture.path().join("src/lib.rs"),
-        "pub fn helper() -> i32 { 1 }\n\npub fn entry() -> i32 { helper() }\n",
+        "use std::fmt::Debug;\n\npub trait Renderer {}\npub struct Human;\nimpl Renderer for Human {}\n\npub fn helper() -> i32 { 1 }\n\npub fn entry() -> i32 { helper() }\n\npub fn caller() -> i32 { entry() }\n",
     )
     .expect("write fixture source");
+    let unicode_dir = fixture.path().join("src/界界");
+    fs::create_dir_all(&unicode_dir).expect("create Unicode source directory");
+    fs::write(
+        unicode_dir.join("e\u{301}_very_long_component_name.rs"),
+        "pub fn unicode_helper() -> &'static str { \"café\" }\n",
+    )
+    .expect("write Unicode fixture source");
+    fs::write(
+        fixture.path().join("src/cli.py"),
+        "import click\n\n@click.command()\ndef ship():\n    helper()\n\ndef helper():\n    return 'ok'\n",
+    )
+    .expect("write command fixture source");
     run_git(fixture.path(), ["add", "."]);
     run_git(fixture.path(), ["commit", "-m", "fixture"]);
     fixture
+}
+
+#[cfg(unix)]
+fn run_in_pty(cwd: &Path, args: &[&str], columns: u16) -> (String, String) {
+    let mut master = -1;
+    let mut slave = -1;
+    let size = libc::winsize {
+        ws_row: 24,
+        ws_col: columns,
+        ws_xpixel: 0,
+        ws_ypixel: 0,
+    };
+    // SAFETY: openpty initializes both descriptors on success; no termios is supplied.
+    let result = unsafe {
+        libc::openpty(
+            &raw mut master,
+            &raw mut slave,
+            std::ptr::null_mut(),
+            std::ptr::null(),
+            &raw const size,
+        )
+    };
+    assert_eq!(result, 0, "openpty failed");
+    // SAFETY: successful openpty returned newly owned file descriptors.
+    let master = unsafe { OwnedFd::from_raw_fd(master) };
+    // SAFETY: successful openpty returned newly owned file descriptors.
+    let slave = unsafe { OwnedFd::from_raw_fd(slave) };
+    let output = Command::new(env!("CARGO_BIN_EXE_orbit-graph"))
+        .current_dir(cwd)
+        .args(args)
+        .stdout(Stdio::from(slave))
+        .output()
+        .expect("run orbit-graph in PTY");
+    assert!(
+        output.status.success(),
+        "PTY command failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let mut reader = std::fs::File::from(master);
+    let mut stdout = Vec::new();
+    loop {
+        let mut buffer = [0_u8; 4096];
+        match reader.read(&mut buffer) {
+            Ok(0) => break,
+            Ok(count) => stdout.extend_from_slice(&buffer[..count]),
+            Err(error) if error.raw_os_error() == Some(libc::EIO) => break,
+            Err(error) => panic!("read PTY output: {error}"),
+        }
+    }
+    (
+        String::from_utf8(stdout)
+            .expect("PTY output is UTF-8")
+            .replace("\r\n", "\n"),
+        String::from_utf8(output.stderr).expect("stderr is UTF-8"),
+    )
 }
 
 fn run_git<const N: usize>(cwd: &Path, args: [&str; N]) {

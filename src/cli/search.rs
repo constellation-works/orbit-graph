@@ -1,6 +1,8 @@
 use crate::{SearchKind, SearchQuery};
 use clap::{Args, ValueEnum};
+use serde_json::Value;
 
+use super::output::{Column, CommandOutput, TableView, View, ViewBlock};
 use super::{CliError, CommandContext, json_value};
 
 #[derive(Debug, Args)]
@@ -12,6 +14,33 @@ pub struct SearchCommand {
     lang: Option<String>,
     #[arg(long)]
     limit: Option<usize>,
+}
+
+pub(crate) fn output(document: Value) -> CommandOutput {
+    let matches = document["matches"].as_array().cloned().unwrap_or_default();
+    let mut table = TableView::new(vec![
+        Column::fixed("kind"),
+        Column::text("match"),
+        Column::path("path"),
+        Column::number("line"),
+    ]);
+    for item in &matches {
+        table.push_row([
+            super::display_value(&item["kind"]),
+            item.get("name")
+                .or_else(|| item.get("value"))
+                .map_or_else(|| "-".to_owned(), super::display_value),
+            super::display_value(&item["path"]),
+            super::display_value(&item["line"]),
+        ]);
+    }
+    CommandOutput::with_view(
+        document,
+        View::Blocks(vec![ViewBlock::table(
+            table.with_empty_message("no search matches"),
+        )]),
+    )
+    .with_ndjson_records(matches)
 }
 
 impl SearchCommand {

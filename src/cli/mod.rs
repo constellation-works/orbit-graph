@@ -99,6 +99,15 @@ impl Cli {
 impl Command {
     fn output(&self, document: Value) -> CommandOutput {
         match self {
+            Self::Overview(_) => overview::output(document),
+            Self::Search(_) => search::output(document),
+            Self::Show(_) => show::output(document),
+            Self::Refs(_) => refs::output(document),
+            Self::Callees(_) => callees::output(document),
+            Self::Implementors(_) => implementors::output(document),
+            Self::Deps(_) => deps::output(document),
+            Self::Trace(_) => trace::output(document),
+            Self::Impact(_) => impact::output(document),
             Self::Recommend(_) => recommend::output(document),
             Self::History(command) => command.output(document),
             Self::Evaluate(_) => evaluate::output(document),
@@ -106,7 +115,6 @@ impl Command {
             Self::DbPath(_) => db_path::output(document),
             Self::Clean(_) => clean::output(document),
             Self::Version(_) => version::output(document),
-            _ => CommandOutput::document(document),
         }
     }
 
