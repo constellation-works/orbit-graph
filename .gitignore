@@ -1,0 +1,6 @@
+.orbit/*
+!.orbit/auto_tasks/
+!.orbit/resources/
+!.orbit/routines/
+!.orbit/config.toml
+.orbit/**/*.lock

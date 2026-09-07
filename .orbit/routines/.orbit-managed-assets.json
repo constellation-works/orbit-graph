@@ -1,0 +1,85 @@
+{
+  "schemaVersion": 2,
+  "assetKind": "routine",
+  "assets": {
+    "auto_task_scheduler": "9d9ea7278cb04ebd47f20b5a3b678d3dca41536a51bf3371db3a71ca8480cdc2",
+    "ci_failure_sweep": "4c1853d2ad006218205c25de6bafeaa7aaeff0170adab634ea9cbd0d1b37f3af",
+    "dependabot_alert_sweep": "7c209292987565fa3f916f62e94787b852f7d6217ba5f45f5de7274e399a2efd",
+    "ship_sweep": "5fb8c0e552775cb7e9dbe41db456be1a9458151d0c975415b7a2b2933d86b9f0",
+    "task_pilot": "188e38c79920d35fb5e1762e97cdfe18508b1338931d9345793c461bbd0aeb0e",
+    "task_triage": "1e47b10968ec0bad38f26a6fb834243c9872fcf673e90b9551a5d6d499bb51ea",
+    "worktree_gc": "f5b66071e3c98f97a649b7c5be20eb1b194a2a4eb8d636bdcd481cf295170a56"
+  },
+  "routineProvenance": {
+    "auto_task_scheduler": {
+      "templateDigest": "7f3b1a41dfe43b5445b47450f21d8e424fcdeeaa977a6f09d4ded03fc7ed16be",
+      "renderedDigest": "9d9ea7278cb04ebd47f20b5a3b678d3dca41536a51bf3371db3a71ca8480cdc2",
+      "binding": {
+        "name": "auto-task-scheduler-orbit-graph",
+        "hosts": [
+          "dk-server-1"
+        ]
+      }
+    },
+    "ci_failure_sweep": {
+      "templateDigest": "a1b01d81293cbddb16f636aaf1d097a1ef7c1a90f88046a0b9223bc1a6158825",
+      "renderedDigest": "4c1853d2ad006218205c25de6bafeaa7aaeff0170adab634ea9cbd0d1b37f3af",
+      "binding": {
+        "name": "ci-failure-sweep-orbit-graph",
+        "hosts": [
+          "dk-server-1"
+        ]
+      }
+    },
+    "dependabot_alert_sweep": {
+      "templateDigest": "e66de2d11cf610f8bb9100845aafe8a85a33bc5678a10e30bd062d6894ad0d0f",
+      "renderedDigest": "7c209292987565fa3f916f62e94787b852f7d6217ba5f45f5de7274e399a2efd",
+      "binding": {
+        "name": "dependabot-alert-sweep-orbit-graph",
+        "hosts": [
+          "dk-server-1"
+        ]
+      }
+    },
+    "ship_sweep": {
+      "templateDigest": "416134b342e33f1b2565b88bc2e41b885a39b21c02324f0c8ed79bec74c562d1",
+      "renderedDigest": "5fb8c0e552775cb7e9dbe41db456be1a9458151d0c975415b7a2b2933d86b9f0",
+      "binding": {
+        "name": "ship-sweep-orbit-graph",
+        "hosts": [
+          "dk-server-1"
+        ]
+      }
+    },
+    "task_pilot": {
+      "templateDigest": "f8b9699a0dc505ea5cbe44998b88995b8720d6e0bdde3fa6ab3f40bec863f280",
+      "renderedDigest": "188e38c79920d35fb5e1762e97cdfe18508b1338931d9345793c461bbd0aeb0e",
+      "binding": {
+        "name": "task-pilot-orbit-graph",
+        "hosts": [
+          "dk-server-1"
+        ]
+      }
+    },
+    "task_triage": {
+      "templateDigest": "21feb397078d47165a0e2a618e8f0dfc97cdbd02c60d0595d71b43b20abd7c5e",
+      "renderedDigest": "1e47b10968ec0bad38f26a6fb834243c9872fcf673e90b9551a5d6d499bb51ea",
+      "binding": {
+        "name": "task-triage-orbit-graph",
+        "hosts": [
+          "dk-server-1"
+        ]
+      }
+    },
+    "worktree_gc": {
+      "templateDigest": "b03d4f900f0746dd317d82fc11b6cd81a398edee18519e3f650d37ed9195a70d",
+      "renderedDigest": "f5b66071e3c98f97a649b7c5be20eb1b194a2a4eb8d636bdcd481cf295170a56",
+      "binding": {
+        "name": "worktree-gc-orbit-graph",
+        "hosts": [
+          "dk-server-1"
+        ]
+      }
+    }
+  }
+}
