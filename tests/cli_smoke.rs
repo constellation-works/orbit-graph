@@ -7,9 +7,11 @@ use std::path::Path;
 use std::process::{Command, Output};
 use std::time::{SystemTime, UNIX_EPOCH};
 
+use clap::CommandFactory;
 use serde_json::Value;
 use tempfile::TempDir;
 
+use orbit_graph::cli::Cli;
 use orbit_graph::{HistoryIndex, TaskTextAvailability, TemporalStatus};
 
 #[test]
@@ -101,13 +103,103 @@ fn real_binary_help_succeeds() {
     let output = run(fixture.path(), ["--help"]);
 
     assert!(output.status.success());
-    assert!(String::from_utf8_lossy(&output.stdout).contains("Usage: orbit-graph <COMMAND>"));
+    let help = String::from_utf8_lossy(&output.stdout);
+    assert!(help.contains("Usage: orbit-graph <COMMAND>"));
+    for heading in [
+        "Explore code:",
+        "Follow relationships:",
+        "Recommendations and history:",
+        "Index and utilities:",
+    ] {
+        assert!(help.contains(heading), "missing help heading: {heading}");
+    }
+    for command in Cli::command()
+        .get_subcommands()
+        .map(|command| command.get_name())
+    {
+        assert!(
+            help.lines()
+                .any(|line| { line.split_whitespace().next() == Some(command) }),
+            "registered command missing from help: {command}"
+        );
+    }
+    for (command, description) in [
+        ("overview", "Summarize indexed files and symbols"),
+        (
+            "search",
+            "Search indexed symbols, strings, and configuration keys",
+        ),
+        ("show", "Show source and metadata for a graph selector"),
+        ("refs", "List references to a symbol"),
+        ("callees", "List outbound calls from a function or command"),
+        ("implementors", "Find implementations of a trait"),
+        ("deps", "List source-level imports for a file or directory"),
+        (
+            "trace",
+            "Trace outbound calls from a discovered CLI command handler",
+        ),
+        ("impact", "Trace the downstream impact of a selector"),
+        (
+            "recommend",
+            "Recommend current change destinations from historical evidence",
+        ),
+        (
+            "history",
+            "Inspect and maintain historical delivery evidence",
+        ),
+        (
+            "evaluate",
+            "Run leakage-safe chronological recommendation evaluation",
+        ),
+        ("sync", "Update or rebuild the source graph index"),
+        ("db-path", "Print the current graph database path"),
+        ("clean", "Remove obsolete graph databases"),
+        ("version", "Print crate and extractor versions"),
+    ] {
+        assert!(
+            help.lines().any(|line| {
+                line.trim_start().starts_with(command) && line.contains(description)
+            }),
+            "missing command description: {command}"
+        );
+    }
+    assert!(help.contains("orbit-graph <COMMAND> --help"));
     assert!(output.stderr.is_empty());
+    assert!(!help.contains('\u{1b}'));
 
     let bare = run(fixture.path(), []);
     assert!(bare.status.success());
     assert_eq!(bare.stdout, output.stdout);
     assert!(bare.stderr.is_empty());
+
+    let help_subcommand = run(fixture.path(), ["help"]);
+    assert!(help_subcommand.status.success());
+    assert_eq!(help_subcommand.stdout, output.stdout);
+    assert!(help_subcommand.stderr.is_empty());
+
+    for env in [[("NO_COLOR", "1")], [("TERM", "dumb")]] {
+        let plain = run_with_env(fixture.path(), ["--help"], &env);
+        assert!(plain.status.success());
+        assert!(!String::from_utf8_lossy(&plain.stdout).contains('\u{1b}'));
+        assert!(plain.stderr.is_empty());
+    }
+
+    for args in [["overview", "--help"], ["history", "--help"]] {
+        let command_help = run(fixture.path(), args);
+        assert!(command_help.status.success());
+        assert!(String::from_utf8_lossy(&command_help.stdout).contains("Usage: orbit-graph"));
+        assert!(command_help.stderr.is_empty());
+    }
+}
+
+#[test]
+fn real_binary_unknown_command_keeps_json_error_protocol() {
+    let fixture = fixture_repository();
+    let output = run(fixture.path(), ["not-a-command"]);
+
+    assert!(!output.status.success());
+    let error: Value = serde_json::from_slice(&output.stderr).expect("JSON error payload");
+    assert_eq!(error["error"]["code"], "argument_error");
 }
 
 #[test]
@@ -922,11 +1014,16 @@ fn import_cli_delivery(
 }
 
 fn run<const N: usize>(cwd: &Path, args: [&str; N]) -> Output {
-    Command::new(env!("CARGO_BIN_EXE_orbit-graph"))
-        .current_dir(cwd)
-        .args(args)
-        .output()
-        .expect("run orbit-graph")
+    run_with_env(cwd, args, &[])
+}
+
+fn run_with_env<const N: usize>(cwd: &Path, args: [&str; N], env: &[(&str, &str)]) -> Output {
+    let mut command = Command::new(env!("CARGO_BIN_EXE_orbit-graph"));
+    command.current_dir(cwd).args(args);
+    for (key, value) in env {
+        command.env(key, value);
+    }
+    command.output().expect("run orbit-graph")
 }
 
 fn fixture_repository() -> TempDir {

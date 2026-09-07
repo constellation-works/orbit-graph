@@ -65,6 +65,9 @@ conventional text help. Failures return a nonzero status and write a JSON
 object with `error.code` and `error.message` to stderr. Set `RUST_LOG` to enable
 diagnostic tracing on stderr.
 
+The grouped help layout, stream contracts, styling rules, and future output
+boundaries are documented in [the terminal-interface design](docs/design/terminal-interface.md).
+
 ## Index lifecycle and location
 
 Synchronization is explicit. Query commands never refresh the index; run

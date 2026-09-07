@@ -30,8 +30,57 @@ mod version;
 #[cfg(test)]
 mod tests;
 
+const TOP_LEVEL_HELP_TEMPLATE: &str = "\
+{name}
+
+{about}
+
+{usage-heading} {usage}
+
+Explore code:
+  overview    Summarize indexed files and symbols
+  search      Search indexed symbols, strings, and configuration keys
+  show        Show source and metadata for a graph selector
+
+Follow relationships:
+  refs          List references to a symbol
+  callees       List outbound calls from a function or command
+  implementors  Find implementations of a trait
+  deps          List source-level imports for a file or directory
+  trace         Trace outbound calls from a discovered CLI command handler
+  impact        Trace the downstream impact of a selector
+
+Recommendations and history:
+  recommend  Recommend current change destinations from historical evidence
+  history    Inspect and maintain historical delivery evidence
+  evaluate   Run leakage-safe chronological recommendation evaluation
+
+Index and utilities:
+  sync     Update or rebuild the source graph index
+  db-path  Print the current graph database path
+  clean    Remove obsolete graph databases
+  version  Print crate and extractor versions
+
+Other:
+  help     Print this message or the help of the given subcommand(s)
+
+Options:
+{options}
+
+Run `orbit-graph <COMMAND> --help` for command-specific options.
+
+Examples:
+  orbit-graph overview
+  orbit-graph search parser --kind symbol
+  orbit-graph refs symbol:src/lib.rs#entry:function
+";
+
 #[derive(Debug, Parser)]
-#[command(name = "orbit-graph", about = "Index and query a source-code graph")]
+#[command(
+    name = "orbit-graph",
+    about = "Index and query a source-code graph",
+    help_template = TOP_LEVEL_HELP_TEMPLATE
+)]
 pub struct Cli {
     #[command(subcommand)]
     command: Command,
@@ -80,24 +129,38 @@ impl Command {
 
 #[derive(Debug, Subcommand)]
 pub enum Command {
+    /// Update or rebuild the source graph index.
     Sync(sync::SyncCommand),
+    /// Search indexed symbols, strings, and configuration keys.
     Search(search::SearchCommand),
+    /// Show source and metadata for a graph selector.
     Show(show::ShowCommand),
+    /// List references to a symbol.
     Refs(refs::RefsCommand),
+    /// List outbound calls from a function or command.
     Callees(callees::CalleesCommand),
+    /// Trace the downstream impact of a selector.
     Impact(impact::ImpactCommand),
     /// Recommend current change destinations from historical evidence.
     Recommend(recommend::RecommendCommand),
+    /// Inspect and maintain historical delivery evidence.
     History(history::HistoryCommand),
-    Trace(trace::TraceCommand),
-    Overview(overview::OverviewCommand),
-    Implementors(implementors::ImplementorsCommand),
-    Deps(deps::DepsCommand),
     /// Run leakage-safe chronological recommendation evaluation.
     Evaluate(evaluate::EvaluateCommand),
-    Version(version::VersionCommand),
+    /// Trace outbound calls from a discovered CLI command handler.
+    Trace(trace::TraceCommand),
+    /// Summarize indexed files and symbols.
+    Overview(overview::OverviewCommand),
+    /// Find implementations of a trait.
+    Implementors(implementors::ImplementorsCommand),
+    /// List source-level imports for a file or directory.
+    Deps(deps::DepsCommand),
+    /// Print the current graph database path.
     DbPath(db_path::DbPathCommand),
+    /// Remove obsolete graph databases.
     Clean(clean::CleanCommand),
+    /// Print crate and extractor versions.
+    Version(version::VersionCommand),
 }
 
 pub(crate) struct CommandContext {
