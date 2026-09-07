@@ -30,7 +30,7 @@ description: >
   bounded, redacted evidence on the host, file each current failure cluster as
   a proposed task, and promote only pilot-validated current repairs to backlog.
   Deduped against still-open tasks by failure key.
-enabled: false
+enabled: true
 hosts:
   - dk-server-1
 trigger:
