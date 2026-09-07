@@ -14,6 +14,7 @@ mod callees;
 mod clean;
 mod db_path;
 mod deps;
+mod evaluate;
 mod history;
 mod impact;
 mod implementors;
@@ -69,6 +70,7 @@ impl Command {
             Command::Overview(command) => command.run(context),
             Command::Implementors(command) => command.run(context),
             Command::Deps(command) => command.run(context),
+            Command::Evaluate(command) => command.run(context),
             Command::Version(command) => command.run(),
             Command::DbPath(command) => command.run(context),
             Command::Clean(command) => command.run(context),
@@ -91,6 +93,8 @@ pub enum Command {
     Overview(overview::OverviewCommand),
     Implementors(implementors::ImplementorsCommand),
     Deps(deps::DepsCommand),
+    /// Run leakage-safe chronological recommendation evaluation.
+    Evaluate(evaluate::EvaluateCommand),
     Version(version::VersionCommand),
     DbPath(db_path::DbPathCommand),
     Clean(clean::CleanCommand),
@@ -137,6 +141,8 @@ pub enum CliError {
     Clap(clap::Error),
     #[error("failed to determine current directory: {0}")]
     CurrentDir(std::io::Error),
+    #[error("failed to read stdin: {0}")]
+    Stdin(std::io::Error),
     #[error(transparent)]
     Graph(#[from] GraphError),
     #[error(transparent)]
@@ -152,6 +158,7 @@ impl CliError {
         match self {
             Self::Clap(_) => "argument_error",
             Self::CurrentDir(_) => "current_dir_error",
+            Self::Stdin(_) => "stdin_error",
             Self::Graph(_) => "graph_error",
             Self::Selector(_) => "selector_parse_error",
             Self::Json(_) => "json_error",

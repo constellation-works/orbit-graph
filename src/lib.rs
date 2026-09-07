@@ -19,8 +19,10 @@ use serde::Serialize;
 
 /// JSON command-line interface shared by the `orbit-graph` binary and tests.
 pub mod cli;
+mod evaluation;
 /// Pure extraction contracts and language-specific extractors.
 mod extract;
+pub mod plugin;
 mod query;
 mod recommend;
 mod store;
@@ -39,6 +41,9 @@ pub use store::history::{
     HistoryStatus, HistorySyncReport,
 };
 
+pub use evaluation::{
+    EVALUATION_SCHEMA_VERSION, EvaluationCorpus, EvaluationReport, evaluate_corpus,
+};
 pub use query::{
     DEFAULT_SEARCH_LIMIT, DEFAULT_SHOW_MAX_BYTES, Match, NodeMetadata, NodeView, SearchKind,
     SearchQuery, SearchResult, SourceSpan,
@@ -47,7 +52,7 @@ pub use recommend::{
     DEFAULT_RECOMMENDATION_LIMIT, HybridTaskHit, Recommendation, RecommendationAssociation,
     RecommendationCounts, RecommendationEngine, RecommendationFallback, RecommendationFreshness,
     RecommendationFreshnessStatus, RecommendationInput, RecommendationLevel, RecommendationReason,
-    RecommendationRequest, RecommendationResult,
+    RecommendationRequest, RecommendationResult, RecommendationVariant,
 };
 
 #[cfg(test)]

@@ -5,7 +5,7 @@ use clap::{Args, ValueEnum};
 
 use crate::{
     GraphError, HybridTaskHit, RecommendationEngine, RecommendationInput, RecommendationLevel,
-    RecommendationRequest, TaskAssociation,
+    RecommendationRequest, RecommendationVariant, TaskAssociation,
 };
 
 use super::{CliError, CommandContext, json_value};
@@ -27,6 +27,9 @@ pub struct RecommendCommand {
     /// Destination granularity.
     #[arg(long, value_enum, default_value_t = LevelArg::File)]
     level: LevelArg,
+    /// Ranking strategy (primarily useful for evaluation and diagnosis).
+    #[arg(long, value_enum, default_value_t = VariantArg::Combined)]
+    variant: VariantArg,
     /// Maximum recommendations (1..=100).
     #[arg(long)]
     limit: Option<usize>,
@@ -80,6 +83,7 @@ impl RecommendCommand {
         let request = RecommendationRequest {
             input,
             level: self.level.into_graph(),
+            variant: self.variant.into_graph(),
             limit: self.limit,
             target_revision: self.revision.clone(),
             cutoff: self.cutoff.clone(),
@@ -92,6 +96,25 @@ impl RecommendCommand {
         };
         let engine = RecommendationEngine::open(context.worktree_root(), self.branch.as_str())?;
         json_value(engine.recommend(&request)?)
+    }
+}
+
+#[derive(Debug, Clone, Copy, ValueEnum)]
+enum VariantArg {
+    Combined,
+    TaskSearchOnly,
+    GraphOnly,
+    Frequency,
+}
+
+impl VariantArg {
+    fn into_graph(self) -> RecommendationVariant {
+        match self {
+            Self::Combined => RecommendationVariant::Combined,
+            Self::TaskSearchOnly => RecommendationVariant::TaskSearchOnly,
+            Self::GraphOnly => RecommendationVariant::GraphOnly,
+            Self::Frequency => RecommendationVariant::Frequency,
+        }
     }
 }
 

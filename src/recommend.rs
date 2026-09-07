@@ -37,6 +37,21 @@ pub enum RecommendationLevel {
     Symbol,
 }
 
+/// Ranking strategy used by live recommendations and chronological evaluation.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum RecommendationVariant {
+    /// Task relevance, verified change evidence, co-change, lexical, and structure.
+    #[default]
+    Combined,
+    /// Similar-task changed destinations only.
+    TaskSearchOnly,
+    /// Current-tree lexical matches and bounded structural neighbors only.
+    GraphOnly,
+    /// Query-independent historical destination frequency.
+    Frequency,
+}
+
 /// Exactly one source of recommendation intent.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -65,6 +80,9 @@ pub struct RecommendationRequest {
     pub input: RecommendationInput,
     /// File or symbol destination granularity.
     pub level: RecommendationLevel,
+    /// Ranking strategy. Ordinary callers use the combined strategy.
+    #[serde(default)]
+    pub variant: RecommendationVariant,
     /// Top-K bound. Defaults to 10 and must be between 1 and 100.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub limit: Option<usize>,
@@ -191,6 +209,8 @@ pub struct RecommendationResult {
     pub input: RecommendationInput,
     /// Requested result granularity.
     pub level: RecommendationLevel,
+    /// Ranking strategy applied to this response.
+    pub variant: RecommendationVariant,
     /// Fully resolved immutable target commit.
     pub resolved_target_revision: String,
     /// Explicit cutoff, or the request observation time with subsecond precision when omitted.
@@ -268,19 +288,31 @@ impl RecommendationEngine {
             &repo,
             &mut resolver,
             eligible.as_slice(),
-            query.as_str(),
-            &hybrid,
-            request.level,
-            &cutoff,
+            &HistoryScoreRequest {
+                query: query.as_str(),
+                hybrid: &hybrid,
+                level: request.level,
+                cutoff: &cutoff,
+                variant: request.variant,
+            },
         )?;
 
-        add_lexical_baseline(&resolver, query.as_str(), request.level, &mut scored);
+        if matches!(
+            request.variant,
+            RecommendationVariant::Combined | RecommendationVariant::GraphOnly
+        ) {
+            add_lexical_baseline(&resolver, query.as_str(), request.level, &mut scored);
+        }
         let checkout_head = repo
             .head()
             .ok()
             .and_then(|head| head.peel_to_commit().ok())
             .map(|c| c.id());
-        let structure = if checkout_head == Some(target) {
+        let structure = if checkout_head == Some(target)
+            && matches!(
+                request.variant,
+                RecommendationVariant::Combined | RecommendationVariant::GraphOnly
+            ) {
             add_current_structure(
                 self.repo_root.as_path(),
                 request.level,
@@ -290,17 +322,22 @@ impl RecommendationEngine {
         } else {
             StructureEvidence::default()
         };
-        if checkout_head != Some(target) {
-            fallbacks.push(RecommendationFallback {
-                kind: "structure_unavailable_for_revision".to_string(),
-                reason: "bounded structural expansion was skipped because the target is not the current checkout; HEAD structure was not reused".to_string(),
-            });
-        } else if !structure.applied {
-            fallbacks.push(RecommendationFallback {
-                kind: "structure_unavailable".to_string(),
-                reason: "the current graph index contained no usable structural neighbors"
-                    .to_string(),
-            });
+        if matches!(
+            request.variant,
+            RecommendationVariant::Combined | RecommendationVariant::GraphOnly
+        ) {
+            if checkout_head != Some(target) {
+                fallbacks.push(RecommendationFallback {
+                    kind: "structure_unavailable_for_revision".to_string(),
+                    reason: "bounded structural expansion was skipped because the target is not the current checkout; HEAD structure was not reused".to_string(),
+                });
+            } else if !structure.applied {
+                fallbacks.push(RecommendationFallback {
+                    kind: "structure_unavailable".to_string(),
+                    reason: "the current graph index contained no usable structural neighbors"
+                        .to_string(),
+                });
+            }
         }
         if structure.stale_destinations > 0 {
             fallbacks.push(RecommendationFallback {
@@ -328,6 +365,7 @@ impl RecommendationEngine {
         Ok(RecommendationResult {
             input: request.input.clone(),
             level: request.level,
+            variant: request.variant,
             resolved_target_revision: target.to_string(),
             effective_cutoff,
             source_freshness: freshness,
@@ -338,7 +376,7 @@ impl RecommendationEngine {
     }
 }
 
-fn current_observation_cutoff() -> Result<String, GraphError> {
+pub(crate) fn current_observation_cutoff() -> Result<String, GraphError> {
     let elapsed = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map_err(|error| {
@@ -663,14 +701,19 @@ struct Accumulator {
     fallback_reason: Option<String>,
 }
 
+struct HistoryScoreRequest<'a> {
+    query: &'a str,
+    hybrid: &'a BTreeMap<String, f64>,
+    level: RecommendationLevel,
+    cutoff: &'a Timestamp,
+    variant: RecommendationVariant,
+}
+
 fn score_history(
     repo: &Repository,
     resolver: &mut TargetTree,
     deliveries: &[EligibleDelivery],
-    query: &str,
-    hybrid: &BTreeMap<String, f64>,
-    level: RecommendationLevel,
-    cutoff: &Timestamp,
+    request: &HistoryScoreRequest<'_>,
 ) -> Result<BTreeMap<String, Accumulator>, GraphError> {
     let mut rows = Vec::new();
     for eligible in deliveries {
@@ -681,20 +724,24 @@ fn score_history(
             .delivery
             .tasks
             .iter()
-            .filter(|task| task_is_eligible(task, cutoff))
+            .filter(|task| task_is_eligible(task, request.cutoff))
             .collect::<Vec<_>>();
         for task in &eligible_tasks {
-            let local = lexical_similarity(query, task_text(task).as_str());
+            let local = lexical_similarity(request.query, task_text(task).as_str());
             let relevance = f64::max(
                 local,
-                hybrid.get(task.task_id.as_str()).copied().unwrap_or(0.0),
+                request
+                    .hybrid
+                    .get(task.task_id.as_str())
+                    .copied()
+                    .unwrap_or(0.0),
             );
             if relevance > 0.0 {
                 task_ids.insert(task.task_id.clone());
             }
             similarity = similarity.max(relevance);
         }
-        let locations = resolver.locations_for_delivery(repo, delivery, level)?;
+        let locations = resolver.locations_for_delivery(repo, delivery, request.level)?;
         if locations.is_empty() {
             continue;
         }
@@ -728,6 +775,31 @@ fn score_history(
     }
     let history_total = deliveries.len().max(1);
     let mut scored = BTreeMap::new();
+    if request.variant == RecommendationVariant::Frequency {
+        for row in &rows {
+            for (selector, meta) in &row.locations {
+                let entry = scored
+                    .entry(selector.clone())
+                    .or_insert_with(Accumulator::default);
+                let contribution = 1.0 / history_total as f64;
+                entry.score += contribution;
+                entry.deliveries.insert(row.delivery_id.clone());
+                entry.file_fallback |= meta.file_fallback;
+                if entry.fallback_reason.is_none() {
+                    entry.fallback_reason.clone_from(&meta.fallback_reason);
+                }
+                entry.reasons.push(RecommendationReason {
+                    kind: "historical_frequency".to_string(),
+                    contribution,
+                    explanation: "query-independent eligible delivery frequency".to_string(),
+                });
+            }
+        }
+        return Ok(scored);
+    }
+    if request.variant == RecommendationVariant::GraphOnly {
+        return Ok(scored);
+    }
     let mut direct_strength = BTreeMap::new();
     for row in &rows {
         if row.similarity <= 0.0 {
@@ -769,13 +841,15 @@ fn score_history(
                 .or_insert(contribution);
         }
     }
-    add_associations(
-        &rows,
-        &prevalence,
-        history_total,
-        &direct_strength,
-        &mut scored,
-    );
+    if request.variant == RecommendationVariant::Combined {
+        add_associations(
+            &rows,
+            &prevalence,
+            history_total,
+            &direct_strength,
+            &mut scored,
+        );
+    }
     Ok(scored)
 }
 
@@ -1342,6 +1416,18 @@ fn split_symbol_selector(selector: &str) -> Option<(&str, &str, &str)> {
     Some((path, qualified, kind))
 }
 
+pub(crate) fn selector_is_live_at(
+    repo_root: &Path,
+    revision: &str,
+    selector: &str,
+) -> Result<bool, GraphError> {
+    let repo = Repository::open(repo_root).map_err(|error| {
+        GraphError::invalid_data("open selector validation repository", error.to_string())
+    })?;
+    let oid = Oid::from_str(revision).map_err(git_error("parse selector validation revision"))?;
+    Ok(TargetTree::load(&repo, oid)?.selector_is_live(selector))
+}
+
 fn git_error(operation: &'static str) -> impl FnOnce(git2::Error) -> GraphError {
     move |error| GraphError::invalid_data(operation, error.to_string())
 }
@@ -1559,6 +1645,7 @@ mod tests {
             .recommend(&RecommendationRequest {
                 input: RecommendationInput::TaskId("TARGET-1".to_string()),
                 level: RecommendationLevel::File,
+                variant: RecommendationVariant::Combined,
                 limit: Some(10),
                 target_revision: Some(target_revision.clone()),
                 cutoff: None,
@@ -1606,6 +1693,7 @@ mod tests {
             .recommend(&RecommendationRequest {
                 input: RecommendationInput::TaskId("TARGET-1".to_string()),
                 level: RecommendationLevel::Symbol,
+                variant: RecommendationVariant::Combined,
                 limit: Some(10),
                 target_revision: Some(target_revision),
                 cutoff: None,
@@ -1622,6 +1710,7 @@ mod tests {
             .recommend(&RecommendationRequest {
                 input: RecommendationInput::Query("payment cache".to_string()),
                 level: RecommendationLevel::Symbol,
+                variant: RecommendationVariant::Combined,
                 limit: Some(20),
                 target_revision: Some(future_revision),
                 cutoff: Some("unix:15".to_string()),

@@ -1,0 +1,110 @@
+{
+  "schema_version": 1,
+  "repository": "https://github.com/constellation-works/orbit-graph.git",
+  "landing_branch": "agent-main",
+  "source": {
+    "system": "public_api_observation+orbit.workflow.run.show+git",
+    "record_id": "pre-execution-snapshots-20260907.json; jrun-20260907-0441-3,jrun-20260907-0500-3,jrun-20260907-0516-3"
+  },
+  "complete": false,
+  "coverage_note": "Prospective capture contains two tasks. ORB-11483 has a later verified three-run delivery chain and is evaluable. ORB-11484 delivery is unavailable until this implementation lands and is excluded at collection. No earlier task has an attested pre-execution text snapshot, so training is empty and no ranking-superiority inference is valid.",
+  "k": 10,
+  "training_deliveries": [],
+  "cases": [
+    {
+      "id": "ORB-11483@2026-09-07T04:15:17Z",
+      "target_revision": "4d84b3b7a61aa8d3a6035a6fe92bd4526b746679",
+      "cutoff": "2026-09-07T04:15:17.000000001Z",
+      "task_snapshot": {
+        "task_id": "ORB-11483",
+        "title": "Recommend current files and symbols from task and co-change evidence",
+        "description": "Daniel approved implementation of a standalone Orbit plugin learning from actual verified changes, with file/symbol modes; context_files must NOT be a training dependency or automatically mutated. Work only in orbit-graph; no Orbit control-plane crate dependencies or internal database reads. Preserve current graph/CLI behavior. No releases, tags, publication, or agent-review automation. Keep modules readable and cohesive. Run CONTRIBUTING.md checks, strict Clippy/fmt/tests/docs/build and real CLI tests; leave changes for managed delivery.\n\nStage 2 of 3, depends on the history index task. Read docs/design/change-recommendations.md and its public types after stage 1 lands. Implement library/CLI recommend accepting exactly one query or task ID, level=file|symbol, top-K limit, and explicit target revision (default current checkout). Task query uses title/description/acceptance criteria only; exclude target task's own delivery/summary and future evidence. Rank similar historical tasks and their verified changed locations, expand directional co-change associations, then bounded current structural neighbors (callers/callees/implementations/test links where evidence exists). Preserve a pluggable input for Orbit's existing hybrid search ranked hits (provided through stage 3 adapter), with deterministic local lexical retrieval for standalone/backtesting use; do not need a new embedding service. Normalize file aggregation so many symbols in one file do not unfairly multiply votes.\n\nExplainable scoring combines task similarity, actual change evidence, co-change support/confidence/lift and bounded current structure, with recency decay and discounts for broad bulk changes, generated files/lockfiles, ubiquitous locations and ambiguous task association. Use each delivery once, not task-count-expanded pseudo-evidence. Cold start/empty history remains meaningful with explicit limited evidence. Return rank, score (not probability), selector, supporting task/delivery IDs, counts/directional association and contribution reasons, source freshness/index revision, resolved target revision, and explicit symbol-mode file fallbacks. Resolve historical identities through renames against CURRENT/requested revision; never suggest deleted or unresolved symbols as live destinations; stale/unavailable results must be explicit. Branch-specific databases and non-default target revisions must not silently use HEAD structure.\n\nUse deterministic ranking tests and real CLI fixture tasks/history showing relevant function and tests outrank ubiquitous metadata, association asymmetry, scope size dilution, recency, file and symbol modes, deleted/renamed symbols, duplicate/ambiguous deliveries, temporal cutoff/self-leakage exclusion, stable ties and top-K validation. Do not make handpicked output-string tests the primary proof. Stage 3 implements protocol adapter and chronological evaluation; expose reusable scoring/baseline/cutoff seams without speculative frameworks.",
+        "acceptance_criteria": [
+          "Query and task-ID recommendations work in both file and symbol modes with top-K, revision resolution, explanations and explicit fallback/freshness metadata.",
+          "Deterministic behavioral tests establish directional association support/confidence/lift, broad-change discounts, recency, deduplication and useful task relevance.",
+          "Target task/future delivery evidence is excluded; removed/unresolved symbols are never returned as live destinations, including rename and non-HEAD revision cases.",
+          "Existing graph commands continue passing; full CONTRIBUTING validation and real executable recommendation fixtures pass; documented public interfaces support integration/backtesting."
+        ],
+        "source": {
+          "system": "orbit.task.show.public_observation",
+          "record_id": "configured:mcp__orbit_linux/ws_orbit-graph/ORB-11483@2026-09-07T04:15:17Z"
+        },
+        "created_at": {
+          "status": "known",
+          "timestamp": "2026-09-07T03:33:43.994257370+00:00",
+          "source": {
+            "system": "orbit.task.show.created_at",
+            "record_id": "ws_orbit-graph:ORB-11483"
+          }
+        },
+        "snapshot_available_at": {
+          "status": "known",
+          "timestamp": "2026-09-07T04:15:17Z",
+          "source": {
+            "system": "public_api_observation",
+            "record_id": "pre-execution-snapshots-20260907.json#ORB-11483"
+          }
+        },
+        "text_availability": "known_pre_execution",
+        "captured_at": "2026-09-07T04:15:17Z"
+      },
+      "held_out_delivery": {
+        "schema_version": 2,
+        "repository": "https://github.com/constellation-works/orbit-graph.git",
+        "landing_branch": "agent-main",
+        "before_revision": "7d128b8a31d96d35cf50f277bdb4c130c1210f89",
+        "after_revision": "8ca24afb938b45cd6f9517e5713fa12ff8469d51",
+        "delivery_id": "orbit-run-chain:ORB-11483:jrun-20260907-0441-3..0516-3",
+        "evidence": "verified_delivery",
+        "source": {
+          "system": "orbit.workflow.run.show+git",
+          "record_id": "jrun-20260907-0441-3,jrun-20260907-0500-3,jrun-20260907-0516-3"
+        },
+        "delivered_at": {
+          "status": "uncertain",
+          "timestamp": "2026-09-07T05:23:27.887916581Z",
+          "source": {
+            "system": "orbit.workflow.run.show.run.finished_at",
+            "record_id": "jrun-20260907-0516-3"
+          }
+        },
+        "captured_at": "2026-09-07T05:23:27.887916581Z",
+        "tasks": [
+          {
+            "task_id": "ORB-11483",
+            "title": "Recommend current files and symbols from task and co-change evidence",
+            "description": "Post-execution association read; not used as chronological query text.",
+            "acceptance_criteria": [],
+            "source": {
+              "system": "orbit.task.show",
+              "record_id": "ws_orbit-graph:ORB-11483@2026-09-07T05:24:53Z"
+            },
+            "created_at": {
+              "status": "known",
+              "timestamp": "2026-09-07T03:33:43.994257370+00:00",
+              "source": {
+                "system": "orbit.task.show.created_at",
+                "record_id": "ws_orbit-graph:ORB-11483"
+              }
+            },
+            "snapshot_available_at": {
+              "status": "known",
+              "timestamp": "2026-09-07T05:24:53Z",
+              "source": {
+                "system": "orbit.task.show.observation",
+                "record_id": "ws_orbit-graph:ORB-11483@2026-09-07T05:24:53Z"
+              }
+            },
+            "text_availability": "post_execution",
+            "captured_at": "2026-09-07T05:24:53Z"
+          }
+        ]
+      },
+      "hybrid_hits": [],
+      "source": {
+        "system": "public_api_observation+verified_run_chain",
+        "record_id": "ORB-11483"
+      }
+    }
+  ]
+}

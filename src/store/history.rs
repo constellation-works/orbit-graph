@@ -178,6 +178,20 @@ impl HistoryIndex {
         Ok(report)
     }
 
+    /// Validate and extract an envelope without mutating the derived history index.
+    ///
+    /// Chronological evaluators use this to derive held-out truth without making
+    /// the target delivery available to ranking.
+    pub fn preview(&self, mut delivery: DeliveryImport) -> Result<DeliveredChange, GraphError> {
+        normalize_tasks(&mut delivery.tasks)?;
+        delivery.landing_branch = normalize_branch(delivery.landing_branch.as_str());
+        self.ensure_scope(&delivery)?;
+        let repo = Repository::open(self.repo_root.as_path()).map_err(|error| {
+            GraphError::invalid_data("open repository for history preview", error.to_string())
+        })?;
+        extract_delivery(&repo, delivery)
+    }
+
     /// Incrementally index first-parent commits, bounded by `limit`.
     pub fn sync(&self, limit: Option<usize>) -> Result<HistorySyncReport, GraphError> {
         self.sync_impl(limit.unwrap_or(DEFAULT_HISTORY_SYNC_LIMIT), false)

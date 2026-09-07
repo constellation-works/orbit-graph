@@ -1,0 +1,39 @@
+{
+  "schema_version": 1,
+  "repository": "https://github.com/constellation-works/orbit-graph.git",
+  "evaluated_at_revision": "8ca24afb938b45cd6f9517e5713fa12ff8469d51",
+  "source": {
+    "system": "public_api_observation+orbit.workflow.run.show+git",
+    "record_id": "pre-execution-snapshots-20260907.json; jrun-20260907-0441-3,jrun-20260907-0500-3,jrun-20260907-0516-3"
+  },
+  "corpus_digest": "d787f6e040cd5b9401d9296bb7a2040277d3e7d87e425f77496909bf98af8146",
+  "coverage": {
+    "source_complete": false,
+    "note": "Prospective capture contains two tasks. ORB-11483 has a later verified three-run delivery chain and is evaluable. ORB-11484 delivery is unavailable until this implementation lands and is excluded at collection. No earlier task has an attested pre-execution text snapshot, so training is empty and no ranking-superiority inference is valid.",
+    "cases_total": 1,
+    "cases_evaluated": 1,
+    "cases_excluded": 0,
+    "training_deliveries_supplied": 0,
+    "training_deliveries_inserted": 0
+  },
+  "metrics": [
+    {"variant":"combined","level":"file","k":10,"cases":1,"relevant":6,"true_positives":1,"recall_at_k":0.16666666666666666,"precision_at_k":0.1,"stale_result_rate":0.0,"mean_latency_ms":369.729,"max_latency_ms":369.729},
+    {"variant":"combined","level":"symbol","k":10,"cases":1,"relevant":5,"true_positives":0,"recall_at_k":0.0,"precision_at_k":0.0,"stale_result_rate":0.0,"mean_latency_ms":845.632,"max_latency_ms":845.632},
+    {"variant":"task_search_only","level":"file","k":10,"cases":1,"relevant":6,"true_positives":0,"recall_at_k":0.0,"precision_at_k":0.0,"stale_result_rate":0.0,"mean_latency_ms":333.597,"max_latency_ms":333.597},
+    {"variant":"task_search_only","level":"symbol","k":10,"cases":1,"relevant":5,"true_positives":0,"recall_at_k":0.0,"precision_at_k":0.0,"stale_result_rate":0.0,"mean_latency_ms":338.759,"max_latency_ms":338.759},
+    {"variant":"graph_only","level":"file","k":10,"cases":1,"relevant":6,"true_positives":1,"recall_at_k":0.16666666666666666,"precision_at_k":0.1,"stale_result_rate":0.0,"mean_latency_ms":379.835,"max_latency_ms":379.835},
+    {"variant":"graph_only","level":"symbol","k":10,"cases":1,"relevant":5,"true_positives":0,"recall_at_k":0.0,"precision_at_k":0.0,"stale_result_rate":0.0,"mean_latency_ms":849.961,"max_latency_ms":849.961},
+    {"variant":"frequency","level":"file","k":10,"cases":1,"relevant":6,"true_positives":0,"recall_at_k":0.0,"precision_at_k":0.0,"stale_result_rate":0.0,"mean_latency_ms":374.963,"max_latency_ms":374.963},
+    {"variant":"frequency","level":"symbol","k":10,"cases":1,"relevant":5,"true_positives":0,"recall_at_k":0.0,"precision_at_k":0.0,"stale_result_rate":0.0,"mean_latency_ms":359.172,"max_latency_ms":359.172}
+  ],
+  "cases": [
+    {
+      "id": "ORB-11483@2026-09-07T04:15:17Z",
+      "evaluated": true,
+      "exclusions": [],
+      "target_revision": "4d84b3b7a61aa8d3a6035a6fe92bd4526b746679",
+      "held_out_delivery_id": "orbit-run-chain:ORB-11483:jrun-20260907-0441-3..0516-3",
+      "source": {"system":"public_api_observation+verified_run_chain","record_id":"ORB-11483"}
+    }
+  ]
+}

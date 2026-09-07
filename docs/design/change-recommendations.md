@@ -300,3 +300,56 @@ committed deletion cannot return the removed file or symbol; skipped stale rows
 are explicit in `fallbacks`. These seams let Stage 3 run chronological
 backtests by setting both `target_revision` and `cutoff`, then comparing the
 ranked selectors to held-out delivered destinations.
+
+## Stage 3 Orbit adapter and plugin
+
+The shipped integration is an Orbit external tool, not a private control-plane
+dependency. Three schema-version-1 `*.orbit-tool.yaml` manifests register the
+same executable as `orbit.graph.recommend`, `orbit.graph.status`, and
+`orbit.graph.maintain`. Orbit invokes the binary with no argv, JSON stdin/stdout,
+and `ORBIT_TOOL_NAME`; the ordinary clap interface remains unchanged otherwise.
+
+Requests route the repository by an explicit absolute path. Authoritative task
+and hybrid reads additionally require an explicit Orbit workspace selector and
+optionally an explicit Orbit root. Cwd and `ORBIT_TOOL_WORKSPACE_ROOT` are never
+interpreted as authority. The adapter shells only to the installed public Orbit
+CLI: registered `orbit.task.show`/`orbit.search` tools and detailed `orbit run
+show --format json`. It never reads SQLite, task bundles, or another private
+store.
+
+An Orbit delivery is marked verified only when a successful public run exposes
+a committed step with exact base, commit, and task ID, and Git verifies both
+strict ancestry and landing-branch reachability. The run's finish time is an
+uncertain landing-time proxy unless a future public feed attests exact delivery
+time. Current task text is `known_pre_execution` only when observed while the
+public lifecycle has no start and is still pending; otherwise it is explicitly
+post-execution or uncertain. Earlier versioned `TaskAssociation` observations
+can be supplied without becoming a second task authority.
+
+Bounded `orbit_sync` accepts explicit run IDs and task IDs (resolved only to
+their current public `job_run_id`). It is incrementally replayable through
+stable delivery IDs, but its response always says coverage is partial. The
+missing Orbit-side seam is precisely a cursor-paginated public delivery feed
+containing workspace, task ID, immutable base/landed commit, exact landing time
+with provenance, and an immutable pre-execution task snapshot or snapshot
+revision. Until that exists, older retries and unlisted tasks require explicit
+IDs and historical task text without an attested capture remains excluded.
+
+## Stage 3 chronological evaluation
+
+The versioned evaluation corpus separates the query-time task snapshot and
+target revision from a held-out delivery envelope. The evaluator validates the
+snapshot strictly predates the cutoff, rejects held-out boundaries already in
+the history index, previews the held-out Git diff without writing it, and maps
+truth only to destinations live at the target revision. All indexed future or
+uncertain-time deliveries pass through the same cutoff filter as production
+ranking.
+
+Four explicit variants are evaluated: combined evidence; direct similar-task
+change evidence; current-tree lexical plus bounded graph structure; and
+query-independent eligible delivery frequency. Reports contain separate file
+and symbol recall/precision@K, stale-result rate, mean/maximum latency,
+coverage/exclusions, exact revisions, source provenance, and a normalized input
+digest. The recorded real cohort in `docs/evaluation/` is intentionally small
+and has no eligible historical training text, so it supports no superiority
+claim.

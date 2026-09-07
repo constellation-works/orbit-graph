@@ -2,7 +2,7 @@
 
 //! JSON command-line interface for the standalone graph index.
 
-use std::io::{self, Write};
+use std::io::{self, Read, Write};
 use std::process::ExitCode;
 
 use clap::Parser;
@@ -14,6 +14,12 @@ use tracing_subscriber::EnvFilter;
 fn main() -> ExitCode {
     init_tracing();
 
+    if let Ok(tool_name) = std::env::var("ORBIT_TOOL_NAME")
+        && orbit_graph::plugin::recognizes_tool(tool_name.as_str())
+    {
+        return run_external_tool(tool_name.as_str());
+    }
+
     let cli = match Cli::try_parse() {
         Ok(cli) => cli,
         Err(error) if error.exit_code() == 0 => {
@@ -24,6 +30,20 @@ fn main() -> ExitCode {
     };
 
     match cli.run().and_then(|output| write_json_to_stdout(&output)) {
+        Ok(()) => ExitCode::SUCCESS,
+        Err(error) => report_error(&error),
+    }
+}
+
+fn run_external_tool(tool_name: &str) -> ExitCode {
+    let mut input = Vec::new();
+    if let Err(source) = io::stdin().read_to_end(&mut input) {
+        return report_error(&CliError::Stdin(source));
+    }
+    match orbit_graph::plugin::execute_external_tool(tool_name, input.as_slice())
+        .map_err(CliError::Graph)
+        .and_then(|output| write_json_to_stdout(&output))
+    {
         Ok(()) => ExitCode::SUCCESS,
         Err(error) => report_error(&error),
     }
