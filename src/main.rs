@@ -1,11 +1,15 @@
 #![allow(missing_docs)]
 
-//! JSON command-line interface for the standalone graph index.
+//! Command-line interface for the standalone graph index.
 
 use std::io::{self, Read, Write};
 use std::process::ExitCode;
 
-use clap::Parser;
+use clap::{CommandFactory, FromArgMatches};
+use orbit_graph::cli::output::{
+    CommandOutput, OutputSink, emit, emit_error, install_format_argument, requested_format,
+    requested_format_from_args,
+};
 use orbit_graph::cli::{Cli, CliError};
 use serde::Serialize;
 use serde_json::json;
@@ -24,38 +28,70 @@ fn main() -> ExitCode {
     if args.len() == 1 {
         args.push("--help".into());
     }
-    let cli = match Cli::try_parse_from(args) {
-        Ok(cli) => cli,
+    let fallback_format = requested_format_from_args(&args);
+    let matches = match install_format_argument(Cli::command()).try_get_matches_from(args) {
+        Ok(matches) => matches,
         Err(error) if error.exit_code() == 0 => {
             let _ = error.print();
             return ExitCode::SUCCESS;
         }
-        Err(error) => return report_error(&CliError::Clap(error)),
+        Err(error) => {
+            let exit_code = error.exit_code();
+            let sink = OutputSink::from_process(fallback_format);
+            emit_error(&CliError::Clap(error), sink);
+            return process_exit_code(exit_code);
+        }
     };
+    let format = requested_format(&matches);
+    let cli = match Cli::from_arg_matches(&matches) {
+        Ok(cli) => cli,
+        Err(error) => {
+            let exit_code = error.exit_code();
+            let sink = OutputSink::from_process(format);
+            emit_error(&CliError::Clap(error), sink);
+            return process_exit_code(exit_code);
+        }
+    };
+    let sink = OutputSink::from_process(format);
 
-    match cli.run().and_then(|output| write_json_to_stdout(&output)) {
+    match cli.run().and_then(|output| emit_to_process(&output, sink)) {
         Ok(()) => ExitCode::SUCCESS,
-        Err(error) => report_error(&error),
+        Err(error) if error.is_broken_pipe() => ExitCode::SUCCESS,
+        Err(error) => {
+            emit_error(&error, sink);
+            ExitCode::FAILURE
+        }
     }
 }
 
 fn run_external_tool(tool_name: &str) -> ExitCode {
     let mut input = Vec::new();
     if let Err(source) = io::stdin().read_to_end(&mut input) {
-        return report_error(&CliError::Stdin(source));
+        return report_plugin_error(&CliError::Stdin(source));
     }
     match orbit_graph::plugin::execute_external_tool(tool_name, input.as_slice())
         .map_err(CliError::Graph)
         .and_then(|output| write_json_to_stdout(&output))
     {
         Ok(()) => ExitCode::SUCCESS,
-        Err(error) => report_error(&error),
+        Err(error) if error.is_broken_pipe() => ExitCode::SUCCESS,
+        Err(error) => report_plugin_error(&error),
     }
 }
 
-fn report_error(error: &CliError) -> ExitCode {
+fn report_plugin_error(error: &CliError) -> ExitCode {
     let _ = write_json_to_stderr(&ErrorPayload::from(error));
     ExitCode::FAILURE
+}
+
+fn emit_to_process(output: &CommandOutput, sink: OutputSink) -> Result<(), CliError> {
+    let mut stdout = io::stdout().lock();
+    let mut stderr = io::stderr().lock();
+    emit(output, sink, &mut stdout, &mut stderr)
+}
+
+fn process_exit_code(code: i32) -> ExitCode {
+    u8::try_from(code).map_or(ExitCode::FAILURE, ExitCode::from)
 }
 
 fn init_tracing() {

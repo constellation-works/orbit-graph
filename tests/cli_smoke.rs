@@ -4,8 +4,13 @@
 
 use std::fs;
 use std::path::Path;
-use std::process::{Command, Output};
+use std::process::{Command, Output, Stdio};
 use std::time::{SystemTime, UNIX_EPOCH};
+
+#[cfg(unix)]
+use std::os::fd::OwnedFd;
+#[cfg(unix)]
+use std::os::unix::net::UnixStream;
 
 use clap::CommandFactory;
 use serde_json::Value;
@@ -85,7 +90,12 @@ fn real_binary_indexes_and_queries_a_fixture() {
 #[test]
 fn real_binary_rejects_malformed_selectors_with_json_error() {
     let fixture = fixture_repository();
-    let output = run(fixture.path(), ["show", "not-a-selector"]);
+    let human = run(fixture.path(), ["show", "not-a-selector"]);
+    assert_eq!(human.status.code(), Some(1));
+    assert!(human.stdout.is_empty());
+    assert!(String::from_utf8_lossy(&human.stderr).contains("selectors must start with"));
+
+    let output = run_explicit_json(fixture.path(), ["show", "not-a-selector"]);
 
     assert!(!output.status.success());
     let error: Value = serde_json::from_slice(&output.stderr).expect("JSON error payload");
@@ -104,7 +114,7 @@ fn real_binary_help_succeeds() {
 
     assert!(output.status.success());
     let help = String::from_utf8_lossy(&output.stdout);
-    assert!(help.contains("Usage: orbit-graph <COMMAND>"));
+    assert!(help.contains("Usage: orbit-graph [OPTIONS] <COMMAND>"));
     for heading in [
         "Explore code:",
         "Follow relationships:",
@@ -190,16 +200,159 @@ fn real_binary_help_succeeds() {
         assert!(String::from_utf8_lossy(&command_help.stdout).contains("Usage: orbit-graph"));
         assert!(command_help.stderr.is_empty());
     }
+
+    let root_mode_help = run(fixture.path(), ["--format", "json", "--help"]);
+    let nested_mode_help = run(fixture.path(), ["--format", "json", "refs", "--help"]);
+    for explicit_mode_help in [root_mode_help, nested_mode_help] {
+        assert!(explicit_mode_help.status.success());
+        assert!(String::from_utf8_lossy(&explicit_mode_help.stdout).contains("Usage:"));
+        assert!(explicit_mode_help.stderr.is_empty());
+    }
 }
 
 #[test]
 fn real_binary_unknown_command_keeps_json_error_protocol() {
     let fixture = fixture_repository();
-    let output = run(fixture.path(), ["not-a-command"]);
+    let output = run_explicit_json(fixture.path(), ["not-a-command"]);
 
     assert!(!output.status.success());
     let error: Value = serde_json::from_slice(&output.stderr).expect("JSON error payload");
     assert_eq!(error["error"]["code"], "argument_error");
+}
+
+#[test]
+fn real_binary_usage_errors_are_human_by_default_and_machine_readable_on_request() {
+    let fixture = fixture_repository();
+
+    for args in [["refs"], ["trace"]] {
+        let human = run(fixture.path(), args);
+        assert_eq!(human.status.code(), Some(2));
+        assert!(human.stdout.is_empty());
+        let diagnostic = String::from_utf8_lossy(&human.stderr);
+        assert!(diagnostic.contains("required arguments"), "{diagnostic}");
+        assert!(diagnostic.contains("Usage: orbit-graph"), "{diagnostic}");
+        assert!(
+            !diagnostic.contains("\\n"),
+            "escaped diagnostic: {diagnostic}"
+        );
+
+        let json = run_explicit_json(fixture.path(), args);
+        assert_eq!(json.status.code(), Some(2));
+        assert!(json.stdout.is_empty());
+        let envelope: Value = serde_json::from_slice(&json.stderr).expect("structured usage error");
+        assert_eq!(envelope["error"]["code"], "argument_error");
+        assert!(
+            envelope["error"]["message"]
+                .as_str()
+                .is_some_and(|message| message.contains("Usage: orbit-graph"))
+        );
+    }
+
+    let ndjson = run(fixture.path(), ["--format", "ndjson", "refs"]);
+    assert_eq!(ndjson.status.code(), Some(2));
+    let envelope: Value = serde_json::from_slice(&ndjson.stderr).expect("NDJSON error envelope");
+    assert_eq!(envelope["error"]["code"], "argument_error");
+
+    let namespace = run(fixture.path(), ["history"]);
+    assert_eq!(namespace.status.code(), Some(2));
+    assert!(namespace.stdout.is_empty());
+    let help = String::from_utf8_lossy(&namespace.stderr);
+    assert!(help.contains("Usage: orbit-graph history"));
+    for subcommand in ["import", "sync", "status", "rebuild"] {
+        assert!(help.contains(subcommand), "missing {subcommand} in {help}");
+    }
+}
+
+#[test]
+fn real_binary_resolves_environment_modes_and_overview_format_without_ambiguity() {
+    let fixture = fixture_repository();
+
+    let environment_json = run_with_env(
+        fixture.path(),
+        ["version"],
+        &[("ORBIT_GRAPH_FORMAT", "json")],
+    );
+    assert!(environment_json.status.success());
+    assert_eq!(
+        environment_json
+            .stdout
+            .iter()
+            .filter(|byte| **byte == b'\n')
+            .count(),
+        1
+    );
+    let version: Value =
+        serde_json::from_slice(&environment_json.stdout).expect("environment JSON mode");
+    assert!(version["crate_version"].is_string());
+
+    let explicit_table = run_with_env(
+        fixture.path(),
+        ["--format", "table", "version"],
+        &[("ORBIT_GRAPH_FORMAT", "json")],
+    );
+    assert!(explicit_table.status.success());
+    assert!(
+        String::from_utf8_lossy(&explicit_table.stdout).starts_with("{\n"),
+        "explicit mode did not outrank environment: {}",
+        String::from_utf8_lossy(&explicit_table.stdout)
+    );
+
+    let ndjson = run(fixture.path(), ["version", "--format", "ndjson"]);
+    assert!(ndjson.status.success());
+    assert_eq!(
+        ndjson.stdout.iter().filter(|byte| **byte == b'\n').count(),
+        1
+    );
+    serde_json::from_slice::<Value>(&ndjson.stdout).expect("one NDJSON detail record");
+
+    let _ = run_json(fixture.path(), ["sync", "--full"]);
+    let overview = run(
+        fixture.path(),
+        ["--format", "json", "overview", "--format", "full"],
+    );
+    assert!(
+        overview.status.success(),
+        "{}",
+        String::from_utf8_lossy(&overview.stderr)
+    );
+    let overview: Value = serde_json::from_slice(&overview.stdout).expect("overview JSON");
+    assert!(
+        overview["files"]
+            .as_array()
+            .is_some_and(|files| !files.is_empty())
+    );
+
+    for environment in [[("NO_COLOR", "1")], [("TERM", "dumb")]] {
+        let plain = run_with_env(
+            fixture.path(),
+            ["--format", "table", "version"],
+            &environment,
+        );
+        assert!(plain.status.success());
+        assert!(!String::from_utf8_lossy(&plain.stdout).contains('\u{1b}'));
+    }
+}
+
+#[cfg(unix)]
+#[test]
+fn real_binary_treats_a_closed_stdout_pipe_as_success() {
+    let fixture = fixture_repository();
+    let (reader, writer) = UnixStream::pair().expect("create stdout pipe");
+    drop(reader);
+    let writer: OwnedFd = writer.into();
+    let output = Command::new(env!("CARGO_BIN_EXE_orbit-graph"))
+        .current_dir(fixture.path())
+        .args(["--format", "json", "version"])
+        .stdout(Stdio::from(writer))
+        .output()
+        .expect("run with closed stdout pipe");
+
+    assert!(
+        output.status.success(),
+        "broken pipe failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(output.stderr.is_empty());
 }
 
 #[test]
@@ -247,7 +400,7 @@ fn real_binary_recommends_in_file_and_symbol_modes_and_validates_top_k() {
         })
     }));
 
-    let bad_limit = run(
+    let bad_limit = run_explicit_json(
         fixture.path(),
         ["recommend", "--query", "helper", "--limit", "0"],
     );
@@ -255,7 +408,7 @@ fn real_binary_recommends_in_file_and_symbol_modes_and_validates_top_k() {
     let error: Value = serde_json::from_slice(&bad_limit.stderr).expect("JSON error");
     assert_eq!(error["error"]["code"], "graph_error");
 
-    let both = run(
+    let both = run_explicit_json(
         fixture.path(),
         ["recommend", "--query", "helper", "--task-id", "TASK-1"],
     );
@@ -790,7 +943,7 @@ fn real_binary_rejects_history_repository_mismatch_with_json_error() {
     )
     .expect("write bad envelope");
     let envelope_arg = envelope_path.to_string_lossy();
-    let output = run(
+    let output = run_explicit_json(
         fixture.path(),
         ["history", "import", "--input", envelope_arg.as_ref()],
     );
@@ -839,7 +992,7 @@ fn real_binary_rejects_invalid_history_timestamps_without_partial_import() {
     )
     .expect("write invalid envelope");
     let envelope_arg = envelope_path.to_string_lossy();
-    let output = run(
+    let output = run_explicit_json(
         fixture.path(),
         ["history", "import", "--input", envelope_arg.as_ref()],
     );
@@ -925,7 +1078,7 @@ fn real_binary_rejects_signed_rfc3339_components_without_changing_history_state(
 }
 
 fn run_json<const N: usize>(cwd: &Path, args: [&str; N]) -> Value {
-    let output = run(cwd, args);
+    let output = run_explicit_json(cwd, args);
     assert!(
         output.status.success(),
         "orbit-graph failed: {}",
@@ -1015,6 +1168,15 @@ fn import_cli_delivery(
 
 fn run<const N: usize>(cwd: &Path, args: [&str; N]) -> Output {
     run_with_env(cwd, args, &[])
+}
+
+fn run_explicit_json<const N: usize>(cwd: &Path, args: [&str; N]) -> Output {
+    Command::new(env!("CARGO_BIN_EXE_orbit-graph"))
+        .current_dir(cwd)
+        .args(["--format", "json"])
+        .args(args)
+        .output()
+        .expect("run orbit-graph in JSON mode")
 }
 
 fn run_with_env<const N: usize>(cwd: &Path, args: [&str; N], env: &[(&str, &str)]) -> Output {

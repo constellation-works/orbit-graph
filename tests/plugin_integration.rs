@@ -1240,6 +1240,7 @@ fn plugin_output_with_env(
 fn run<const N: usize>(repository: &Path, args: [&str; N]) -> Output {
     Command::new(env!("CARGO_BIN_EXE_orbit-graph"))
         .current_dir(repository)
+        .args(["--format", "json"])
         .args(args)
         .output()
         .expect("run orbit-graph")
