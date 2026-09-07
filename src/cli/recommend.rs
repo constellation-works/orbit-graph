@@ -8,7 +8,10 @@ use crate::{
     RecommendationRequest, RecommendationVariant, TaskAssociation,
 };
 
-use super::{CliError, CommandContext, json_value};
+use serde_json::{Value, json};
+
+use super::output::{Column, CommandOutput, TableView, View, ViewBlock};
+use super::{CliError, CommandContext, display_value, json_value};
 
 #[derive(Debug, Args)]
 #[command(group(
@@ -97,6 +100,85 @@ impl RecommendCommand {
         let engine = RecommendationEngine::open(context.worktree_root(), self.branch.as_str())?;
         json_value(engine.recommend(&request)?)
     }
+}
+
+pub(crate) fn output(document: Value) -> CommandOutput {
+    let freshness = format!(
+        "{}: {}",
+        display_value(&document["source_freshness"]["status"]),
+        display_value(&document["source_freshness"]["reason"])
+    );
+    let fallbacks = document["fallbacks"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .map(|fallback| display_value(&fallback["kind"]))
+        .collect::<Vec<_>>()
+        .join(", ");
+    let mut table = TableView::new(vec![
+        Column::number("rank"),
+        Column::text("selector"),
+        Column::number("score"),
+        Column::text("evidence"),
+        Column::text("freshness"),
+    ]);
+    if let Some(recommendations) = document["recommendations"].as_array() {
+        for recommendation in recommendations {
+            let mut evidence = recommendation["reasons"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .take(2)
+                .map(|reason| {
+                    format!(
+                        "{} ({:+.3})",
+                        display_value(&reason["explanation"]),
+                        reason["contribution"].as_f64().unwrap_or_default()
+                    )
+                })
+                .collect::<Vec<_>>();
+            if recommendation["file_fallback"].as_bool() == Some(true) {
+                evidence.push(format!(
+                    "fallback: {}",
+                    display_value(&recommendation["fallback_reason"])
+                ));
+            }
+            if !fallbacks.is_empty() {
+                evidence.push(format!("limits: {fallbacks}"));
+            }
+            table.push_row([
+                display_value(&recommendation["rank"]),
+                display_value(&recommendation["selector"]),
+                recommendation["score"]
+                    .as_f64()
+                    .map_or_else(|| "-".to_owned(), |score| format!("{score:.4}")),
+                if evidence.is_empty() {
+                    "no scored evidence".to_owned()
+                } else {
+                    evidence.join("; ")
+                },
+                freshness.clone(),
+            ]);
+        }
+    }
+    let empty = if fallbacks.is_empty() {
+        format!("no recommendations; source freshness is {freshness}")
+    } else {
+        format!("no recommendations; {freshness}; fallbacks: {fallbacks}")
+    };
+    let view = View::Blocks(vec![ViewBlock::table(table.with_empty_message(empty))]);
+
+    let mut context = document.clone();
+    let recommendations = context
+        .as_object_mut()
+        .and_then(|object| object.remove("recommendations"))
+        .and_then(|value| value.as_array().cloned())
+        .unwrap_or_default();
+    let mut records = vec![json!({"record_type": "recommendation_context", "context": context})];
+    records.extend(recommendations.into_iter().map(
+        |recommendation| json!({"record_type": "recommendation", "recommendation": recommendation}),
+    ));
+    CommandOutput::with_view(document, view).with_ndjson_records(records)
 }
 
 #[derive(Debug, Clone, Copy, ValueEnum)]

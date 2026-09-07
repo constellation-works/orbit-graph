@@ -91,11 +91,25 @@ pub struct Cli {
 
 impl Cli {
     pub fn run(&self) -> Result<CommandOutput, CliError> {
-        self.command.run().map(CommandOutput::document)
+        let document = self.command.run()?;
+        Ok(self.command.output(document))
     }
 }
 
 impl Command {
+    fn output(&self, document: Value) -> CommandOutput {
+        match self {
+            Self::Recommend(_) => recommend::output(document),
+            Self::History(command) => command.output(document),
+            Self::Evaluate(_) => evaluate::output(document),
+            Self::Sync(_) => sync::output(document),
+            Self::DbPath(_) => db_path::output(document),
+            Self::Clean(_) => clean::output(document),
+            Self::Version(_) => version::output(document),
+            _ => CommandOutput::document(document),
+        }
+    }
+
     /// Dispatch this subcommand against a freshly discovered worktree context
     /// and return the JSON payload the caller is expected to emit.
     pub fn run(&self) -> Result<Value, CliError> {
@@ -199,6 +213,16 @@ impl CommandContext {
 
 pub(crate) fn json_value<T: Serialize>(value: T) -> Result<Value, CliError> {
     serde_json::to_value(value).map_err(CliError::Json)
+}
+
+pub(crate) fn display_value(value: &Value) -> String {
+    match value {
+        Value::Null => "-".to_owned(),
+        Value::String(value) => value.clone(),
+        Value::Bool(value) => value.to_string(),
+        Value::Number(value) => value.to_string(),
+        value => serde_json::to_string(value).unwrap_or_else(|_| "-".to_owned()),
+    }
 }
 
 #[derive(Debug, Error)]
