@@ -9,6 +9,8 @@ use std::process::{Command, Output};
 use serde_json::Value;
 use tempfile::TempDir;
 
+use orbit_graph::{HistoryIndex, TaskTextAvailability, TemporalStatus};
+
 #[test]
 fn real_binary_indexes_and_queries_a_fixture() {
     let fixture = fixture_repository();
@@ -124,7 +126,7 @@ fn real_binary_imports_syncs_reports_and_rebuilds_history() {
         .to_string_lossy()
         .into_owned();
     let envelope = serde_json::json!({
-        "schema_version": 1,
+        "schema_version": 2,
         "repository": repository,
         "landing_branch": "main",
         "before_revision": before,
@@ -132,14 +134,27 @@ fn real_binary_imports_syncs_reports_and_rebuilds_history() {
         "delivery_id": "verified-cli-1",
         "evidence": "verified_delivery",
         "source": {"system": "cli_test", "record_id": "delivery-1"},
-        "captured_at": "2026-09-07T00:00:00Z",
+        "delivered_at": {
+            "status": "known", "timestamp": "2026-09-07T00:00:00Z",
+            "source": {"system": "delivery_service", "record_id": "landed-1"}
+        },
+        "captured_at": "2026-09-07T00:01:00Z",
         "tasks": [{
             "task_id": "ORB-CLI",
             "title": "Exercise history CLI",
             "description": "Verify the public import contract",
             "acceptance_criteria": ["CLI operations return JSON"],
             "source": {"system": "cli_test", "record_id": "ORB-CLI"},
-            "captured_at": "2026-09-07T00:00:00Z"
+            "created_at": {
+                "status": "known", "timestamp": "2026-09-06T20:00:00Z",
+                "source": {"system": "task_service", "record_id": "created-1"}
+            },
+            "snapshot_available_at": {
+                "status": "known", "timestamp": "2026-09-06T21:00:00Z",
+                "source": {"system": "task_service", "record_id": "snapshot-7"}
+            },
+            "text_availability": "known_pre_execution",
+            "captured_at": "2026-09-07T00:00:30Z"
         }]
     });
     let envelope_path = fixture.path().join("delivery.json");
@@ -155,6 +170,33 @@ fn real_binary_imports_syncs_reports_and_rebuilds_history() {
         ["history", "import", "--input", envelope_arg.as_ref()],
     );
     assert_eq!(imported["inserted"], true);
+    let stored = HistoryIndex::open(fixture.path(), "main")
+        .expect("open imported history")
+        .deliveries()
+        .expect("read imported delivery");
+    let stored_delivery = &stored[0].delivery;
+    assert_eq!(stored_delivery.captured_at, "2026-09-07T00:01:00Z");
+    assert_eq!(stored_delivery.delivered_at.status, TemporalStatus::Known);
+    assert_eq!(
+        stored_delivery.delivered_at.timestamp.as_deref(),
+        Some("2026-09-07T00:00:00Z")
+    );
+    assert_eq!(
+        stored_delivery.tasks[0].text_availability,
+        TaskTextAvailability::KnownPreExecution
+    );
+    assert_eq!(
+        stored_delivery.tasks[0].created_at.timestamp.as_deref(),
+        Some("2026-09-06T20:00:00Z")
+    );
+    assert_eq!(
+        stored_delivery.tasks[0]
+            .snapshot_available_at
+            .source
+            .record_id
+            .as_deref(),
+        Some("snapshot-7")
+    );
     let duplicate = run_json(
         fixture.path(),
         ["history", "import", "--input", envelope_arg.as_ref()],
@@ -167,6 +209,8 @@ fn real_binary_imports_syncs_reports_and_rebuilds_history() {
     );
     assert_eq!(synced["complete"], true);
     let status = run_json(fixture.path(), ["history", "status", "--branch", "main"]);
+    assert_eq!(status["schema_version"], 2);
+    assert_eq!(status["extractor_version"], 2);
     assert_eq!(status["verified_deliveries"], 1);
     assert_eq!(status["git_only_deliveries"], 1);
     assert_eq!(status["task_associations"], 2);
@@ -193,9 +237,10 @@ fn real_binary_rejects_history_repository_mismatch_with_json_error() {
     let before = git_stdout(fixture.path(), ["rev-parse", "HEAD~1"]);
     let envelope_path = fixture.path().join("bad-delivery.json");
     let envelope = serde_json::json!({
-        "schema_version": 1, "repository": "wrong", "landing_branch": "main",
+        "schema_version": 2, "repository": "wrong", "landing_branch": "main",
         "before_revision": before, "after_revision": after, "delivery_id": "bad",
         "evidence": "verified_delivery", "source": {"system": "test"},
+        "delivered_at": {"status": "unavailable", "source": {"system": "test"}},
         "captured_at": "2026-09-07T00:00:00Z", "tasks": []
     });
     fs::write(
@@ -216,6 +261,52 @@ fn real_binary_rejects_history_repository_mismatch_with_json_error() {
             .as_str()
             .is_some_and(|details| details.contains("mismatch"))
     );
+}
+
+#[test]
+fn real_binary_rejects_invalid_history_timestamps_without_partial_import() {
+    let fixture = fixture_repository();
+    fs::write(
+        fixture.path().join("src/lib.rs"),
+        "pub fn helper() -> i32 { 2 }\n",
+    )
+    .expect("edit fixture source");
+    run_git(fixture.path(), ["add", "."]);
+    run_git(fixture.path(), ["commit", "-m", "second"]);
+    let after = git_stdout(fixture.path(), ["rev-parse", "HEAD"]);
+    let before = git_stdout(fixture.path(), ["rev-parse", "HEAD~1"]);
+    let repository = fixture
+        .path()
+        .canonicalize()
+        .expect("canonical fixture")
+        .to_string_lossy()
+        .into_owned();
+    let envelope = serde_json::json!({
+        "schema_version": 2, "repository": repository, "landing_branch": "main",
+        "before_revision": before, "after_revision": after, "delivery_id": "bad-time",
+        "evidence": "verified_delivery", "source": {"system": "test"},
+        "delivered_at": {
+            "status": "known", "timestamp": "not-a-time",
+            "source": {"system": "test_clock"}
+        },
+        "captured_at": "2026-09-07T00:00:00Z", "tasks": []
+    });
+    let envelope_path = fixture.path().join("bad-time.json");
+    fs::write(
+        &envelope_path,
+        serde_json::to_vec(&envelope).expect("encode invalid envelope"),
+    )
+    .expect("write invalid envelope");
+    let envelope_arg = envelope_path.to_string_lossy();
+    let output = run(
+        fixture.path(),
+        ["history", "import", "--input", envelope_arg.as_ref()],
+    );
+    assert!(!output.status.success());
+    let error: Value = serde_json::from_slice(&output.stderr).expect("JSON error");
+    assert!(error.to_string().contains("timestamp"), "{error}");
+    let status = run_json(fixture.path(), ["history", "status", "--branch", "main"]);
+    assert_eq!(status["deliveries"], 0);
 }
 
 fn run_json<const N: usize>(cwd: &Path, args: [&str; N]) -> Value {

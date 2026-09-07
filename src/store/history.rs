@@ -3,6 +3,7 @@
 use std::collections::BTreeSet;
 use std::fs::{self, File, OpenOptions};
 use std::path::{Path, PathBuf};
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use fs2::FileExt;
 use git2::{Oid, Repository};
@@ -13,13 +14,14 @@ use crate::GraphError;
 use crate::extract::history::{
     CHANGE_EXTRACTOR_VERSION, CurrentRevisionResolution, CurrentSymbolStatus,
     DEFAULT_HISTORY_SYNC_LIMIT, DELIVERY_IMPORT_SCHEMA_VERSION, DeliveredChange, DeliveryEvidence,
-    DeliveryImport, Provenance, RevisionSide, SymbolIdentity, TaskAssociation, branch_tip,
-    extract_delivery, repository_identity,
+    DeliveryImport, Provenance, RevisionSide, SymbolIdentity, TaskAssociation,
+    TaskTextAvailability, TemporalFact, TemporalStatus, branch_tip, extract_delivery,
+    repository_identity, validate_task_association,
 };
 use crate::extract::languages;
 
 /// Version of the history SQLite schema.
-pub const HISTORY_INDEX_SCHEMA_VERSION: u32 = 1;
+pub const HISTORY_INDEX_SCHEMA_VERSION: u32 = 2;
 
 /// Handle to the repository-local, rebuildable delivery-history index.
 #[derive(Debug, Clone)]
@@ -522,7 +524,8 @@ impl HistoryIndex {
                     .unwrap_or_default()
                     .trim()
                     .to_string();
-                let captured_at = format!("unix:{}", commit.time().seconds());
+                let commit_at = format!("unix:{}", commit.time().seconds());
+                let captured_at = ingestion_timestamp()?;
                 let tasks = task_ids
                     .into_iter()
                     .map(|task_id| TaskAssociation {
@@ -534,6 +537,23 @@ impl HistoryIndex {
                             system: "git_trailer".into(),
                             record_id: Some(oid.to_string()),
                         },
+                        created_at: TemporalFact {
+                            status: TemporalStatus::Unavailable,
+                            timestamp: None,
+                            source: Provenance {
+                                system: "git_trailer".into(),
+                                record_id: Some(oid.to_string()),
+                            },
+                        },
+                        snapshot_available_at: TemporalFact {
+                            status: TemporalStatus::Uncertain,
+                            timestamp: Some(commit_at.clone()),
+                            source: Provenance {
+                                system: "git_commit".into(),
+                                record_id: Some(oid.to_string()),
+                            },
+                        },
+                        text_availability: TaskTextAvailability::Uncertain,
                         captured_at: captured_at.clone(),
                     })
                     .collect();
@@ -550,6 +570,14 @@ impl HistoryIndex {
                         source: Provenance {
                             system: "git_first_parent".into(),
                             record_id: Some(oid.to_string()),
+                        },
+                        delivered_at: TemporalFact {
+                            status: TemporalStatus::Uncertain,
+                            timestamp: Some(commit_at),
+                            source: Provenance {
+                                system: "git_commit".into(),
+                                record_id: Some(oid.to_string()),
+                            },
                         },
                         captured_at,
                         tasks,
@@ -588,6 +616,7 @@ impl HistoryIndex {
         for (key, expected) in [
             ("schema_version", HISTORY_INDEX_SCHEMA_VERSION),
             ("extractor_version", CHANGE_EXTRACTOR_VERSION),
+            ("import_schema_version", DELIVERY_IMPORT_SCHEMA_VERSION),
         ] {
             let actual: String = conn
                 .query_row(
@@ -616,7 +645,10 @@ CREATE TABLE IF NOT EXISTS history_scopes (
 CREATE TABLE IF NOT EXISTS history_deliveries (
   repository TEXT NOT NULL, landing_branch TEXT NOT NULL, delivery_id TEXT NOT NULL,
   before_revision TEXT NOT NULL, after_revision TEXT NOT NULL, evidence TEXT NOT NULL,
-  source_system TEXT NOT NULL, source_record_id TEXT, captured_at TEXT NOT NULL,
+  source_system TEXT NOT NULL, source_record_id TEXT,
+  delivered_status TEXT NOT NULL, delivered_at TEXT,
+  delivered_source_system TEXT NOT NULL, delivered_source_record_id TEXT,
+  captured_at TEXT NOT NULL,
   task_count INTEGER NOT NULL, file_count INTEGER NOT NULL, symbol_count INTEGER NOT NULL,
   payload_json TEXT NOT NULL,
   PRIMARY KEY(repository, landing_branch, delivery_id)
@@ -626,7 +658,12 @@ CREATE TABLE IF NOT EXISTS history_tasks (
   repository TEXT NOT NULL, landing_branch TEXT NOT NULL, delivery_id TEXT NOT NULL,
   task_id TEXT NOT NULL, title TEXT NOT NULL, description TEXT NOT NULL,
   acceptance_criteria_json TEXT NOT NULL, source_system TEXT NOT NULL,
-  source_record_id TEXT, captured_at TEXT NOT NULL,
+  source_record_id TEXT,
+  created_status TEXT NOT NULL, created_at TEXT,
+  created_source_system TEXT NOT NULL, created_source_record_id TEXT,
+  snapshot_status TEXT NOT NULL, snapshot_available_at TEXT,
+  snapshot_source_system TEXT NOT NULL, snapshot_source_record_id TEXT,
+  text_availability TEXT NOT NULL, captured_at TEXT NOT NULL,
   PRIMARY KEY(repository, landing_branch, delivery_id, task_id),
   FOREIGN KEY(repository, landing_branch, delivery_id)
     REFERENCES history_deliveries(repository, landing_branch, delivery_id) ON DELETE CASCADE
@@ -705,16 +742,16 @@ fn insert_delivery(
         });
     }
     tx.execute(
-        "INSERT INTO history_deliveries(repository,landing_branch,delivery_id,before_revision,after_revision,evidence,source_system,source_record_id,captured_at,task_count,file_count,symbol_count,payload_json) VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13)",
-        params![delivery.repository, delivery.landing_branch, delivery.delivery_id, delivery.before_revision, delivery.after_revision, delivery.evidence.as_str(), delivery.source.system, delivery.source.record_id, delivery.captured_at, i64_len(delivery.tasks.len())?, i64_len(change.files.len())?, i64_len(symbol_count)?, payload],
+        "INSERT INTO history_deliveries(repository,landing_branch,delivery_id,before_revision,after_revision,evidence,source_system,source_record_id,delivered_status,delivered_at,delivered_source_system,delivered_source_record_id,captured_at,task_count,file_count,symbol_count,payload_json) VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17)",
+        params![delivery.repository, delivery.landing_branch, delivery.delivery_id, delivery.before_revision, delivery.after_revision, delivery.evidence.as_str(), delivery.source.system, delivery.source.record_id, temporal_status(delivery.delivered_at.status), delivery.delivered_at.timestamp, delivery.delivered_at.source.system, delivery.delivered_at.source.record_id, delivery.captured_at, i64_len(delivery.tasks.len())?, i64_len(change.files.len())?, i64_len(symbol_count)?, payload],
     ).map_err(|source| GraphError::sqlite("insert history delivery", source))?;
     for task in &delivery.tasks {
         let criteria = serde_json::to_string(&task.acceptance_criteria).map_err(|error| {
             GraphError::invalid_data("encode history task criteria", error.to_string())
         })?;
         tx.execute(
-            "INSERT INTO history_tasks(repository,landing_branch,delivery_id,task_id,title,description,acceptance_criteria_json,source_system,source_record_id,captured_at) VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10)",
-            params![delivery.repository, delivery.landing_branch, delivery.delivery_id, task.task_id, task.title, task.description, criteria, task.source.system, task.source.record_id, task.captured_at],
+            "INSERT INTO history_tasks(repository,landing_branch,delivery_id,task_id,title,description,acceptance_criteria_json,source_system,source_record_id,created_status,created_at,created_source_system,created_source_record_id,snapshot_status,snapshot_available_at,snapshot_source_system,snapshot_source_record_id,text_availability,captured_at) VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17,?18,?19)",
+            params![delivery.repository, delivery.landing_branch, delivery.delivery_id, task.task_id, task.title, task.description, criteria, task.source.system, task.source.record_id, temporal_status(task.created_at.status), task.created_at.timestamp, task.created_at.source.system, task.created_at.source.record_id, temporal_status(task.snapshot_available_at.status), task.snapshot_available_at.timestamp, task.snapshot_available_at.source.system, task.snapshot_available_at.source.record_id, task_text_availability(task.text_availability), task.captured_at],
         ).map_err(|source| GraphError::sqlite("insert history task association", source))?;
     }
     for (file_ordinal, file) in change.files.iter().enumerate() {
@@ -778,15 +815,7 @@ fn normalize_tasks(tasks: &mut Vec<TaskAssociation>) -> Result<(), GraphError> {
     tasks.sort_by(|left, right| left.task_id.cmp(&right.task_id));
     let mut normalized: Vec<TaskAssociation> = Vec::with_capacity(tasks.len());
     for task in tasks.drain(..) {
-        if task.task_id.trim().is_empty()
-            || task.source.system.trim().is_empty()
-            || task.captured_at.trim().is_empty()
-        {
-            return Err(GraphError::invalid_data(
-                "validate delivery task association",
-                "task_id, source.system, and captured_at must be non-empty",
-            ));
-        }
+        validate_task_association(&task)?;
         if let Some(previous) = normalized.last()
             && previous.task_id == task.task_id
         {
@@ -802,6 +831,31 @@ fn normalize_tasks(tasks: &mut Vec<TaskAssociation>) -> Result<(), GraphError> {
     }
     *tasks = normalized;
     Ok(())
+}
+
+fn temporal_status(status: TemporalStatus) -> &'static str {
+    match status {
+        TemporalStatus::Known => "known",
+        TemporalStatus::Uncertain => "uncertain",
+        TemporalStatus::Unavailable => "unavailable",
+    }
+}
+
+fn task_text_availability(availability: TaskTextAvailability) -> &'static str {
+    match availability {
+        TaskTextAvailability::KnownPreExecution => "known_pre_execution",
+        TaskTextAvailability::PostExecution => "post_execution",
+        TaskTextAvailability::Uncertain => "uncertain",
+    }
+}
+
+fn ingestion_timestamp() -> Result<String, GraphError> {
+    let duration = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_err(|error| {
+            GraphError::invalid_data("capture history ingestion time", error.to_string())
+        })?;
+    Ok(format!("unix:{}", duration.as_secs()))
 }
 
 fn current_resolution(

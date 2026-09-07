@@ -10,10 +10,10 @@ use super::{RawSymbol, languages};
 use crate::GraphError;
 
 /// Version of the public delivery import JSON contract.
-pub const DELIVERY_IMPORT_SCHEMA_VERSION: u32 = 1;
+pub const DELIVERY_IMPORT_SCHEMA_VERSION: u32 = 2;
 
 /// Version of the historical change extractor.
-pub const CHANGE_EXTRACTOR_VERSION: u32 = 1;
+pub const CHANGE_EXTRACTOR_VERSION: u32 = 2;
 
 /// Maximum commits processed by one default incremental history sync.
 pub const DEFAULT_HISTORY_SYNC_LIMIT: usize = 1_000;
@@ -38,7 +38,9 @@ pub struct DeliveryImport {
     pub evidence: DeliveryEvidence,
     /// Source that produced this envelope.
     pub source: Provenance,
-    /// RFC 3339 capture timestamp supplied by the producer.
+    /// Actual delivery/landing time evidence, distinct from ingestion capture.
+    pub delivered_at: TemporalFact,
+    /// RFC 3339 or `unix:<seconds>` ingestion capture timestamp.
     pub captured_at: String,
     /// Tasks associated with the delivery. Multiple entries deliberately retain ambiguity.
     #[serde(default)]
@@ -75,6 +77,43 @@ pub struct Provenance {
     pub record_id: Option<String>,
 }
 
+/// Confidence attached to a temporal fact.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum TemporalStatus {
+    /// The producer attests that the timestamp represents the named event.
+    Known,
+    /// A timestamp may be present, but is only a proxy or estimate.
+    Uncertain,
+    /// The event time is unavailable and no timestamp may be supplied.
+    Unavailable,
+}
+
+/// A timestamp together with explicit confidence and provenance.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct TemporalFact {
+    /// Whether the named event time is known, uncertain, or unavailable.
+    pub status: TemporalStatus,
+    /// RFC 3339 or `unix:<seconds>` time, required for `known` and optional for `uncertain`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub timestamp: Option<String>,
+    /// Source of this temporal assertion.
+    pub source: Provenance,
+}
+
+/// Whether a task-text snapshot is proven usable before task execution.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum TaskTextAvailability {
+    /// The source attests that this exact text was available before execution began.
+    KnownPreExecution,
+    /// The snapshot was first captured after execution began.
+    PostExecution,
+    /// Its availability relative to execution cannot be established.
+    Uncertain,
+}
+
 /// Task text associated with a delivered change.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -90,7 +129,13 @@ pub struct TaskAssociation {
     pub acceptance_criteria: Vec<String>,
     /// Provenance of this task snapshot.
     pub source: Provenance,
-    /// RFC 3339 capture timestamp for the task snapshot.
+    /// Task creation-time evidence; never inferred from snapshot capture.
+    pub created_at: TemporalFact,
+    /// Evidence for when this exact task-text snapshot became available.
+    pub snapshot_available_at: TemporalFact,
+    /// Explicit eligibility of this text for pre-execution evaluation.
+    pub text_availability: TaskTextAvailability,
+    /// RFC 3339 or `unix:<seconds>` capture timestamp for the task snapshot.
     pub captured_at: String,
 }
 
@@ -379,6 +424,19 @@ pub(crate) fn validate_delivery(
             "delivery_id, source.system, and captured_at must be non-empty",
         ));
     }
+    validate_timestamp("delivery captured_at", delivery.captured_at.as_str())?;
+    validate_temporal_fact("delivered_at", &delivery.delivered_at)?;
+    if delivery.evidence == DeliveryEvidence::GitOnly
+        && delivery.delivered_at.status == TemporalStatus::Known
+    {
+        return Err(GraphError::invalid_data(
+            "validate delivery temporal evidence",
+            "git_only evidence cannot assert a known delivery time",
+        ));
+    }
+    for task in &delivery.tasks {
+        validate_task_association(task)?;
+    }
     let detected = repository_identity(repo)?;
     if delivery.repository != detected {
         return Err(GraphError::invalid_data(
@@ -413,6 +471,139 @@ pub(crate) fn validate_delivery(
         ));
     }
     Ok((before, after))
+}
+
+pub(crate) fn validate_task_association(task: &TaskAssociation) -> Result<(), GraphError> {
+    if task.task_id.trim().is_empty()
+        || task.source.system.trim().is_empty()
+        || task.captured_at.trim().is_empty()
+    {
+        return Err(GraphError::invalid_data(
+            "validate delivery task association",
+            "task_id, source.system, and captured_at must be non-empty",
+        ));
+    }
+    validate_timestamp("task captured_at", task.captured_at.as_str())?;
+    validate_temporal_fact("task created_at", &task.created_at)?;
+    validate_temporal_fact("task snapshot_available_at", &task.snapshot_available_at)?;
+    if task.text_availability == TaskTextAvailability::KnownPreExecution
+        && task.snapshot_available_at.status != TemporalStatus::Known
+    {
+        return Err(GraphError::invalid_data(
+            "validate task text availability",
+            "known_pre_execution requires a known snapshot_available_at timestamp",
+        ));
+    }
+    Ok(())
+}
+
+fn validate_temporal_fact(field: &str, fact: &TemporalFact) -> Result<(), GraphError> {
+    if fact.source.system.trim().is_empty() {
+        return Err(GraphError::invalid_data(
+            "validate temporal provenance",
+            format!("{field}.source.system must be non-empty"),
+        ));
+    }
+    match (fact.status, fact.timestamp.as_deref()) {
+        (TemporalStatus::Known, Some(timestamp)) => validate_timestamp(field, timestamp),
+        (TemporalStatus::Known, None) => Err(GraphError::invalid_data(
+            "validate temporal fact",
+            format!("{field} is known but has no timestamp"),
+        )),
+        (TemporalStatus::Uncertain, Some(timestamp)) => validate_timestamp(field, timestamp),
+        (TemporalStatus::Uncertain, None) | (TemporalStatus::Unavailable, None) => Ok(()),
+        (TemporalStatus::Unavailable, Some(_)) => Err(GraphError::invalid_data(
+            "validate temporal fact",
+            format!("{field} is unavailable but supplies a timestamp"),
+        )),
+    }
+}
+
+fn validate_timestamp(field: &str, timestamp: &str) -> Result<(), GraphError> {
+    if let Some(seconds) = timestamp.strip_prefix("unix:") {
+        if let Ok(value) = seconds.parse::<i64>()
+            && seconds == value.to_string()
+        {
+            return Ok(());
+        }
+        return Err(invalid_timestamp(field, timestamp));
+    }
+    let bytes = timestamp.as_bytes();
+    if bytes.len() < 20
+        || bytes.get(4) != Some(&b'-')
+        || bytes.get(7) != Some(&b'-')
+        || !matches!(bytes.get(10), Some(b'T') | Some(b't'))
+        || bytes.get(13) != Some(&b':')
+        || bytes.get(16) != Some(&b':')
+    {
+        return Err(invalid_timestamp(field, timestamp));
+    }
+    let number = |start: usize, end: usize| -> Option<u32> {
+        std::str::from_utf8(bytes.get(start..end)?)
+            .ok()?
+            .parse()
+            .ok()
+    };
+    let (Some(year), Some(month), Some(day), Some(hour), Some(minute), Some(second)) = (
+        number(0, 4),
+        number(5, 7),
+        number(8, 10),
+        number(11, 13),
+        number(14, 16),
+        number(17, 19),
+    ) else {
+        return Err(invalid_timestamp(field, timestamp));
+    };
+    let leap = year % 4 == 0 && (year % 100 != 0 || year % 400 == 0);
+    let days = match month {
+        1 | 3 | 5 | 7 | 8 | 10 | 12 => 31,
+        4 | 6 | 9 | 11 => 30,
+        2 if leap => 29,
+        2 => 28,
+        _ => 0,
+    };
+    if day == 0 || day > days || hour > 23 || minute > 59 || second > 60 {
+        return Err(invalid_timestamp(field, timestamp));
+    }
+    let mut cursor = 19;
+    if bytes.get(cursor) == Some(&b'.') {
+        cursor += 1;
+        let fraction_start = cursor;
+        while bytes.get(cursor).is_some_and(u8::is_ascii_digit) {
+            cursor += 1;
+        }
+        if cursor == fraction_start {
+            return Err(invalid_timestamp(field, timestamp));
+        }
+    }
+    match bytes.get(cursor) {
+        Some(b'Z') | Some(b'z') if cursor + 1 == bytes.len() => Ok(()),
+        Some(b'+') | Some(b'-')
+            if cursor + 6 == bytes.len() && bytes.get(cursor + 3) == Some(&b':') =>
+        {
+            let offset_hour = std::str::from_utf8(&bytes[cursor + 1..cursor + 3])
+                .ok()
+                .and_then(|value| value.parse::<u32>().ok());
+            let offset_minute = std::str::from_utf8(&bytes[cursor + 4..cursor + 6])
+                .ok()
+                .and_then(|value| value.parse::<u32>().ok());
+            if offset_hour.is_some_and(|value| value <= 23)
+                && offset_minute.is_some_and(|value| value <= 59)
+            {
+                Ok(())
+            } else {
+                Err(invalid_timestamp(field, timestamp))
+            }
+        }
+        _ => Err(invalid_timestamp(field, timestamp)),
+    }
+}
+
+fn invalid_timestamp(field: &str, timestamp: &str) -> GraphError {
+    GraphError::invalid_data(
+        "validate timestamp",
+        format!("{field} must be RFC 3339 or unix:<seconds>; got {timestamp:?}"),
+    )
 }
 
 pub(crate) fn extract_delivery(
@@ -529,7 +720,12 @@ fn extract_tree_diff(
             after_content.as_deref(),
             &new_lines,
         );
-        let symbols = pair_symbols(before_attr.symbols, after_attr.symbols);
+        let symbols = pair_symbols(
+            before_attr.changed_symbols,
+            after_attr.changed_symbols,
+            before_attr.all_symbols,
+            after_attr.all_symbols,
+        );
         changes.push(FileChange {
             old_path,
             new_path,
@@ -567,7 +763,8 @@ fn read_tree_file(
 }
 
 struct SideAttribution {
-    symbols: Vec<SymbolAttribution>,
+    changed_symbols: Vec<SymbolAttribution>,
+    all_symbols: Vec<SymbolAttribution>,
     fallback: Option<FileFallbackReason>,
 }
 
@@ -583,20 +780,23 @@ fn attribute_side(
 ) -> SideAttribution {
     let (Some(path), Some(content)) = (path, content) else {
         return SideAttribution {
-            symbols: Vec::new(),
+            changed_symbols: Vec::new(),
+            all_symbols: Vec::new(),
             fallback: Some(FileFallbackReason::FileUnavailable),
         };
     };
     if content.contains(&0) {
         return SideAttribution {
-            symbols: Vec::new(),
+            changed_symbols: Vec::new(),
+            all_symbols: Vec::new(),
             fallback: Some(FileFallbackReason::Binary),
         };
     }
     let extractors = languages::extractors();
     let Some(extractor) = extractors.iter().find(|extractor| extractor.supports(path)) else {
         return SideAttribution {
-            symbols: Vec::new(),
+            changed_symbols: Vec::new(),
+            all_symbols: Vec::new(),
             fallback: Some(FileFallbackReason::UnsupportedLanguage),
         };
     };
@@ -609,7 +809,8 @@ fn attribute_side(
             || !extracted.configs.is_empty()
             || !extracted.commands.is_empty();
         return SideAttribution {
-            symbols: Vec::new(),
+            changed_symbols: Vec::new(),
+            all_symbols: Vec::new(),
             fallback: Some(if has_non_symbol_evidence {
                 FileFallbackReason::NoEnclosingNamedSymbol
             } else {
@@ -626,12 +827,21 @@ fn attribute_side(
             unmatched = true;
             continue;
         };
-        let selected = extracted
+        let candidates = extracted
             .symbols
             .iter()
             .filter(|symbol| symbol.span_start < end && symbol.span_end > start)
-            .min_by_key(|symbol| symbol.span_end.saturating_sub(symbol.span_start));
-        if let Some(symbol) = selected {
+            .collect::<Vec<_>>();
+        let selected = candidates.iter().copied().filter(|symbol| {
+            !candidates.iter().copied().any(|child| {
+                child.span_start >= symbol.span_start
+                    && child.span_end <= symbol.span_end
+                    && (child.span_start > symbol.span_start || child.span_end < symbol.span_end)
+            })
+        });
+        let mut selected_any = false;
+        for symbol in selected {
+            selected_any = true;
             by_symbol
                 .entry((
                     symbol.span_start,
@@ -642,31 +852,50 @@ fn attribute_side(
                 .or_insert_with(|| (symbol.clone(), Vec::new()))
                 .1
                 .push(*line);
-        } else {
+        }
+        if !selected_any {
             unmatched = true;
         }
     }
-    let symbols = by_symbol
+    let changed_symbols = by_symbol
         .into_values()
-        .map(|(symbol, changed_lines)| SymbolAttribution {
-            symbol: SymbolIdentity {
-                revision: revision.to_string(),
-                side,
-                file_path: normalize_path(path),
-                name: symbol.name,
-                qualified: symbol.qualified,
-                kind: symbol.kind,
-                span_start: symbol.span_start,
-                span_end: symbol.span_end,
-                signature: symbol.signature,
-                parent: symbol.parent_symbol,
-            },
-            changed_lines,
+        .map(|(symbol, changed_lines)| {
+            symbol_attribution(revision, side, path, symbol, changed_lines)
         })
         .collect();
+    let all_symbols = extracted
+        .symbols
+        .into_iter()
+        .map(|symbol| symbol_attribution(revision, side, path, symbol, Vec::new()))
+        .collect();
     SideAttribution {
-        symbols,
+        changed_symbols,
+        all_symbols,
         fallback: unmatched.then_some(FileFallbackReason::NoEnclosingNamedSymbol),
+    }
+}
+
+fn symbol_attribution(
+    revision: &str,
+    side: RevisionSide,
+    path: &Path,
+    symbol: RawSymbol,
+    changed_lines: Vec<u32>,
+) -> SymbolAttribution {
+    SymbolAttribution {
+        symbol: SymbolIdentity {
+            revision: revision.to_string(),
+            side,
+            file_path: normalize_path(path),
+            name: symbol.name,
+            qualified: symbol.qualified,
+            kind: symbol.kind,
+            span_start: symbol.span_start,
+            span_end: symbol.span_end,
+            signature: symbol.signature,
+            parent: symbol.parent_symbol,
+        },
+        changed_lines,
     }
 }
 
@@ -691,29 +920,36 @@ fn all_line_numbers(content: &[u8]) -> impl Iterator<Item = u32> {
 }
 
 fn pair_symbols(
-    before: Vec<SymbolAttribution>,
-    after: Vec<SymbolAttribution>,
+    before_changed: Vec<SymbolAttribution>,
+    after_changed: Vec<SymbolAttribution>,
+    before_all: Vec<SymbolAttribution>,
+    after_all: Vec<SymbolAttribution>,
 ) -> Vec<SymbolChange> {
-    let mut after = after.into_iter().map(Some).collect::<Vec<_>>();
+    let mut after_changed = after_changed.into_iter().map(Some).collect::<Vec<_>>();
+    let mut matched_before = BTreeSet::new();
+    let mut matched_after = BTreeSet::new();
     let mut changes = Vec::new();
-    for old in before {
-        let exact = unique_candidate(&after, |new| {
+    for old in before_changed {
+        let exact = unique_candidate(&after_all, &matched_after, |new| {
             new.symbol.qualified == old.symbol.qualified
                 && new.symbol.kind == old.symbol.kind
                 && (!old.symbol.qualified.contains('#')
                     || new.symbol.signature == old.symbol.signature)
         });
         let similar = exact.or_else(|| {
-            unique_candidate(&after, |new| {
+            unique_candidate(&after_all, &matched_after, |new| {
                 new.symbol.kind == old.symbol.kind
                     && new.symbol.signature.is_some()
                     && new.symbol.signature == old.symbol.signature
             })
         });
         if let Some(index) = similar {
-            let Some(new) = after[index].take() else {
-                continue;
-            };
+            let new = take_changed_attribution(&mut after_changed, &after_all[index].symbol)
+                .unwrap_or_else(|| after_all[index].clone());
+            matched_after.insert(index);
+            if let Some(index) = identity_index(&before_all, &old.symbol) {
+                matched_before.insert(index);
+            }
             let confidence = if new.symbol.qualified == old.symbol.qualified {
                 SymbolMatchConfidence::Exact
             } else {
@@ -731,9 +967,11 @@ fn pair_symbols(
                 live_after: true,
             });
         } else {
-            let ambiguous = after
+            let ambiguous = after_all
                 .iter()
-                .flatten()
+                .enumerate()
+                .filter(|(index, _)| !matched_after.contains(index))
+                .map(|(_, item)| item)
                 .filter(|new| {
                     new.symbol.kind == old.symbol.kind
                         && (new.symbol.name == old.symbol.name
@@ -759,35 +997,102 @@ fn pair_symbols(
             });
         }
     }
-    changes.extend(after.into_iter().flatten().map(|new| SymbolChange {
-        before: None,
-        after: Some(new),
-        match_confidence: SymbolMatchConfidence::Unmatched,
-        reason: "no unique before-tree identity".to_string(),
-        live_after: true,
-    }));
+    for new in after_changed.into_iter().flatten() {
+        let exact = unique_candidate(&before_all, &matched_before, |old| {
+            old.symbol.qualified == new.symbol.qualified
+                && old.symbol.kind == new.symbol.kind
+                && (!new.symbol.qualified.contains('#')
+                    || old.symbol.signature == new.symbol.signature)
+        });
+        let similar = exact.or_else(|| {
+            unique_candidate(&before_all, &matched_before, |old| {
+                old.symbol.kind == new.symbol.kind
+                    && old.symbol.signature.is_some()
+                    && old.symbol.signature == new.symbol.signature
+            })
+        });
+        if let Some(index) = similar {
+            matched_before.insert(index);
+            let confidence = if before_all[index].symbol.qualified == new.symbol.qualified {
+                SymbolMatchConfidence::Exact
+            } else {
+                SymbolMatchConfidence::Similar
+            };
+            changes.push(SymbolChange {
+                before: Some(before_all[index].clone()),
+                after: Some(new),
+                match_confidence: confidence,
+                reason: if exact.is_some() {
+                    "same qualified name and kind".to_string()
+                } else {
+                    "unique equal signature and kind across revisions".to_string()
+                },
+                live_after: true,
+            });
+        } else {
+            let ambiguous = before_all
+                .iter()
+                .enumerate()
+                .filter(|(index, _)| !matched_before.contains(index))
+                .map(|(_, item)| item)
+                .filter(|old| {
+                    old.symbol.kind == new.symbol.kind
+                        && (old.symbol.name == new.symbol.name
+                            || (old.symbol.signature.is_some()
+                                && old.symbol.signature == new.symbol.signature))
+                })
+                .count()
+                > 1;
+            changes.push(SymbolChange {
+                before: None,
+                after: Some(new),
+                match_confidence: if ambiguous {
+                    SymbolMatchConfidence::Uncertain
+                } else {
+                    SymbolMatchConfidence::Unmatched
+                },
+                reason: if ambiguous {
+                    "multiple structural candidates; identity not invented".to_string()
+                } else {
+                    "no unique before-tree identity".to_string()
+                },
+                live_after: true,
+            });
+        }
+    }
     changes
 }
 
 fn unique_candidate(
-    candidates: &[Option<SymbolAttribution>],
+    candidates: &[SymbolAttribution],
+    excluded: &BTreeSet<usize>,
     predicate: impl Fn(&SymbolAttribution) -> bool,
 ) -> Option<usize> {
     let matches = candidates
         .iter()
         .enumerate()
-        .filter_map(|(index, candidate)| {
-            candidate
-                .as_ref()
-                .filter(|item| predicate(item))
-                .map(|_| index)
-        })
+        .filter(|(index, candidate)| !excluded.contains(index) && predicate(candidate))
+        .map(|(index, _)| index)
         .collect::<Vec<_>>();
     if matches.len() == 1 {
         Some(matches[0])
     } else {
         None
     }
+}
+
+fn identity_index(candidates: &[SymbolAttribution], identity: &SymbolIdentity) -> Option<usize> {
+    candidates.iter().position(|item| &item.symbol == identity)
+}
+
+fn take_changed_attribution(
+    candidates: &mut [Option<SymbolAttribution>],
+    identity: &SymbolIdentity,
+) -> Option<SymbolAttribution> {
+    let index = candidates
+        .iter()
+        .position(|item| item.as_ref().is_some_and(|item| &item.symbol == identity))?;
+    candidates[index].take()
 }
 
 fn normalize_path(path: &Path) -> String {

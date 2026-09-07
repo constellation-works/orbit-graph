@@ -51,6 +51,7 @@ fn real_git_trees_attribute_add_edit_delete_rename_and_nested_symbols() {
             system: "test".into(),
             record_id: Some("1".into()),
         },
+        delivered_at: known_time("delivery"),
         captured_at: "2026-09-07T00:00:00Z".into(),
         tasks: vec![],
     };
@@ -192,6 +193,7 @@ fn real_git_trees_keep_structural_similarity_and_ambiguity_explicit() {
                 system: "test".into(),
                 record_id: None,
             },
+            delivered_at: known_time("delivery"),
             captured_at: "2026-09-07T00:00:00Z".into(),
             tasks: vec![],
         },
@@ -232,6 +234,171 @@ fn real_git_trees_keep_structural_similarity_and_ambiguity_explicit() {
         }),
         "overload ambiguity should remain unpaired: {overloads:#?}"
     );
+}
+
+#[test]
+fn body_only_insertions_and_deletions_retain_surviving_function_identity() {
+    let repo = fixture_repo();
+    write(
+        repo.path(),
+        "lib.rs",
+        "pub fn keep() {\n    let a = 1;\n    let b = 2;\n}\n",
+    );
+    commit(repo.path(), "before deletion");
+    let before_deletion = head(repo.path());
+    write(
+        repo.path(),
+        "lib.rs",
+        "pub fn keep() {\n    let a = 1;\n}\n",
+    );
+    commit(repo.path(), "delete body line");
+    let after_deletion = head(repo.path());
+
+    let repository = Repository::open(repo.path()).expect("open repository");
+    let deletion = extract_delivery(
+        &repository,
+        delivery(
+            &repository,
+            before_deletion,
+            after_deletion.clone(),
+            "deletion-only",
+        ),
+    )
+    .expect("extract deletion-only edit");
+    let deleted_line = deletion.files[0]
+        .symbols
+        .iter()
+        .find(|change| {
+            change
+                .before
+                .as_ref()
+                .is_some_and(|item| item.symbol.name == "keep")
+        })
+        .expect("changed function");
+    assert_eq!(deletion.files[0].additions, 0);
+    assert_eq!(deletion.files[0].deletions, 1);
+    assert!(deleted_line.after.is_some());
+    assert!(deleted_line.live_after);
+    assert!(
+        deleted_line
+            .after
+            .as_ref()
+            .is_some_and(|item| item.changed_lines.is_empty())
+    );
+
+    write(
+        repo.path(),
+        "lib.rs",
+        "pub fn keep() {\n    let a = 1;\n    let c = 3;\n}\n",
+    );
+    commit(repo.path(), "insert body line");
+    let after_insertion = head(repo.path());
+    let insertion = extract_delivery(
+        &repository,
+        delivery(
+            &repository,
+            after_deletion,
+            after_insertion,
+            "insertion-only",
+        ),
+    )
+    .expect("extract insertion-only edit");
+    let inserted_line = insertion.files[0]
+        .symbols
+        .iter()
+        .find(|change| {
+            change
+                .after
+                .as_ref()
+                .is_some_and(|item| item.symbol.name == "keep")
+        })
+        .expect("changed function");
+    assert_eq!(insertion.files[0].additions, 1);
+    assert_eq!(insertion.files[0].deletions, 0);
+    assert!(inserted_line.before.is_some());
+    assert!(inserted_line.live_after);
+    assert!(
+        inserted_line
+            .before
+            .as_ref()
+            .is_some_and(|item| item.changed_lines.is_empty())
+    );
+}
+
+#[test]
+fn same_line_siblings_are_all_attributed_without_implicating_parent() {
+    let repo = fixture_repo();
+    write(
+        repo.path(),
+        "siblings.rs",
+        "pub mod parent { pub fn one() -> i32 { 1 } pub fn two() -> i32 { 2 } }\n",
+    );
+    commit(repo.path(), "before");
+    let before = head(repo.path());
+    write(
+        repo.path(),
+        "siblings.rs",
+        "pub mod parent { pub fn one() -> i32 { 3 } pub fn two() -> i32 { 4 } }\n",
+    );
+    commit(repo.path(), "after");
+    let after = head(repo.path());
+    let repository = Repository::open(repo.path()).expect("open repository");
+    let change = extract_delivery(
+        &repository,
+        delivery(&repository, before, after, "same-line-siblings"),
+    )
+    .expect("extract siblings");
+    let symbols = &change.files[0].symbols;
+    assert!(symbols.iter().any(|item| {
+        item.after
+            .as_ref()
+            .is_some_and(|after| after.symbol.name == "one")
+    }));
+    assert!(symbols.iter().any(|item| {
+        item.after
+            .as_ref()
+            .is_some_and(|after| after.symbol.name == "two")
+    }));
+    assert!(!symbols.iter().any(|item| {
+        item.after
+            .as_ref()
+            .is_some_and(|after| after.symbol.name == "parent")
+    }));
+}
+
+fn delivery(
+    repository: &Repository,
+    before_revision: String,
+    after_revision: String,
+    delivery_id: &str,
+) -> DeliveryImport {
+    DeliveryImport {
+        schema_version: DELIVERY_IMPORT_SCHEMA_VERSION,
+        repository: repository_identity(repository).expect("identity"),
+        landing_branch: "main".into(),
+        before_revision,
+        after_revision,
+        delivery_id: delivery_id.into(),
+        evidence: DeliveryEvidence::VerifiedDelivery,
+        source: Provenance {
+            system: "test".into(),
+            record_id: Some(delivery_id.into()),
+        },
+        delivered_at: known_time("delivery"),
+        captured_at: "2026-09-07T00:00:01Z".into(),
+        tasks: vec![],
+    }
+}
+
+fn known_time(record_id: &str) -> TemporalFact {
+    TemporalFact {
+        status: TemporalStatus::Known,
+        timestamp: Some("2026-09-07T00:00:00Z".into()),
+        source: Provenance {
+            system: "test_clock".into(),
+            record_id: Some(record_id.into()),
+        },
+    }
 }
 
 fn fixture_repo() -> TempDir {

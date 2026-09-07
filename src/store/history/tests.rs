@@ -81,6 +81,24 @@ fn sync_is_incremental_and_rejects_rebound_history_without_partial_writes() {
     let index = HistoryIndex::open(repo.path(), "main").expect("open");
     let first = index.sync(Some(10)).expect("sync");
     assert_eq!(first.deliveries_inserted, 1);
+    let git_only = index.deliveries().expect("load Git-only delivery");
+    assert_eq!(git_only[0].delivery.evidence, DeliveryEvidence::GitOnly);
+    assert_eq!(
+        git_only[0].delivery.delivered_at.status,
+        TemporalStatus::Uncertain
+    );
+    assert_eq!(
+        git_only[0].delivery.delivered_at.source.system,
+        "git_commit"
+    );
+    assert_eq!(
+        git_only[0].delivery.tasks[0].created_at.status,
+        TemporalStatus::Unavailable
+    );
+    assert_eq!(
+        git_only[0].delivery.tasks[0].text_availability,
+        TaskTextAvailability::Uncertain
+    );
     assert_eq!(
         index
             .sync(Some(10))
@@ -188,6 +206,89 @@ fn merge_sync_uses_first_parent_boundary_and_keeps_multi_file_commit() {
     assert!(deliveries.iter().any(|delivery| delivery.files.len() == 2));
 }
 
+#[test]
+fn temporal_facts_round_trip_and_invalid_timestamps_are_atomic() {
+    let repo = fixture_repo();
+    write(repo.path(), "a.rs", "fn a() -> i32 { 1 }\n");
+    commit(repo.path(), "one");
+    let before = head(repo.path());
+    write(repo.path(), "a.rs", "fn a() -> i32 { 2 }\n");
+    commit(repo.path(), "two");
+    let after = head(repo.path());
+    let index = HistoryIndex::open(repo.path(), "main").expect("open");
+    let delivery = fixture_delivery(&index, before, after, "temporal");
+    let mut legacy = delivery.clone();
+    legacy.schema_version = 1;
+    assert!(index.import(legacy).is_err());
+    assert_eq!(
+        index.status().expect("empty after v1 rejection").deliveries,
+        0
+    );
+    index
+        .import(delivery.clone())
+        .expect("import temporal facts");
+    let loaded = index.deliveries().expect("load delivery");
+    assert_eq!(loaded[0].delivery, delivery);
+
+    let before_count = index
+        .status()
+        .expect("status before invalid import")
+        .deliveries;
+    let mut invalid = delivery;
+    invalid.delivery_id = "invalid-time".into();
+    invalid.captured_at = "2026-99-99".into();
+    assert!(index.import(invalid).is_err());
+    assert_eq!(
+        index
+            .status()
+            .expect("status after invalid import")
+            .deliveries,
+        before_count
+    );
+}
+
+#[test]
+fn post_execution_and_uncertain_snapshots_are_not_pre_execution_evidence() {
+    let repo = fixture_repo();
+    write(repo.path(), "a.rs", "fn a() -> i32 { 1 }\n");
+    commit(repo.path(), "one");
+    let before = head(repo.path());
+    write(repo.path(), "a.rs", "fn a() -> i32 { 2 }\n");
+    commit(repo.path(), "two");
+    let after = head(repo.path());
+    let index = HistoryIndex::open(repo.path(), "main").expect("open");
+    let mut invalid = fixture_delivery(
+        &index,
+        before.clone(),
+        after.clone(),
+        "invalid-availability",
+    );
+    invalid.tasks[0].snapshot_available_at = unavailable_time("missing-snapshot-time");
+    assert!(index.import(invalid).is_err());
+    assert_eq!(index.status().expect("still empty").deliveries, 0);
+
+    let mut delivery = fixture_delivery(&index, before, after, "availability");
+    delivery.tasks[0].text_availability = TaskTextAvailability::PostExecution;
+    delivery.tasks[1].text_availability = TaskTextAvailability::Uncertain;
+    delivery.tasks[1].snapshot_available_at = unavailable_time("snapshot-unavailable");
+    index
+        .import(delivery)
+        .expect("import unavailable snapshots");
+    let loaded = index.deliveries().expect("load delivery");
+    assert_eq!(
+        loaded[0].delivery.tasks[0].text_availability,
+        TaskTextAvailability::PostExecution
+    );
+    assert_eq!(
+        loaded[0].delivery.tasks[1].text_availability,
+        TaskTextAvailability::Uncertain
+    );
+    assert_eq!(
+        loaded[0].delivery.tasks[1].snapshot_available_at.status,
+        TemporalStatus::Unavailable
+    );
+}
+
 fn fixture_delivery(
     index: &HistoryIndex,
     before: String,
@@ -203,6 +304,9 @@ fn fixture_delivery(
             system: "test_tasks".into(),
             record_id: Some(task_id.into()),
         },
+        created_at: known_time(format!("{task_id}:created")),
+        snapshot_available_at: known_time(format!("{task_id}:snapshot")),
+        text_availability: TaskTextAvailability::KnownPreExecution,
         captured_at: "2026-09-07T00:00:00Z".into(),
     };
     DeliveryImport {
@@ -217,8 +321,31 @@ fn fixture_delivery(
             system: "test_delivery".into(),
             record_id: Some(id.into()),
         },
+        delivered_at: known_time(format!("{id}:delivery")),
         captured_at: "2026-09-07T00:00:00Z".into(),
         tasks: vec![task("A"), task("B")],
+    }
+}
+
+fn known_time(record_id: String) -> TemporalFact {
+    TemporalFact {
+        status: TemporalStatus::Known,
+        timestamp: Some("2026-09-06T23:59:59Z".into()),
+        source: Provenance {
+            system: "test_clock".into(),
+            record_id: Some(record_id),
+        },
+    }
+}
+
+fn unavailable_time(record_id: &str) -> TemporalFact {
+    TemporalFact {
+        status: TemporalStatus::Unavailable,
+        timestamp: None,
+        source: Provenance {
+            system: "test_clock".into(),
+            record_id: Some(record_id.into()),
+        },
     }
 }
 

@@ -31,6 +31,7 @@ pub use extract::history::{
     DEFAULT_HISTORY_SYNC_LIMIT, DELIVERY_IMPORT_SCHEMA_VERSION, DeliveredChange, DeliveryEvidence,
     DeliveryImport, FileChange, FileChangeKind, FileFallbackReason, Provenance, RevisionSide,
     SymbolAttribution, SymbolChange, SymbolIdentity, SymbolMatchConfidence, TaskAssociation,
+    TaskTextAvailability, TemporalFact, TemporalStatus,
 };
 pub use store::history::{
     HISTORY_INDEX_SCHEMA_VERSION, HistoryImportReport, HistoryIndex, HistoryRebuildReport,
