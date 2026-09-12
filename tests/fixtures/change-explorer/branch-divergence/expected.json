@@ -1,0 +1,38 @@
+{
+  "case_id": "branch-divergence",
+  "languages": ["rust"],
+  "description": "base and head are two commits on branches that diverge from a common root commit; the root does not contain either branch's addition. A naive base-to-head diff would report base_only as removed and head_only as added, wrongly implying a regression. Comparing against the true merge-base (root) shows only head_only as new and does not implicate base_only at all, since it never existed on head's line of history.",
+  "topology": "branch_divergence",
+  "branch_topology": {
+    "root_branch": "root-branch",
+    "base_branch": "base-branch",
+    "head_branch": "head-branch"
+  },
+  "changed_symbols": [
+    {
+      "selector": "symbol:src/lib.rs#base_only:function",
+      "change": "added",
+      "present_in": ["base"],
+      "absent_in": ["root", "head"]
+    },
+    {
+      "selector": "symbol:src/lib.rs#head_only:function",
+      "change": "added",
+      "present_in": ["head"],
+      "absent_in": ["root", "base"]
+    }
+  ],
+  "unchanged_symbols": [
+    {
+      "selector": "symbol:src/lib.rs#base_fn:function",
+      "present_in": ["root", "base", "head"],
+      "note": "base_fn exists identically on every branch and must not appear in either diff interpretation."
+    }
+  ],
+  "expected_references": [],
+  "expected_impact": [],
+  "candidate_tests": [],
+  "known_gaps": [],
+  "direct_diff_note": "Comparing base (base-branch tip) directly against head (head-branch tip) makes base_only look removed (present_in base, absent_in head) and head_only look added (absent_in base, present_in head) -- as if one feature replaced the other.",
+  "merge_base_diff_note": "Comparing the merge-base (root-branch tip) against head shows only head_only as added; base_only is absent from root too, so it is not part of this change at all -- it is unrelated work still in flight on the other branch."
+}

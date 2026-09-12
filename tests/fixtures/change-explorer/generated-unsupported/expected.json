@@ -1,0 +1,34 @@
+{
+  "case_id": "generated-unsupported",
+  "languages": ["rust"],
+  "description": "config_value changes in src/lib.rs. schema.proto is an unsupported-language file that textually mentions config_value in a comment; the extractor has no .proto grammar, so this reference is an expected unknown rather than an edge.",
+  "topology": "linear",
+  "changed_symbols": [
+    {
+      "selector": "symbol:src/lib.rs#config_value:function",
+      "change": "modified",
+      "present_in": ["base", "head"],
+      "absent_in": []
+    }
+  ],
+  "expected_references": [],
+  "expected_impact": [],
+  "candidate_tests": [],
+  "known_gaps": [
+    {
+      "description": "schema.proto has no registered extractor (Protocol Buffers is not among the supported languages), so its textual mention of config_value is completely invisible: the file contributes nothing to files_indexed, show(file:schema.proto) resolves to null, and search for config_value only matches src/lib.rs.",
+      "snapshot": "head",
+      "check": {
+        "type": "unindexed_file",
+        "path": "schema.proto",
+        "search_query": "config_value"
+      },
+      "observed_command": ["search", "config_value"],
+      "observed_output": {
+        "matches": [
+          {"kind": "symbol", "line": 1, "name": "config_value", "path": "src/lib.rs"}
+        ]
+      }
+    }
+  ]
+}

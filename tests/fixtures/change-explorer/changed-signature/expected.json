@@ -1,0 +1,130 @@
+{
+  "case_id": "changed-signature",
+  "languages": ["python"],
+  "description": "process() gains an optional parameter (y=0); its one caller (caller(), same file) and one test (test_process, imported call) keep calling it with the original arity and remain valid on both snapshots. A second test (test_process_dynamic) exercises process only through getattr() dynamic dispatch, which the static extractor cannot see at all -- recorded as a known_gap.",
+  "topology": "linear",
+  "changed_symbols": [
+    {
+      "selector": "symbol:mod.py#process:function",
+      "change": "modified",
+      "present_in": ["base", "head"],
+      "absent_in": []
+    }
+  ],
+  "expected_references": [
+    {
+      "target": "symbol:mod.py#process:function",
+      "snapshot": "base",
+      "confidence": "exact",
+      "kind": "call",
+      "file": "mod.py",
+      "line": 6
+    },
+    {
+      "target": "symbol:mod.py#process:function",
+      "snapshot": "base",
+      "confidence": "same_module",
+      "kind": "use",
+      "file": "test_process.py",
+      "line": 1
+    },
+    {
+      "target": "symbol:mod.py#process:function",
+      "snapshot": "base",
+      "confidence": "same_module",
+      "kind": "call",
+      "file": "test_process.py",
+      "line": 5
+    },
+    {
+      "target": "symbol:mod.py#process:function",
+      "snapshot": "head",
+      "confidence": "exact",
+      "kind": "call",
+      "file": "mod.py",
+      "line": 6
+    },
+    {
+      "target": "symbol:mod.py#process:function",
+      "snapshot": "head",
+      "confidence": "same_module",
+      "kind": "use",
+      "file": "test_process.py",
+      "line": 1
+    },
+    {
+      "target": "symbol:mod.py#process:function",
+      "snapshot": "head",
+      "confidence": "same_module",
+      "kind": "call",
+      "file": "test_process.py",
+      "line": 5
+    }
+  ],
+  "expected_impact": [
+    {
+      "origin": "symbol:mod.py#process:function",
+      "snapshot": "head",
+      "confidence": "same_module",
+      "qualified_name": "caller",
+      "edge_kind": "call",
+      "distance": 1
+    },
+    {
+      "origin": "symbol:mod.py#process:function",
+      "snapshot": "head",
+      "confidence": "same_module",
+      "qualified_name": "test_process",
+      "edge_kind": "call",
+      "distance": 1
+    }
+  ],
+  "candidate_tests": [
+    {
+      "test_selector": "symbol:test_process.py#test_process:function",
+      "target": "symbol:mod.py#process:function",
+      "category": "call-path",
+      "snapshot": "head",
+      "confidence": "same_module",
+      "kind": "call",
+      "file": "test_process.py",
+      "line": 5
+    },
+    {
+      "test_selector": "symbol:test_naming.py#test_process_dynamic:function",
+      "target": "symbol:mod.py#process:function",
+      "category": "import",
+      "snapshot": "head",
+      "import_target_path": "mod"
+    },
+    {
+      "test_selector": "symbol:test_naming.py#test_process_dynamic:function",
+      "target": "symbol:mod.py#process:function",
+      "category": "naming-heuristic",
+      "snapshot": "head",
+      "rationale": "Name similarity only (test_naming.py's test_process_dynamic references 'process' via getattr); no call or import edge is extractable, see known_gaps."
+    }
+  ],
+  "known_gaps": [
+    {
+      "description": "Calling a function via getattr(module, name)(...) instead of a literal name(...) call expression is invisible to the static call extractor: refs for process at the loosest confidence floor contains zero entries for test_naming.py despite test_process_dynamic exercising process at runtime.",
+      "snapshot": "head",
+      "check": {
+        "type": "absent_reference",
+        "target": "symbol:mod.py#process:function",
+        "file": "test_naming.py"
+      },
+      "observed_command": ["refs", "symbol:mod.py#process:function", "--confidence", "fuzzy_name"],
+      "observed_output": {
+        "refs": [
+          {"confidence": "exact", "file": "mod.py", "kind": "call", "line": 6},
+          {"confidence": "same_module", "file": "test_process.py", "kind": "use", "line": 1},
+          {"confidence": "same_module", "file": "test_process.py", "kind": "call", "line": 5}
+        ],
+        "relations": [],
+        "skipped_low_confidence": 0,
+        "target": {"name": "process", "qualified": "process"}
+      }
+    }
+  ]
+}

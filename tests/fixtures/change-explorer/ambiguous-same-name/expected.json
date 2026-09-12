@@ -1,0 +1,121 @@
+{
+  "case_id": "ambiguous-same-name",
+  "languages": ["rust"],
+  "description": "Two symbols named `run` live in different modules (src/a.rs and src/b.rs); only a::run changes. Intended ownership is call_a (src/lib.rs line 5) calls a::run, and call_b (src/lib.rs line 9) calls b::run. The resolver cannot disambiguate a same-named qualified call by module, so both call sites are reported as fuzzy_name references for either target; this is recorded as a known_gap rather than asserted as clean per-caller attribution.",
+  "topology": "linear",
+  "changed_symbols": [
+    {
+      "selector": "symbol:src/a.rs#run:function",
+      "change": "modified",
+      "present_in": ["base", "head"],
+      "absent_in": []
+    }
+  ],
+  "expected_references": [
+    {
+      "target": "symbol:src/a.rs#run:function",
+      "snapshot": "base",
+      "confidence": "fuzzy_name",
+      "kind": "call",
+      "file": "src/lib.rs",
+      "line": 5
+    },
+    {
+      "target": "symbol:src/a.rs#run:function",
+      "snapshot": "base",
+      "confidence": "fuzzy_name",
+      "kind": "call",
+      "file": "src/lib.rs",
+      "line": 9
+    },
+    {
+      "target": "symbol:src/b.rs#run:function",
+      "snapshot": "base",
+      "confidence": "fuzzy_name",
+      "kind": "call",
+      "file": "src/lib.rs",
+      "line": 5
+    },
+    {
+      "target": "symbol:src/b.rs#run:function",
+      "snapshot": "base",
+      "confidence": "fuzzy_name",
+      "kind": "call",
+      "file": "src/lib.rs",
+      "line": 9
+    },
+    {
+      "target": "symbol:src/a.rs#run:function",
+      "snapshot": "head",
+      "confidence": "fuzzy_name",
+      "kind": "call",
+      "file": "src/lib.rs",
+      "line": 5
+    },
+    {
+      "target": "symbol:src/a.rs#run:function",
+      "snapshot": "head",
+      "confidence": "fuzzy_name",
+      "kind": "call",
+      "file": "src/lib.rs",
+      "line": 9
+    },
+    {
+      "target": "symbol:src/b.rs#run:function",
+      "snapshot": "head",
+      "confidence": "fuzzy_name",
+      "kind": "call",
+      "file": "src/lib.rs",
+      "line": 5
+    },
+    {
+      "target": "symbol:src/b.rs#run:function",
+      "snapshot": "head",
+      "confidence": "fuzzy_name",
+      "kind": "call",
+      "file": "src/lib.rs",
+      "line": 9
+    }
+  ],
+  "expected_impact": [
+    {
+      "origin": "symbol:src/a.rs#run:function",
+      "snapshot": "head",
+      "confidence": "fuzzy_name",
+      "qualified_name": "call_a",
+      "edge_kind": "call",
+      "distance": 1
+    },
+    {
+      "origin": "symbol:src/a.rs#run:function",
+      "snapshot": "head",
+      "confidence": "fuzzy_name",
+      "qualified_name": "call_b",
+      "edge_kind": "call",
+      "distance": 1
+    }
+  ],
+  "candidate_tests": [],
+  "known_gaps": [
+    {
+      "description": "Qualified calls to two same-named functions in different modules (a::run and b::run) cannot be attributed to the correct definition: refs for a::run and refs for b::run return the identical fuzzy_name reference set (both call sites in src/lib.rs), even though only call_a (line 5) actually calls a::run and only call_b (line 9) actually calls b::run.",
+      "snapshot": "base",
+      "check": {
+        "type": "identical_ambiguous_refs",
+        "target_a": "symbol:src/a.rs#run:function",
+        "target_b": "symbol:src/b.rs#run:function",
+        "confidence": "fuzzy_name"
+      },
+      "observed_command": ["refs", "symbol:src/a.rs#run:function", "--confidence", "fuzzy_name"],
+      "observed_output": {
+        "refs": [
+          {"confidence": "fuzzy_name", "file": "src/lib.rs", "kind": "call", "line": 5},
+          {"confidence": "fuzzy_name", "file": "src/lib.rs", "kind": "call", "line": 9}
+        ],
+        "relations": [],
+        "skipped_low_confidence": 0,
+        "target": {"name": "run", "qualified": "run"}
+      }
+    }
+  ]
+}
