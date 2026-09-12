@@ -733,6 +733,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "orbit-graph-explorer"
+version = "0.1.0"
+dependencies = [
+ "git2",
+ "orbit-graph",
+ "tempfile",
+ "thiserror",
+]
+
+[[package]]
 name = "percent-encoding"
 version = "2.3.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"

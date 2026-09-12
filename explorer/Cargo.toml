@@ -1,0 +1,25 @@
+[package]
+name = "orbit-graph-explorer"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.89"
+license = "MIT"
+description = "Local change explorer built on the public orbit-graph library API"
+repository = "https://github.com/constellation-works/orbit-graph"
+publish = false
+
+[[bin]]
+name = "orbit-graph-explorer"
+path = "src/main.rs"
+
+[lints]
+workspace = true
+
+[dependencies]
+git2 = { version = "0.20", default-features = false }
+orbit-graph = { path = "..", version = "0.9.2" }
+tempfile = "3"
+thiserror = "2"
+
+[dev-dependencies]
+tempfile = "3"
