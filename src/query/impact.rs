@@ -7,8 +7,8 @@ use rusqlite::{Connection, OptionalExtension, params};
 
 use crate::query::callees;
 use crate::{
-    DEFAULT_IMPACT_DEPTH, Graph, GraphError, IMPACT_NODE_CAP, ImpactEntry, ImpactFallback,
-    ImpactResult, RefConfidence, RefKind, SymbolSpan,
+    DEFAULT_IMPACT_DEPTH, Graph, GraphError, IMPACT_NODE_CAP, ImpactDirection, ImpactEntry,
+    ImpactFallback, ImpactOrigin, ImpactResult, RefConfidence, RefKind, SymbolSpan,
 };
 
 pub(crate) fn run(
@@ -16,10 +16,11 @@ pub(crate) fn run(
     sel: &Selector,
     depth: u8,
     min_confidence: RefConfidence,
+    direction: ImpactDirection,
 ) -> Result<ImpactResult, GraphError> {
     graph.with_read_connection(|conn| {
         let Some(origin) = resolve_selector(conn, sel)? else {
-            return Ok(empty_result());
+            return Ok(empty_result(direction));
         };
 
         let max_depth = usize::from(if depth == 0 {
@@ -27,16 +28,18 @@ pub(crate) fn run(
         } else {
             depth
         });
-        let traversal = traverse(conn, origin.clone(), max_depth, min_confidence)?;
+        let traversal = traverse(conn, origin.clone(), max_depth, min_confidence, direction)?;
         let fallback = maybe_fuzzy_fallback(
             conn,
             &origin,
             max_depth,
             min_confidence,
             traversal.touched.as_slice(),
+            direction,
         )?;
 
         Ok(ImpactResult {
+            direction,
             visited_nodes: traversal.touched.len(),
             touched: traversal.touched,
             truncated: traversal.truncated,
@@ -45,8 +48,9 @@ pub(crate) fn run(
     })
 }
 
-fn empty_result() -> ImpactResult {
+fn empty_result(direction: ImpactDirection) -> ImpactResult {
     ImpactResult {
+        direction,
         touched: Vec::new(),
         truncated: false,
         visited_nodes: 0,
@@ -59,6 +63,7 @@ fn traverse(
     origin: ImpactSymbol,
     max_depth: usize,
     min_confidence: RefConfidence,
+    direction: ImpactDirection,
 ) -> Result<ImpactTraversal, GraphError> {
     let mut queue = VecDeque::from([(origin.clone(), 0usize)]);
     let mut seen = HashSet::from([origin.qualified]);
@@ -70,7 +75,7 @@ fn traverse(
             continue;
         }
         let next_distance = distance + 1;
-        for neighbor in neighbors(conn, &symbol, min_confidence)? {
+        for neighbor in neighbors(conn, &symbol, min_confidence, direction)? {
             if seen.contains(neighbor.qualified_name.as_str()) {
                 continue;
             }
@@ -88,6 +93,7 @@ fn traverse(
             }
             touched.push(ImpactEntry {
                 qualified_name: neighbor.qualified_name,
+                origin: neighbor.origin,
                 distance: next_distance,
                 edge_kind: neighbor.edge_kind,
             });
@@ -103,12 +109,19 @@ fn maybe_fuzzy_fallback(
     max_depth: usize,
     min_confidence: RefConfidence,
     touched: &[ImpactEntry],
+    direction: ImpactDirection,
 ) -> Result<Option<ImpactFallback>, GraphError> {
     if !touched.is_empty() || min_confidence == RefConfidence::FuzzyName {
         return Ok(None);
     }
 
-    let fallback = traverse(conn, origin.clone(), max_depth, RefConfidence::FuzzyName)?;
+    let fallback = traverse(
+        conn,
+        origin.clone(),
+        max_depth,
+        RefConfidence::FuzzyName,
+        direction,
+    )?;
     if fallback.touched.is_empty() {
         return Ok(None);
     }
@@ -142,19 +155,28 @@ fn neighbors(
     conn: &Connection,
     symbol: &ImpactSymbol,
     min_confidence: RefConfidence,
+    direction: ImpactDirection,
 ) -> Result<Vec<ImpactNeighbor>, GraphError> {
-    let mut neighbors = inbound_ref_neighbors(
-        conn,
-        symbol.qualified.as_str(),
-        symbol.name.as_str(),
-        min_confidence,
-    )?;
-    neighbors.extend(outbound_call_neighbors(conn, symbol, min_confidence)?);
-    neighbors.extend(relation_neighbors(
-        conn,
-        symbol.qualified.as_str(),
-        min_confidence,
-    )?);
+    let inbound = || {
+        inbound_ref_neighbors(
+            conn,
+            symbol.qualified.as_str(),
+            symbol.name.as_str(),
+            min_confidence,
+        )
+    };
+    let relations =
+        |direction| relation_neighbors(conn, symbol.qualified.as_str(), min_confidence, direction);
+    let mut neighbors = match direction {
+        ImpactDirection::Inbound => inbound()?,
+        ImpactDirection::Outbound => outbound_call_neighbors(conn, symbol, min_confidence)?,
+        ImpactDirection::Both => {
+            let mut values = inbound()?;
+            values.extend(outbound_call_neighbors(conn, symbol, min_confidence)?);
+            values
+        }
+    };
+    neighbors.extend(relations(direction)?);
     Ok(neighbors)
 }
 
@@ -186,7 +208,13 @@ fn inbound_ref_neighbors(
                     LIMIT 1
                 ),
                 r.from_file
-            ) AS source_qualified";
+            ) AS source_qualified,
+            CASE WHEN EXISTS (
+                SELECT 1 FROM symbols s
+                WHERE s.file_path = r.from_file
+                  AND s.span_start <= r.from_span_start
+                  AND s.span_end >= r.from_span_end
+            ) THEN 'symbol' ELSE 'file' END AS source_origin";
     let include_fuzzy_name = min_confidence == RefConfidence::FuzzyName;
     let rows = if include_fuzzy_name {
         let sql = format!(
@@ -224,8 +252,12 @@ fn inbound_ref_neighbors(
 fn raw_neighbor_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<RawNeighborRow> {
     Ok(RawNeighborRow {
         qualified_name: row.get(0)?,
-        kind: row.get(1)?,
-        confidence: row.get(2)?,
+        kind: row.get(2)?,
+        confidence: row.get(3)?,
+        origin: match row.get::<_, String>(1)?.as_str() {
+            "file" => ImpactOrigin::File,
+            _ => ImpactOrigin::Symbol,
+        },
     })
 }
 
@@ -250,6 +282,7 @@ fn outbound_call_neighbors(
         neighbors.push(ImpactNeighbor {
             qualified_name,
             edge_kind: RefKind::Call,
+            origin: ImpactOrigin::Symbol,
         });
     }
     Ok(neighbors)
@@ -259,28 +292,30 @@ fn relation_neighbors(
     conn: &Connection,
     qualified: &str,
     min_confidence: RefConfidence,
+    direction: ImpactDirection,
 ) -> Result<Vec<ImpactNeighbor>, GraphError> {
-    let mut neighbors = relation_rows(
-        conn,
-        "SELECT from_qualified, kind, confidence
-         FROM relations
-         WHERE to_qualified = ?1
-         ORDER BY def_file, def_span_start, id",
-        qualified,
-        "impact inbound relations",
-        min_confidence,
-    )?;
-    neighbors.extend(relation_rows(
-        conn,
-        "SELECT to_qualified, kind, confidence
-         FROM relations
-         WHERE from_qualified = ?1
-         ORDER BY def_file, def_span_start, id",
-        qualified,
-        "impact outbound relations",
-        min_confidence,
-    )?);
-    Ok(neighbors)
+    let (sql, operation) = match direction {
+        ImpactDirection::Inbound => (
+            "SELECT from_qualified, kind, confidence FROM relations WHERE to_qualified = ?1 ORDER BY def_file, def_span_start, id",
+            "impact inbound relations",
+        ),
+        ImpactDirection::Outbound => (
+            "SELECT to_qualified, kind, confidence FROM relations WHERE from_qualified = ?1 ORDER BY def_file, def_span_start, id",
+            "impact outbound relations",
+        ),
+        ImpactDirection::Both => {
+            let mut inbound =
+                relation_neighbors(conn, qualified, min_confidence, ImpactDirection::Inbound)?;
+            inbound.extend(relation_neighbors(
+                conn,
+                qualified,
+                min_confidence,
+                ImpactDirection::Outbound,
+            )?);
+            return Ok(inbound);
+        }
+    };
+    relation_rows(conn, sql, qualified, operation, min_confidence)
 }
 
 fn relation_rows(
@@ -299,6 +334,7 @@ fn relation_rows(
                 qualified_name: Some(row.get(0)?),
                 kind: row.get(1)?,
                 confidence: row.get(2)?,
+                origin: ImpactOrigin::Symbol,
             })
         })
         .map_err(|source| GraphError::sqlite(operation, source))?
@@ -323,6 +359,7 @@ fn rows_to_neighbors(
         neighbors.push(ImpactNeighbor {
             qualified_name,
             edge_kind: RefKind::from_db(row.kind.as_str())?,
+            origin: row.origin,
         });
     }
     Ok(neighbors)
@@ -459,6 +496,7 @@ struct ImpactSymbol {
 struct ImpactNeighbor {
     qualified_name: String,
     edge_kind: RefKind,
+    origin: ImpactOrigin,
 }
 
 struct ImpactTraversal {
@@ -470,6 +508,7 @@ struct RawNeighborRow {
     qualified_name: Option<String>,
     kind: String,
     confidence: String,
+    origin: ImpactOrigin,
 }
 
 #[cfg(test)]

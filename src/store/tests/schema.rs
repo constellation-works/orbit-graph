@@ -5,9 +5,69 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use git2::{Oid, Repository, RepositoryInitOptions, Signature, build::CheckoutBuilder};
 use rusqlite::Connection;
+use tempfile::TempDir;
 
 use crate::store::schema::SCHEMA_VERSION;
 use crate::{EXTRACTOR_VERSION, Graph, SyncPolicy, resolve_db_path, resolve_db_path_for_commit};
+
+#[test]
+fn graph_open_with_db_path_indexes_source_root_outside_its_scratch_directory() {
+    let worktree = TestWorktree::new("explicit-db-path", "main");
+    fs::create_dir_all(worktree.path().join("src")).expect("create source directory");
+    fs::write(worktree.path().join("src/lib.rs"), "pub fn indexed() {}\n")
+        .expect("write source file");
+    let database_home = TempDir::new().expect("create external database home");
+    let db_path = database_home.path().join("nested/snapshot.db");
+
+    let graph = Graph::open_with_db_path(worktree.path(), &db_path, SyncPolicy::Manual)
+        .expect("open graph at explicit database path");
+    graph
+        .sync(crate::SyncMode::Full)
+        .expect("index source root");
+
+    assert_eq!(graph.worktree_root(), worktree.path());
+    assert_eq!(graph.db_path().path(), db_path);
+    assert!(db_path.is_file());
+    assert!(!worktree.path().join(".orbit-graph").exists());
+    let conn = open_test_connection(&db_path);
+    assert_eq!(row_count(&conn, "files"), 1);
+}
+
+#[test]
+fn graph_open_with_revision_names_synthetic_tree_database_for_revision() {
+    let worktree = TestWorktree::new("synthetic-revision", "main");
+    let revision = "0123456789abcdef0123456789abcdef01234567";
+
+    let graph = Graph::open_with_revision(worktree.path(), revision, SyncPolicy::Manual)
+        .expect("open synthetic revision graph");
+
+    assert_eq!(graph.worktree_root(), worktree.path());
+    assert_eq!(graph.db_path().branch(), "HEAD");
+    assert_eq!(
+        graph.db_path().schema_version(),
+        crate::STORE_SCHEMA_VERSION
+    );
+    assert_eq!(
+        graph
+            .db_path()
+            .path()
+            .file_name()
+            .and_then(|name| name.to_str()),
+        Some(format!("detached-{}.{}.db", &revision[..12], EXTRACTOR_VERSION).as_str())
+    );
+}
+
+#[test]
+fn graph_open_with_db_path_rejects_a_directory() {
+    let worktree = TestWorktree::new("explicit-db-directory", "main");
+    let directory = TempDir::new().expect("create database directory");
+
+    let error = Graph::open_with_db_path(worktree.path(), directory.path(), SyncPolicy::Manual)
+        .err()
+        .expect("directory path must fail");
+
+    assert!(error.to_string().contains("database path must name a file"));
+}
 
 #[test]
 fn graph_open_creates_documented_schema_and_initial_meta() {

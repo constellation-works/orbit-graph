@@ -114,14 +114,14 @@ times remain distinct and carry explicit certainty/provenance. See
 | `show <selector> [--max-bytes <n>]` | Return metadata and a bounded source slice. |
 | `refs <symbol> [--confidence <level>] [--kind <kind>]` | Return inbound references and relations. |
 | `callees <symbol>` | Return calls made by a symbol. |
-| `impact <selector> [--depth <n>] [--confidence <level>]` | Traverse the bounded reverse dependency graph. |
+| `impact <selector> [--depth <n>] [--confidence <level>] [--direction inbound\|outbound\|both]` | Traverse callers, callees, or both around a selector (default: both). |
 | `trace <command> [--depth <n>] [--confidence <level>]` | Trace a discovered CLI command handler and its calls. |
 | `overview [<file-or-dir-selector>] [--format summary|full]` | Summarize indexed files and symbols. |
 | `implementors <trait-selector>` | Find concrete implementations of a trait-like symbol. |
 | `deps <file-or-dir-selector>` | List source-level module/import edges. |
 | `db-path` | Show the current database path and extractor version. |
 | `clean` | Delete obsolete graph databases. |
-| `version` | Show crate and extractor versions. |
+| `version` | Show crate, extractor, and store schema versions. |
 
 Confidence levels are `exact`, `import`, `same_module`, and `fuzzy`. Reference
 kinds are `call`, `type`, `use`, `trait_bound`, `impl`, `extends`, and

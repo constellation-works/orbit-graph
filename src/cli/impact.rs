@@ -1,5 +1,5 @@
 use crate::Selector;
-use crate::{DEFAULT_IMPACT_DEPTH, RefConfidence};
+use crate::{DEFAULT_IMPACT_DEPTH, ImpactDirection, RefConfidence};
 use clap::{Args, ValueEnum};
 use serde_json::{Value, json};
 
@@ -18,6 +18,9 @@ pub struct ImpactCommand {
     /// `--confidence fuzzy` to include them in the blast radius.
     #[arg(long, value_enum, default_value_t = ConfidenceArg::SameModule)]
     confidence: ConfidenceArg,
+    /// Traversal direction (default: both).
+    #[arg(long, value_enum)]
+    direction: Option<DirectionArg>,
 }
 
 pub(crate) fn output(document: Value) -> CommandOutput {
@@ -65,7 +68,7 @@ pub(crate) fn output(document: Value) -> CommandOutput {
     CommandOutput::with_view(
         document,
         View::Blocks(vec![ViewBlock::table(table.with_empty_message(
-            "selector has no downstream impact at this confidence",
+            "selector has no related nodes at this confidence",
         ))]),
     )
     .with_ndjson_records(records)
@@ -84,7 +87,40 @@ impl ImpactCommand {
     pub(crate) fn run(&self, context: &CommandContext) -> Result<serde_json::Value, CliError> {
         let graph = context.open_graph()?;
         let selector = self.selector.parse::<Selector>()?;
-        json_value(graph.impact(&selector, self.depth, self.confidence.into_graph())?)
+        let result = match self.direction {
+            Some(direction) => graph.impact_with_direction(
+                &selector,
+                self.depth,
+                self.confidence.into_graph(),
+                direction.into_graph(),
+            )?,
+            None => graph.impact(&selector, self.depth, self.confidence.into_graph())?,
+        };
+        let mut document = json_value(result)?;
+        if let Some(direction) = self.direction
+            && let Some(object) = document.as_object_mut()
+        {
+            object.insert("direction".to_string(), json!(direction.into_graph()));
+        }
+        Ok(document)
+    }
+}
+
+#[derive(Debug, Clone, Copy, ValueEnum)]
+#[clap(rename_all = "snake_case")]
+enum DirectionArg {
+    Inbound,
+    Outbound,
+    Both,
+}
+
+impl DirectionArg {
+    fn into_graph(self) -> ImpactDirection {
+        match self {
+            Self::Inbound => ImpactDirection::Inbound,
+            Self::Outbound => ImpactDirection::Outbound,
+            Self::Both => ImpactDirection::Both,
+        }
     }
 }
 
