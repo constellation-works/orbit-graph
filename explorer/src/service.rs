@@ -15,7 +15,13 @@
 //!    cannot drive the service with the browser's credentials.
 //! 3. **Per-launch bearer token.** A fresh token is generated for every launch
 //!    and printed once to standard error. It is never written to a file and
-//!    never appears in a response body.
+//!    never appears in a response body. The one exception is `GET /` and its
+//!    two static assets (`/ui/app.css`, `/ui/app.js`): a plain navigation or
+//!    `<link>`/`<script>` fetch cannot attach a custom header, and none of
+//!    the three carries repository content or a secret of its own. The
+//!    embedded page instead receives the token once, through the launch
+//!    URL's fragment, which the browser never transmits to the server, and
+//!    holds it in memory only for the rest of the session.
 //!
 //! Indexing runs on a background thread. `GET /api/health` answers from the
 //! launch scope alone and therefore stays responsive while both revisions are
@@ -62,29 +68,28 @@ const RECV_ERROR_BACKOFF: Duration = Duration::from_millis(10);
 /// Interval between `unblock` calls while waiting for handlers to stop.
 const SHUTDOWN_POLL: Duration = Duration::from_millis(5);
 
-/// Minimal shell served at `/` until the real UI lands.
+/// Embedded three-pane UI shell: one HTML document, one stylesheet, one
+/// framework-free JavaScript module. Compiled into the binary at build time —
+/// no CDN, no build step, no network access other than this service's own
+/// `/api/*` endpoints.
 ///
 /// Static markup from the binary. No repository content is interpolated into
-/// it, and the UI it will be replaced by must insert source text as text
-/// content, never as markup.
-const PLACEHOLDER_SHELL: &str = r#"<!DOCTYPE html>
-<html lang="en">
-<head><meta charset="utf-8"><title>orbit-graph change explorer</title></head>
-<body>
-<h1>orbit-graph change explorer</h1>
-<p>This build serves the JSON API only; the user interface is a later milestone.</p>
-<p>Every request needs the per-launch bearer token printed to standard error at launch.</p>
-<ul>
-<li><code>GET /api/health</code></li>
-<li><code>GET /api/comparison</code></li>
-<li><code>GET /api/changed-symbols</code></li>
-<li><code>GET /api/evidence?selector=&amp;side=&amp;depth=&amp;confidence=</code></li>
-<li><code>GET /api/candidate-tests?selector=&amp;side=</code></li>
-<li><code>GET /api/source?selector=&amp;side=</code></li>
-</ul>
-</body>
-</html>
-"#;
+/// it: the JSON API is the only source of repository-derived data, and the
+/// script that consumes it inserts source text as text content, never as
+/// markup.
+const SHELL_HTML: &str = include_str!("../ui/index.html");
+
+/// Embedded stylesheet for [`SHELL_HTML`].
+const SHELL_CSS: &str = include_str!("../ui/app.css");
+
+/// Embedded JavaScript module for [`SHELL_HTML`].
+const SHELL_JS: &str = include_str!("../ui/app.js");
+
+/// CSP for the shell and its two static assets: same-origin only, no inline
+/// script or style execution, no framing.
+const SHELL_CSP: &str = "default-src 'self'; script-src 'self'; style-src 'self'; \
+                          connect-src 'self'; img-src 'self'; base-uri 'none'; \
+                          frame-ancestors 'none'";
 
 /// Failure surface of service startup.
 #[derive(Debug, Error)]
@@ -571,22 +576,32 @@ fn error_response(status: u16, code: &str, message: &str) -> Body {
     )
 }
 
-fn html_response(status: u16, body: &'static str) -> Body {
-    let mut response = Response::from_data(body.as_bytes().to_vec()).with_status_code(status);
+/// Serve a static asset embedded in the binary, with the shell's CSP.
+fn asset_response(content_type: &'static str, body: &'static str) -> Body {
+    let mut response = Response::from_data(body.as_bytes().to_vec()).with_status_code(200);
     for header in [
-        ("Content-Type", "text/html; charset=utf-8"),
+        ("Content-Type", content_type),
         ("Cache-Control", "no-store"),
         ("X-Content-Type-Options", "nosniff"),
-        (
-            "Content-Security-Policy",
-            "default-src 'none'; style-src 'unsafe-inline'; frame-ancestors 'none'",
-        ),
+        ("Content-Security-Policy", SHELL_CSP),
     ] {
         if let Ok(header) = Header::from_bytes(header.0.as_bytes(), header.1.as_bytes()) {
             response.add_header(header);
         }
     }
     response
+}
+
+fn html_response(body: &'static str) -> Body {
+    asset_response("text/html; charset=utf-8", body)
+}
+
+fn css_response(body: &'static str) -> Body {
+    asset_response("text/css; charset=utf-8", body)
+}
+
+fn js_response(body: &'static str) -> Body {
+    asset_response("text/javascript; charset=utf-8", body)
 }
 
 /// Route one request, after the three launch-scope defences have passed.
@@ -597,7 +612,9 @@ fn handle(scope: &Scope, index: &RwLock<IndexState>, request: &Request) -> Body 
 
     let info = request_info(request);
     match (info.method.as_str(), info.path.as_str()) {
-        ("GET", "/") => html_response(200, PLACEHOLDER_SHELL),
+        ("GET", "/") => html_response(SHELL_HTML),
+        ("GET", "/ui/app.css") => css_response(SHELL_CSS),
+        ("GET", "/ui/app.js") => js_response(SHELL_JS),
         ("GET", "/api/health") => json_response(200, &health_payload(scope, index)),
         ("POST", "/api/report") => error_response(
             501,
@@ -640,6 +657,16 @@ fn reject(scope: &Scope, request: &Request) -> Option<Body> {
         }
     }
 
+    if is_public_asset(request) {
+        // The shell and its two static assets carry no repository content and
+        // no secret of their own, and a plain navigation or a `<link>`/
+        // `<script>` fetch cannot attach a custom header. The per-launch
+        // token instead reaches the page through the launch URL fragment,
+        // which the browser never sends to the server, so these three routes
+        // are the one exception to the bearer-token check below.
+        return None;
+    }
+
     let presented = header_value(request, "Authorization")
         .and_then(|value| value.trim().strip_prefix("Bearer "))
         .map(str::trim)
@@ -653,6 +680,17 @@ fn reject(scope: &Scope, request: &Request) -> Option<Body> {
         ));
     }
     None
+}
+
+/// Whether a request addresses the embedded shell or one of its two static
+/// assets: the only routes served without the per-launch bearer token.
+fn is_public_asset(request: &Request) -> bool {
+    if request.method().as_str() != "GET" {
+        return false;
+    }
+    let url = request.url();
+    let path = url.split('?').next().unwrap_or_default();
+    matches!(path, "/" | "/ui/app.css" | "/ui/app.js")
 }
 
 /// Run `run` against a ready comparison, or report the indexing status.
@@ -1072,6 +1110,12 @@ pub fn print_launch_banner(service: &Service) -> io::Result<()> {
         stderr,
         "orbit-graph-explorer listening on {}",
         service.origin()
+    )?;
+    writeln!(
+        stderr,
+        "Open: {}/#token={}",
+        service.origin(),
+        service.token()
     )?;
     writeln!(stderr, "Authorization: Bearer {}", service.token())?;
     writeln!(
