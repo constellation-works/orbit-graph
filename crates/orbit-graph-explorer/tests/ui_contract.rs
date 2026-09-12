@@ -1,6 +1,6 @@
 //! Real-binary coverage for the embedded three-pane UI shell.
 //!
-//! Three things are asserted here, all against the packaged
+//! Four things are asserted here, all against the packaged
 //! `orbit-graph-explorer` binary rather than an in-process handler:
 //!
 //! - `GET /` and its two static assets serve the embedded shell with the
@@ -9,8 +9,15 @@
 //!   cannot attach one), and without any repository-derived content.
 //! - The JSON field names `crates/orbit-graph-explorer/ui/app.js` depends on —
 //!   its data contract, restated in the module doc comment there — are present
-//!   in the real service's serializers for the `direct-call` and
-//!   `removed-symbol` fixtures.
+//!   in the real service's serializers for the `direct-call`, `removed-symbol`,
+//!   `cycle`, and `ambiguous-same-name` fixtures. This covers the comparison's
+//!   per-side cache/index-identity envelope, the changed-symbol list's
+//!   `filtered_out` block, and the evidence and entry-point payloads the
+//!   filter bar, path following, and entry-points section read.
+//! - The served `app.js` persists filter state through the URL fragment
+//!   without the per-launch token: it reads and discards `token` before ever
+//!   writing the fragment back, and only the filter keys the service accepts
+//!   as query parameters are serialized.
 //! - A selector naming a file with a space and a Unicode character round-trips
 //!   through the API's percent-encoded query strings.
 
@@ -122,6 +129,77 @@ fn removed_symbol_data_contract_matches_the_page() {
     assert_data_contract("removed-symbol");
 }
 
+#[test]
+fn cycle_data_contract_matches_the_page() {
+    assert_data_contract("cycle");
+}
+
+#[test]
+fn ambiguous_same_name_data_contract_matches_the_page() {
+    assert_data_contract("ambiguous-same-name");
+}
+
+/// Filter state must round-trip through the URL fragment the page parses,
+/// and the per-launch token must never be written back into it.
+///
+/// The fragment is client-side state: nothing in the real HTTP contract
+/// encodes it. This asserts the invariant against the served `app.js` itself
+/// (the same asset the CSP and static-asset tests already fetch from the real
+/// binary), the way the existing data-contract tests assert field names
+/// against the real serializers rather than against a copy of the source.
+#[test]
+fn filter_state_round_trips_through_the_fragment_without_the_token() {
+    let service = Service::launch("direct-call");
+    let js = service.request("GET", "/ui/app.js", &[]);
+    assert_eq!(js.status, 200, "{js:?}");
+    let body = js.body.as_str();
+
+    // Exactly the query parameters the service accepts as filters are ever
+    // persisted, so a bookmarked or copied URL carries filters, never a
+    // credential.
+    for key in ["confidence", "language", "change_kind", "depth", "scope"] {
+        assert!(
+            body.contains(format!("\"{key}\"").as_str()),
+            "app.js must persist the `{key}` filter in FILTER_KEYS: missing from the served asset"
+        );
+    }
+
+    // The token is read from the fragment once, then discarded before the
+    // fragment is ever written back.
+    assert!(
+        body.contains("initialParams.delete(\"token\")"),
+        "app.js must strip the token before persisting the fragment"
+    );
+    assert!(
+        body.contains("function encodeFragment"),
+        "app.js must expose the fragment encoder the round trip depends on"
+    );
+    assert!(
+        body.contains("function decodeFragment"),
+        "app.js must expose the fragment decoder the round trip depends on"
+    );
+    assert!(
+        body.contains("function writeFragment"),
+        "app.js must expose the fragment writer used on every filter change"
+    );
+
+    // The encoder's own scan is bounded to `FILTER_KEYS`, so `token` cannot
+    // reach the fragment through that path even if a caller mishandled it
+    // upstream.
+    let encode_start = body
+        .find("function encodeFragment")
+        .expect("encodeFragment is defined");
+    let encode_body = &body[encode_start..encode_start + 400.min(body.len() - encode_start)];
+    assert!(
+        encode_body.contains("FILTER_KEYS"),
+        "encodeFragment must iterate FILTER_KEYS, not an unbounded set of params: {encode_body}"
+    );
+    assert!(
+        !encode_body.contains("token"),
+        "encodeFragment must never reference `token`: {encode_body}"
+    );
+}
+
 /// Assert every field `crates/orbit-graph-explorer/ui/app.js` reads is present
 /// in the real service's JSON, for both endpoints and both sides of `case_id`.
 fn assert_data_contract(case_id: &str) {
@@ -159,11 +237,34 @@ fn assert_data_contract(case_id: &str) {
         comparison["working_tree"].get("notice").is_some(),
         "{comparison}"
     );
+    // Header cache/index-identity status: per-side hit/miss plus the
+    // extractor and store schema versions the page prints next to it.
+    let snapshots = comparison["snapshots"].as_array().expect("snapshots array");
+    assert_eq!(snapshots.len(), 2, "{comparison}");
+    for snapshot in snapshots {
+        for field in ["side", "cache", "index_identity"] {
+            assert!(
+                snapshot.get(field).is_some(),
+                "comparison snapshot missing `{field}`: {snapshot}"
+            );
+        }
+        for field in ["extractor_version", "store_schema_version"] {
+            assert!(
+                snapshot["index_identity"].get(field).is_some(),
+                "comparison snapshot index_identity missing `{field}`: {snapshot}"
+            );
+        }
+    }
 
     let changed = service
         .authorized("GET", "/api/changed-symbols", &[])
         .json();
     assert!(changed.get("schema_version").is_some(), "{changed}");
+    assert!(
+        changed.get("filtered_out").is_some(),
+        "changed-symbols.filtered_out missing, needed for the pane-1 \"hidden by filters\" line: \
+         {changed}"
+    );
     let symbols = changed["symbols"].as_array().expect("symbols array");
     assert!(
         !symbols.is_empty(),
@@ -244,6 +345,8 @@ fn assert_data_contract(case_id: &str) {
         "skipped_low_confidence",
         "truncated",
         "truncated_by",
+        "bounds_hit",
+        "filtered_out",
         "no_path_reasons",
     ] {
         assert!(
@@ -251,21 +354,45 @@ fn assert_data_contract(case_id: &str) {
             "evidence.{field} missing: {evidence}"
         );
     }
-    for field in ["depth", "min_confidence", "source_max_bytes"] {
+    for field in [
+        "depth",
+        "node_cap",
+        "min_confidence",
+        "time_budget_ms",
+        "source_max_bytes",
+    ] {
         assert!(evidence["query_options"].get(field).is_some(), "{evidence}");
     }
     for path in evidence["paths"].as_array().expect("paths array") {
-        for field in ["truncated", "truncated_by", "edges"] {
+        for field in [
+            "from",
+            "to",
+            "distance",
+            "category",
+            "truncated",
+            "truncated_by",
+            "edges",
+        ] {
             assert!(
                 path.get(field).is_some(),
                 "evidence path missing `{field}`: {path}"
             );
         }
+        for endpoint in ["from", "to"] {
+            for field in ["selector", "snapshot", "label", "origin"] {
+                assert!(
+                    path[endpoint].get(field).is_some(),
+                    "evidence path {endpoint} missing `{field}`: {path}"
+                );
+            }
+        }
         let edge = &path["edges"][0];
         for field in [
             "from",
             "from_selector",
+            "from_origin",
             "to",
+            "to_selector",
             "relationship",
             "category",
             "confidence",
@@ -281,6 +408,67 @@ fn assert_data_contract(case_id: &str) {
         }
         assert!(edge["source"].get("file").is_some(), "{edge}");
         assert!(edge["source"].get("line").is_some(), "{edge}");
+    }
+
+    // Pane 2's entry-points section: each entry's classification rule and its
+    // shortest path back to the queried symbol, plus the bounds/truncation
+    // envelope the section header states.
+    let entry_points = service
+        .authorized(
+            "GET",
+            format!("/api/entry-points?selector={encoded_selector}&side={side}").as_str(),
+            &[],
+        )
+        .json();
+    for field in [
+        "target",
+        "commit_sha",
+        "query_options",
+        "rules",
+        "entry_points",
+        "truncated",
+        "truncated_by",
+        "bounds_hit",
+        "filtered_out",
+        "no_entry_point_reasons",
+    ] {
+        assert!(
+            entry_points.get(field).is_some(),
+            "entry-points.{field} missing: {entry_points}"
+        );
+    }
+    for rule in entry_points["rules"].as_array().expect("rules array") {
+        for field in ["id", "description"] {
+            assert!(
+                rule.get(field).is_some(),
+                "entry-point rule missing `{field}`: {rule}"
+            );
+        }
+    }
+    for entry in entry_points["entry_points"]
+        .as_array()
+        .expect("entry_points array")
+    {
+        for field in [
+            "node",
+            "rule",
+            "rule_description",
+            "rules",
+            "distance",
+            "path",
+            "note",
+        ] {
+            assert!(
+                entry.get(field).is_some(),
+                "entry point missing `{field}`: {entry}"
+            );
+        }
+        for field in ["selector", "snapshot", "label", "origin"] {
+            assert!(
+                entry["node"].get(field).is_some(),
+                "entry point node missing `{field}`: {entry}"
+            );
+        }
     }
 
     let candidates = service

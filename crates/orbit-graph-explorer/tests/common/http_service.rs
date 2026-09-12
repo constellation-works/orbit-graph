@@ -259,15 +259,29 @@ fn read_response(stream: &mut TcpStream) -> Result<HttpResponse, String> {
         }
     }
 
-    let length: usize = headers
+    let chunked = headers
         .iter()
-        .find(|(field, _)| field == "content-length")
-        .and_then(|(_, value)| value.parse().ok())
-        .unwrap_or(0);
-    let mut body = vec![0u8; length];
-    reader
-        .read_exact(body.as_mut_slice())
-        .map_err(|error| format!("read {length}-byte body: {error}"))?;
+        .find(|(field, _)| field == "transfer-encoding")
+        .is_some_and(|(_, value)| value.to_ascii_lowercase().contains("chunked"));
+
+    let body = if chunked {
+        // tiny_http switches to chunked transfer past its default
+        // `chunked_threshold` (32768 bytes; see `tiny_http::Response`), so any
+        // embedded asset that grows past that needs this decoded rather than
+        // read as a fixed `Content-Length`.
+        read_chunked_body(&mut reader)?
+    } else {
+        let length: usize = headers
+            .iter()
+            .find(|(field, _)| field == "content-length")
+            .and_then(|(_, value)| value.parse().ok())
+            .unwrap_or(0);
+        let mut body = vec![0u8; length];
+        reader
+            .read_exact(body.as_mut_slice())
+            .map_err(|error| format!("read {length}-byte body: {error}"))?;
+        body
+    };
 
     Ok(HttpResponse {
         status,
@@ -275,6 +289,44 @@ fn read_response(stream: &mut TcpStream) -> Result<HttpResponse, String> {
         body: String::from_utf8_lossy(body.as_slice()).into_owned(),
         request_line: String::new(),
     })
+}
+
+/// Decode an HTTP/1.1 chunked-transfer body: a `<hex-size>\r\n` line, that many
+/// data bytes, a trailing `\r\n`, repeated until a zero-size chunk, followed by
+/// optional trailer headers up to the final blank line.
+fn read_chunked_body(reader: &mut BufReader<&mut TcpStream>) -> Result<Vec<u8>, String> {
+    let mut body = Vec::new();
+    loop {
+        let mut size_line = String::new();
+        reader
+            .read_line(&mut size_line)
+            .map_err(|error| format!("read chunk size line: {error}"))?;
+        let size_text = size_line.trim().split(';').next().unwrap_or("").trim();
+        let size = usize::from_str_radix(size_text, 16)
+            .map_err(|error| format!("parse chunk size {size_text:?}: {error}"))?;
+        if size == 0 {
+            loop {
+                let mut trailer = String::new();
+                let read = reader
+                    .read_line(&mut trailer)
+                    .map_err(|error| format!("read chunk trailer: {error}"))?;
+                if read == 0 || trailer.trim().is_empty() {
+                    break;
+                }
+            }
+            break;
+        }
+        let mut chunk = vec![0u8; size];
+        reader
+            .read_exact(chunk.as_mut_slice())
+            .map_err(|error| format!("read {size}-byte chunk: {error}"))?;
+        body.extend_from_slice(chunk.as_slice());
+        let mut crlf = [0u8; 2];
+        reader
+            .read_exact(&mut crlf)
+            .map_err(|error| format!("read chunk trailing CRLF: {error}"))?;
+    }
+    Ok(body)
 }
 
 #[derive(Debug)]
