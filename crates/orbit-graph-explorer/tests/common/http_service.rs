@@ -136,6 +136,34 @@ impl Service {
     }
 
     pub fn request(&self, method: &str, path: &str, headers: &[(&str, &str)]) -> HttpResponse {
+        self.request_with_body(method, path, headers, b"")
+    }
+
+    /// Like [`Service::authorized`], but sends `body` as the request body
+    /// with a matching `Content-Length`, for routes such as `POST
+    /// /api/report` that read a JSON request body.
+    pub fn authorized_with_body(
+        &self,
+        method: &str,
+        path: &str,
+        headers: &[(&str, &str)],
+        body: &[u8],
+    ) -> HttpResponse {
+        let authorization = format!("Bearer {}", self.token);
+        let mut all = vec![("Authorization", authorization.as_str())];
+        all.extend_from_slice(headers);
+        self.request_with_body(method, path, all.as_slice(), body)
+    }
+
+    /// Like [`Service::request`], but sends `body` as the request body with a
+    /// matching `Content-Length`.
+    pub fn request_with_body(
+        &self,
+        method: &str,
+        path: &str,
+        headers: &[(&str, &str)],
+        body: &[u8],
+    ) -> HttpResponse {
         let mut stream = TcpStream::connect(self.authority.as_str()).expect("connect to service");
         stream
             .set_read_timeout(Some(Duration::from_secs(30)))
@@ -144,8 +172,11 @@ impl Service {
         for (field, value) in headers {
             request.push_str(format!("{field}: {value}\r\n").as_str());
         }
-        request.push_str("Content-Length: 0\r\n\r\n");
-        stream.write_all(request.as_bytes()).expect("write request");
+        request.push_str(format!("Content-Length: {}\r\n\r\n", body.len()).as_str());
+        stream
+            .write_all(request.as_bytes())
+            .expect("write request head");
+        stream.write_all(body).expect("write request body");
         stream.flush().expect("flush request");
 
         // Read exactly `Content-Length` body bytes rather than reading to

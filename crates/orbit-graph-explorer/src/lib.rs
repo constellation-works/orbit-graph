@@ -26,5 +26,6 @@ pub mod cache;
 pub mod changes;
 pub mod evidence;
 pub mod filters;
+pub mod report;
 pub mod service;
 pub mod snapshot;
