@@ -159,12 +159,11 @@ means a session pays full indexing cost per revision.
 return source. A snapshot tree must therefore outlive every query against it.
 The tree is not a scratch artifact that may be deleted after indexing.
 
-**Caching** keys a cached index by
-`(commit SHA, EXTRACTOR_VERSION, store schema version)` under a configurable
-cache directory defaulting to `.orbit-graph/explorer/snapshots/` in the user
-repository. A cache entry whose key does not match exactly is discarded and
-rebuilt, never reused with a warning; the materialized tree must be cached
-alongside the index because of the lifetime rule above.
+**Caching is not in Milestone 2.** Each comparison materializes fresh,
+task-owned snapshot trees and indexes them in place. A future cache may key an
+entry by `(commit SHA, EXTRACTOR_VERSION, store schema version)` under a
+configurable cache directory, but no cache directory is created by the shipped
+explorer service and no snapshot or index is reused.
 
 **Dirty working trees are detected and reported, never indexed.** A comparison
 inspects the repository status (untracked files included, ignored files
@@ -454,7 +453,7 @@ rejected — the scope is never inferred from the request.
 | `GET /api/comparison` | The resolved comparison for the launch scope | Resolved comparison payload |
 | `GET /api/changed-symbols` | Changed-symbol slice (milestone 2) | Changed-symbol payload |
 | `GET /api/evidence?selector=…&side=…&depth=…&confidence=…` | Relationship evidence for one symbol in one snapshot | Evidence-path payloads |
-| `GET /api/candidate-tests?selector=…` | Candidate tests for one changed symbol | Candidate-test payload |
+| `GET /api/candidate-tests?selector=…&side=…&confidence=…` | Candidate tests for one changed symbol in one snapshot | Candidate-test payload |
 | `GET /api/source?selector=…&side=…` | Bounded source excerpt for an evidence location | `{"file","span","bytes_or_text","truncated","snapshot"}` |
 | `POST /api/report` | Export the current report | Exported change-report payload |
 | `GET /api/health` | Liveness and scope echo | `{"status","repository","base_sha","head_sha","mode"}` |
@@ -467,10 +466,81 @@ Rules:
   `innerHTML`. Syntax highlighting, if added, tokenizes text that is already in
   the DOM as text.
 - A `side` parameter is required wherever a snapshot matters, and the response
-  echoes the snapshot and its SHA.
+  echoes the snapshot and its SHA. It defaults to `head` for the evidence,
+  candidate-tests, and source routes; accepted values are `base` and `head`.
+- `confidence` defaults to `same_module` and accepts `exact`,
+  `import_resolved`, `same_module`, and `fuzzy_name` (the CLI aliases `import`
+  and `fuzzy` are also accepted). Evidence and candidate-test payloads carry
+  `schema_version`, `target`, `commit_sha`, `query_options`, and their result
+  arrays. Evidence additionally carries `resolved`, `resolved_qualified`,
+  `skipped_low_confidence`, `truncated`, `truncated_by`, and
+  `no_path_reasons`; each path carries `path_id`, `from`, `to`, `truncated`,
+  `truncated_by`, and `edges`, and each edge carries `from`, `from_selector`,
+  `to`, `relationship`, `category`, `confidence`, `snapshot`, `commit_sha`,
+  `source.file`, `source.line`, and optional `note`. Candidate tests additionally
+  carry `unsupported_scope`; each candidate carries `test`, `source`, `label`,
+  `category`, optional `path_id`, `changed_symbols`, `truncated`, and optional
+  `note`.
+- The changed-symbol payload has `schema_version`, `symbols`, and
+  `out_of_scope`. Each symbol carries `status`, `pairing`, `pairing_evidence`,
+  optional `base` and `head` symbol references, `supporting_snapshots`,
+  `file_change`, optional `base_path` and `head_path`,
+  `uncertain_candidates`, and optional `note`. A symbol reference carries
+  `selector`, `snapshot`, and `commit_sha`; an uncertain candidate carries
+  `symbol` and `reason`. Statuses are `added`, `removed`, `modified`,
+  `signature_changed`, `moved`, `renamed`, and `uncertain`. File-change values
+  are `added`, `deleted`, `modified`, `renamed`, `copied`, `type_changed`, and
+  `other`. Out-of-scope entries carry `path`, `reason`, and `snapshot`.
+- The comparison payload's scope envelope carries `schema_version`,
+  `repository`, `mode`, `base` and `head` objects (`requested_ref` and
+  `commit_sha`), `base_sha`, `head_sha`, `effective_base_sha`, `working_tree`,
+  `indexing_status`, `indexing_error`, and `extractor_version`; snapshots add
+  `side`, `requested_ref`, `commit_sha`, `files_indexed`, `files_written`,
+  `extractor_version`, and `excluded` entries (`path` and `reason`). Health
+  returns the launch identifiers plus `status: "ok"` and indexing fields.
+  Indexing statuses are `indexing`, `ready`, and `failed`.
+- `GET /api/source` returns `schema_version`, `scope`, `selector`, `snapshot`,
+  `commit_sha`, `file`, `span.start`, `span.end`, `kind`, `name`, `qualified`,
+  `encoding`, `bytes_or_text`, `truncated`, `truncated_by`, and
+  `source_max_bytes`. `encoding` is `text` or `bytes`; a missing selector on
+  the requested side returns 404 with error code `not_in_snapshot`.
+- Errors use `{"schema_version":1,"error":{"code","message"}}`, with a
+  `scope` envelope on comparison-dependent errors. The service emits
+  `unauthorized` (401), `host_mismatch`, `origin_mismatch`, or
+  `repository_out_of_scope` (403), `invalid_side`, `invalid_confidence`,
+  `missing_selector`, `unsupported_depth`, `evidence_failed`,
+  `candidate_tests_failed`, or `invalid_selector` (400), `not_found` (404),
+  `method_not_allowed` (405), `index_unavailable`, `indexing_failed`,
+  `changed_symbols_failed`, or `source_failed` (500), `indexing` (503), and
+  `not_implemented` (501). `POST /api/report` deliberately returns 501.
 - Responses are read-only with respect to the user's repository. No endpoint
   writes to the working tree, the Git index, or the object store.
 - The service exits when its session ends, taking both snapshot trees with it.
+
+## Amendments
+
+These Milestone 2 amendments reconcile the original Milestone 1 contract with
+the shipped service and serializers; they are recorded rather than silently
+rewriting the original examples.
+
+- **2026-09-12 — ORB-12373:** The service uses `tiny_http` 0.12 with default
+  features disabled. It is a small blocking dependency suited to this
+  short-lived loopback service: seven JSON routes need no async runtime,
+  streaming, or middleware, and no TLS backend is needed.
+- **2026-09-12 — ORB-12373:** Changed-symbol statuses expand the original
+  example's `added|removed|modified|uncertain` to
+  `added|removed|modified|signature_changed|moved|renamed|uncertain` so the
+  pairing ladder is represented directly. One-sided entries use
+  `pairing: same_selector`; Git rename or copy evidence is required for
+  `moved` and `renamed`, otherwise candidates remain `uncertain`.
+- **2026-09-12 — ORB-12373:** Milestone 2 adds the explicit service envelope,
+  depth-1 query options, default `side=head`, confidence aliases, source
+  encoding, host checks, and the error codes listed in Service surface.
+  `POST /api/report` remains a 501 placeholder and `/` remains an embedded
+  placeholder shell.
+- **2026-09-12 — ORB-12373:** Snapshot caching is deferred. The service creates
+  fresh per-comparison trees and indexes under each snapshot tree; the
+  previously described repository cache is not shipped.
 
 ## UI sketch
 
@@ -556,6 +626,18 @@ machine contract), and tests covering the removed-symbol case across both
 snapshots, working-tree immutability, snapshot-index location, dirty-tree
 detection, and the real executable.
 
-Deliberately absent: the HTTP service, the UI, the changed-symbol diff, the
-report export, and snapshot caching. Those belong to later milestones and must
-conform to the contract above.
+At the Milestone 1 boundary, the HTTP service, UI, changed-symbol diff, report
+export, and snapshot caching were deliberately absent. The service and
+changed-symbol diff now belong to Milestone 2; the UI, report export, and
+snapshot caching remain later work and must conform to the contract above.
+
+## Milestone 2 scope
+
+Landed after Milestone 1: the changed-symbol slice
+(`explorer/src/changes.rs`), depth-1 inbound evidence and candidate-test
+classification (`explorer/src/evidence.rs`), and the authenticated loopback
+JSON service (`explorer/src/service.rs`). The service resolves direct base and
+head refs, materializes isolated snapshots, reports dirty working-tree state,
+and serves the routes and bounded payloads in Service surface. It does not add
+a UI, multi-hop evidence, report export, or snapshot caching; those remain
+later milestone work.
