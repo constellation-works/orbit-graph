@@ -1,0 +1,79 @@
+{
+  "case_id": "direct-call",
+  "languages": ["rust"],
+  "description": "A changed function (helper) with one direct caller (entry) and one test that calls it directly. Baseline case: caller and test evidence must survive the body change unchanged.",
+  "topology": "linear",
+  "changed_symbols": [
+    {
+      "selector": "symbol:src/lib.rs#helper:function",
+      "change": "modified",
+      "present_in": ["base", "head"],
+      "absent_in": []
+    }
+  ],
+  "expected_references": [
+    {
+      "target": "symbol:src/lib.rs#helper:function",
+      "snapshot": "base",
+      "confidence": "exact",
+      "kind": "call",
+      "file": "src/lib.rs",
+      "line": 6
+    },
+    {
+      "target": "symbol:src/lib.rs#helper:function",
+      "snapshot": "base",
+      "confidence": "same_module",
+      "kind": "call",
+      "file": "tests/test_lib.rs",
+      "line": 2
+    },
+    {
+      "target": "symbol:src/lib.rs#helper:function",
+      "snapshot": "head",
+      "confidence": "exact",
+      "kind": "call",
+      "file": "src/lib.rs",
+      "line": 6
+    },
+    {
+      "target": "symbol:src/lib.rs#helper:function",
+      "snapshot": "head",
+      "confidence": "same_module",
+      "kind": "call",
+      "file": "tests/test_lib.rs",
+      "line": 2
+    }
+  ],
+  "expected_impact": [
+    {
+      "origin": "symbol:src/lib.rs#helper:function",
+      "snapshot": "head",
+      "confidence": "exact",
+      "qualified_name": "entry",
+      "edge_kind": "call",
+      "distance": 1
+    },
+    {
+      "origin": "symbol:src/lib.rs#helper:function",
+      "snapshot": "head",
+      "confidence": "same_module",
+      "qualified_name": "test_helper",
+      "edge_kind": "call",
+      "distance": 1
+    }
+  ],
+  "candidate_tests": [
+    {
+      "test_selector": "symbol:tests/test_lib.rs#test_helper:function",
+      "target": "symbol:src/lib.rs#helper:function",
+      "category": "call-path",
+      "snapshot": "head",
+      "confidence": "same_module",
+      "kind": "call",
+      "file": "tests/test_lib.rs",
+      "line": 2
+    }
+  ],
+  "known_gaps": []
+}

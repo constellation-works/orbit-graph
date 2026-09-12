@@ -1,0 +1,68 @@
+{
+  "case_id": "cycle",
+  "languages": ["rust"],
+  "description": "is_even and is_odd call each other mutually; only is_even's base-case body changes. The traversal must resolve the direct call edge in each direction without looping forever around the cycle.",
+  "topology": "linear",
+  "changed_symbols": [
+    {
+      "selector": "symbol:src/lib.rs#is_even:function",
+      "change": "modified",
+      "present_in": ["base", "head"],
+      "absent_in": []
+    }
+  ],
+  "expected_references": [
+    {
+      "target": "symbol:src/lib.rs#is_even:function",
+      "snapshot": "base",
+      "confidence": "exact",
+      "kind": "call",
+      "file": "src/lib.rs",
+      "line": 13
+    },
+    {
+      "target": "symbol:src/lib.rs#is_odd:function",
+      "snapshot": "base",
+      "confidence": "exact",
+      "kind": "call",
+      "file": "src/lib.rs",
+      "line": 5
+    },
+    {
+      "target": "symbol:src/lib.rs#is_even:function",
+      "snapshot": "head",
+      "confidence": "exact",
+      "kind": "call",
+      "file": "src/lib.rs",
+      "line": 13
+    },
+    {
+      "target": "symbol:src/lib.rs#is_odd:function",
+      "snapshot": "head",
+      "confidence": "exact",
+      "kind": "call",
+      "file": "src/lib.rs",
+      "line": 5
+    }
+  ],
+  "expected_impact": [
+    {
+      "origin": "symbol:src/lib.rs#is_even:function",
+      "snapshot": "head",
+      "confidence": "exact",
+      "qualified_name": "is_odd",
+      "edge_kind": "call",
+      "distance": 1
+    },
+    {
+      "origin": "symbol:src/lib.rs#is_odd:function",
+      "snapshot": "head",
+      "confidence": "exact",
+      "qualified_name": "is_even",
+      "edge_kind": "call",
+      "distance": 1
+    }
+  ],
+  "candidate_tests": [],
+  "known_gaps": []
+}

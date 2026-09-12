@@ -1,0 +1,50 @@
+{
+  "case_id": "changed-test",
+  "languages": ["rust"],
+  "description": "Only the test file changes (the asserted values in test_add); src/lib.rs#add is byte-identical on both snapshots and must not appear as a changed symbol.",
+  "topology": "linear",
+  "changed_symbols": [
+    {
+      "selector": "symbol:tests/add_test.rs#test_add:function",
+      "change": "modified",
+      "present_in": ["base", "head"],
+      "absent_in": []
+    }
+  ],
+  "unchanged_symbols": [
+    {
+      "selector": "symbol:src/lib.rs#add:function",
+      "present_in": ["base", "head"],
+      "note": "add is byte-identical on both snapshots and must not be reported as added/removed/modified by anything in this fixture."
+    }
+  ],
+  "expected_references": [],
+  "expected_impact": [],
+  "candidate_tests": [
+    {
+      "test_selector": "symbol:tests/add_test.rs#test_add:function",
+      "target": "symbol:src/lib.rs#add:function",
+      "category": "naming-heuristic",
+      "snapshot": "head",
+      "rationale": "test_add exercises add(...) only as an argument inside the assert_eq! macro; the call extractor does not record call references for arguments of macro invocations, so no call-path edge exists. See known_gaps."
+    }
+  ],
+  "known_gaps": [
+    {
+      "description": "A function call written as an argument to a macro invocation (assert_eq!(add(1, 2), 3)) produces zero call references for the callee: refs for add returns an empty refs array even though add is clearly invoked from the test.",
+      "snapshot": "base",
+      "check": {
+        "type": "absent_reference",
+        "target": "symbol:src/lib.rs#add:function",
+        "file": "tests/add_test.rs"
+      },
+      "observed_command": ["refs", "symbol:src/lib.rs#add:function", "--confidence", "fuzzy_name"],
+      "observed_output": {
+        "refs": [],
+        "relations": [],
+        "skipped_low_confidence": 0,
+        "target": {"name": "add", "qualified": "add"}
+      }
+    }
+  ]
+}

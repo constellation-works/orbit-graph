@@ -1,0 +1,36 @@
+{
+  "case_id": "removed-symbol",
+  "languages": ["rust"],
+  "description": "old_helper is present in base with one caller and removed entirely in head, which rewrites caller to no longer reference it.",
+  "topology": "linear",
+  "changed_symbols": [
+    {
+      "selector": "symbol:src/lib.rs#old_helper:function",
+      "change": "removed",
+      "present_in": ["base"],
+      "absent_in": ["head"]
+    }
+  ],
+  "expected_references": [
+    {
+      "target": "symbol:src/lib.rs#old_helper:function",
+      "snapshot": "base",
+      "confidence": "exact",
+      "kind": "call",
+      "file": "src/lib.rs",
+      "line": 6
+    }
+  ],
+  "expected_impact": [
+    {
+      "origin": "symbol:src/lib.rs#old_helper:function",
+      "snapshot": "base",
+      "confidence": "exact",
+      "qualified_name": "caller",
+      "edge_kind": "call",
+      "distance": 1
+    }
+  ],
+  "candidate_tests": [],
+  "known_gaps": []
+}
