@@ -1,13 +1,18 @@
 {
   "case_id": "changed-signature",
-  "languages": ["python"],
+  "languages": [
+    "python"
+  ],
   "description": "process() gains an optional parameter (y=0); its one caller (caller(), same file) and one test (test_process, imported call) keep calling it with the original arity and remain valid on both snapshots. A second test (test_process_dynamic) exercises process only through getattr() dynamic dispatch, which the static extractor cannot see at all -- recorded as a known_gap.",
   "topology": "linear",
   "changed_symbols": [
     {
       "selector": "symbol:mod.py#process:function",
       "change": "modified",
-      "present_in": ["base", "head"],
+      "present_in": [
+        "base",
+        "head"
+      ],
       "absent_in": []
     }
   ],
@@ -23,7 +28,7 @@
     {
       "target": "symbol:mod.py#process:function",
       "snapshot": "base",
-      "confidence": "same_module",
+      "confidence": "import_resolved",
       "kind": "use",
       "file": "test_process.py",
       "line": 1
@@ -31,7 +36,7 @@
     {
       "target": "symbol:mod.py#process:function",
       "snapshot": "base",
-      "confidence": "same_module",
+      "confidence": "import_resolved",
       "kind": "call",
       "file": "test_process.py",
       "line": 5
@@ -47,7 +52,7 @@
     {
       "target": "symbol:mod.py#process:function",
       "snapshot": "head",
-      "confidence": "same_module",
+      "confidence": "import_resolved",
       "kind": "use",
       "file": "test_process.py",
       "line": 1
@@ -55,7 +60,7 @@
     {
       "target": "symbol:mod.py#process:function",
       "snapshot": "head",
-      "confidence": "same_module",
+      "confidence": "import_resolved",
       "kind": "call",
       "file": "test_process.py",
       "line": 5
@@ -65,7 +70,7 @@
     {
       "origin": "symbol:mod.py#process:function",
       "snapshot": "head",
-      "confidence": "same_module",
+      "confidence": "exact",
       "qualified_name": "caller",
       "edge_kind": "call",
       "distance": 1
@@ -73,7 +78,7 @@
     {
       "origin": "symbol:mod.py#process:function",
       "snapshot": "head",
-      "confidence": "same_module",
+      "confidence": "import_resolved",
       "qualified_name": "test_process",
       "edge_kind": "call",
       "distance": 1
@@ -85,7 +90,7 @@
       "target": "symbol:mod.py#process:function",
       "category": "call-path",
       "snapshot": "head",
-      "confidence": "same_module",
+      "confidence": "import_resolved",
       "kind": "call",
       "file": "test_process.py",
       "line": 5
@@ -114,16 +119,39 @@
         "target": "symbol:mod.py#process:function",
         "file": "test_naming.py"
       },
-      "observed_command": ["refs", "symbol:mod.py#process:function", "--confidence", "fuzzy_name"],
+      "observed_command": [
+        "refs",
+        "symbol:mod.py#process:function",
+        "--confidence",
+        "fuzzy_name"
+      ],
       "observed_output": {
         "refs": [
-          {"confidence": "exact", "file": "mod.py", "kind": "call", "line": 6},
-          {"confidence": "same_module", "file": "test_process.py", "kind": "use", "line": 1},
-          {"confidence": "same_module", "file": "test_process.py", "kind": "call", "line": 5}
+          {
+            "confidence": "exact",
+            "file": "mod.py",
+            "kind": "call",
+            "line": 6
+          },
+          {
+            "confidence": "import_resolved",
+            "file": "test_process.py",
+            "kind": "use",
+            "line": 1
+          },
+          {
+            "confidence": "import_resolved",
+            "file": "test_process.py",
+            "kind": "call",
+            "line": 5
+          }
         ],
         "relations": [],
         "skipped_low_confidence": 0,
-        "target": {"name": "process", "qualified": "process"}
+        "target": {
+          "name": "process",
+          "qualified": "process"
+        }
       }
     }
   ]

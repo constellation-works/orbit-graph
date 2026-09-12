@@ -127,6 +127,11 @@ Confidence levels are `exact`, `import`, `same_module`, and `fuzzy`. Reference
 kinds are `call`, `type`, `use`, `trait_bound`, `impl`, `extends`, and
 `implements`.
 
+Qualified cross-file calls such as `a::run()` and `pkg.mod.run()` report
+`exact` when the qualifier and indexed file-module path identify one symbol.
+Explicit imports report `import` (`import_resolved` in JSON and storage) when
+they identify one symbol; ambiguous qualifiers or imports remain `fuzzy`.
+
 Selectors use one of these forms:
 
 ```text

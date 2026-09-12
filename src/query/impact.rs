@@ -160,6 +160,7 @@ fn neighbors(
     let inbound = || {
         inbound_ref_neighbors(
             conn,
+            symbol.id,
             symbol.qualified.as_str(),
             symbol.name.as_str(),
             min_confidence,
@@ -193,6 +194,7 @@ fn neighbors(
 // filtered out anyway).
 fn inbound_ref_neighbors(
     conn: &Connection,
+    symbol_id: i64,
     qualified: &str,
     name: &str,
     min_confidence: RefConfidence,
@@ -220,27 +222,29 @@ fn inbound_ref_neighbors(
         let sql = format!(
             "SELECT {SOURCE_QUALIFIED}, r.kind, r.confidence
              FROM refs r
-             WHERE r.target_qualified = ?1
-                OR (r.confidence = 'fuzzy_name' AND r.target_name = ?2)
+             WHERE r.target_symbol_hint = ?1
+                OR (r.target_symbol_hint IS NULL AND r.target_qualified = ?2)
+                OR (r.confidence = 'fuzzy_name' AND r.target_name = ?3)
              ORDER BY r.from_file, r.from_span_start, r.id"
         );
         let mut stmt = conn
             .prepare_cached(sql.as_str())
             .map_err(|source| GraphError::sqlite("prepare impact inbound refs query", source))?;
-        stmt.query_map(params![qualified, name], raw_neighbor_row)
+        stmt.query_map(params![symbol_id, qualified, name], raw_neighbor_row)
             .map_err(|source| GraphError::sqlite("execute impact inbound refs query", source))?
             .collect::<Result<Vec<_>, _>>()
     } else {
         let sql = format!(
             "SELECT {SOURCE_QUALIFIED}, r.kind, r.confidence
              FROM refs r
-             WHERE r.target_qualified = ?1
+             WHERE r.target_symbol_hint = ?1
+                OR (r.target_symbol_hint IS NULL AND r.target_qualified = ?2)
              ORDER BY r.from_file, r.from_span_start, r.id"
         );
         let mut stmt = conn
             .prepare_cached(sql.as_str())
             .map_err(|source| GraphError::sqlite("prepare impact inbound refs query", source))?;
-        stmt.query_map(params![qualified], raw_neighbor_row)
+        stmt.query_map(params![symbol_id, qualified], raw_neighbor_row)
             .map_err(|source| GraphError::sqlite("execute impact inbound refs query", source))?
             .collect::<Result<Vec<_>, _>>()
     }
@@ -394,7 +398,7 @@ fn resolve_symbol_selector(
 ) -> Result<Option<ImpactSymbol>, GraphError> {
     if kind.trim().is_empty() {
         conn.query_row(
-            "SELECT file_path, qualified, name, span_start, span_end
+            "SELECT id, file_path, qualified, name, span_start, span_end
              FROM symbols
              WHERE file_path = ?1
                AND (name = ?2 OR qualified = ?2)
@@ -405,7 +409,7 @@ fn resolve_symbol_selector(
         )
     } else {
         conn.query_row(
-            "SELECT file_path, qualified, name, span_start, span_end
+            "SELECT id, file_path, qualified, name, span_start, span_end
              FROM symbols
              WHERE file_path = ?1
                AND kind = ?3
@@ -425,7 +429,7 @@ fn resolve_module_selector(
     qualified: &str,
 ) -> Result<Option<ImpactSymbol>, GraphError> {
     conn.query_row(
-        "SELECT file_path, qualified, name, span_start, span_end
+        "SELECT id, file_path, qualified, name, span_start, span_end
          FROM symbols
          WHERE kind = 'module'
            AND (qualified = ?1 OR name = ?1)
@@ -443,7 +447,7 @@ fn resolve_command_selector(
     name: &str,
 ) -> Result<Option<ImpactSymbol>, GraphError> {
     conn.query_row(
-        "SELECT s.file_path, s.qualified, s.name, s.span_start, s.span_end
+        "SELECT s.id, s.file_path, s.qualified, s.name, s.span_start, s.span_end
          FROM commands c
          JOIN symbols s ON s.id = c.handler_symbol
          WHERE c.name = ?1
@@ -461,7 +465,7 @@ fn resolve_symbol_by_qualified(
     qualified: &str,
 ) -> Result<Option<ImpactSymbol>, GraphError> {
     conn.query_row(
-        "SELECT file_path, qualified, name, span_start, span_end
+        "SELECT id, file_path, qualified, name, span_start, span_end
          FROM symbols
          WHERE qualified = ?1
          ORDER BY id
@@ -475,16 +479,18 @@ fn resolve_symbol_by_qualified(
 
 fn impact_symbol_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<ImpactSymbol> {
     Ok(ImpactSymbol {
-        file_path: row.get(0)?,
-        qualified: row.get(1)?,
-        name: row.get(2)?,
-        span_start: row.get(3)?,
-        span_end: row.get(4)?,
+        id: row.get(0)?,
+        file_path: row.get(1)?,
+        qualified: row.get(2)?,
+        name: row.get(3)?,
+        span_start: row.get(4)?,
+        span_end: row.get(5)?,
     })
 }
 
 #[derive(Debug, Clone)]
 struct ImpactSymbol {
+    id: i64,
     file_path: String,
     qualified: String,
     name: String,

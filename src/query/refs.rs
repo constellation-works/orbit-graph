@@ -21,16 +21,17 @@ pub(crate) fn run(graph: &Graph, sel: &Selector, opts: &RefOpts) -> Result<RefRe
     let mut line_cache = LineCache::new(graph.worktree_root.as_path());
     graph.with_read_connection(|conn| {
         let target = resolve_target(conn, sel)?;
-        let Some(qualified) = target.qualified.as_deref() else {
-            return Ok(empty_result(target));
+        let Some(qualified) = target.output.qualified.as_deref() else {
+            return Ok(empty_result(target.output));
         };
 
         let mut skipped_low_confidence = 0;
         let refs = if should_query_refs(opts.kind) {
             query_refs(
                 conn,
+                target.symbol_id,
                 qualified,
-                target.name.as_str(),
+                target.output.name.as_str(),
                 opts,
                 &mut line_cache,
                 &mut skipped_low_confidence,
@@ -52,15 +53,16 @@ pub(crate) fn run(graph: &Graph, sel: &Selector, opts: &RefOpts) -> Result<RefRe
 
         let fallback = maybe_fuzzy_fallback(
             conn,
+            target.symbol_id,
             qualified,
-            target.name.as_str(),
+            target.output.name.as_str(),
             opts,
             &refs,
             &mut line_cache,
         )?;
 
         Ok(RefResult {
-            target,
+            target: target.output,
             refs,
             relations,
             skipped_low_confidence,
@@ -78,6 +80,7 @@ pub(crate) fn run(graph: &Graph, sel: &Selector, opts: &RefOpts) -> Result<RefRe
 /// lower-confidence match exists. See ORB-00383.
 fn maybe_fuzzy_fallback(
     conn: &Connection,
+    symbol_id: Option<i64>,
     qualified: &str,
     target_name: &str,
     opts: &RefOpts,
@@ -98,6 +101,7 @@ fn maybe_fuzzy_fallback(
     let mut skipped = 0;
     let fallback_refs = query_refs(
         conn,
+        symbol_id,
         qualified,
         target_name,
         &fallback_opts,
@@ -131,17 +135,20 @@ fn confidence_label(confidence: RefConfidence) -> &'static str {
     }
 }
 
-fn resolve_target(conn: &Connection, sel: &Selector) -> Result<RefTarget, GraphError> {
+fn resolve_target(conn: &Connection, sel: &Selector) -> Result<QueryTarget, GraphError> {
     let Selector::Symbol { path, symbol, kind } = sel else {
-        return Ok(RefTarget {
-            name: sel.path().to_string(),
-            qualified: None,
+        return Ok(QueryTarget {
+            output: RefTarget {
+                name: sel.path().to_string(),
+                qualified: None,
+            },
+            symbol_id: None,
         });
     };
 
     let mut stmt = conn
         .prepare_cached(
-            "SELECT name, qualified FROM symbols
+            "SELECT id, name, qualified FROM symbols
              WHERE file_path = ?1
                AND kind = ?2
                AND (name = ?3 OR qualified = ?3)
@@ -150,17 +157,23 @@ fn resolve_target(conn: &Connection, sel: &Selector) -> Result<RefTarget, GraphE
         )
         .map_err(|source| GraphError::sqlite("prepare refs target resolution", source))?;
     let result = stmt.query_row(params![path, kind, symbol], |row| {
-        Ok(RefTarget {
-            name: row.get(0)?,
-            qualified: Some(row.get(1)?),
+        Ok(QueryTarget {
+            symbol_id: Some(row.get(0)?),
+            output: RefTarget {
+                name: row.get(1)?,
+                qualified: Some(row.get(2)?),
+            },
         })
     });
 
     match result {
         Ok(target) => Ok(target),
-        Err(rusqlite::Error::QueryReturnedNoRows) => Ok(RefTarget {
-            name: symbol.clone(),
-            qualified: None,
+        Err(rusqlite::Error::QueryReturnedNoRows) => Ok(QueryTarget {
+            output: RefTarget {
+                name: symbol.clone(),
+                qualified: None,
+            },
+            symbol_id: None,
         }),
         Err(source) => Err(GraphError::sqlite("resolve refs target symbol", source)),
     }
@@ -186,6 +199,7 @@ fn should_query_relations(kind: Option<RefKind>) -> bool {
 
 fn query_refs(
     conn: &Connection,
+    symbol_id: Option<i64>,
     qualified: &str,
     target_name: &str,
     opts: &RefOpts,
@@ -197,30 +211,32 @@ fn query_refs(
         (Some(_), true) => {
             "SELECT from_file, from_span_start, kind, confidence
              FROM refs
-             WHERE kind = ?2
+             WHERE kind = ?3
                AND (
-                   target_qualified = ?1
-                   OR (confidence = 'fuzzy_name' AND target_name = ?3)
+                   target_symbol_hint = ?1
+                   OR (target_symbol_hint IS NULL AND target_qualified = ?2)
+                   OR (confidence = 'fuzzy_name' AND target_name = ?4)
                )
              ORDER BY from_file, from_span_start, id"
         }
         (Some(_), false) => {
             "SELECT from_file, from_span_start, kind, confidence
              FROM refs
-             WHERE target_qualified = ?1 AND kind = ?2
+             WHERE (target_symbol_hint = ?1 OR (target_symbol_hint IS NULL AND target_qualified = ?2)) AND kind = ?3
              ORDER BY from_file, from_span_start, id"
         }
         (None, true) => {
             "SELECT from_file, from_span_start, kind, confidence
              FROM refs
-             WHERE target_qualified = ?1
-                OR (confidence = 'fuzzy_name' AND target_name = ?2)
+             WHERE target_symbol_hint = ?1
+                OR (target_symbol_hint IS NULL AND target_qualified = ?2)
+                OR (confidence = 'fuzzy_name' AND target_name = ?3)
              ORDER BY from_file, from_span_start, id"
         }
         (None, false) => {
             "SELECT from_file, from_span_start, kind, confidence
              FROM refs
-             WHERE target_qualified = ?1
+             WHERE target_symbol_hint = ?1 OR (target_symbol_hint IS NULL AND target_qualified = ?2)
              ORDER BY from_file, from_span_start, id"
         }
     };
@@ -230,21 +246,21 @@ fn query_refs(
     let rows = match (opts.kind, include_fuzzy_name) {
         (Some(kind), true) => stmt
             .query_map(
-                params![qualified, kind.as_str(), target_name],
+                params![symbol_id, qualified, kind.as_str(), target_name],
                 row_to_ref_row,
             )
             .map_err(|source| GraphError::sqlite("query refs by target", source))?
             .collect::<Result<Vec<_>, _>>(),
         (Some(kind), false) => stmt
-            .query_map(params![qualified, kind.as_str()], row_to_ref_row)
+            .query_map(params![symbol_id, qualified, kind.as_str()], row_to_ref_row)
             .map_err(|source| GraphError::sqlite("query refs by target", source))?
             .collect::<Result<Vec<_>, _>>(),
         (None, true) => stmt
-            .query_map(params![qualified, target_name], row_to_ref_row)
+            .query_map(params![symbol_id, qualified, target_name], row_to_ref_row)
             .map_err(|source| GraphError::sqlite("query refs by target", source))?
             .collect::<Result<Vec<_>, _>>(),
         (None, false) => stmt
-            .query_map(params![qualified], row_to_ref_row)
+            .query_map(params![symbol_id, qualified], row_to_ref_row)
             .map_err(|source| GraphError::sqlite("query refs by target", source))?
             .collect::<Result<Vec<_>, _>>(),
     }
@@ -266,6 +282,11 @@ fn query_refs(
         });
     }
     Ok(entries)
+}
+
+struct QueryTarget {
+    output: RefTarget,
+    symbol_id: Option<i64>,
 }
 
 fn query_relations(

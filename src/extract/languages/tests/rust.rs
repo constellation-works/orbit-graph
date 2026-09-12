@@ -149,6 +149,38 @@ use crate::task::{Task, TaskId as Id};
 }
 
 #[test]
+fn fixture_qualified_calls_and_import_forms_preserve_resolution_inputs() {
+    let calls = extract_at(
+        "src/lib.rs",
+        "mod a;\nmod b;\nfn caller() { a::run(); b::run(); }\n",
+    );
+    let qualified_calls = calls
+        .refs
+        .iter()
+        .filter(|reference| reference.kind == "call")
+        .map(|reference| reference.target_qualified.as_deref())
+        .collect::<Vec<_>>();
+    assert_eq!(qualified_calls, vec![Some("a::run"), Some("b::run")]);
+
+    let imports =
+        extract("use crate::a::{run, other};\nuse super::b::run as b_run;\nuse crate::c::*;\n");
+    let import_rows = imports
+        .imports
+        .iter()
+        .map(|import| (import.target_path.as_str(), import.target_symbol.as_deref()))
+        .collect::<Vec<_>>();
+    assert_eq!(
+        import_rows,
+        vec![
+            ("crate::a", Some("other")),
+            ("crate::a", Some("run")),
+            ("crate::c", None),
+            ("super::b", Some("b_run")),
+        ]
+    );
+}
+
+#[test]
 fn qualifies_nested_module_symbols() {
     let file = extract(
         r#"

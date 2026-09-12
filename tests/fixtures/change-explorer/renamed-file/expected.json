@@ -1,42 +1,60 @@
 {
   "case_id": "renamed-file",
-  "languages": ["python"],
-  "description": "Two independent renames in one change: formatter.py moves to formatting/formatter.py with unchanged content, and helper.py moves to helpers.py with changed content. main.py updates its imports to the new paths in both cases and keeps resolving its calls by name at the same confidence.",
+  "languages": [
+    "python"
+  ],
+  "description": "Two independent renames in one change: formatter.py moves to formatting/formatter.py with unchanged content, and helper.py moves to helpers.py with changed content. main.py updates its imports to the new paths, and its explicit imports and calls resolve with import_resolved confidence.",
   "topology": "linear",
   "changed_symbols": [
     {
       "selector": "symbol:formatter.py#format_value:function",
       "change": "removed",
-      "present_in": ["base"],
-      "absent_in": ["head"],
+      "present_in": [
+        "base"
+      ],
+      "absent_in": [
+        "head"
+      ],
       "note": "Unchanged content moved to formatting/formatter.py; the query layer has no cross-path rename identity, so this looks like a plain removal. See known_gaps."
     },
     {
       "selector": "symbol:formatting/formatter.py#format_value:function",
       "change": "added",
-      "present_in": ["head"],
-      "absent_in": ["base"],
+      "present_in": [
+        "head"
+      ],
+      "absent_in": [
+        "base"
+      ],
       "note": "Same content as the removed formatter.py#format_value; recorded as an independent addition at the new path."
     },
     {
       "selector": "symbol:helper.py#helper_fn:function",
       "change": "removed",
-      "present_in": ["base"],
-      "absent_in": ["head"],
+      "present_in": [
+        "base"
+      ],
+      "absent_in": [
+        "head"
+      ],
       "note": "Renamed to helpers.py and content also changed (doubles the input)."
     },
     {
       "selector": "symbol:helpers.py#helper_fn:function",
       "change": "added",
-      "present_in": ["head"],
-      "absent_in": ["base"]
+      "present_in": [
+        "head"
+      ],
+      "absent_in": [
+        "base"
+      ]
     }
   ],
   "expected_references": [
     {
       "target": "symbol:formatter.py#format_value:function",
       "snapshot": "base",
-      "confidence": "same_module",
+      "confidence": "import_resolved",
       "kind": "use",
       "file": "main.py",
       "line": 1
@@ -44,7 +62,7 @@
     {
       "target": "symbol:formatter.py#format_value:function",
       "snapshot": "base",
-      "confidence": "same_module",
+      "confidence": "import_resolved",
       "kind": "call",
       "file": "main.py",
       "line": 6
@@ -52,7 +70,7 @@
     {
       "target": "symbol:helper.py#helper_fn:function",
       "snapshot": "base",
-      "confidence": "same_module",
+      "confidence": "import_resolved",
       "kind": "use",
       "file": "main.py",
       "line": 2
@@ -60,7 +78,7 @@
     {
       "target": "symbol:helper.py#helper_fn:function",
       "snapshot": "base",
-      "confidence": "same_module",
+      "confidence": "import_resolved",
       "kind": "call",
       "file": "main.py",
       "line": 6
@@ -68,7 +86,7 @@
     {
       "target": "symbol:formatting/formatter.py#format_value:function",
       "snapshot": "head",
-      "confidence": "same_module",
+      "confidence": "import_resolved",
       "kind": "use",
       "file": "main.py",
       "line": 1
@@ -76,7 +94,7 @@
     {
       "target": "symbol:formatting/formatter.py#format_value:function",
       "snapshot": "head",
-      "confidence": "same_module",
+      "confidence": "import_resolved",
       "kind": "call",
       "file": "main.py",
       "line": 6
@@ -84,7 +102,7 @@
     {
       "target": "symbol:helpers.py#helper_fn:function",
       "snapshot": "head",
-      "confidence": "same_module",
+      "confidence": "import_resolved",
       "kind": "use",
       "file": "main.py",
       "line": 2
@@ -92,7 +110,7 @@
     {
       "target": "symbol:helpers.py#helper_fn:function",
       "snapshot": "head",
-      "confidence": "same_module",
+      "confidence": "import_resolved",
       "kind": "call",
       "file": "main.py",
       "line": 6
@@ -104,7 +122,10 @@
     {
       "description": "The graph has no cross-path rename identity: a file move (even with byte-identical content) is indistinguishable from an unrelated removal at the old path plus an unrelated addition at the new path. show(old selector) is null on head and show(new selector) is null on base for both renamed symbols.",
       "snapshot": "head",
-      "observed_command": ["show", "symbol:formatter.py#format_value:function"],
+      "observed_command": [
+        "show",
+        "symbol:formatter.py#format_value:function"
+      ],
       "observed_output": null
     }
   ]
