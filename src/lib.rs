@@ -64,7 +64,9 @@ mod tests;
 /// incompatibly. Older graph DB files then become invisible to the active
 /// graph handle and are removed by the next sync.
 // L-0052: FTS population invariants require a fresh DB when old indexes may be empty.
-pub const EXTRACTOR_VERSION: u32 = 4;
+/// Version 5 rebuilds stored refs so qualified cross-file and explicit-import
+/// resolution records stable symbol hints.
+pub const EXTRACTOR_VERSION: u32 = 5;
 
 /// SQLite schema version used by the graph store.
 pub const STORE_SCHEMA_VERSION: u32 = store::schema::SCHEMA_VERSION;

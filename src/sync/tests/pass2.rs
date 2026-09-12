@@ -69,7 +69,7 @@ mod imported {
 }
 
 #[test]
-fn same_module_resolution_uses_unique_cross_file_module_match() {
+fn qualified_cross_file_resolution_is_exact() {
     let worktree = TestWorktree::new("same-module");
     let graph = Graph::open(worktree.path(), SyncPolicy::Manual).expect("open graph");
     worktree.write(
@@ -96,7 +96,7 @@ mod shared {
     let conn = open_test_connection(worktree.path());
     let row = call_ref(&conn, "src/caller.rs", "target");
     assert_eq!(row.target_qualified.as_deref(), Some("shared::target"));
-    assert_eq!(row.confidence, super::CONFIDENCE_SAME_MODULE);
+    assert_eq!(row.confidence, super::CONFIDENCE_EXACT);
     assert!(row.target_symbol_hint.is_some());
 }
 
@@ -167,6 +167,65 @@ mod chosen {
 }
 
 #[test]
+fn rust_grouped_super_and_whole_module_imports_resolve() {
+    let worktree = TestWorktree::new("rust-import-forms");
+    let graph = Graph::open(worktree.path(), SyncPolicy::Manual).expect("open graph");
+    worktree.write(
+        "src/nested/caller.rs",
+        "use crate::grouped::{grouped, other};\nuse super::sibling::sibling;\nuse crate::whole::*;\nfn caller() { grouped(); other(); sibling(); whole::whole(); }\n",
+    );
+    worktree.write("src/grouped.rs", "pub fn grouped() {}\npub fn other() {}\n");
+    worktree.write("src/nested/sibling.rs", "pub fn sibling() {}\n");
+    worktree.write("src/whole.rs", "pub fn whole() {}\n");
+    graph.sync(SyncMode::Full).expect("sync graph");
+
+    let conn = open_test_connection(worktree.path());
+    for name in ["grouped", "other", "sibling", "whole"] {
+        let row = call_ref(&conn, "src/nested/caller.rs", name);
+        assert_eq!(row.confidence, super::CONFIDENCE_IMPORT_RESOLVED, "{name}");
+        assert!(row.target_symbol_hint.is_some(), "{name}");
+    }
+}
+
+#[test]
+fn python_from_module_and_aliased_module_imports_resolve() {
+    let worktree = TestWorktree::new("python-import-forms");
+    let graph = Graph::open(worktree.path(), SyncPolicy::Manual).expect("open graph");
+    worktree.write(
+        "caller.py",
+        "from direct import direct\nimport module\nimport package.aliased as alias\ndef caller():\n    direct()\n    module.module_fn()\n    alias.alias_fn()\n",
+    );
+    worktree.write("direct.py", "def direct():\n    pass\n");
+    worktree.write("module.py", "def module_fn():\n    pass\n");
+    worktree.write("package/aliased.py", "def alias_fn():\n    pass\n");
+    graph.sync(SyncMode::Full).expect("sync graph");
+
+    let conn = open_test_connection(worktree.path());
+    for name in ["direct", "module_fn", "alias_fn"] {
+        let row = call_ref(&conn, "caller.py", name);
+        assert_eq!(row.confidence, super::CONFIDENCE_IMPORT_RESOLVED, "{name}");
+        assert!(row.target_symbol_hint.is_some(), "{name}");
+    }
+}
+
+#[test]
+fn ambiguous_explicit_imports_do_not_choose_a_target() {
+    let worktree = TestWorktree::new("ambiguous-explicit-imports");
+    let graph = Graph::open(worktree.path(), SyncPolicy::Manual).expect("open graph");
+    worktree.write(
+        "src/caller.rs",
+        "use crate::left::run;\nuse crate::right::run;\nfn caller() { run(); }\n",
+    );
+    worktree.write("src/left.rs", "pub fn run() {}\n");
+    worktree.write("src/right.rs", "pub fn run() {}\n");
+    graph.sync(SyncMode::Full).expect("sync graph");
+
+    let conn = open_test_connection(worktree.path());
+    let row = call_ref(&conn, "src/caller.rs", "run");
+    assert_ref(&row, None, super::CONFIDENCE_FUZZY_NAME);
+}
+
+#[test]
 fn fuzzy_refs_are_null_and_non_fuzzy_refs_are_populated_in_three_file_sync() {
     let worktree = TestWorktree::new("three-file-tiers");
     let graph = Graph::open(worktree.path(), SyncPolicy::Manual).expect("open graph");
@@ -226,7 +285,7 @@ mod shared {
     assert_ref(
         rows.get("module_call").expect("same module call ref"),
         Some("shared::module_call"),
-        super::CONFIDENCE_SAME_MODULE,
+        super::CONFIDENCE_EXACT,
     );
     assert_ref(
         rows.get("ambiguous_call").expect("ambiguous call ref"),
@@ -236,7 +295,7 @@ mod shared {
 }
 
 #[test]
-fn target_symbol_hint_is_null_when_resolved_qualified_is_ambiguous() {
+fn duplicate_import_targets_remain_fuzzy_and_unhinted() {
     let worktree = TestWorktree::new("ambiguous-hint");
     let graph = Graph::open(worktree.path(), SyncPolicy::Manual).expect("open graph");
     drop(graph);
@@ -261,8 +320,8 @@ fn target_symbol_hint_is_null_when_resolved_qualified_is_ambiguous() {
 
     let conn = open_test_connection(worktree.path());
     let row = call_ref(&conn, "src/caller.rs", "target");
-    assert_eq!(row.target_qualified.as_deref(), Some("dupe::target"));
-    assert_eq!(row.confidence, super::CONFIDENCE_IMPORT_RESOLVED);
+    assert_eq!(row.target_qualified, None);
+    assert_eq!(row.confidence, super::CONFIDENCE_FUZZY_NAME);
     assert!(row.target_symbol_hint.is_none());
 }
 

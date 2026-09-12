@@ -69,9 +69,48 @@ def helper():
     assert!(file.refs.iter().any(|reference| {
         reference.kind == "call"
             && reference.target_name == "perform"
-            && reference.target_qualified.is_none()
+            && reference.target_qualified.as_deref() == Some("worker.perform")
             && reference.confidence == "fuzzy_name"
     }));
+}
+
+#[test]
+fn fixture_imports_and_calls_preserve_resolution_inputs() {
+    let file = extract(
+        "from mod import process\nimport mod\nimport package.module as alias\n\ndef test_process():\n    process(5)\n    mod.process(5)\n    alias.process(5)\n",
+    );
+    let import_rows = file
+        .imports
+        .iter()
+        .map(|import| (import.target_path.as_str(), import.target_symbol.as_deref()))
+        .collect::<Vec<_>>();
+    let call_rows = file
+        .refs
+        .iter()
+        .filter(|reference| reference.kind == "call")
+        .map(|reference| {
+            (
+                reference.target_name.as_str(),
+                reference.target_qualified.as_deref(),
+            )
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(
+        import_rows,
+        vec![
+            ("mod", None),
+            ("mod", Some("process")),
+            ("package.module", Some("alias")),
+        ]
+    );
+    assert_eq!(
+        call_rows,
+        vec![
+            ("process", Some("process")),
+            ("process", Some("mod.process")),
+            ("process", Some("alias.process")),
+        ]
+    );
 }
 
 #[test]

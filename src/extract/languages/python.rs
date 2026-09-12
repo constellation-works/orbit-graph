@@ -631,7 +631,13 @@ fn collect_call_ref(
         }
         "attribute" => {
             if let Some(attribute) = function.child_by_field_name("attribute") {
-                state.push_ref(attribute, source, None, "call", "fuzzy_name");
+                state.push_ref(
+                    attribute,
+                    source,
+                    Some(normalize_qualified_name(&node_text(function, source))),
+                    "call",
+                    "fuzzy_name",
+                );
             }
         }
         _ => collect_expression_refs(function, source, parent_symbol, state),
