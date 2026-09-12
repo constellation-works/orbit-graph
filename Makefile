@@ -3,6 +3,7 @@
 
 CARGO ?= cargo
 BINARY := orbit-graph
+BINARY_PACKAGE := orbit-graph-cli
 PROFILE ?= debug
 INSTALL_PROFILE ?= release
 INSTALL_BIN_DIR ?= $(HOME)/.cargo/bin
@@ -47,10 +48,10 @@ build:
 	$(CARGO) build --workspace --locked $(CARGO_PROFILE) --target-dir "$(CARGO_TARGET_DIR)"
 
 release:
-	$(CARGO) build --bin $(BINARY) --locked --release --target-dir "$(CARGO_TARGET_DIR)"
+	$(CARGO) build -p $(BINARY_PACKAGE) --bin $(BINARY) --locked --release --target-dir "$(CARGO_TARGET_DIR)"
 
 run:
-	$(CARGO) run --bin $(BINARY) --locked $(CARGO_PROFILE) --target-dir "$(CARGO_TARGET_DIR)" -- $(ARGS)
+	$(CARGO) run -p $(BINARY_PACKAGE) --bin $(BINARY) --locked $(CARGO_PROFILE) --target-dir "$(CARGO_TARGET_DIR)" -- $(ARGS)
 
 dev: build
 	"$(CARGO_TARGET_DIR)/$(PROFILE)/$(BINARY)" $(ARGS)
@@ -91,7 +92,7 @@ ci-fast: fmt-check
 ci-lint: clippy
 
 install:
-	$(CARGO) build --bin $(BINARY) --locked $(INSTALL_CARGO_PROFILE) --target-dir "$(CARGO_TARGET_DIR)"
+	$(CARGO) build -p $(BINARY_PACKAGE) --bin $(BINARY) --locked $(INSTALL_CARGO_PROFILE) --target-dir "$(CARGO_TARGET_DIR)"
 	install -d "$(INSTALL_BIN_DIR)"
 	install -m 755 "$(CARGO_TARGET_DIR)/$(INSTALL_PROFILE)/$(BINARY)" "$(INSTALL_BIN_DIR)/$(BINARY)"
 

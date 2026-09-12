@@ -28,10 +28,12 @@ to make the UI simpler.
 
 ### D1. Placement: a workspace member crate
 
-The explorer is a second Cargo workspace member in this repository,
-`explorer/` (package `orbit-graph-explorer`, with its own `[[bin]]`). The root
-`orbit-graph` package remains a workspace member whose `cargo install --path .`
-path, semantics, and independence from Orbit state are unchanged.
+The explorer is a workspace member of this repository,
+`crates/orbit-graph-explorer` (package `orbit-graph-explorer`, with its own
+`[[bin]]`). The library (`crates/orbit-graph`) and the `orbit-graph` executable
+(`crates/orbit-graph-cli`, installed with
+`cargo install --path crates/orbit-graph-cli`) keep their semantics and their
+independence from Orbit state.
 
 Reasoning: the explorer is the first consumer that exercises the public library
 API end to end, so keeping it in-tree makes an API gap visible in the same
@@ -81,9 +83,11 @@ the executable bit, so no snapshot path is invocable even by accident.
 
 ## Verified API inventory
 
-Every row below was verified against the current implementation (`src/lib.rs`,
-`src/query/*`, `src/cli/*`), not against the README. Confidence labels are
-`exact`, `import_resolved`, `same_module`, `fuzzy_name` (CLI spellings `exact`,
+Every row below was verified against the current implementation
+(`crates/orbit-graph/src/lib.rs`, `crates/orbit-graph/src/query/*`,
+`crates/orbit-graph-cli/src/command/*`), not against the README. Confidence
+labels are `exact`, `import_resolved`, `same_module`, `fuzzy_name` (CLI
+spellings `exact`,
 `import`, `same_module`, `fuzzy`); the floor admits its own level and every
 stricter level. Reference kinds are textual (`call`, `type`, `use`,
 `trait_bound`) or structural (`impl`, `extends`, `implements`).
@@ -119,7 +123,8 @@ to a commit. Both full SHAs are recorded and are echoed in every payload and
 export. A ref that cannot be resolved is an error naming the ref; no snapshot is
 materialized.
 
-**Each revision is a separate, isolated index.** `explorer/src/snapshot.rs`
+**Each revision is a separate, isolated index.**
+`crates/orbit-graph-explorer/src/snapshot.rs`
 materializes the committed tree of each revision into its own temporary
 directory (`orbit-graph-explorer-base-*`, `orbit-graph-explorer-head-*` under
 the system temporary directory), then opens a `Graph` on that directory with
@@ -619,8 +624,9 @@ These gaps were found while building the milestone-1 scaffold and are now closed
 
 ## Milestone 1 scope
 
-Landed with this document: the Cargo workspace conversion (root `orbit-graph`
-plus `explorer/`), the `explorer/src/snapshot.rs` module described above, the
+Landed with this document: the Cargo workspace conversion (the library plus the
+explorer crate), the `crates/orbit-graph-explorer/src/snapshot.rs` module
+described above, the
 milestone-1 diagnostic binary (a human report explicitly labelled as not a
 machine contract), and tests covering the removed-symbol case across both
 snapshots, working-tree immutability, snapshot-index location, dirty-tree
@@ -634,10 +640,12 @@ snapshot caching remain later work and must conform to the contract above.
 ## Milestone 2 scope
 
 Landed after Milestone 1: the changed-symbol slice
-(`explorer/src/changes.rs`), depth-1 inbound evidence and candidate-test
-classification (`explorer/src/evidence.rs`), and the authenticated loopback
-JSON service (`explorer/src/service.rs`). The service resolves direct base and
-head refs, materializes isolated snapshots, reports dirty working-tree state,
+(`crates/orbit-graph-explorer/src/changes.rs`), depth-1 inbound evidence and
+candidate-test classification
+(`crates/orbit-graph-explorer/src/evidence.rs`), and the authenticated loopback
+JSON service (`crates/orbit-graph-explorer/src/service.rs`). The service
+resolves direct base and head refs, materializes isolated snapshots, reports
+dirty working-tree state,
 and serves the routes and bounded payloads in Service surface. It does not add
 a UI, multi-hop evidence, report export, or snapshot caching; those remain
 later milestone work.

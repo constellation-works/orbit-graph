@@ -10,13 +10,13 @@ need an Orbit checkout, runtime, configuration, or private dependency.
 Rust 1.89 or newer and Git are required. From a checkout:
 
 ```sh
-cargo install --path . --locked
+cargo install --path crates/orbit-graph-cli --locked
 ```
 
 For development, build without installing:
 
 ```sh
-cargo build --locked
+cargo build --workspace --locked
 ```
 
 ### Install the Orbit external tools
@@ -26,7 +26,7 @@ sidecar manifests. Registration is local configuration; maintainers retain
 production registration ownership.
 
 ```sh
-cargo install --path . --locked
+cargo install --path crates/orbit-graph-cli --locked
 ./scripts/install-orbit-plugin.sh
 orbit tool show orbit.graph.recommend
 orbit tool show orbit.graph.status
@@ -253,11 +253,20 @@ archive, font, PDF, and lock files are skipped.
 
 ## Workspace layout
 
-The repository is a Cargo workspace with two members: the root `orbit-graph`
-package (library, CLI, and Orbit plugin adapter) and `explorer/`
-(`orbit-graph-explorer`), a developer-facing change explorer built strictly on
-the public `orbit_graph` API. `cargo install --path .` still installs only the
-root binary, and the explorer never reads Orbit control-plane state.
+The repository is a virtual Cargo workspace with three members under
+`crates/`:
+
+- `crates/orbit-graph` — the library: extraction, storage, synchronization,
+  queries, recommendations, and the Orbit plugin adapter. Library target only.
+- `crates/orbit-graph-cli` — the `orbit-graph` executable: one module per
+  subcommand under `src/command/`, the shared output policy under `src/output/`,
+  and the integration tests that run the real binary.
+- `crates/orbit-graph-explorer` — the `orbit-graph-explorer` binary, a
+  developer-facing change explorer built strictly on the public `orbit_graph`
+  API.
+
+`cargo install --path crates/orbit-graph-cli` installs only the `orbit-graph`
+binary, and the explorer never reads Orbit control-plane state.
 
 The explorer is at milestone 1: it provides base/head snapshot resolution —
 refs resolved to immutable SHAs, each commit materialized into an isolated

@@ -24,13 +24,24 @@ At the primary snapshot, the former `orbit-graph-extract` and
   `c85e38b3e0820f1e468db70c3465ea6c2b14ace9:crates/orbit-common/src/utility/selector.rs`.
   This repository retains only the `Selector`, `SelectorParseError`, parsing,
   display, and path-normalization pieces used by graph callers.
-- `src/main.rs` is adapted from the last standalone JSON entry point at
+- `crates/orbit-graph-cli/src/main.rs` is adapted from the last standalone JSON
+  entry point at
   `4f868826c47763a18946f1485aabedd3f53c8922:crates/orbit-graph-cli/src/main.rs`.
   The package import and executable name changed to the consolidated
   `orbit-graph` crate.
 - SQLite setup was already locally implemented in
   `c85e38b3e0820f1e468db70c3465ea6c2b14ace9:crates/orbit-graph/src/store/mod.rs`.
   No `orbit-common` SQLite code was copied.
+
+## Repository layout relocation (2026-09-12)
+
+The original paths recorded above are historical and stay as written. On
+2026-09-12 the tree moved to an Orbit-style `crates/` layout: the library became
+`crates/orbit-graph`, the executable and its real-binary tests became
+`crates/orbit-graph-cli` (`src/cli/**` → `src/command/**` and `src/output/**`),
+and `explorer/` became `crates/orbit-graph-explorer`. The relocations are pure
+moves, so `git log --follow` still reaches the pre-move history; no recovered
+code was rewritten.
 
 ## Standalone adaptation boundary
 
