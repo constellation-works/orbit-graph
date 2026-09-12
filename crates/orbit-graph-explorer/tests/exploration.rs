@@ -734,8 +734,9 @@ fn clean_removes_only_stale_and_unreferenced_cache_entries() {
     let _ = service.authorized("GET", "/api/comparison", &[]);
     drop(service);
 
-    // An entry for a commit this repository does not have, and a file that is
-    // not a cache entry at all.
+    // An entry for a commit this repository does not have (with the current
+    // key, so it is unreferenced rather than stale), and a file that is not a
+    // cache entry at all.
     let unreferenced = "f".repeat(40);
     let entry_root = cache.path().join(unreferenced.as_str());
     fs::create_dir_all(entry_root.join("tree")).expect("create entry");
@@ -744,8 +745,8 @@ fn clean_removes_only_stale_and_unreferenced_cache_entries() {
         serde_json::to_vec(&serde_json::json!({
             "schema_version": 1,
             "commit_sha": unreferenced,
-            "extractor_version": 5,
-            "store_schema_version": 1,
+            "extractor_version": orbit_graph::EXTRACTOR_VERSION,
+            "store_schema_version": orbit_graph::STORE_SCHEMA_VERSION,
             "build": {"files_written": 0, "bytes_written": 0, "excluded": [], "files_indexed": 0},
             "published_at": 0,
         }))
