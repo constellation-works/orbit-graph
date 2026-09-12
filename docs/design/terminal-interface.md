@@ -6,7 +6,8 @@ Orbit control-plane configuration, runtime state, or rendering crates.
 
 ## Output sink and modes
 
-`src/cli/output.rs` owns the one sink resolved for an invocation. It reads
+`crates/orbit-graph-cli/src/output/sink.rs` owns the one sink resolved for an
+invocation. It reads
 whether stdout is a terminal, terminal width, color controls, and output mode
 once. Command code does not inspect those process properties or write its
 records directly.
@@ -185,7 +186,8 @@ record, so provenance and coverage are never lost.
 
 ## Help, diagnostics, streams, and exits
 
-Top-level help is a human-readable Clap template in `src/cli/mod.rs`. It uses
+Top-level help is a human-readable Clap template in
+`crates/orbit-graph-cli/src/command/mod.rs`. It uses
 named, borderless purpose sections. `orbit-graph`, `orbit-graph --help`, and
 `orbit-graph help` print that text to stdout and exit 0. Nested help does the
 same. Redirected help is complete and contains no ANSI styling.
@@ -204,11 +206,14 @@ boundary. A closed stderr is not reclassified as a successful command.
 
 ## Executable compatibility matrix
 
-`tests/cli_smoke.rs` runs the built `orbit-graph` executable against disposable
-Git fixtures. Its command-inventory assertion keeps this table synchronized
-with Clap registration; adding a command requires both an inventory entry and
+`crates/orbit-graph-cli/tests/cli_smoke.rs` runs the built `orbit-graph`
+executable against disposable Git fixtures. The command-inventory assertion in
+`crates/orbit-graph-cli/src/tests/inventory.rs` keeps this table synchronized
+with Clap registration — the binary has no library target, so that assertion
+lives in the crate; adding a command requires both an inventory entry and
 real-workflow coverage. The plugin boundary is exercised separately by
-`tests/plugin_integration.rs` with `ORBIT_TOOL_NAME` and JSON stdin.
+`crates/orbit-graph-cli/tests/plugin_integration.rs` with `ORBIT_TOOL_NAME` and
+JSON stdin.
 
 | Registered path | Executable behavior covered |
 | --- | --- |

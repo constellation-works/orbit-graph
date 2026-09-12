@@ -1,6 +1,8 @@
 # Agent guidance
 
-- This repository is the standalone `orbit-graph` Rust crate and JSON CLI.
+- This repository is a standalone Cargo workspace: `crates/orbit-graph` (the
+  library), `crates/orbit-graph-cli` (the `orbit-graph` JSON CLI), and
+  `crates/orbit-graph-explorer` (the change explorer).
 - Keep it independent of Orbit control-plane crates, configuration, and runtime
   state. Graph scratch files belong under `.orbit-graph/`.
 - Preserve recovered behavior and tests. Record any additional historical code
