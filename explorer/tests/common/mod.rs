@@ -9,6 +9,7 @@
 #![allow(clippy::expect_used)]
 
 pub mod corpus;
+pub mod http_service;
 
 use std::collections::BTreeMap;
 use std::fs;

@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>orbit-graph change explorer</title>
+<link rel="stylesheet" href="/ui/app.css">
+</head>
+<body>
+<a class="skip-link" href="#pane-changes">Skip to change list</a>
+
+<div id="token-gate" role="alert">
+  <p>
+    No per-launch token was found in this page's URL fragment. Reopen the URL
+    printed to standard error when <code>orbit-graph-explorer serve</code>
+    started (it looks like
+    <code>http://127.0.0.1:&lt;port&gt;/#token=&lt;token&gt;</code>).
+  </p>
+</div>
+
+<div id="app" hidden>
+  <header id="app-header">
+    <h1>orbit-graph change explorer</h1>
+    <dl id="scope-summary">
+      <div class="scope-item">
+        <dt>base</dt>
+        <dd><code id="scope-base-sha">…</code></dd>
+      </div>
+      <div class="scope-item">
+        <dt>head</dt>
+        <dd><code id="scope-head-sha">…</code></dd>
+      </div>
+      <div class="scope-item">
+        <dt>mode</dt>
+        <dd id="scope-mode">…</dd>
+      </div>
+    </dl>
+    <p id="dirty-notice" hidden></p>
+    <p id="indexing-notice" role="status"></p>
+  </header>
+
+  <main id="panes">
+    <section id="pane-changes" aria-labelledby="pane-changes-heading">
+      <h2 id="pane-changes-heading">1. Change list</h2>
+      <div id="change-groups"></div>
+      <footer id="out-of-scope-footer"></footer>
+    </section>
+
+    <section id="pane-relationships" aria-labelledby="pane-relationships-heading">
+      <h2 id="pane-relationships-heading">2. Focused relationship view</h2>
+      <div id="relationship-empty">Select a changed symbol from pane 1 to see its evidence.</div>
+      <div id="relationship-content" hidden>
+        <h3 id="selected-symbol-heading"></h3>
+        <p id="selected-symbol-selector"></p>
+
+        <section aria-labelledby="evidence-heading">
+          <h4 id="evidence-heading">Inbound evidence</h4>
+          <p id="evidence-bounds"></p>
+          <div id="evidence-primary"></div>
+          <div id="evidence-heuristic"></div>
+          <p id="evidence-no-path" hidden></p>
+        </section>
+
+        <section aria-labelledby="candidate-tests-heading">
+          <h4 id="candidate-tests-heading">Candidate tests</h4>
+          <div id="candidate-tests"></div>
+        </section>
+      </div>
+    </section>
+
+    <section id="pane-source" aria-labelledby="pane-source-heading">
+      <h2 id="pane-source-heading">3. Source / diff evidence</h2>
+      <div id="source-empty">Select a changed symbol or an evidence row to see source.</div>
+      <div id="symbol-source" hidden>
+        <h3>Symbol source</h3>
+        <div id="symbol-source-panels"></div>
+      </div>
+      <div id="reference-source" hidden>
+        <h3>Reference source</h3>
+        <div id="reference-source-panel"></div>
+      </div>
+    </section>
+  </main>
+</div>
+
+<script type="module" src="/ui/app.js"></script>
+</body>
+</html>
