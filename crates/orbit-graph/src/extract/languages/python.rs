@@ -639,6 +639,12 @@ fn collect_call_ref(
                     "fuzzy_name",
                 );
             }
+            // Recurse into the receiver so nested calls in a method chain
+            // (`a().b().c()`) are not dropped just because this call's own
+            // traversal only descends into its `arguments`.
+            if let Some(object) = function.child_by_field_name("object") {
+                collect_expression_refs(object, source, parent_symbol, state);
+            }
         }
         _ => collect_expression_refs(function, source, parent_symbol, state),
     }

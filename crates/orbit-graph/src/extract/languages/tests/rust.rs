@@ -338,6 +338,140 @@ fn run(_args: RunArgs) {}
     assert_eq!(command, Some(None));
 }
 
+fn call_names(file: &crate::extract::ExtractedFile) -> Vec<&str> {
+    file.refs
+        .iter()
+        .filter(|reference| reference.kind == "call")
+        .map(|reference| reference.target_name.as_str())
+        .collect()
+}
+
+#[test]
+fn closure_in_method_chain_call_is_extracted() {
+    let file = extract(
+        r#"
+fn resolve_import(candidates: Vec<Candidate>) -> Vec<Candidate> {
+    candidates
+        .into_iter()
+        .filter(|candidate| qualified_matches_import(candidate))
+        .collect()
+}
+"#,
+    );
+
+    let names = call_names(&file);
+    for expected in ["into_iter", "filter", "qualified_matches_import", "collect"] {
+        assert!(
+            names.contains(&expected),
+            "missing callee {expected}, got {names:?}"
+        );
+    }
+}
+
+#[test]
+fn nested_call_in_argument_position_is_extracted() {
+    let file = extract(
+        r#"
+fn combine(value: i32) -> i32 {
+    outer(inner(value))
+}
+"#,
+    );
+
+    let names = call_names(&file);
+    assert!(
+        names.contains(&"outer"),
+        "missing outer call, got {names:?}"
+    );
+    assert!(
+        names.contains(&"inner"),
+        "missing inner nested call, got {names:?}"
+    );
+}
+
+#[test]
+fn try_wrapped_call_as_chain_receiver_is_extracted() {
+    let file = extract(
+        r#"
+fn load() -> Option<i32> {
+    fetch()?.parse().ok()
+}
+"#,
+    );
+
+    let names = call_names(&file);
+    assert!(
+        names.contains(&"fetch"),
+        "missing ?-wrapped receiver call, got {names:?}"
+    );
+    assert!(
+        names.contains(&"parse"),
+        "missing chained call after ?, got {names:?}"
+    );
+    assert!(
+        names.contains(&"ok"),
+        "missing final chained call, got {names:?}"
+    );
+}
+
+#[test]
+fn await_chain_call_is_extracted() {
+    let file = extract(
+        r#"
+async fn run() {
+    fetch_value().await.process();
+}
+"#,
+    );
+
+    let names = call_names(&file);
+    assert!(
+        names.contains(&"fetch_value"),
+        "missing awaited receiver call, got {names:?}"
+    );
+    assert!(
+        names.contains(&"process"),
+        "missing call chained after .await, got {names:?}"
+    );
+}
+
+#[test]
+fn turbofish_method_chain_receiver_does_not_leak_as_call_name() {
+    let file = extract(
+        r#"
+fn resolve_import(tx: &Connection, imported_name: &str, import: &Import) -> Vec<Candidate> {
+    symbols_by_name(tx, imported_name)
+        .into_iter()
+        .filter(|candidate| {
+            qualified_matches_import(candidate, import, imported_name)
+        })
+        .collect::<Vec<_>>()
+}
+"#,
+    );
+
+    let names = call_names(&file);
+    for expected in [
+        "symbols_by_name",
+        "qualified_matches_import",
+        "filter",
+        "collect",
+    ] {
+        assert!(
+            names.contains(&expected),
+            "missing callee {expected}, got {names:?}"
+        );
+    }
+    assert!(
+        file.refs.iter().all(|reference| {
+            !reference.target_name.contains('(')
+                && !reference.target_name.contains('\n')
+                && !reference.target_name.contains('.')
+        }),
+        "a ref target_name leaked receiver source text: {names:?}"
+    );
+}
+
 #[test]
 fn skips_command_extraction_for_non_orbit_workspace_crates() {
     let file = extract_at(

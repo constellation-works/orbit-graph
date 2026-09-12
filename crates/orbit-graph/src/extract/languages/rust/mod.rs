@@ -623,7 +623,21 @@ fn collect_call_ref(node: Node, source: &str, module: &ModuleScope, state: &mut 
     let Some(function) = node.child_by_field_name("function") else {
         return;
     };
+    push_call_target_ref(function, source, module, state);
+}
 
+/// Pushes a ref for the call target at `function`, then recurses into any
+/// nested receiver/path expression that can itself contain further calls:
+/// method-chain receivers (`a().b()`), and `?`/`.await`-wrapped receivers
+/// (`a()?.b()`, `a().await.b()`), which surface as the `value` of the
+/// receiver's `field_expression` and are otherwise never visited because a
+/// `call_expression`'s own traversal only descends into its `arguments`.
+fn push_call_target_ref(
+    function: Node,
+    source: &str,
+    module: &ModuleScope,
+    state: &mut ExtractionState,
+) {
     match function.kind() {
         "identifier" => state.push_ref(
             function,
@@ -643,8 +657,19 @@ fn collect_call_ref(node: Node, source: &str, module: &ModuleScope, state: &mut 
             if let Some(field) = function.child_by_field_name("field") {
                 state.push_ref(field, source, None, "call", "fuzzy_name");
             }
+            if let Some(value) = function.child_by_field_name("value") {
+                collect_expression_refs(value, source, module, state);
+            }
         }
-        "generic_function" | "generic_type_with_turbofish" => {
+        "generic_function" => {
+            // Turbofish on a method call (`x.collect::<Vec<_>>()`) or on a
+            // path call (`a::run::<T>()`): unwrap to the inner function
+            // position instead of pushing the whole node's source text.
+            if let Some(inner) = function.child_by_field_name("function") {
+                push_call_target_ref(inner, source, module, state);
+            }
+        }
+        "generic_type_with_turbofish" => {
             if let Some(type_node) = function.child_by_field_name("function") {
                 state.push_ref(
                     type_node,

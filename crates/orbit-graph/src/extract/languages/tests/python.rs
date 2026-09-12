@@ -156,3 +156,26 @@ def dynamic():
             && reference.confidence == "fuzzy_name"
     }));
 }
+
+#[test]
+fn method_chain_receiver_calls_are_extracted() {
+    let source = r#"
+def resolve_import(tx, imported_name):
+    return symbols_by_name(tx, imported_name).into_iter().filter(matches_import).collect()
+"#;
+
+    let file = extract(source);
+    let call_names: Vec<&str> = file
+        .refs
+        .iter()
+        .filter(|reference| reference.kind == "call")
+        .map(|reference| reference.target_name.as_str())
+        .collect();
+
+    for expected in ["symbols_by_name", "into_iter", "filter", "collect"] {
+        assert!(
+            call_names.contains(&expected),
+            "missing callee {expected} from method chain receiver, got {call_names:?}"
+        );
+    }
+}
