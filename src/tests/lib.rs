@@ -7,8 +7,8 @@ use rusqlite::{Connection, params};
 
 use crate::sync::{fail_next_sync_after_scan, scanner::scan_count, sync_leader_count};
 use crate::{
-    CalleeEdge, EXTRACTOR_VERSION, Graph, GraphError, SearchQuery, Selector, SyncPolicy,
-    resolve_db_path, resolve_db_path_for_commit,
+    CalleeEdge, EXTRACTOR_VERSION, Graph, GraphError, RefConfidence, SearchQuery, Selector,
+    SyncPolicy, resolve_db_path, resolve_db_path_for_commit,
 };
 
 #[test]
@@ -456,7 +456,7 @@ fn query_callees_function_with_five_call_sites_returns_five_edges_including_nest
         .iter()
         .find(|e| e.target_name == "nested_call")
         .unwrap();
-    assert_eq!(nested.confidence, "exact");
+    assert_eq!(nested.confidence, RefConfidence::Exact);
     assert_eq!(nested.line, 3);
 }
 

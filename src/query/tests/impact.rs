@@ -9,20 +9,24 @@ use crate::query::tests::support::{
 };
 use crate::sync::sync_leader_count;
 use crate::{
-    IMPACT_NODE_CAP, ImpactEntry, ImpactResult, RefConfidence, RefKind, Selector, SyncPolicy,
+    IMPACT_NODE_CAP, ImpactDirection, ImpactEntry, ImpactOrigin, ImpactResult, RefConfidence,
+    RefKind, Selector, SyncPolicy,
 };
 
 #[test]
 fn impact_result_shape_matches_golden_fixture() {
     let result = ImpactResult {
+        direction: ImpactDirection::Both,
         touched: vec![
             ImpactEntry {
                 qualified_name: "crate::a".to_string(),
+                origin: ImpactOrigin::Symbol,
                 distance: 1,
                 edge_kind: RefKind::Call,
             },
             ImpactEntry {
                 qualified_name: "crate::Impl".to_string(),
+                origin: ImpactOrigin::Symbol,
                 distance: 2,
                 edge_kind: RefKind::Impl,
             },
@@ -303,6 +307,7 @@ fn inbound_ref_outside_any_symbol_span_is_attributed_to_source_file() {
     assert_eq!(result.touched.len(), 1);
     let entry = &result.touched[0];
     assert_eq!(entry.qualified_name, "src/caller.rs");
+    assert_eq!(entry.origin, ImpactOrigin::File);
     assert_eq!(entry.distance, 1);
     assert_eq!(entry.edge_kind, RefKind::Call);
     assert!(!result.truncated);

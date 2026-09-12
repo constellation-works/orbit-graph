@@ -66,6 +66,9 @@ mod tests;
 // L-0052: FTS population invariants require a fresh DB when old indexes may be empty.
 pub const EXTRACTOR_VERSION: u32 = 4;
 
+/// SQLite schema version used by the graph store.
+pub const STORE_SCHEMA_VERSION: u32 = store::schema::SCHEMA_VERSION;
+
 /// Default graph distance used by callers that do not supply `--depth`.
 pub const DEFAULT_IMPACT_DEPTH: u8 = 3;
 
@@ -95,6 +98,45 @@ impl Graph {
         let _ensure_synced: fn(&Self) -> Result<(), GraphError> = Self::ensure_synced;
         let opened = store::open(worktree_root, policy)?;
         clean_old_databases_excluding(worktree_root, opened.db_path.path())?;
+        Self::from_opened(worktree_root, policy, opened)
+    }
+
+    /// Open a graph for a synthetic or detached tree identified by `revision`.
+    ///
+    /// The database uses the existing `detached-<short-sha>` naming contract.
+    pub fn open_with_revision(
+        worktree_root: &Path,
+        revision: &str,
+        policy: SyncPolicy,
+    ) -> Result<Self, GraphError> {
+        if detached_commit_prefix(revision).is_none() {
+            return Err(GraphError::invalid_data(
+                "validate graph revision identity",
+                "revision identity must begin with at least 12 hexadecimal characters",
+            ));
+        }
+        let opened = store::open_for_revision(worktree_root, revision)?;
+        clean_old_databases_excluding(worktree_root, opened.db_path.path())?;
+        Self::from_opened(worktree_root, policy, opened)
+    }
+
+    /// Open a graph that indexes `worktree_root` at a caller-supplied database path.
+    ///
+    /// Missing parent directories are created. The path must name a file.
+    pub fn open_with_db_path(
+        worktree_root: &Path,
+        db_path: &Path,
+        policy: SyncPolicy,
+    ) -> Result<Self, GraphError> {
+        let opened = store::open_with_db_path(worktree_root, db_path)?;
+        Self::from_opened(worktree_root, policy, opened)
+    }
+
+    fn from_opened(
+        worktree_root: &Path,
+        policy: SyncPolicy,
+        opened: store::OpenedGraph,
+    ) -> Result<Self, GraphError> {
         let read_conn = open_read_connection(opened.db_path.path(), "open graph read connection")?;
         let last_auto_sync_at = read_last_incremental_at(
             &read_conn,
@@ -136,6 +178,11 @@ impl Graph {
     /// Return the resolved database path backing this graph handle.
     pub fn db_path(&self) -> &GraphDbPath {
         &self.db_path
+    }
+
+    /// Return the source root indexed by this graph handle.
+    pub fn worktree_root(&self) -> &Path {
+        self.worktree_root.as_path()
     }
 
     pub(crate) fn ensure_synced(&self) -> Result<(), GraphError> {
@@ -203,8 +250,17 @@ impl Graph {
 
     /// Return outbound call edges from `sel`.
     pub fn callees(&self, sel: &Selector) -> Result<Vec<CalleeEdge>, GraphError> {
+        self.callees_with_options(sel, &CalleeOpts::all())
+    }
+
+    /// Return outbound call edges from `sel` filtered by `opts`.
+    pub fn callees_with_options(
+        &self,
+        sel: &Selector,
+        opts: &CalleeOpts,
+    ) -> Result<Vec<CalleeEdge>, GraphError> {
         self.ensure_synced()?;
-        query::callees::run(self, sel)
+        query::callees::run(self, sel, opts)
     }
 
     /// Return the bounded impact set around `sel`.
@@ -214,8 +270,19 @@ impl Graph {
         depth: u8,
         min_confidence: Confidence,
     ) -> Result<ImpactResult, GraphError> {
+        self.impact_with_direction(sel, depth, min_confidence, ImpactDirection::Both)
+    }
+
+    /// Return the bounded impact set around `sel` in `direction`.
+    pub fn impact_with_direction(
+        &self,
+        sel: &Selector,
+        depth: u8,
+        min_confidence: Confidence,
+        direction: ImpactDirection,
+    ) -> Result<ImpactResult, GraphError> {
         self.ensure_synced()?;
-        query::impact::run(self, sel, depth, min_confidence)
+        query::impact::run(self, sel, depth, min_confidence, direction)
     }
 
     /// Trace the call tree rooted at a command handler.
@@ -503,6 +570,14 @@ pub struct GraphDbPath {
 }
 
 impl GraphDbPath {
+    fn new(path: PathBuf, branch: String, extractor_version: u32) -> Self {
+        Self {
+            path,
+            branch,
+            extractor_version,
+        }
+    }
+
     /// Return the canonical SQLite database path.
     pub fn path(&self) -> &Path {
         self.path.as_path()
@@ -516,6 +591,11 @@ impl GraphDbPath {
     /// Return the extractor version embedded in the database filename.
     pub fn extractor_version(&self) -> u32 {
         self.extractor_version
+    }
+
+    /// Return the graph store schema version.
+    pub const fn schema_version(&self) -> u32 {
+        STORE_SCHEMA_VERSION
     }
 }
 
@@ -541,11 +621,11 @@ pub fn resolve_db_path_for_commit(
 ) -> GraphDbPath {
     let filename_stem = graph_db_filename_stem(branch, commit_sha);
     let filename = format!("{filename_stem}.{extractor_version}.db");
-    GraphDbPath {
-        path: worktree_root.join(".orbit-graph").join(filename),
-        branch: branch.to_string(),
+    GraphDbPath::new(
+        worktree_root.join(".orbit-graph").join(filename),
+        branch.to_string(),
         extractor_version,
-    }
+    )
 }
 
 fn graph_db_filename_stem(branch: &str, commit_sha: &str) -> String {
@@ -930,15 +1010,38 @@ pub struct CalleeEdge {
     pub target_name: String,
     /// Resolved qualified name (authoritative when present); None for fuzzy/unresolved.
     pub target_qualified: Option<String>,
-    /// Confidence label emitted verbatim by the resolver (P3.3) at write time.
-    pub confidence: String,
+    /// Resolution confidence assigned to the call edge.
+    pub confidence: RefConfidence,
     /// One-based source line containing the call site.
     pub line: usize,
+}
+
+/// Options for [`Graph::callees_with_options`].
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct CalleeOpts {
+    /// Minimum confidence included in returned edges.
+    pub confidence: RefConfidence,
+    /// Optional edge-kind filter. Since this query returns calls, any non-call
+    /// kind produces an empty result.
+    pub kind: Option<RefKind>,
+}
+
+impl CalleeOpts {
+    /// Return options that preserve the unfiltered [`Graph::callees`] behavior.
+    pub const fn all() -> Self {
+        Self {
+            confidence: RefConfidence::FuzzyName,
+            kind: None,
+        }
+    }
 }
 
 /// Bounded impact result returned by [`Graph::impact`].
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct ImpactResult {
+    /// Traversal direction used to build this result.
+    #[serde(skip_serializing_if = "ImpactDirection::is_both")]
+    pub direction: ImpactDirection,
     /// Impacted symbols in breadth-first order from the origin.
     pub touched: Vec<ImpactEntry>,
     /// Whether traversal stopped because [`IMPACT_NODE_CAP`] was reached.
@@ -977,10 +1080,49 @@ pub struct ImpactFallback {
 pub struct ImpactEntry {
     /// Qualified symbol name reached by the traversal.
     pub qualified_name: String,
+    /// Whether `qualified_name` names a symbol or a file-attributed call site.
+    #[serde(skip_serializing_if = "ImpactOrigin::is_symbol")]
+    pub origin: ImpactOrigin,
     /// Breadth-first distance from the origin symbol.
     pub distance: usize,
     /// Edge kind used for the prior hop into this symbol.
     pub edge_kind: RefKind,
+}
+
+/// Direction followed by an impact traversal.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ImpactDirection {
+    /// Follow callers and reverse structural dependencies.
+    Inbound,
+    /// Follow callees and forward structural dependencies.
+    Outbound,
+    /// Follow both directions, preserving the historical behavior.
+    #[default]
+    Both,
+}
+
+impl ImpactDirection {
+    fn is_both(&self) -> bool {
+        *self == Self::Both
+    }
+}
+
+/// Origin represented by an [`ImpactEntry`].
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ImpactOrigin {
+    /// An indexed symbol node.
+    #[default]
+    Symbol,
+    /// A call site attributed to its file because it lies outside symbol spans.
+    File,
+}
+
+impl ImpactOrigin {
+    fn is_symbol(&self) -> bool {
+        *self == Self::Symbol
+    }
 }
 
 /// Command trace result returned by [`Graph::trace`].

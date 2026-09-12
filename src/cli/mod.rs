@@ -51,7 +51,7 @@ Follow relationships:
   implementors  Find implementations of a trait
   deps          List source-level imports for a file or directory
   trace         Trace outbound calls from a discovered CLI command handler
-  impact        Trace the downstream impact of a selector
+  impact        Traverse the bounded graph around a selector
 
 Recommendations and history:
   recommend  Recommend current change destinations from historical evidence
@@ -62,7 +62,7 @@ Index and utilities:
   sync     Update or rebuild the source graph index
   db-path  Print the current graph database path
   clean    Remove obsolete graph databases
-  version  Print crate and extractor versions
+  version  Print crate, extractor, and store schema versions
 
 Other:
   help     Print this message or the help of the given subcommand(s)
@@ -164,7 +164,7 @@ pub enum Command {
     Refs(refs::RefsCommand),
     /// List outbound calls from a function or command.
     Callees(callees::CalleesCommand),
-    /// Trace the downstream impact of a selector.
+    /// Traverse the bounded graph around a selector.
     Impact(impact::ImpactCommand),
     /// Recommend current change destinations from historical evidence.
     Recommend(recommend::RecommendCommand),
@@ -184,7 +184,7 @@ pub enum Command {
     DbPath(db_path::DbPathCommand),
     /// Remove obsolete graph databases.
     Clean(clean::CleanCommand),
-    /// Print crate and extractor versions.
+    /// Print crate, extractor, and store schema versions.
     Version(version::VersionCommand),
 }
 

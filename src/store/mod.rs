@@ -23,7 +23,42 @@ pub(crate) fn open(worktree_root: &Path, _policy: SyncPolicy) -> Result<OpenedGr
         git.commit_sha.as_str(),
         EXTRACTOR_VERSION,
     );
+    open_at_path(db_path, &git)
+}
 
+pub(crate) fn open_for_revision(
+    worktree_root: &Path,
+    revision: &str,
+) -> Result<OpenedGraph, GraphError> {
+    let git = GitContext {
+        branch: "HEAD".to_string(),
+        commit_sha: revision.to_string(),
+    };
+    let db_path = resolve_db_path_for_commit(
+        worktree_root,
+        git.branch.as_str(),
+        git.commit_sha.as_str(),
+        EXTRACTOR_VERSION,
+    );
+    open_at_path(db_path, &git)
+}
+
+pub(crate) fn open_with_db_path(
+    worktree_root: &Path,
+    db_path: &Path,
+) -> Result<OpenedGraph, GraphError> {
+    if db_path.is_dir() || db_path.file_name().is_none() {
+        return Err(GraphError::invalid_data(
+            "validate graph database path",
+            format!("database path must name a file: {}", db_path.display()),
+        ));
+    }
+    let git = GitContext::for_worktree(worktree_root);
+    let db_path = GraphDbPath::new(db_path.to_path_buf(), git.branch.clone(), EXTRACTOR_VERSION);
+    open_at_path(db_path, &git)
+}
+
+fn open_at_path(db_path: GraphDbPath, git: &GitContext) -> Result<OpenedGraph, GraphError> {
     if let Some(parent) = db_path.path().parent() {
         fs::create_dir_all(parent)
             .map_err(|source| GraphError::io("create graph database directory", parent, source))?;

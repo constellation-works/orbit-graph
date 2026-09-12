@@ -4,7 +4,7 @@ use crate::query::tests::support::{
     TestWorktree, assert_json_matches_fixture, insert_file, insert_symbol, open_connection,
     open_graph,
 };
-use crate::{CalleeEdge, Selector, SyncPolicy};
+use crate::{CalleeEdge, CalleeOpts, RefConfidence, RefKind, Selector, SyncPolicy};
 
 #[test]
 fn callees_result_shape_matches_golden_fixture() {
@@ -12,13 +12,13 @@ fn callees_result_shape_matches_golden_fixture() {
         CalleeEdge {
             target_name: "foo".to_string(),
             target_qualified: Some("crate::foo".to_string()),
-            confidence: "exact".to_string(),
+            confidence: RefConfidence::Exact,
             line: 2,
         },
         CalleeEdge {
             target_name: "dynamic".to_string(),
             target_qualified: None,
-            confidence: "fuzzy_name".to_string(),
+            confidence: RefConfidence::FuzzyName,
             line: 4,
         },
     ];
@@ -67,23 +67,73 @@ fn mixed_confidence_edges_return_source_lines() {
             CalleeEdge {
                 target_name: "exact_call".to_string(),
                 target_qualified: Some("crate::exact_call".to_string()),
-                confidence: "exact".to_string(),
+                confidence: RefConfidence::Exact,
                 line: 2,
             },
             CalleeEdge {
                 target_name: "fuzzy_call".to_string(),
                 target_qualified: None,
-                confidence: "fuzzy_name".to_string(),
+                confidence: RefConfidence::FuzzyName,
                 line: 3,
             },
             CalleeEdge {
                 target_name: "imported_call".to_string(),
                 target_qualified: Some("other::imported_call".to_string()),
-                confidence: "import_resolved".to_string(),
+                confidence: RefConfidence::ImportResolved,
                 line: 4,
             },
         ]
     );
+}
+
+#[test]
+fn options_filter_by_confidence_and_kind_without_changing_unfiltered_results() {
+    let worktree = TestWorktree::new("callees-options");
+    let source = "fn caller() {\n    exact_call();\n    fuzzy_call();\n}\n";
+    worktree.write("src/lib.rs", source);
+    let graph = open_graph(&worktree, SyncPolicy::Manual);
+    let conn = open_connection(&worktree);
+    seed_caller(&conn, source);
+    insert_call_ref(
+        &conn,
+        source.find("exact_call").expect("exact"),
+        "exact_call",
+        Some("crate::exact_call"),
+        "exact",
+    );
+    insert_call_ref(
+        &conn,
+        source.find("fuzzy_call").expect("fuzzy"),
+        "fuzzy_call",
+        None,
+        "fuzzy_name",
+    );
+
+    let unfiltered = graph
+        .callees(&caller_selector())
+        .expect("unfiltered callees");
+    assert_eq!(unfiltered.len(), 2);
+    let exact = graph
+        .callees_with_options(
+            &caller_selector(),
+            &CalleeOpts {
+                confidence: RefConfidence::Exact,
+                kind: Some(RefKind::Call),
+            },
+        )
+        .expect("filtered callees");
+    assert_eq!(exact.len(), 1);
+    assert_eq!(exact[0].confidence, RefConfidence::Exact);
+    let wrong_kind = graph
+        .callees_with_options(
+            &caller_selector(),
+            &CalleeOpts {
+                confidence: RefConfidence::FuzzyName,
+                kind: Some(RefKind::Type),
+            },
+        )
+        .expect("kind-filtered callees");
+    assert!(wrong_kind.is_empty());
 }
 
 #[test]

@@ -90,6 +90,51 @@ fn real_binary_indexes_and_queries_a_fixture() {
 }
 
 #[test]
+fn real_binary_impact_direction_distinguishes_callers_from_callees() {
+    let fixture = fixture_repository();
+    let _ = run_json(fixture.path(), ["sync", "--full"]);
+    let selector = "symbol:src/lib.rs#entry:function";
+
+    let inbound = run_json(
+        fixture.path(),
+        ["impact", selector, "--direction", "inbound"],
+    );
+    let outbound = run_json(
+        fixture.path(),
+        ["impact", selector, "--direction", "outbound"],
+    );
+
+    assert_eq!(inbound["direction"], "inbound");
+    assert_eq!(outbound["direction"], "outbound");
+    let inbound_names = inbound["touched"]
+        .as_array()
+        .expect("inbound touched")
+        .iter()
+        .filter_map(|entry| entry["qualified_name"].as_str())
+        .collect::<Vec<_>>();
+    let outbound_names = outbound["touched"]
+        .as_array()
+        .expect("outbound touched")
+        .iter()
+        .filter_map(|entry| entry["qualified_name"].as_str())
+        .collect::<Vec<_>>();
+    assert!(inbound_names.iter().any(|name| name.ends_with("caller")));
+    assert!(outbound_names.iter().any(|name| name.ends_with("helper")));
+    assert_ne!(inbound_names, outbound_names);
+
+    let default = run_json(fixture.path(), ["impact", selector]);
+    assert!(default.get("direction").is_none());
+    let both = run_json(fixture.path(), ["impact", selector, "--direction", "both"]);
+    assert_eq!(both["direction"], "both");
+    let mut both_without_direction = both;
+    both_without_direction
+        .as_object_mut()
+        .expect("impact result object")
+        .remove("direction");
+    assert_eq!(default, both_without_direction);
+}
+
+#[test]
 fn real_binary_rejects_malformed_selectors_with_json_error() {
     let fixture = fixture_repository();
     let human = run(fixture.path(), ["show", "not-a-selector"]);
@@ -150,7 +195,7 @@ fn real_binary_help_succeeds() {
             "trace",
             "Trace outbound calls from a discovered CLI command handler",
         ),
-        ("impact", "Trace the downstream impact of a selector"),
+        ("impact", "Traverse the bounded graph around a selector"),
         (
             "recommend",
             "Recommend current change destinations from historical evidence",
@@ -166,7 +211,10 @@ fn real_binary_help_succeeds() {
         ("sync", "Update or rebuild the source graph index"),
         ("db-path", "Print the current graph database path"),
         ("clean", "Remove obsolete graph databases"),
-        ("version", "Print crate and extractor versions"),
+        (
+            "version",
+            "Print crate, extractor, and store schema versions",
+        ),
     ] {
         assert!(
             help.lines().any(|line| {
@@ -337,6 +385,10 @@ fn real_binary_resolves_environment_modes_and_overview_format_without_ambiguity(
     let version: Value =
         serde_json::from_slice(&environment_json.stdout).expect("environment JSON mode");
     assert!(version["crate_version"].is_string());
+    assert_eq!(
+        version["store_schema_version"],
+        orbit_graph::STORE_SCHEMA_VERSION
+    );
 
     let explicit_table = run_with_env(
         fixture.path(),
@@ -715,7 +767,7 @@ fn real_binary_renders_recommendation_and_index_views_with_complete_record_bound
     let version = run(fixture.path(), ["version"]);
     assert!(version.status.success());
     let version = String::from_utf8(version.stdout).expect("version plain UTF-8");
-    assert_eq!(version.trim_end().split('\t').count(), 2);
+    assert_eq!(version.trim_end().split('\t').count(), 3);
 
     let db_path = run(fixture.path(), ["db-path"]);
     assert!(db_path.status.success());

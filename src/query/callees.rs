@@ -6,14 +6,35 @@ use std::path::{Path, PathBuf};
 use crate::extract::Selector;
 use rusqlite::{Connection, params};
 
-use crate::{CalleeEdge, Graph, GraphError, SymbolSpan, resolve_symbol_span};
+use crate::{
+    CalleeEdge, CalleeOpts, Graph, GraphError, RefConfidence, RefKind, SymbolSpan,
+    resolve_symbol_span,
+};
 
-pub(crate) fn run(graph: &Graph, sel: &Selector) -> Result<Vec<CalleeEdge>, GraphError> {
+pub(crate) fn run(
+    graph: &Graph,
+    sel: &Selector,
+    opts: &CalleeOpts,
+) -> Result<Vec<CalleeEdge>, GraphError> {
+    if opts.kind.is_some_and(|kind| kind != RefKind::Call) {
+        return Ok(Vec::new());
+    }
     let resolved = graph.with_read_connection(|conn| {
         let Some(symbol) = resolve_symbol_span(conn, sel)? else {
             return Ok(None);
         };
-        let edges = edges_for_symbol(conn, &symbol)?;
+        let edges = edges_for_symbol(conn, &symbol)?
+            .into_iter()
+            .filter_map(
+                |edge| match RefConfidence::from_db(edge.confidence.as_str()) {
+                    Ok(confidence) if confidence.visible_at_floor(opts.confidence) => {
+                        Some(Ok((edge, confidence)))
+                    }
+                    Ok(_) => None,
+                    Err(error) => Some(Err(error)),
+                },
+            )
+            .collect::<Result<Vec<_>, _>>()?;
         Ok(Some((symbol, edges)))
     })?;
     let (symbol, edges) = match resolved {
@@ -71,7 +92,7 @@ pub(crate) struct StoredCalleeEdge {
 fn materialize_edges(
     worktree_root: &Path,
     file_path: &str,
-    edges: Vec<StoredCalleeEdge>,
+    edges: Vec<(StoredCalleeEdge, RefConfidence)>,
 ) -> Result<Vec<CalleeEdge>, GraphError> {
     if edges.is_empty() {
         return Ok(Vec::new());
@@ -88,14 +109,14 @@ fn materialize_edges(
     let lines = LineIndex::new(bytes);
     edges
         .into_iter()
-        .map(|edge| {
+        .map(|(edge, confidence)| {
             let from_span = usize::try_from(edge.from_span).map_err(|source| {
                 GraphError::invalid_data("compute graph callee line", source.to_string())
             })?;
             Ok(CalleeEdge {
                 target_name: edge.target_name,
                 target_qualified: edge.target_qualified,
-                confidence: edge.confidence,
+                confidence,
                 line: lines.line_for(from_span),
             })
         })

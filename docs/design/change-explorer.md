@@ -94,8 +94,8 @@ stricter level. Reference kinds are textual (`call`, `type`, `use`,
 | `search(SearchQuery{query,kind,lang,limit})` | free text; optional `kind` (`symbol`\|`string`\|`config`) and `lang` | n/a | n/a | `limit` default 20 (`DEFAULT_SEARCH_LIMIT`); empty query or `limit == 0` returns no matches | Lexical FTS5 only: whitespace-split terms are quoted as phrases and ANDed, so operator syntax, prefixes, and semantic similarity are unavailable. Ranking is internal `bm25` and is not returned. A match is a definition, string literal, or config key — never a relationship. |
 | `show(Selector, max_bytes)` | `symbol:`, `file:`, `module:`, `command:`; `dir:` resolves to `None` | n/a | n/a | `max_bytes` default 65536 (`DEFAULT_SHOW_MAX_BYTES`); `metadata.truncated` marks a clipped span | Source bytes are read from the worktree at query time, not from the index, so a stale index can disagree with the returned text. Non-UTF-8 source is returned as `{encoding:"bytes",bytes:[…]}`, not as text. |
 | `refs(Selector, RefOpts{confidence,kind})` | only `symbol:` resolves a target; other forms return an unresolved target with empty lists | floor, default `same_module`; each entry carries its own level | a textual `kind` filters `refs` only; a structural `kind` filters `relations` only | no node cap; `skipped_low_confidence` counts rows excluded by the floor | Inbound syntactic references and structural relations, not a caller proof. When the precise floor yields no textual refs, a `fallback` block of `fuzzy_name` (name-only) matches is attached; those may be unrelated symbols that share a short name. Dynamic dispatch, macro-generated, and runtime-resolved call sites are missing or name-only. |
-| `callees(Selector)` | `symbol:` only (`kind` may be empty); other forms return an empty list | every stored edge is returned with the resolver's raw confidence string; there is no floor parameter | call edges only | none | Outbound call sites written inside the symbol's span. `target_qualified` is `None` for unresolved or name-only targets, so an edge can name a callee the index cannot locate. Not a runtime call trace. |
-| `impact(Selector, depth, min_confidence)` | `symbol:`, `module:`, `command:`; `file:`/`dir:` return an empty set | floor, default `same_module` | traverses inbound textual refs, outbound call edges, and structural relations | `depth` default 3 (`DEFAULT_IMPACT_DEPTH`, `0` means default), `IMPACT_NODE_CAP` 200 nodes, `truncated` flag | A bounded **undirected neighbourhood**, not a pure caller closure and not a reachability proof: outbound callees of the origin are included alongside inbound callers. `touched[].qualified_name` falls back to the *file path* of a call site that lies outside every indexed symbol span, so an entry is not always a symbol. A `fallback` block, when present, is name-only. |
+| `callees(Selector)` / `callees_with_options(Selector, CalleeOpts)` | `symbol:` only (`kind` may be empty); other forms return an empty list | every edge carries typed `RefConfidence`; options add a confidence floor | call edges only; options accept a kind filter | none | Outbound call sites written inside the symbol's span. `target_qualified` is `None` for unresolved or name-only targets, so an edge can name a callee the index cannot locate. The no-options method preserves the unfiltered result. Not a runtime call trace. |
+| `impact(Selector, depth, min_confidence)` / `impact_with_direction(…, ImpactDirection)` | `symbol:`, `module:`, `command:`; `file:`/`dir:` return an empty set | floor, default `same_module` | `inbound` follows callers/reverse relations, `outbound` follows callees/forward relations, and `both` preserves the historical neighbourhood | `depth` default 3 (`DEFAULT_IMPACT_DEPTH`, `0` means default), `IMPACT_NODE_CAP` 200 nodes, `truncated` flag | A bounded static traversal, not a reachability proof. `ImpactEntry::origin` distinguishes symbols from file-attributed call sites while `qualified_name` retains its compatible value. A `fallback` block, when present, is name-only. |
 | `trace(command, depth, min_confidence)` | a command name, with or without the `command:` prefix | floor, default `same_module` | call edges only | `depth` default 5 (`DEFAULT_TRACE_DEPTH`), `TRACE_NODE_CAP` 200 nodes, `truncated` flag | Resolves only commands the extractor discovered into the `commands` table with a handler symbol; an unknown command yields `root: None`, which is not evidence that the command does not exist. Nodes whose `qualified_name` is `None` were not resolved and are expanded no further. |
 | `deps(Selector)` | `file:` or `dir:` only; other forms fail with `InvalidData` | n/a | import/module edges | none | Direct source-level import edges declared by in-scope files. Not a transitive closure and not the Cargo/package dependency graph. `target_path` is a language-specific opaque specifier, not a resolved file. |
 | `overview(Option<Selector>, format)` | `None`, `file:`, or `dir:`; other forms fail with `InvalidData` | n/a | n/a | `summary` returns top files with empty `symbols`; `full` returns every in-scope file | Counts of indexed rows, so unsupported languages and skipped files are invisible in the totals rather than reported as gaps. |
@@ -159,7 +159,7 @@ means a session pays full indexing cost per revision.
 return source. A snapshot tree must therefore outlive every query against it.
 The tree is not a scratch artifact that may be deleted after indexing.
 
-**Caching, when it arrives** (see gap G1), keys a cached index by
+**Caching** keys a cached index by
 `(commit SHA, EXTRACTOR_VERSION, store schema version)` under a configurable
 cache directory defaulting to `.orbit-graph/explorer/snapshots/` in the user
 repository. A cache entry whose key does not match exactly is discarded and
@@ -426,10 +426,9 @@ candidate is never presented as coverage, and the list is never described as
 }
 ```
 
-`store_schema_version` is reserved for the graph store's schema version
-(currently 1). It is `null` in v1 because that value lives only in the snapshot
-database's `meta` table and is not readable through the public API; see gap G7.
-`extractor_version` is the authoritative index identity until then.
+`store_schema_version` is the graph store's public `STORE_SCHEMA_VERSION`
+(currently 1). Together with `extractor_version`, it identifies the index
+format used for a snapshot.
 
 `source_rendering` is `reference` (file, line span, and SHA only) or `excerpt`
 (bounded source text included). An export containing excerpts carries the
@@ -530,49 +529,23 @@ present in a row.
 
 ## Public-API capability gaps
 
-These were found while building the milestone-1 scaffold against the public API.
-Each is proposed as a separate, focused core change; none is implemented in this
-milestone, and the explorer works without them.
+These gaps were found while building the milestone-1 scaffold and are now closed:
 
-- **G1. The database location is derived from the worktree root.**
-  `Graph::open(worktree_root, policy)` computes its database path from
-  `worktree_root`, so a snapshot index can only live inside the snapshot tree.
-  Snapshot indexes therefore cannot be cached across sessions, and every
-  session re-indexes both revisions. *Proposal:* a public constructor that
-  accepts an explicit database path alongside the source root (for example
-  `Graph::open_with_db_path(source_root, db_path, policy)`), leaving the
-  existing path contract as the default.
-- **G2. A snapshot database filename carries no revision identity.** A snapshot
-  tree has no commit of its own, so `resolve_db_path_for_commit` yields
-  `HEAD.<EXTRACTOR_VERSION>.db` for both sides. Any cache must therefore carry
-  its own key; the filename cannot be trusted to identify the revision.
-  *Proposal:* allow a caller-supplied revision identity for a detached or
-  synthetic worktree, so the existing `detached-<sha>` naming applies.
-- **G3. `Graph` does not expose the root it was opened on.** The explorer must
-  track the snapshot root itself to map a result path back to a file. *Proposal:*
-  a `Graph::worktree_root()` accessor.
-- **G4. `impact` is an undirected neighbourhood, not a caller closure.** The
-  traversal follows inbound references, outbound calls, and relations together,
-  and the CLI help and README describe it as a reverse/downstream traversal.
-  The explorer must therefore label impact results as "related symbols" rather
-  than "callers" unless it filters them itself. *Proposal:* either a direction
-  option on `impact`, or corrected wording in the root help and README. Both are
-  root-crate changes outside this task's scope.
-- **G5. Impact entries may be file paths.** A call site outside every indexed
-  symbol span is attributed to its file path in `touched[].qualified_name`, so a
-  consumer cannot assume the value parses as a symbol. *Proposal:* a typed
-  origin field distinguishing a symbol node from a file-attributed node.
-- **G6. `callees` has no confidence floor.** Unlike `refs`, `impact`, and
-  `trace`, `callees` returns every stored edge with a raw confidence string, so
-  a caller must filter and must parse that string itself. *Proposal:* an options
-  struct mirroring `RefOpts`.
-- **G7. The store schema version is not publicly readable.** `EXTRACTOR_VERSION`
-  is public, but the store schema version is a crate-private constant recorded
-  in the database `meta` table, so an exported report cannot state it without
-  opening the SQLite file outside the public API. The explorer therefore reports
-  `extractor_version` as the authoritative index identity in v1 and omits the
-  store schema version until it is available. *Proposal:* expose the store
-  schema version as a public constant or on `GraphDbPath`.
+- **G1 — closed:** `Graph::open_with_db_path(source_root, db_path, policy)`
+  separates the indexed source root from the caller-owned database path.
+- **G2 — closed:** `Graph::open_with_revision(source_root, revision, policy)`
+  applies the `detached-<short-sha>` database naming contract to synthetic trees.
+- **G3 — closed:** `Graph::worktree_root()` and `Graph::db_path()` expose both
+  paths represented by a graph handle.
+- **G4 — closed:** `Graph::impact_with_direction` accepts `ImpactDirection`, and
+  the CLI exposes `--direction inbound|outbound|both` with `both` as the default.
+- **G5 — closed:** `ImpactEntry::origin` is a typed `ImpactOrigin::Symbol` or
+  `ImpactOrigin::File`; `qualified_name` retains its prior compatible value.
+- **G6 — closed:** `Graph::callees_with_options` accepts `CalleeOpts`, and
+  `CalleeEdge::confidence` is a typed `RefConfidence`. `Graph::callees` keeps
+  the historical unfiltered behavior.
+- **G7 — closed:** `STORE_SCHEMA_VERSION` and `GraphDbPath::schema_version()`
+  expose the store version, and the `version` command reports it.
 
 ## Milestone 1 scope
 
