@@ -246,6 +246,21 @@ and ambiguous same-name symbols can produce missing or lower-confidence edges.
 Cross-file and cross-language resolution is deliberately conservative. Binary,
 archive, font, PDF, and lock files are skipped.
 
+## Workspace layout
+
+The repository is a Cargo workspace with two members: the root `orbit-graph`
+package (library, CLI, and Orbit plugin adapter) and `explorer/`
+(`orbit-graph-explorer`), a developer-facing change explorer built strictly on
+the public `orbit_graph` API. `cargo install --path .` still installs only the
+root binary, and the explorer never reads Orbit control-plane state.
+
+The explorer is at milestone 1: it provides base/head snapshot resolution —
+refs resolved to immutable SHAs, each commit materialized into an isolated
+temporary tree and indexed separately, dirty working trees detected and
+reported, and the user's working tree never touched — plus a diagnostic binary.
+Its evidence contract, snapshot semantics, service surface, and UI plan are in
+[the change-explorer design](docs/design/change-explorer.md).
+
 ## Library
 
 The crate exposes `Graph`, `Selector`, synchronization policies, and typed query
