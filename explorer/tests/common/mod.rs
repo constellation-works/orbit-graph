@@ -1,7 +1,14 @@
-//! Shared deterministic Git fixture for explorer integration tests.
+//! Shared deterministic Git fixtures for explorer integration tests.
+//!
+//! Two builders live here. [`build_fixture`] creates a two-commit throwaway
+//! repository used by the snapshot tests. [`corpus`] materializes a case from
+//! the shared change-explorer fixture corpus under
+//! `tests/fixtures/change-explorer/`.
 
 #![allow(dead_code)]
 #![allow(clippy::expect_used)]
+
+pub mod corpus;
 
 use std::collections::BTreeMap;
 use std::fs;
