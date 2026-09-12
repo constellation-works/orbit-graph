@@ -34,11 +34,16 @@ fn removed_function_is_base_evidence_and_absent_from_head() {
     assert_eq!(comparison.head().side(), SnapshotSide::Head);
     assert_eq!(comparison.mode().label(), "direct_base_head");
     assert_ne!(comparison.base().root(), comparison.head().root());
-    let cache_dir = fixture
-        .path()
-        .join(".orbit-graph")
-        .join("explorer")
-        .join("snapshots");
+    // Canonicalized: the snapshot resolves symlinked temp roots (macOS
+    // `/var` -> `/private/var`) and the comparison must be on equal terms.
+    let cache_dir = fs::canonicalize(
+        fixture
+            .path()
+            .join(".orbit-graph")
+            .join("explorer")
+            .join("snapshots"),
+    )
+    .expect("cache directory exists after a cold build");
     for side in [SnapshotSide::Base, SnapshotSide::Head] {
         let snapshot = comparison.snapshot(side);
         assert_eq!(
