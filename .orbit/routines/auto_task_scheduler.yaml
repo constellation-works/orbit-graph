@@ -24,8 +24,6 @@ description: >
   dedupe are enforced by the scheduler; each definition's own schedule
   governs its cadence.
 enabled: true
-hosts:
-  - dk-server-1
 trigger:
   cron: "10 * * * *"
   missed_run: skip
