@@ -16,7 +16,7 @@ repository = "https://github.com/constellation-works/orbit-graph"
 # Versions shared by more than one workspace member. Single-consumer
 # dependencies stay in the crate that needs them.
 [workspace.dependencies]
-git2 = { version = "0.20", default-features = false }
+git2 = { version = "0.21", default-features = false }
 libc = "0.2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
