@@ -18,9 +18,11 @@
 
 use std::collections::BTreeSet;
 
+use orbit_graph::Confidence;
 use orbit_graph_explorer::changes::{ChangeStatus, ChangedSymbols, Pairing, PairingEvidence};
 use orbit_graph_explorer::evidence::{
-    CandidateSource, EvidenceCategory, EvidenceCollector, EvidenceReport,
+    CandidateSource, EvidenceBounds, EvidenceCategory, EvidenceCollector, EvidenceQuery,
+    EvidenceReport,
 };
 use orbit_graph_explorer::snapshot::{Comparison, SnapshotSide};
 use serde_json::Value;
@@ -710,7 +712,7 @@ impl Case {
         let mut collector =
             EvidenceCollector::new(&self.comparison, side).expect("build evidence collector");
         collector
-            .evidence(selector, Default::default())
+            .evidence(selector, &direct_query())
             .unwrap_or_else(|error| {
                 panic!(
                     "case `{}`: evidence for `{selector}` on {side}: {error}",
@@ -727,11 +729,7 @@ impl Case {
         let mut collector =
             EvidenceCollector::new(&self.comparison, side).expect("build evidence collector");
         let candidates = collector
-            .candidate_tests(
-                selector,
-                Default::default(),
-                self.changed.out_of_scope.clone(),
-            )
+            .candidate_tests(selector, &direct_query(), self.changed.out_of_scope.clone())
             .unwrap_or_else(|error| {
                 panic!(
                     "case `{}`: candidate tests for `{selector}` on {side}: {error}",
@@ -831,6 +829,21 @@ fn snapshot_list(entry: &Value, field: &str) -> BTreeSet<String> {
 }
 
 /// Assert one edge, matching the manifest's `expected_references` shape.
+/// The direct (one hop) query these corpus assertions are written against.
+///
+/// Each manifest entry names one reference site, so the corpus reconciliation
+/// stays at depth 1; multi-hop traversal has its own tests in
+/// `tests/exploration.rs`.
+fn direct_query() -> EvidenceQuery<'static> {
+    EvidenceQuery {
+        bounds: EvidenceBounds {
+            depth: 1,
+            ..EvidenceBounds::default()
+        },
+        ..EvidenceQuery::new(Confidence::default())
+    }
+}
+
 fn assert_edge(
     report: &EvidenceReport,
     file: &str,

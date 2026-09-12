@@ -155,6 +155,24 @@ fn every_endpoint_answers_the_direct_call_comparison() {
     assert_eq!(snapshots[0]["side"], "base");
     assert_eq!(snapshots[1]["side"], "head");
     assert!(snapshots[0]["files_indexed"].as_u64().unwrap_or_default() > 0);
+    for snapshot in &snapshots {
+        // A cold launch builds both sides and says so, and every snapshot
+        // reports the index identity its evidence came from.
+        assert_eq!(snapshot["cache"], "miss", "{snapshot}");
+        assert_eq!(
+            snapshot["index_identity"]["store_schema_version"], 1,
+            "{snapshot}"
+        );
+        assert!(
+            snapshot["index_identity"]["extractor_version"]
+                .as_u64()
+                .unwrap_or_default()
+                > 0,
+            "{snapshot}"
+        );
+        assert!(snapshot["prepare_ms"].is_number(), "{snapshot}");
+    }
+    assert!(comparison["cache"]["directory"].is_string(), "{comparison}");
 
     let changed = service
         .authorized("GET", "/api/changed-symbols", &[])
@@ -182,8 +200,10 @@ fn every_endpoint_answers_the_direct_call_comparison() {
     assert_eq!(evidence["schema_version"], 1);
     assert_scope(&evidence, &service);
     assert_eq!(evidence["resolved"], true);
-    assert_eq!(evidence["query_options"]["depth"], 1);
+    assert_eq!(evidence["query_options"]["depth"], 3);
+    assert_eq!(evidence["query_options"]["direction"], "inbound");
     assert_eq!(evidence["query_options"]["min_confidence"], "same_module");
+    assert_eq!(evidence["impact"]["direction"], "inbound");
     assert_eq!(evidence["truncated"], false);
     assert_eq!(evidence["truncated_by"], Value::Null);
     let categories: Vec<String> = evidence["paths"]
@@ -211,15 +231,28 @@ fn every_endpoint_answers_the_direct_call_comparison() {
         assert_eq!(path["truncated"], false);
     }
 
-    // Depth beyond this milestone is refused rather than silently answered at
-    // depth 1.
+    // A depth beyond the service's own maximum is refused rather than silently
+    // answered at a different depth.
     let deep = service.authorized(
         "GET",
-        "/api/evidence?selector=symbol%3Asrc%2Flib.rs%23helper%3Afunction&depth=3",
+        "/api/evidence?selector=symbol%3Asrc%2Flib.rs%23helper%3Afunction&depth=99",
         &[],
     );
     assert_eq!(deep.status, 400, "{deep:?}");
     assert_eq!(deep.json()["error"]["code"], "unsupported_depth");
+
+    // A depth inside the maximum is answered at exactly that depth.
+    let shallow = service
+        .authorized(
+            "GET",
+            "/api/evidence?selector=symbol%3Asrc%2Flib.rs%23helper%3Afunction&depth=1",
+            &[],
+        )
+        .json();
+    assert_eq!(shallow["query_options"]["depth"], 1, "{shallow}");
+    for path in shallow["paths"].as_array().expect("paths") {
+        assert_eq!(path["distance"], 1, "{path}");
+    }
 
     let candidates = service
         .authorized(
@@ -340,6 +373,7 @@ fn shutting_a_service_down_stops_it_answering() {
         base: case.base().to_string(),
         head: case.head().to_string(),
         port: 0,
+        ..ServeOptions::default()
     })
     .expect("start service");
 

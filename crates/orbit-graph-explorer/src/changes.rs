@@ -31,6 +31,7 @@ use orbit_graph::{DEFAULT_SHOW_MAX_BYTES, OverviewFormat, Selector};
 use serde::Serialize;
 use thiserror::Error;
 
+use crate::filters::{FilterLog, FilterReason, FilterSet, FilteredOut};
 use crate::snapshot::{Comparison, ExclusionReason, Snapshot, SnapshotSide};
 
 /// Schema version of the changed-symbol payload.
@@ -377,6 +378,50 @@ impl ChangedSymbols {
             symbols,
             out_of_scope,
         })
+    }
+
+    /// Apply presentation filters, returning the kept slice and an explanation
+    /// of everything the filters removed.
+    ///
+    /// Filtering is presentation only: the underlying pairing is unchanged, and
+    /// `out_of_scope` is never filtered, because hiding a disclosure of what the
+    /// extractor could not see would turn a stated gap into a silent one.
+    pub fn filtered(&self, filters: &FilterSet) -> (Self, Vec<FilteredOut>) {
+        let mut log = FilterLog::default();
+        if filters.is_empty() {
+            return (self.clone(), log.into_filtered_out());
+        }
+
+        let mut symbols = Vec::new();
+        for symbol in &self.symbols {
+            let paths: Vec<&str> = [symbol.head_path.as_deref(), symbol.base_path.as_deref()]
+                .into_iter()
+                .flatten()
+                .collect();
+            let example = symbol.primary_selector().to_string();
+            if !paths.is_empty() && !paths.iter().any(|path| filters.language_admits(path)) {
+                log.record(FilterReason::Language, example.as_str());
+                continue;
+            }
+            if !paths.is_empty() && !paths.iter().any(|path| filters.scope_admits(path)) {
+                log.record(FilterReason::Scope, example.as_str());
+                continue;
+            }
+            if !filters.change_kind_admits(Some(symbol.status.label())) {
+                log.record(FilterReason::ChangeKind, example.as_str());
+                continue;
+            }
+            symbols.push(symbol.clone());
+        }
+
+        (
+            Self {
+                schema_version: self.schema_version,
+                symbols,
+                out_of_scope: self.out_of_scope.clone(),
+            },
+            log.into_filtered_out(),
+        )
     }
 
     /// Entries whose base or head selector equals `selector`.

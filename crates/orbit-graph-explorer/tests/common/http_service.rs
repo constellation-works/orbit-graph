@@ -42,11 +42,17 @@ pub struct Service {
 
 impl Service {
     pub fn launch(case_id: &str) -> Self {
+        Self::launch_case_with(case_id, &[])
+    }
+
+    /// Launch a corpus case with extra command-line arguments, such as a cache
+    /// directory or a smaller traversal bound.
+    pub fn launch_case_with(case_id: &str, extra: &[&str]) -> Self {
         let case = corpus::build_case(case_id);
         let repository = case.repository.clone();
         let base_sha = case.base().to_string();
         let head_sha = case.head().to_string();
-        Self::launch_at(repository, base_sha, head_sha, Box::new(case))
+        Self::launch_at_with(repository, base_sha, head_sha, Box::new(case), extra)
     }
 
     /// Launch against an arbitrary repository and pair of revisions, keeping
@@ -59,18 +65,36 @@ impl Service {
         head_sha: String,
         guard: Box<dyn Any>,
     ) -> Self {
+        Self::launch_at_with(repository, base_sha, head_sha, guard, &[])
+    }
+
+    /// Launch against an arbitrary repository with extra command-line
+    /// arguments.
+    pub fn launch_at_with(
+        repository: PathBuf,
+        base_sha: String,
+        head_sha: String,
+        guard: Box<dyn Any>,
+        extra: &[&str],
+    ) -> Self {
         let repository = repository.canonicalize().unwrap_or(repository);
 
+        let mut arguments: Vec<String> = vec![
+            "serve".to_string(),
+            "--repo".to_string(),
+            repository
+                .to_str()
+                .expect("utf8 repository path")
+                .to_string(),
+            "--base".to_string(),
+            base_sha.clone(),
+            "--head".to_string(),
+            head_sha.clone(),
+        ];
+        arguments.extend(extra.iter().map(|argument| (*argument).to_string()));
+
         let mut child = Command::new(env!("CARGO_BIN_EXE_orbit-graph-explorer"))
-            .args([
-                "serve",
-                "--repo",
-                repository.to_str().expect("utf8 repository path"),
-                "--base",
-                base_sha.as_str(),
-                "--head",
-                head_sha.as_str(),
-            ])
+            .args(arguments.as_slice())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .spawn()
