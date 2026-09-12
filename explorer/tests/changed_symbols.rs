@@ -83,7 +83,7 @@ fn direct_call_reports_only_the_changed_body() {
 }
 
 #[test]
-fn ambiguous_same_name_surfaces_the_collapsed_resolution_as_heuristic() {
+fn ambiguous_same_name_resolves_each_qualified_call_to_its_own_target() {
     let case = Case::open("ambiguous-same-name");
     case.assert_manifest_presence();
 
@@ -96,31 +96,38 @@ fn ambiguous_same_name_surfaces_the_collapsed_resolution_as_heuristic() {
         BTreeSet::from(["symbol:src/a.rs#run:function".to_string()])
     );
 
-    // The known gap: the resolver cannot attribute a qualified same-name call
-    // to the right definition, so both call sites come back for either target.
-    // That must surface as `heuristic_match`, never as a resolved call.
-    for target in [
-        "symbol:src/a.rs#run:function",
-        "symbol:src/b.rs#run:function",
+    // Since ORB-12372 the resolver matches a qualified cross-file call
+    // (`a::run()` / `b::run()`) against the candidate's qualification, so each
+    // target gets exactly its own call site as a resolved `exact` call and the
+    // other site never appears for it.
+    for (target, own_line, other_line) in [
+        ("symbol:src/a.rs#run:function", 5, 9),
+        ("symbol:src/b.rs#run:function", 9, 5),
     ] {
         let report = case.evidence(SnapshotSide::Head, target);
-        for line in [5, 9] {
-            assert_edge(
-                &report,
-                "src/lib.rs",
-                line,
-                EvidenceCategory::HeuristicMatch,
-                "fuzzy_name",
-                "call",
-            );
-        }
+        assert_edge(
+            &report,
+            "src/lib.rs",
+            own_line,
+            EvidenceCategory::ResolvedCall,
+            "exact",
+            "call",
+        );
         assert!(
             report
                 .paths
                 .iter()
                 .flat_map(|path| path.edges.iter())
-                .all(|edge| edge.category == EvidenceCategory::HeuristicMatch),
-            "an ambiguous same-name target must produce heuristic evidence only: {report:?}"
+                .all(|edge| edge.source.line != Some(other_line)),
+            "a qualified same-name target must not attract the other module's call site: {report:?}"
+        );
+        assert!(
+            report
+                .paths
+                .iter()
+                .flat_map(|path| path.edges.iter())
+                .all(|edge| edge.category != EvidenceCategory::HeuristicMatch),
+            "qualified same-name calls resolve exactly; no heuristic evidence expected: {report:?}"
         );
     }
 }
@@ -154,8 +161,8 @@ fn changed_signature_is_labelled_signature_changed() {
             &report,
             "test_process.py",
             5,
-            EvidenceCategory::ObservedReference,
-            "same_module",
+            EvidenceCategory::ResolvedCall,
+            "import_resolved",
             "call",
         );
         assert_edge(
@@ -163,7 +170,7 @@ fn changed_signature_is_labelled_signature_changed() {
             "test_process.py",
             1,
             EvidenceCategory::ImportRelationship,
-            "same_module",
+            "import_resolved",
             "use",
         );
 
@@ -319,8 +326,8 @@ fn renamed_file_pairs_as_moved_not_as_an_unrelated_remove_and_add() {
             &report,
             "main.py",
             6,
-            EvidenceCategory::ObservedReference,
-            "same_module",
+            EvidenceCategory::ResolvedCall,
+            "import_resolved",
             "call",
         );
         assert_edge(
@@ -328,7 +335,7 @@ fn renamed_file_pairs_as_moved_not_as_an_unrelated_remove_and_add() {
             "main.py",
             use_line,
             EvidenceCategory::ImportRelationship,
-            "same_module",
+            "import_resolved",
             "use",
         );
     }
