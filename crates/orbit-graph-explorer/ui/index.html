@@ -35,13 +35,51 @@
         <dd id="scope-mode">…</dd>
       </div>
     </dl>
+    <dl id="cache-status" class="cache-status" hidden></dl>
     <p id="dirty-notice" hidden></p>
     <p id="indexing-notice" role="status"></p>
   </header>
 
+  <form id="filter-bar" aria-labelledby="filter-bar-heading">
+    <h2 id="filter-bar-heading">Filters</h2>
+    <div class="filter-fields">
+      <label class="filter-field">
+        <span>Confidence floor</span>
+        <select id="filter-confidence" name="confidence">
+          <option value="">(default: same_module)</option>
+          <option value="exact">exact</option>
+          <option value="import_resolved">import_resolved</option>
+          <option value="same_module">same_module</option>
+          <option value="fuzzy_name">fuzzy_name</option>
+        </select>
+      </label>
+      <label class="filter-field">
+        <span>Language</span>
+        <input id="filter-language" name="language" type="text" placeholder="e.g. rust" autocomplete="off">
+      </label>
+      <fieldset class="filter-field filter-change-kind">
+        <legend>Change kind</legend>
+        <span id="filter-change-kind-options" role="group"></span>
+      </fieldset>
+      <label class="filter-field">
+        <span>Depth</span>
+        <input id="filter-depth" name="depth" type="number" min="0" max="10" placeholder="3" autocomplete="off">
+      </label>
+      <label class="filter-field">
+        <span>Scope (path prefix)</span>
+        <input id="filter-scope" name="scope" type="text" placeholder="e.g. src/" autocomplete="off">
+      </label>
+    </div>
+    <div class="filter-actions">
+      <button type="submit">Apply filters</button>
+      <button type="button" id="filter-clear">Clear filters</button>
+    </div>
+  </form>
+
   <main id="panes">
     <section id="pane-changes" aria-labelledby="pane-changes-heading">
       <h2 id="pane-changes-heading">1. Change list</h2>
+      <div id="change-hidden-by-filters"></div>
       <div id="change-groups"></div>
       <footer id="out-of-scope-footer"></footer>
     </section>
@@ -50,15 +88,26 @@
       <h2 id="pane-relationships-heading">2. Focused relationship view</h2>
       <div id="relationship-empty">Select a changed symbol from pane 1 to see its evidence.</div>
       <div id="relationship-content" hidden>
+        <nav id="focus-breadcrumb" aria-label="Focused symbol trail" hidden></nav>
         <h3 id="selected-symbol-heading"></h3>
         <p id="selected-symbol-selector"></p>
 
         <section aria-labelledby="evidence-heading">
-          <h4 id="evidence-heading">Inbound evidence</h4>
+          <h4 id="evidence-heading">Inbound evidence (potential impact)</h4>
           <p id="evidence-bounds"></p>
+          <p id="evidence-summary"></p>
+          <div id="evidence-hidden-by-filters"></div>
           <div id="evidence-primary"></div>
           <div id="evidence-heuristic"></div>
           <p id="evidence-no-path" hidden></p>
+        </section>
+
+        <section aria-labelledby="entry-points-heading">
+          <h4 id="entry-points-heading">Entry points</h4>
+          <p id="entry-points-bounds"></p>
+          <div id="entry-points-hidden-by-filters"></div>
+          <div id="entry-points-list"></div>
+          <p id="entry-points-none" hidden></p>
         </section>
 
         <section aria-labelledby="candidate-tests-heading">
@@ -73,6 +122,7 @@
       <div id="source-empty">Select a changed symbol or an evidence row to see source.</div>
       <div id="symbol-source" hidden>
         <h3>Symbol source</h3>
+        <div id="symbol-selectors"></div>
         <div id="symbol-source-panels"></div>
       </div>
       <div id="reference-source" hidden>

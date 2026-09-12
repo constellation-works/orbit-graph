@@ -100,6 +100,112 @@ body {
   display: none;
 }
 
+.cache-status {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4em 1.5em;
+  margin: 0.5em 0 0 0;
+  font-size: 0.85rem;
+}
+
+.cache-status dt {
+  font-weight: 600;
+  text-transform: uppercase;
+  font-size: 0.7rem;
+  display: inline;
+}
+
+.cache-status dt::after {
+  content: ": ";
+}
+
+.cache-status dd {
+  display: inline;
+  margin: 0 1.5em 0 0;
+}
+
+#filter-bar {
+  padding: 0.75em 1em;
+  border-bottom: 2px solid var(--border);
+}
+
+#filter-bar h2 {
+  font-size: 0.85rem;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  margin: 0 0 0.5em 0;
+}
+
+.filter-fields {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1em;
+  align-items: flex-start;
+}
+
+.filter-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25em;
+  font-size: 0.85rem;
+  min-width: 0;
+}
+
+.filter-field > span,
+.filter-field > legend {
+  font-weight: 600;
+}
+
+.filter-field select,
+.filter-field input[type="text"],
+.filter-field input[type="number"] {
+  font: inherit;
+  padding: 0.2em 0.4em;
+}
+
+.filter-change-kind {
+  border: none;
+  margin: 0;
+  padding: 0;
+}
+
+.filter-change-kind legend {
+  padding: 0;
+}
+
+#filter-change-kind-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5em;
+}
+
+.filter-checkbox {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3em;
+  font-weight: 400;
+  white-space: nowrap;
+}
+
+.filter-actions {
+  margin-top: 0.75em;
+  display: flex;
+  gap: 0.5em;
+}
+
+.filter-actions button {
+  font: inherit;
+  padding: 0.3em 0.8em;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+
+.filter-actions button:hover {
+  background: var(--bg-group);
+}
+
 #panes {
   display: grid;
   grid-template-columns: 1fr 1fr 1fr;
@@ -255,6 +361,159 @@ details.uncertain-candidates > summary {
 .bounds-line {
   font-size: 0.85rem;
   opacity: 0.85;
+}
+
+#evidence-summary,
+#entry-points-bounds {
+  font-size: 0.85rem;
+}
+
+.filtered-out {
+  margin: 0.35em 0 0.75em 0;
+}
+
+.filtered-out > summary {
+  cursor: pointer;
+  font-weight: 600;
+}
+
+.filtered-out-list {
+  list-style: none;
+  margin: 0.35em 0 0 0;
+  padding: 0;
+}
+
+.filtered-out-list li {
+  border: 1px solid var(--border);
+  border-top: none;
+  padding: 0.35em 0.5em;
+}
+
+.filtered-out-list li:first-child {
+  border-top: 1px solid var(--border);
+}
+
+.filtered-out-explanation {
+  margin: 0.25em 0 0 0;
+  font-size: 0.85rem;
+  opacity: 0.85;
+}
+
+#focus-breadcrumb {
+  display: flex;
+  align-items: center;
+  gap: 0.75em;
+  flex-wrap: wrap;
+  margin-bottom: 0.5em;
+  font-size: 0.85rem;
+}
+
+.breadcrumb-back,
+.breadcrumb-button {
+  font: inherit;
+  background: transparent;
+  color: inherit;
+  border: 1px solid var(--border);
+  padding: 0.15em 0.5em;
+  cursor: pointer;
+}
+
+.breadcrumb-list {
+  list-style: none;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4em;
+  margin: 0;
+  padding: 0;
+}
+
+.breadcrumb-list li:not(:last-child)::after {
+  content: "›";
+  margin-left: 0.4em;
+  opacity: 0.6;
+}
+
+.breadcrumb-list [aria-current="true"] {
+  font-weight: 700;
+}
+
+.evidence-path {
+  margin: 0 0 0.5em 0;
+}
+
+.evidence-path > summary {
+  cursor: pointer;
+  border: 1px solid var(--border);
+  padding: 0.35em 0.5em;
+}
+
+.hop-chain {
+  list-style: none;
+  margin: 0;
+  padding: 0 0 0 0.75em;
+  border-left: 2px solid var(--border);
+}
+
+.hop-chain .hop {
+  padding: 0.35em 0 0.35em 0.5em;
+}
+
+.hop-chain .hop .row-button {
+  border: 1px solid var(--border);
+  margin-bottom: 0.15em;
+}
+
+.hop-focus-button {
+  font-size: 0.8rem;
+}
+
+.hop-target {
+  font-weight: 700;
+}
+
+.selector-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5em;
+  margin-bottom: 0.35em;
+}
+
+.copyable-selector {
+  flex: 1;
+  min-width: 0;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.8rem;
+  padding: 0.2em 0.4em;
+  background: transparent;
+  color: inherit;
+  border: 1px solid var(--border);
+}
+
+.side-toggle {
+  font: inherit;
+  padding: 0.2em 0.6em;
+  margin-bottom: 0.5em;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+
+.entry-point-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.entry-point-list > li {
+  border: 1px solid var(--border);
+  border-top: none;
+  padding: 0.5em;
+}
+
+.entry-point-list > li:first-child {
+  border-top: 1px solid var(--border);
 }
 
 .source-side-by-side {
