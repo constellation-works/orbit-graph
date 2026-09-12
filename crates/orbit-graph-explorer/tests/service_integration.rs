@@ -129,10 +129,24 @@ fn every_endpoint_answers_the_direct_call_comparison() {
     );
     assert!(shell.body.contains("change explorer"), "{}", shell.body);
 
-    // Report export is explicitly not implemented rather than partially served.
-    let report = service.authorized("POST", "/api/report", &[]);
-    assert_eq!(report.status, 501, "{report:?}");
-    assert_eq!(report.json()["error"]["code"], "not_implemented");
+    // Report export with no request body reports on every changed symbol
+    // under the launch scope's own bounds. `tests/report_export.rs` covers
+    // the report contract itself in depth; this is just wiring coverage for
+    // the live route.
+    let report = service.authorized_with_body("POST", "/api/report", &[], b"");
+    assert_eq!(report.status, 200, "{report:?}");
+    let report_body = report.json();
+    assert_eq!(report_body["schema_version"], 1);
+    assert_eq!(
+        report_body["comparison"]["base"]["commit_sha"],
+        service.base_sha.as_str()
+    );
+    assert_eq!(
+        report_body["comparison"]["head"]["commit_sha"],
+        service.head_sha.as_str()
+    );
+    assert!(report_body["comparison"]["repository"].is_null());
+    assert!(report_body["changed_symbols"]["symbols"].is_array());
 
     let comparison = service.authorized("GET", "/api/comparison", &[]).json();
     assert_eq!(comparison["schema_version"], 1);

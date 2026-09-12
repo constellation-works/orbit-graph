@@ -57,6 +57,7 @@ use crate::evidence::{
     MAX_EVIDENCE_DEPTH, parse_confidence,
 };
 use crate::filters::{FilterSet, split_terms};
+use crate::report::{ExcerptMode, ReportOptions, build_report};
 use crate::snapshot::{Comparison, ComparisonOptions, Snapshot, SnapshotSide};
 
 /// Schema version of every payload this service serves.
@@ -341,8 +342,8 @@ impl Service {
                 .spawn(move || {
                     while !shutdown.load(Ordering::Relaxed) {
                         match server.recv() {
-                            Ok(request) => {
-                                let response = handle(&scope, &index, &request);
+                            Ok(mut request) => {
+                                let response = handle(&scope, &index, &mut request);
                                 let _ = request.respond(response);
                             }
                             // One failed accept must not retire a handler for
@@ -653,7 +654,7 @@ fn js_response(body: &'static str) -> Body {
 }
 
 /// Route one request, after the three launch-scope defences have passed.
-fn handle(scope: &Scope, index: &RwLock<IndexState>, request: &Request) -> Body {
+fn handle(scope: &Scope, index: &RwLock<IndexState>, request: &mut Request) -> Body {
     if let Some(rejection) = reject(scope, request) {
         return rejection;
     }
@@ -664,12 +665,7 @@ fn handle(scope: &Scope, index: &RwLock<IndexState>, request: &Request) -> Body 
         ("GET", "/ui/app.css") => css_response(SHELL_CSS),
         ("GET", "/ui/app.js") => js_response(SHELL_JS),
         ("GET", "/api/health") => json_response(200, &health_payload(scope, index)),
-        ("POST", "/api/report") => error_response(
-            501,
-            "not_implemented",
-            "Report export is a later milestone. No partial report is emitted, because a report \
-             that omits its scope, bounds, and truncation flags would misstate the evidence.",
-        ),
+        ("POST", "/api/report") => report_request(scope, index, request),
         ("GET", path) if path.starts_with("/api/") => with_comparison(scope, index, |comparison| {
             api(scope, comparison, path, &info.query)
         }),
@@ -1373,6 +1369,134 @@ fn source_route(scope: &Scope, comparison: &Comparison, query: &BTreeMap<String,
             "source_max_bytes": DEFAULT_SHOW_MAX_BYTES,
         }),
     )
+}
+
+/// Read a request body as JSON, treating an empty body as `Value::Null`.
+///
+/// The report route's body is entirely optional: every field defaults, so a
+/// caller that sends no body at all gets a report of every changed symbol
+/// under the launch scope's bounds.
+fn read_json_body(request: &mut Request) -> Result<Value, String> {
+    let mut buffer = String::new();
+    request
+        .as_reader()
+        .read_to_string(&mut buffer)
+        .map_err(|error| error.to_string())?;
+    if buffer.trim().is_empty() {
+        return Ok(Value::Null);
+    }
+    serde_json::from_str(buffer.as_str()).map_err(|error| error.to_string())
+}
+
+/// Build [`ReportOptions`] from an optional JSON request body, bounded by the
+/// launch scope's own bounds: a request may lower a bound, never raise one.
+fn report_options_from_body(scope: &Scope, body: &Value) -> Result<ReportOptions, Body> {
+    let mut options = ReportOptions {
+        bounds: scope.bounds,
+        ..ReportOptions::default()
+    };
+    let Some(object) = body.as_object() else {
+        return Ok(options);
+    };
+
+    if let Some(selection) = object.get("selection").and_then(Value::as_array) {
+        options.selection = selection
+            .iter()
+            .filter_map(Value::as_str)
+            .map(str::to_string)
+            .collect();
+    }
+    if let Some(excerpts) = object.get("excerpts").and_then(Value::as_str) {
+        options.excerpts = ExcerptMode::parse(excerpts).ok_or_else(|| {
+            error_response(
+                400,
+                "invalid_excerpts",
+                format!(
+                    "`excerpts` must be `none`, `controlled`, or `full-span`, not `{excerpts}`."
+                )
+                .as_str(),
+            )
+        })?;
+    }
+    if let Some(confidence) = object.get("confidence").and_then(Value::as_str) {
+        options.min_confidence = parse_confidence(confidence).ok_or_else(|| {
+            error_response(
+                400,
+                "invalid_confidence",
+                format!(
+                    "`confidence` must be `exact`, `import_resolved`, `same_module`, or \
+                     `fuzzy_name`, not `{confidence}`."
+                )
+                .as_str(),
+            )
+        })?;
+    }
+    if let Some(depth) = object.get("depth").and_then(Value::as_u64) {
+        let depth = u8::try_from(depth).unwrap_or(u8::MAX);
+        if depth > MAX_EVIDENCE_DEPTH {
+            return Err(error_response(
+                400,
+                "unsupported_depth",
+                format!(
+                    "`depth={depth}` exceeds the maximum of {MAX_EVIDENCE_DEPTH}. A bound a \
+                     request can raise without limit is not a bound."
+                )
+                .as_str(),
+            ));
+        }
+        options.bounds.depth = depth;
+    }
+    if let Some(include) = object
+        .get("include_absolute_paths")
+        .and_then(Value::as_bool)
+    {
+        options.include_absolute_paths = include;
+    }
+    options.filters = FilterSet {
+        language: object
+            .get("language")
+            .and_then(Value::as_str)
+            .map(str::to_string)
+            .filter(|value| !value.is_empty()),
+        change_kind: object
+            .get("change_kind")
+            .and_then(Value::as_str)
+            .map(split_terms)
+            .unwrap_or_default(),
+        scope: object
+            .get("scope")
+            .and_then(Value::as_str)
+            .map(str::to_string)
+            .filter(|value| !value.is_empty()),
+    };
+    Ok(options)
+}
+
+/// `POST /api/report`: export the current comparison as a complete,
+/// self-describing report. Unlike every other `/api/*` route, its options
+/// come from an optional JSON body rather than the query string, because the
+/// selection list and filters are more naturally structured than one query
+/// string would make them.
+fn report_request(scope: &Scope, index: &RwLock<IndexState>, request: &mut Request) -> Body {
+    let body = match read_json_body(request) {
+        Ok(body) => body,
+        Err(message) => {
+            return error_response(400, "invalid_request_body", message.as_str());
+        }
+    };
+    with_comparison(scope, index, |comparison| {
+        let options = match report_options_from_body(scope, &body) {
+            Ok(options) => options,
+            Err(response) => return response,
+        };
+        match build_report(comparison, &options) {
+            Ok(report) => match serde_json::to_value(&report) {
+                Ok(value) => json_response(200, &value),
+                Err(_) => error_response(500, "report_failed", "failed to encode the report"),
+            },
+            Err(error) => error_response(500, "report_failed", error.to_string().as_str()),
+        }
+    })
 }
 
 /// Print the launch banner to standard error, exactly once.
