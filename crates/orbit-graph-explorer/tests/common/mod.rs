@@ -106,6 +106,52 @@ pub fn commit_tree(
     commit.to_string()
 }
 
+/// Write `files` into `root`, stage everything, and commit it.
+///
+/// Author and committer time are fixed, so a fixture built from the same files
+/// resolves to the same commit SHA on every machine and run.
+pub fn commit_files(
+    repo: &Repository,
+    root: &Path,
+    files: &[(&str, &str)],
+    message: &str,
+    offset: i64,
+) -> String {
+    for (path, contents) in files {
+        let target = root.join(path);
+        if let Some(parent) = target.parent() {
+            fs::create_dir_all(parent).expect("create fixture directory");
+        }
+        fs::write(target.as_path(), contents).expect("write fixture file");
+    }
+    let mut index = repo.index().expect("open fixture index");
+    index
+        .add_all(["*"].iter(), git2::IndexAddOption::DEFAULT, None)
+        .expect("stage fixture tree");
+    index.write().expect("write fixture index");
+    let tree_id = index.write_tree().expect("write fixture tree");
+    let tree = repo.find_tree(tree_id).expect("find fixture tree");
+
+    let when = Time::new(FIXTURE_TIME + offset, 0);
+    let author =
+        Signature::new("Fixture Author", "fixture@example.invalid", &when).expect("signature");
+    let parents = match repo.head().ok().and_then(|head| head.target()) {
+        Some(parent) => vec![repo.find_commit(parent).expect("find parent commit")],
+        None => Vec::new(),
+    };
+    let parent_refs: Vec<&git2::Commit<'_>> = parents.iter().collect();
+    repo.commit(
+        Some("HEAD"),
+        &author,
+        &author,
+        message,
+        &tree,
+        parent_refs.as_slice(),
+    )
+    .expect("create fixture commit")
+    .to_string()
+}
+
 pub fn head_commit(root: &Path) -> String {
     let repo = Repository::open(root).expect("open fixture repository");
     repo.head()
@@ -114,8 +160,13 @@ pub fn head_commit(root: &Path) -> String {
         .expect("resolve fixture HEAD")
 }
 
-/// Byte-for-byte fingerprint of every file in the working tree, excluding Git's
-/// own `.git` directory (which the snapshot module reads but never writes).
+/// Byte-for-byte fingerprint of every source file in the working tree.
+///
+/// Two directories are excluded: `.git`, which the snapshot module reads but
+/// never writes, and `.orbit-graph`, which is graph scratch state by contract
+/// and holds the explorer's snapshot cache. Everything else is the user's own
+/// content and must be byte-for-byte unchanged; the tests that care about what
+/// the cache writes assert on it directly.
 pub fn fingerprint_working_tree(root: &Path) -> BTreeMap<PathBuf, Vec<u8>> {
     let mut files = BTreeMap::new();
     collect_files(root, root, &mut files);
@@ -128,7 +179,7 @@ pub fn collect_files(root: &Path, dir: &Path, out: &mut BTreeMap<PathBuf, Vec<u8
         let entry = entry.expect("read fixture directory entry");
         let path = entry.path();
         let name = entry.file_name();
-        if name == ".git" {
+        if name == ".git" || name == ".orbit-graph" {
             continue;
         }
         let file_type = entry.file_type().expect("read fixture file type");

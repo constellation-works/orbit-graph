@@ -42,15 +42,22 @@ use std::sync::{Arc, RwLock};
 use std::thread::{self, JoinHandle};
 use std::time::Duration;
 
-use orbit_graph::{Confidence, DEFAULT_SHOW_MAX_BYTES, EXTRACTOR_VERSION, RefConfidence, Selector};
+use orbit_graph::{
+    Confidence, DEFAULT_SHOW_MAX_BYTES, EXTRACTOR_VERSION, IMPACT_NODE_CAP, RefConfidence,
+    STORE_SCHEMA_VERSION, Selector,
+};
 use serde::Serialize;
 use serde_json::{Value, json};
 use thiserror::Error;
 use tiny_http::{Header, Request, Response, Server};
 
 use crate::changes::{ChangedSymbols, OutOfScopeEntry};
-use crate::evidence::{EvidenceCollector, parse_confidence};
-use crate::snapshot::{Comparison, Snapshot, SnapshotSide};
+use crate::evidence::{
+    DEFAULT_TIME_BUDGET_MS, EVIDENCE_DEPTH, EvidenceBounds, EvidenceCollector, EvidenceQuery,
+    MAX_EVIDENCE_DEPTH, parse_confidence,
+};
+use crate::filters::{FilterSet, split_terms};
+use crate::snapshot::{Comparison, ComparisonOptions, Snapshot, SnapshotSide};
 
 /// Schema version of every payload this service serves.
 pub const SERVICE_SCHEMA_VERSION: u32 = 1;
@@ -130,6 +137,30 @@ pub struct ServeOptions {
     pub head: String,
     /// Port to bind; `0` requests an ephemeral port.
     pub port: u16,
+    /// Snapshot cache directory; `None` selects
+    /// `<repository>/.orbit-graph/explorer/snapshots`.
+    pub cache_dir: Option<PathBuf>,
+    /// Skip the snapshot cache entirely.
+    pub no_cache: bool,
+    /// Per-request wall-clock budget for traversals, in milliseconds.
+    pub time_budget_ms: u64,
+    /// Node cap for traversals.
+    pub node_cap: usize,
+}
+
+impl Default for ServeOptions {
+    fn default() -> Self {
+        Self {
+            repository: PathBuf::from("."),
+            base: String::new(),
+            head: String::new(),
+            port: 0,
+            cache_dir: None,
+            no_cache: false,
+            time_budget_ms: DEFAULT_TIME_BUDGET_MS,
+            node_cap: IMPACT_NODE_CAP,
+        }
+    }
 }
 
 /// Whether the background indexing thread has finished.
@@ -180,6 +211,9 @@ struct Scope {
     origin: String,
     authority: String,
     token: String,
+    /// Traversal bounds fixed at launch. A request may lower `depth`; it can
+    /// never raise a bound, because a bound a caller controls is not a bound.
+    bounds: EvidenceBounds,
 }
 
 impl Scope {
@@ -249,6 +283,11 @@ impl Service {
             origin: format!("http://{authority}"),
             authority,
             token: generate_token()?,
+            bounds: EvidenceBounds {
+                depth: EVIDENCE_DEPTH,
+                node_cap: options.node_cap.max(1),
+                time_budget_ms: options.time_budget_ms,
+            },
         });
 
         let server = Arc::new(server);
@@ -260,10 +299,19 @@ impl Service {
             let repository = scope.repository.clone();
             let base = scope.base_sha.clone();
             let head = scope.head_sha.clone();
+            let comparison_options = ComparisonOptions {
+                cache_dir: options.cache_dir.clone(),
+                no_cache: options.no_cache,
+            };
             thread::Builder::new()
                 .name("orbit-graph-explorer-index".to_string())
                 .spawn(move || {
-                    let next = match Comparison::open(repository.as_path(), &base, &head) {
+                    let next = match Comparison::open_with_options(
+                        repository.as_path(),
+                        &base,
+                        &head,
+                        &comparison_options,
+                    ) {
                         Ok(comparison) => IndexState::Ready(Box::new(comparison)),
                         Err(error) => IndexState::Failed(error.to_string()),
                     };
@@ -750,8 +798,9 @@ fn api(
 
     match path {
         "/api/comparison" => json_response(200, &comparison_payload(scope, comparison)),
-        "/api/changed-symbols" => changed_symbols_route(scope, comparison),
+        "/api/changed-symbols" => changed_symbols_route(scope, comparison, query),
         "/api/evidence" => evidence_route(scope, comparison, query),
+        "/api/entry-points" => entry_points_route(scope, comparison, query),
         "/api/candidate-tests" => candidate_tests_route(scope, comparison, query),
         "/api/source" => source_route(scope, comparison, query),
         _ => error_response(404, "not_found", "No such route."),
@@ -831,6 +880,7 @@ fn health_payload(scope: &Scope, index: &RwLock<IndexState>) -> Value {
 }
 
 fn snapshot_payload(snapshot: &Snapshot) -> Value {
+    let identity = snapshot.index_identity();
     json!({
         "side": snapshot.side().label(),
         "requested_ref": snapshot.requested_ref(),
@@ -838,6 +888,17 @@ fn snapshot_payload(snapshot: &Snapshot) -> Value {
         "files_indexed": snapshot.files_indexed(),
         "files_written": snapshot.materialization().files_written,
         "extractor_version": EXTRACTOR_VERSION,
+        // Cache reporting: `hit` means this launch reused an entry with a
+        // matching key and indexed nothing; `miss` means it built one.
+        "cache": snapshot.cache_outcome().label(),
+        "cache_note": snapshot.cache_note(),
+        "tree_is_cached": snapshot.tree_is_cached(),
+        "index_identity": {
+            "extractor_version": identity.extractor_version,
+            "store_schema_version": identity.store_schema_version,
+            "db_path": snapshot.db_path().display().to_string(),
+        },
+        "prepare_ms": snapshot.prepared_in().as_millis() as u64,
         "excluded": snapshot
             .materialization()
             .excluded
@@ -858,6 +919,22 @@ fn comparison_payload(scope: &Scope, comparison: &Comparison) -> Value {
                 snapshot_payload(comparison.head()),
             ]),
         );
+        object.insert(
+            "cache".to_string(),
+            json!({
+                "directory": comparison.cache_dir().map(|dir| dir.display().to_string()),
+                "note": comparison.cache_note(),
+                "key": ["commit_sha", "extractor_version", "store_schema_version"],
+                "index_identity": {
+                    "extractor_version": EXTRACTOR_VERSION,
+                    "store_schema_version": STORE_SCHEMA_VERSION,
+                },
+            }),
+        );
+        object.insert(
+            "prepare_ms".to_string(),
+            json!(comparison.prepared_in().as_millis() as u64),
+        );
     }
     payload
 }
@@ -870,12 +947,57 @@ fn serialized<T: Serialize>(value: &T) -> Value {
     serde_json::to_value(value).unwrap_or(Value::Null)
 }
 
-fn changed_symbols_route(scope: &Scope, comparison: &Comparison) -> Body {
+fn changed_symbols_route(
+    scope: &Scope,
+    comparison: &Comparison,
+    query: &BTreeMap<String, String>,
+) -> Body {
+    let filters = filters_of(query);
+    let bounds = match bounds_of(scope, query) {
+        Ok(bounds) => bounds,
+        Err(response) => return response,
+    };
+    let evidence_query = EvidenceQuery {
+        min_confidence: match confidence_of(query) {
+            Ok(confidence) => confidence,
+            Err(response) => return response,
+        },
+        bounds,
+        filters: filters.clone(),
+        changes: None,
+    };
+
     match ChangedSymbols::compute(comparison) {
         Ok(changed) => {
+            let (changed, filtered_out) = changed.filtered(&filters);
             let mut payload = serialized(&changed);
             if let Some(object) = payload.as_object_mut() {
                 object.insert("scope".to_string(), envelope_for(scope, comparison));
+                object.insert("filtered_out".to_string(), serialized(&filtered_out));
+                object.insert(
+                    "query_options".to_string(),
+                    serialized(&crate::evidence::QueryOptions::new(&evidence_query)),
+                );
+                // `confidence` and `depth` bound evidence traversal, not the
+                // change list: the pairing ladder has no confidence of its own.
+                // They are accepted, echoed, and declared inapplicable here
+                // rather than silently ignored.
+                object.insert(
+                    "inapplicable_filters".to_string(),
+                    json!([
+                        {
+                            "filter": "confidence",
+                            "reason": "A changed-symbol entry is a Git and index pairing, not a \
+                                       reference, so it carries no confidence to filter on. The \
+                                       floor applies to `/api/evidence` and `/api/entry-points`.",
+                        },
+                        {
+                            "filter": "depth",
+                            "reason": "Depth bounds evidence traversal. The change list is not a \
+                                       traversal, so depth neither adds nor removes entries here.",
+                        },
+                    ]),
+                );
             }
             json_response(200, &payload)
         }
@@ -926,20 +1048,59 @@ fn selector_of(query: &BTreeMap<String, String>) -> Result<String, Body> {
         })
 }
 
-/// Depth this milestone supports, echoed back and refused if exceeded.
+/// Traversal depth for one request, bounded by [`MAX_EVIDENCE_DEPTH`].
 fn depth_of(query: &BTreeMap<String, String>) -> Result<u8, Body> {
     match query.get("depth").map(String::as_str) {
-        None | Some("") | Some("0") | Some("1") => Ok(crate::evidence::EVIDENCE_DEPTH),
-        Some(other) => Err(error_response(
-            400,
-            "unsupported_depth",
-            format!(
-                "This milestone answers at depth {} only; `depth={other}` was requested. \
-                 Multi-hop traversal is a later milestone.",
-                crate::evidence::EVIDENCE_DEPTH
-            )
-            .as_str(),
-        )),
+        None | Some("") => Ok(EVIDENCE_DEPTH),
+        Some(raw) => {
+            let depth = raw.parse::<u8>().map_err(|_| {
+                error_response(
+                    400,
+                    "unsupported_depth",
+                    format!("`depth` must be a whole number of hops, not `{raw}`.").as_str(),
+                )
+            })?;
+            if depth > MAX_EVIDENCE_DEPTH {
+                return Err(error_response(
+                    400,
+                    "unsupported_depth",
+                    format!(
+                        "`depth={depth}` exceeds the maximum of {MAX_EVIDENCE_DEPTH}. A bound a \
+                         request can raise without limit is not a bound."
+                    )
+                    .as_str(),
+                ));
+            }
+            // `0` selects the default depth, matching `orbit_graph`.
+            Ok(if depth == 0 { EVIDENCE_DEPTH } else { depth })
+        }
+    }
+}
+
+/// Bounds for one request: the launch node cap and time budget, with the
+/// request's depth.
+fn bounds_of(scope: &Scope, query: &BTreeMap<String, String>) -> Result<EvidenceBounds, Body> {
+    Ok(EvidenceBounds {
+        depth: depth_of(query)?,
+        ..scope.bounds
+    })
+}
+
+/// Presentation filters for one request.
+fn filters_of(query: &BTreeMap<String, String>) -> FilterSet {
+    FilterSet {
+        language: query
+            .get("language")
+            .map(|value| value.trim().to_string())
+            .filter(|value| !value.is_empty()),
+        change_kind: query
+            .get("change_kind")
+            .map(|value| split_terms(value.as_str()))
+            .unwrap_or_default(),
+        scope: query
+            .get("scope")
+            .map(|value| value.trim().to_string())
+            .filter(|value| !value.is_empty()),
     }
 }
 
@@ -947,6 +1108,78 @@ fn out_of_scope_for(comparison: &Comparison) -> Vec<OutOfScopeEntry> {
     ChangedSymbols::compute(comparison)
         .map(|changed| changed.out_of_scope)
         .unwrap_or_default()
+}
+
+/// Whether `selector` resolves to an indexed symbol in `side`.
+fn resolves_in(comparison: &Comparison, side: SnapshotSide, selector: &Selector) -> bool {
+    comparison
+        .snapshot(side)
+        .graph()
+        .show(selector, 1)
+        .map(|view| view.is_some())
+        .unwrap_or(false)
+}
+
+/// Refuse a side that cannot carry evidence for this symbol.
+///
+/// A removed symbol has base-side evidence only and an added symbol head-side
+/// only; answering the other side with an empty result would read as "no
+/// callers" instead of "not in this revision". A selector that resolves in
+/// neither snapshot is answered normally, because "no path in the indexed
+/// evidence" is the honest answer there.
+fn reject_wrong_side(
+    scope: &Scope,
+    comparison: &Comparison,
+    side: SnapshotSide,
+    selector: &str,
+) -> Option<Body> {
+    let parsed = selector.parse::<Selector>().ok()?;
+    if resolves_in(comparison, side, &parsed) {
+        return None;
+    }
+    let other = match side {
+        SnapshotSide::Base => SnapshotSide::Head,
+        SnapshotSide::Head => SnapshotSide::Base,
+    };
+    if !resolves_in(comparison, other, &parsed) {
+        return None;
+    }
+    Some(json_response(
+        404,
+        &json!({
+            "schema_version": SERVICE_SCHEMA_VERSION,
+            "scope": envelope_for(scope, comparison),
+            "selector": selector,
+            "snapshot": side.label(),
+            "commit_sha": comparison.snapshot(side).commit_sha(),
+            "evidence_sides": [other.label()],
+            "error": {
+                "code": "not_in_snapshot",
+                "message": format!(
+                    "`{selector}` does not resolve in the {} snapshot; its evidence is {} \
+                     evidence. Evidence from the two revisions is reported separately and never \
+                     merged.",
+                    side.label(),
+                    other.label()
+                ),
+            },
+        }),
+    ))
+}
+
+/// Build the evidence query for one request, including the changed-symbol
+/// slice the `change_kind` filter and the side report need.
+fn evidence_query<'a>(
+    scope: &Scope,
+    query: &BTreeMap<String, String>,
+    changes: Option<&'a ChangedSymbols>,
+) -> Result<EvidenceQuery<'a>, Body> {
+    Ok(EvidenceQuery {
+        min_confidence: confidence_of(query)?,
+        bounds: bounds_of(scope, query)?,
+        filters: filters_of(query),
+        changes,
+    })
 }
 
 fn evidence_route(
@@ -962,11 +1195,12 @@ fn evidence_route(
         Ok(side) => side,
         Err(response) => return response,
     };
-    let confidence = match confidence_of(query) {
-        Ok(confidence) => confidence,
+    let changes = ChangedSymbols::compute(comparison).ok();
+    let request = match evidence_query(scope, query, changes.as_ref()) {
+        Ok(request) => request,
         Err(response) => return response,
     };
-    if let Err(response) = depth_of(query) {
+    if let Some(response) = reject_wrong_side(scope, comparison, side, selector.as_str()) {
         return response;
     }
 
@@ -974,7 +1208,7 @@ fn evidence_route(
         Ok(collector) => collector,
         Err(error) => return error_response(500, "evidence_failed", error.to_string().as_str()),
     };
-    match collector.evidence(selector.as_str(), confidence) {
+    match collector.evidence(selector.as_str(), &request) {
         Ok(report) => {
             let mut payload = serialized(&report);
             if let Some(object) = payload.as_object_mut() {
@@ -983,6 +1217,47 @@ fn evidence_route(
             json_response(200, &payload)
         }
         Err(error) => error_response(400, "evidence_failed", error.to_string().as_str()),
+    }
+}
+
+fn entry_points_route(
+    scope: &Scope,
+    comparison: &Comparison,
+    query: &BTreeMap<String, String>,
+) -> Body {
+    let selector = match selector_of(query) {
+        Ok(selector) => selector,
+        Err(response) => return response,
+    };
+    let side = match side_of(query) {
+        Ok(side) => side,
+        Err(response) => return response,
+    };
+    let changes = ChangedSymbols::compute(comparison).ok();
+    let request = match evidence_query(scope, query, changes.as_ref()) {
+        Ok(request) => request,
+        Err(response) => return response,
+    };
+    if let Some(response) = reject_wrong_side(scope, comparison, side, selector.as_str()) {
+        return response;
+    }
+
+    let mut collector = match EvidenceCollector::new(comparison, side) {
+        Ok(collector) => collector,
+        Err(error) => {
+            return error_response(500, "entry_points_failed", error.to_string().as_str());
+        }
+    };
+    match collector.entry_points(selector.as_str(), &request) {
+        Ok(report) => {
+            let mut payload = serialized(&report);
+            if let Some(object) = payload.as_object_mut() {
+                object.insert("scope".to_string(), envelope_for(scope, comparison));
+                object.insert("snapshot".to_string(), json!(side.label()));
+            }
+            json_response(200, &payload)
+        }
+        Err(error) => error_response(400, "entry_points_failed", error.to_string().as_str()),
     }
 }
 
@@ -999,8 +1274,9 @@ fn candidate_tests_route(
         Ok(side) => side,
         Err(response) => return response,
     };
-    let confidence = match confidence_of(query) {
-        Ok(confidence) => confidence,
+    let changes = ChangedSymbols::compute(comparison).ok();
+    let request = match evidence_query(scope, query, changes.as_ref()) {
+        Ok(request) => request,
         Err(response) => return response,
     };
 
@@ -1011,7 +1287,7 @@ fn candidate_tests_route(
             return error_response(500, "candidate_tests_failed", error.to_string().as_str());
         }
     };
-    match collector.candidate_tests(selector.as_str(), confidence, unsupported) {
+    match collector.candidate_tests(selector.as_str(), &request, unsupported) {
         Ok(candidates) => {
             let mut payload = serialized(&candidates);
             if let Some(object) = payload.as_object_mut() {
@@ -1199,6 +1475,7 @@ mod tests {
             origin: "http://127.0.0.1:9999".to_string(),
             authority: "127.0.0.1:9999".to_string(),
             token: "t".repeat(64),
+            bounds: EvidenceBounds::default(),
         }
     }
 }

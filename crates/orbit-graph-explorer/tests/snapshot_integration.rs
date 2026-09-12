@@ -33,27 +33,40 @@ fn removed_function_is_base_evidence_and_absent_from_head() {
     assert_eq!(comparison.base().side(), SnapshotSide::Base);
     assert_eq!(comparison.head().side(), SnapshotSide::Head);
     assert_eq!(comparison.mode().label(), "direct_base_head");
-    assert!(
-        !comparison.base().root().starts_with(fixture.path()),
-        "snapshot tree {} must live outside the user repository",
-        comparison.base().root().display()
-    );
     assert_ne!(comparison.base().root(), comparison.head().root());
+    let cache_dir = fixture
+        .path()
+        .join(".orbit-graph")
+        .join("explorer")
+        .join("snapshots");
     for side in [SnapshotSide::Base, SnapshotSide::Head] {
         let snapshot = comparison.snapshot(side);
+        assert_eq!(
+            snapshot.cache_outcome().label(),
+            "miss",
+            "{side} is built on a cold cache"
+        );
         assert!(
-            snapshot
-                .graph()
-                .db_path()
-                .path()
-                .starts_with(snapshot.root()),
-            "{side} index must live inside its own snapshot tree: {}",
-            snapshot.graph().db_path().path().display()
+            snapshot.root().starts_with(cache_dir.as_path()),
+            "{side} snapshot tree must live in the cache directory: {}",
+            snapshot.root().display()
+        );
+        assert!(
+            snapshot.db_path().starts_with(cache_dir.as_path()),
+            "{side} index must live in the cache directory: {}",
+            snapshot.db_path().display()
         );
     }
+    // The cache is confined to its own subdirectory: the repository's own
+    // `.orbit-graph/*.db` index files are neither read nor written.
+    let own_databases: Vec<std::path::PathBuf> = fs::read_dir(fixture.path().join(".orbit-graph"))
+        .expect("read graph scratch directory")
+        .filter_map(|entry| entry.ok().map(|entry| entry.path()))
+        .filter(|path| path.extension().is_some_and(|extension| extension == "db"))
+        .collect();
     assert!(
-        !fixture.path().join(".orbit-graph").exists(),
-        "no index may be written under the user repository"
+        own_databases.is_empty(),
+        "the repository's own graph databases must never be written: {own_databases:?}"
     );
     assert!(comparison.base().files_indexed() > 0);
     assert!(comparison.head().files_indexed() > 0);
@@ -119,11 +132,13 @@ fn removed_function_is_base_evidence_and_absent_from_head() {
     assert!(!comparison.working_tree().dirty);
     assert_eq!(comparison.working_tree().notice(), None);
 
+    // A cached tree outlives the comparison on purpose: the next launch reuses
+    // it, and only `clean` removes it.
     let base_root = comparison.base().root().to_path_buf();
     let head_root = comparison.head().root().to_path_buf();
     drop(comparison);
-    assert!(!base_root.exists(), "base snapshot tree must be removed");
-    assert!(!head_root.exists(), "head snapshot tree must be removed");
+    assert!(base_root.exists(), "a cached base tree is kept for reuse");
+    assert!(head_root.exists(), "a cached head tree is kept for reuse");
 
     assert_eq!(
         fingerprint_working_tree(fixture.path()),
