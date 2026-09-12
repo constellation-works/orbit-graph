@@ -64,7 +64,12 @@ mod tests;
 // L-0052: FTS population invariants require a fresh DB when old indexes may be empty.
 /// Version 5 rebuilds stored refs so qualified cross-file and explicit-import
 /// resolution records stable symbol hints.
-pub const EXTRACTOR_VERSION: u32 = 5;
+///
+/// Version 6 rebuilds stored refs again: the Rust and Python call extractors
+/// now recurse into method-chain receivers (previously dropped) and no
+/// longer emit a chain receiver's full source text as a bogus callee name
+/// for turbofish method calls (`x.collect::<Vec<_>>()`).
+pub const EXTRACTOR_VERSION: u32 = 6;
 
 /// SQLite schema version used by the graph store.
 pub const STORE_SCHEMA_VERSION: u32 = store::schema::SCHEMA_VERSION;
