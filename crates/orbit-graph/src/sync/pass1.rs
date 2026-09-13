@@ -23,7 +23,7 @@ use rayon::prelude::*;
 use rusqlite::{Connection, Transaction, TransactionBehavior, params};
 
 use super::scanner::{Diff, mtime_ns, normalize_path};
-use crate::{GraphError, SyncMode, SyncObserver, SyncProgress};
+use crate::{GraphError, SyncMode, SyncObserver, SyncPhase, SyncProgress};
 
 pub(crate) struct Pass1Output {
     pub(crate) refs: Vec<ExtractedFileRefs>,
@@ -33,6 +33,13 @@ pub(crate) struct Pass1Output {
     /// Whether `observer.is_cancelled()` stopped this pass before every file
     /// was processed.
     pub(crate) cancelled: bool,
+    /// Total files this sync touched, written or removed. Equal to
+    /// `files_written + files_removed` when `cancelled` is `false`; carried
+    /// forward as pass 2's frozen `files_seen`/`files_indexed`.
+    pub(crate) total_files: usize,
+    /// Path of the last file pass 1 touched, if any; carried forward as pass
+    /// 2's frozen `current_path`.
+    pub(crate) last_touched_path: Option<String>,
 }
 
 pub(crate) struct ExtractedFileRefs {
@@ -73,11 +80,15 @@ fn run_with_backend(
 
     let total_files = diff.deleted.len() + extracted.len();
     let mut files_touched = 0usize;
+    let mut last_touched_path = None;
     if let Some(observer) = observer {
         observer.on_progress(&SyncProgress {
+            phase: SyncPhase::Extracting,
             files_seen: total_files,
             files_indexed: files_touched,
             current_path: None,
+            units_done: files_touched,
+            units_total: total_files,
         });
     }
 
@@ -91,11 +102,15 @@ fn run_with_backend(
         delete_file_transaction(&mut conn, rel_path)?;
         files_removed += 1;
         files_touched += 1;
+        last_touched_path = Some(normalize_path(rel_path));
         if let Some(observer) = observer {
             observer.on_progress(&SyncProgress {
+                phase: SyncPhase::Extracting,
                 files_seen: total_files,
                 files_indexed: files_touched,
-                current_path: Some(normalize_path(rel_path)),
+                current_path: last_touched_path.clone(),
+                units_done: files_touched,
+                units_total: total_files,
             });
         }
     }
@@ -119,11 +134,15 @@ fn run_with_backend(
             commands.extend(file_commands);
             files_written += 1;
             files_touched += 1;
+            last_touched_path = Some(file.file_path.clone());
             if let Some(observer) = observer {
                 observer.on_progress(&SyncProgress {
+                    phase: SyncPhase::Extracting,
                     files_seen: total_files,
                     files_indexed: files_touched,
-                    current_path: Some(file.file_path.clone()),
+                    current_path: last_touched_path.clone(),
+                    units_done: files_touched,
+                    units_total: total_files,
                 });
             }
         }
@@ -138,6 +157,8 @@ fn run_with_backend(
         files_removed,
         files_indexed,
         cancelled,
+        total_files,
+        last_touched_path,
     })
 }
 

@@ -706,6 +706,8 @@ fn assert_data_contract(case_id: &str) {
             "started_at",
             "elapsed_ms",
             "error",
+            "phase",
+            "phase_progress",
         ] {
             assert!(
                 status["indexing"][side].get(field).is_some(),
@@ -713,6 +715,14 @@ fn assert_data_contract(case_id: &str) {
             );
         }
         assert_eq!(status["indexing"][side]["state"], "ready", "{status}");
+        // A finished side carries no phase: `phase`/`phase_progress` only
+        // narrow `materializing`/`indexing`, both already behind it.
+        assert_eq!(status["indexing"][side]["phase"], Value::Null, "{status}");
+        assert_eq!(
+            status["indexing"][side]["phase_progress"],
+            Value::Null,
+            "{status}"
+        );
     }
 
     // `POST /api/cancel` once indexing has already finished: the `409

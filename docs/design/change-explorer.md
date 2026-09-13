@@ -543,10 +543,20 @@ Rules:
   `indexing` object with per-side progress:
   `{"base": {...}, "head": {...}}`, each side
   `{"state","files_seen","files_indexed","files_ignored",
-  "unsupported_constructs","languages","started_at","elapsed_ms","error"}`.
+  "unsupported_constructs","languages","started_at","elapsed_ms","error",
+  "phase","phase_progress"}`.
   `state` is `pending`, `materializing`, `indexing`, `ready`, `failed`, or
-  `cancelled`. `files_seen` and `files_indexed` are reported live during the
-  `indexing` phase and increase monotonically; `files_ignored` and
+  `cancelled`. `files_seen` and `files_indexed` cover extraction (`orbit_graph`
+  pass 1) only: they are reported live while `phase` is `extracting` and
+  increase monotonically, but they reach `files_seen` well before the `state`
+  leaves `indexing`, because reference resolution (pass 2) and any later work
+  run after extraction with no file-count progress of their own. `phase` is
+  `null` while `state` is `pending`, `ready`, `failed`, or `cancelled`;
+  otherwise it is `materializing`, `extracting`, or `resolving`, naming the
+  sub-phase within `materializing`/`indexing`. `phase_progress` is
+  `{"done","total"}` counting units of the current `phase` (files while
+  `extracting`, resolved refs while `resolving`) and is `null` while `phase`
+  has no counter yet, such as during `materializing`. `files_ignored` and
   `unsupported_constructs` come from materialization and are fixed once
   indexing starts; `languages` is a best-effort, extension-derived list built
   up as indexing progresses. `started_at` is milliseconds since the Unix

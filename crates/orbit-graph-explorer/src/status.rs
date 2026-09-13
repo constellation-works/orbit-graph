@@ -14,7 +14,7 @@ use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
 use serde_json::{Value, json};
 
-use crate::snapshot::{BuildState, BuildStatus, ComparisonProgress, SnapshotSide};
+use crate::snapshot::{BuildPhase, BuildState, BuildStatus, ComparisonProgress, SnapshotSide};
 
 /// One side's status, as last reported, plus timing the build side itself
 /// does not track.
@@ -49,6 +49,12 @@ impl SideReport {
 
     fn to_json(&self) -> Value {
         let elapsed_ms = self.finished_ms.unwrap_or_else(|| self.elapsed_ms());
+        let phase_progress = self.status.phase_progress.map(|progress| {
+            json!({
+                "done": progress.done,
+                "total": progress.total,
+            })
+        });
         json!({
             "state": self.status.state.label(),
             "files_seen": self.status.files_seen,
@@ -59,6 +65,8 @@ impl SideReport {
             "started_at": self.started_at_unix_ms,
             "elapsed_ms": elapsed_ms,
             "error": self.error,
+            "phase": self.status.phase.map(BuildPhase::label),
+            "phase_progress": phase_progress,
         })
     }
 }
@@ -71,6 +79,8 @@ fn pending_status() -> BuildStatus {
         files_ignored: 0,
         unsupported_constructs: 0,
         languages: Vec::new(),
+        phase: None,
+        phase_progress: None,
     }
 }
 

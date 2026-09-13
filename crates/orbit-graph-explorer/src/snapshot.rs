@@ -43,7 +43,7 @@ use std::time::{Duration, Instant};
 use git2::{ObjectType, Oid, Repository, RepositoryInitOptions, Status, StatusOptions, TreeEntry};
 use orbit_graph::{
     Confidence, Graph, GraphError, ImpactResult, RefOpts, RefResult, Selector, SyncMode,
-    SyncObserver, SyncOutcome, SyncPolicy, SyncProgress,
+    SyncObserver, SyncOutcome, SyncPhase, SyncPolicy, SyncProgress,
 };
 use tempfile::TempDir;
 use thiserror::Error;
@@ -151,6 +151,43 @@ impl BuildState {
     }
 }
 
+/// Finer-grained phase within [`BuildState::Materializing`] and
+/// [`BuildState::Indexing`], surfaced alongside `state` so a progress
+/// indicator can tell "extracting" apart from "resolving" instead of reading
+/// `indexing` as one undifferentiated phase.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BuildPhase {
+    /// The commit tree is being materialized. Corresponds to
+    /// [`BuildState::Materializing`].
+    Materializing,
+    /// `orbit_graph`'s pass 1: files are read, parsed, and written.
+    Extracting,
+    /// `orbit_graph`'s pass 2: raw refs are resolved against the confidence
+    /// ladder. This is the phase [`BuildStatus::files_indexed`] does not
+    /// cover: it reaches `files_seen` well before resolving finishes.
+    Resolving,
+}
+
+impl BuildPhase {
+    /// Stable label used in payloads and reports.
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Materializing => "materializing",
+            Self::Extracting => "extracting",
+            Self::Resolving => "resolving",
+        }
+    }
+}
+
+/// `(done, total)` counters for the phase named by [`BuildStatus::phase`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PhaseProgress {
+    /// Units of `phase` completed so far.
+    pub done: usize,
+    /// Total units `phase` will process.
+    pub total: usize,
+}
+
 /// Live progress for one side of a comparison build.
 ///
 /// [`Comparison::open_with_progress`] itself never reports
@@ -177,6 +214,13 @@ pub struct BuildStatus {
     /// deduplicated. Best-effort: derived from file extensions as indexing
     /// progresses, not from the extractor that actually ran.
     pub languages: Vec<String>,
+    /// Finer-grained phase within `state`, when one is known. `None` while
+    /// `state` is `pending`, `ready`, `failed`, or `cancelled`.
+    pub phase: Option<BuildPhase>,
+    /// `(done, total)` counters for `phase`. `None` when `phase` has not yet
+    /// produced a counter (materialization, and the moment indexing starts
+    /// before pass 1's first report).
+    pub phase_progress: Option<PhaseProgress>,
 }
 
 impl BuildStatus {
@@ -188,6 +232,8 @@ impl BuildStatus {
             files_ignored: 0,
             unsupported_constructs: 0,
             languages: Vec::new(),
+            phase: None,
+            phase_progress: None,
         }
     }
 }
@@ -672,6 +718,7 @@ impl Snapshot {
             side,
             &BuildStatus {
                 state: BuildState::Materializing,
+                phase: Some(BuildPhase::Materializing),
                 ..BuildStatus::pending()
             },
         );
@@ -762,6 +809,7 @@ impl Snapshot {
             side,
             &BuildStatus {
                 state: BuildState::Materializing,
+                phase: Some(BuildPhase::Materializing),
                 ..BuildStatus::pending()
             },
         );
@@ -817,6 +865,8 @@ impl Snapshot {
                 files_ignored,
                 unsupported_constructs,
                 languages,
+                phase: None,
+                phase_progress: None,
             },
         );
         Ok(Some(PreparedSnapshot {
@@ -871,6 +921,10 @@ impl SyncObserver for ProgressSyncObserver<'_> {
             }
             languages.iter().map(|lang| lang.to_string()).collect()
         };
+        let phase = match sync_progress.phase {
+            SyncPhase::Extracting => BuildPhase::Extracting,
+            SyncPhase::Resolving => BuildPhase::Resolving,
+        };
         self.progress.on_status(
             self.side,
             &BuildStatus {
@@ -880,6 +934,11 @@ impl SyncObserver for ProgressSyncObserver<'_> {
                 files_ignored: self.files_ignored,
                 unsupported_constructs: self.unsupported_constructs,
                 languages,
+                phase: Some(phase),
+                phase_progress: Some(PhaseProgress {
+                    done: sync_progress.units_done,
+                    total: sync_progress.units_total,
+                }),
             },
         );
     }
@@ -919,6 +978,7 @@ fn index_with_progress(
             state: BuildState::Indexing,
             files_ignored,
             unsupported_constructs,
+            phase: Some(BuildPhase::Extracting),
             ..BuildStatus::pending()
         },
     );
@@ -977,6 +1037,8 @@ fn ready_status(build: &StoredBuild) -> BuildStatus {
             .filter(|entry| entry.reason == "unsupported_kind")
             .count(),
         languages: build.languages.clone(),
+        phase: None,
+        phase_progress: None,
     }
 }
 

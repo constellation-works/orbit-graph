@@ -607,32 +607,77 @@ pub struct SyncReport {
     pub duration: Duration,
 }
 
+/// Phase of [`Graph::sync_with_observer`] a [`SyncProgress`] report describes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SyncPhase {
+    /// Pass 1: changed files are read, parsed, and written; symbols, imports,
+    /// and raw refs are extracted. `units_done`/`units_total` mirror
+    /// `files_indexed`/`files_seen` in this phase.
+    Extracting,
+    /// Pass 2: raw refs extracted from every touched file are resolved
+    /// against the confidence ladder and written. `files_seen`,
+    /// `files_indexed`, and `current_path` are frozen at pass 1's final
+    /// values during this phase; `units_done`/`units_total` count refs
+    /// resolved so far and refs to resolve.
+    Resolving,
+}
+
+impl SyncPhase {
+    /// Stable label used by callers that serialize this phase, such as the
+    /// change-explorer service.
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Extracting => "extracting",
+            Self::Resolving => "resolving",
+        }
+    }
+}
+
 /// Progress observed while [`Graph::sync_with_observer`] processes files.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SyncProgress {
-    /// Total files this sync will touch, written or removed.
+    /// Phase this report describes.
+    pub phase: SyncPhase,
+    /// Total files this sync will touch, written or removed. Frozen at pass
+    /// 1's final count once `phase` is [`SyncPhase::Resolving`].
     pub files_seen: usize,
     /// Files this sync has processed so far; increases monotonically up to
-    /// `files_seen`.
+    /// `files_seen`. Frozen at pass 1's final count once `phase` is
+    /// [`SyncPhase::Resolving`].
     pub files_indexed: usize,
-    /// Path of the file most recently processed, once any has been.
+    /// Path of the file most recently processed, once any has been. Frozen
+    /// at pass 1's last file once `phase` is [`SyncPhase::Resolving`].
     pub current_path: Option<String>,
+    /// Units processed so far within `phase`; increases monotonically up to
+    /// `units_total` and resets at the start of each new phase.
+    pub units_done: usize,
+    /// Total units `phase` will process.
+    pub units_total: usize,
 }
 
-/// Observes per-file [`Graph::sync_with_observer`] progress and can request
-/// cancellation.
+/// Observes progress across both passes of [`Graph::sync_with_observer`] and
+/// can request cancellation of pass 1.
 ///
-/// The cancel check runs between files, so a cancelled sync always leaves the
-/// store consistent: every file fully written before cancellation is indexed
-/// as normal, and every file not yet touched still looks unsynced to the next
-/// sync, incremental or full, which then indexes it and resolves its
-/// references in the ordinary way.
+/// The cancel check runs only between files during pass 1 (extraction), so a
+/// cancelled sync always leaves the store consistent: every file fully
+/// written before cancellation is indexed as normal, and every file not yet
+/// touched still looks unsynced to the next sync, incremental or full, which
+/// then indexes it and resolves its references in the ordinary way.
+///
+/// Pass 2 (reference resolution) is not cancellable: once pass 1 completes
+/// without cancellation, pass 2 resolves every collected ref to completion
+/// inside one SQLite transaction before this call returns. A cancellation
+/// request that arrives while pass 2 is running has no effect on that sync;
+/// it takes effect at the next sync's pass 1.
 pub trait SyncObserver: Send + Sync {
-    /// Called once before the first file, with the total already known, and
-    /// again after each file this sync touches.
+    /// Called once before the first file of pass 1 (with the total already
+    /// known), again after each file pass 1 touches, and — once pass 1
+    /// completes without cancellation — once before pass 2 starts resolving
+    /// refs, at a bounded cadence while it resolves them, and once after the
+    /// last one.
     fn on_progress(&self, progress: &SyncProgress);
-    /// Checked between files; once this returns `true`, no further file in
-    /// this sync starts.
+    /// Checked between files during pass 1; once this returns `true`, no
+    /// further file in pass 1 starts. Not polled during pass 2.
     fn is_cancelled(&self) -> bool;
 }
 

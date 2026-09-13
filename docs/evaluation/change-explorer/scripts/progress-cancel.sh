@@ -28,13 +28,17 @@ cancel="$outdir/cancel.txt"
 rm -rf "${CACHE:?}/$cachekey"
 start_service "$repo" "$base" "$head" "$cachekey"
 trap stop_service EXIT
-printf 'seconds\tbase_state\tbase_files_seen\tbase_files_indexed\tbase_elapsed_ms\thead_state\thead_files_seen\thead_files_indexed\thead_elapsed_ms\tlanguages\n' > "$trace"
+printf 'seconds\tbase_state\tbase_files_seen\tbase_files_indexed\tbase_phase\tbase_phase_done\tbase_phase_total\tbase_elapsed_ms\thead_state\thead_files_seen\thead_files_indexed\thead_phase\thead_phase_done\thead_phase_total\thead_elapsed_ms\tlanguages\n' > "$trace"
 t=0
 while :; do
   s=$(api /api/status)
   echo "$s" | jq -r --arg t "$t" '[$t,
-    .indexing.base.state, .indexing.base.files_seen, .indexing.base.files_indexed, .indexing.base.elapsed_ms,
-    .indexing.head.state, .indexing.head.files_seen, .indexing.head.files_indexed, .indexing.head.elapsed_ms,
+    .indexing.base.state, .indexing.base.files_seen, .indexing.base.files_indexed,
+    .indexing.base.phase, .indexing.base.phase_progress.done, .indexing.base.phase_progress.total,
+    .indexing.base.elapsed_ms,
+    .indexing.head.state, .indexing.head.files_seen, .indexing.head.files_indexed,
+    .indexing.head.phase, .indexing.head.phase_progress.done, .indexing.head.phase_progress.total,
+    .indexing.head.elapsed_ms,
     ([.indexing.base.languages[]?, .indexing.head.languages[]?] | unique | join(","))] | @tsv' >> "$trace"
   state=$(echo "$s" | jq -r '.indexing_status')
   [ "$state" = "ready" ] && break

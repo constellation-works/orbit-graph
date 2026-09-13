@@ -487,20 +487,45 @@ fn status_reports_monotonic_progress_during_a_cold_build_of_a_large_repository()
 
     let mut previous = [0u64, 0u64];
     let mut ready = [false, false];
+    let mut resolving_seen = [false, false];
+    let mut resolving_done_previous = [0u64, 0u64];
     let deadline = Instant::now() + Duration::from_secs(120);
     loop {
         let status = service.authorized("GET", "/api/status", &[]).json();
         for (index, side) in ["base", "head"].iter().enumerate() {
-            let files_indexed = status["indexing"][*side]["files_indexed"]
-                .as_u64()
-                .unwrap_or_default();
+            let indexing_side = &status["indexing"][*side];
+            let files_indexed = indexing_side["files_indexed"].as_u64().unwrap_or_default();
             assert!(
                 files_indexed >= previous[index],
                 "{side} files_indexed must never regress: {} -> {files_indexed}",
                 previous[index]
             );
             previous[index] = files_indexed;
-            if status["indexing"][*side]["state"] == "ready" {
+
+            if indexing_side["phase"] == "resolving" {
+                let phase_progress = &indexing_side["phase_progress"];
+                let total = phase_progress["total"].as_u64().unwrap_or_default();
+                let done = phase_progress["done"].as_u64().unwrap_or_default();
+                assert!(
+                    total > 0,
+                    "{side} resolving phase_progress.total must be non-zero: {status}"
+                );
+                assert!(
+                    done <= total,
+                    "{side} resolving phase_progress.done must not exceed total: {status}"
+                );
+                if resolving_seen[index] {
+                    assert!(
+                        done >= resolving_done_previous[index],
+                        "{side} resolving phase_progress.done must never regress: {} -> {done}",
+                        resolving_done_previous[index]
+                    );
+                }
+                resolving_seen[index] = true;
+                resolving_done_previous[index] = done;
+            }
+
+            if indexing_side["state"] == "ready" {
                 ready[index] = true;
             }
         }
@@ -515,6 +540,14 @@ fn status_reports_monotonic_progress_during_a_cold_build_of_a_large_repository()
     }
     assert!(previous[0] > 0, "base indexed at least one file");
     assert!(previous[1] > 0, "head indexed at least one file");
+    assert!(
+        resolving_seen[0],
+        "base must report a resolving phase with phase_progress.total > 0"
+    );
+    assert!(
+        resolving_seen[1],
+        "head must report a resolving phase with phase_progress.total > 0"
+    );
 }
 
 #[test]
@@ -657,17 +690,30 @@ fn changed_symbols_reports_why_an_empty_list_is_empty() {
 /// Build a throwaway repository with `file_count` files on each side, the
 /// same content shifted by one, so materializing and indexing it takes long
 /// enough to observe an in-progress build instead of racing it.
+///
+/// Each file (after the first) calls the previous file's function, so pass 2
+/// (reference resolution) has real cross-file refs to resolve instead of
+/// running with an empty ref set: `file_count - 1` calls, same-module
+/// resolved, since every top-level function shares the crate-root module
+/// prefix in this flat `src/` layout.
 fn build_large_repo(file_count: usize) -> (TempDir, String, String) {
     let dir = TempDir::new().expect("create large fixture repository");
     let repo = Repository::init(dir.path()).expect("init large fixture repository");
 
-    let base_files: Vec<(String, String)> = (0..file_count)
-        .map(|index| {
-            (
-                format!("src/file_{index}.rs"),
-                format!("pub fn marker_{index}() -> i32 {{\n    {index}\n}}\n"),
+    fn marker_body(index: usize, offset: usize) -> String {
+        let value = index + offset;
+        if index == 0 {
+            format!("pub fn marker_{index}() -> i32 {{\n    {value}\n}}\n")
+        } else {
+            format!(
+                "pub fn marker_{index}() -> i32 {{\n    marker_{}() + {value}\n}}\n",
+                index - 1
             )
-        })
+        }
+    }
+
+    let base_files: Vec<(String, String)> = (0..file_count)
+        .map(|index| (format!("src/file_{index}.rs"), marker_body(index, 0)))
         .collect();
     let base_refs: Vec<(&str, &str)> = base_files
         .iter()
@@ -676,12 +722,7 @@ fn build_large_repo(file_count: usize) -> (TempDir, String, String) {
     let base = commit_files(&repo, dir.path(), base_refs.as_slice(), "base", 0);
 
     let head_files: Vec<(String, String)> = (0..file_count)
-        .map(|index| {
-            (
-                format!("src/file_{index}.rs"),
-                format!("pub fn marker_{index}() -> i32 {{\n    {}\n}}\n", index + 1),
-            )
-        })
+        .map(|index| (format!("src/file_{index}.rs"), marker_body(index, 1)))
         .collect();
     let head_refs: Vec<(&str, &str)> = head_files
         .iter()
