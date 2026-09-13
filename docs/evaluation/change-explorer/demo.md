@@ -1,16 +1,10 @@
 # Demo: exploring a real change end to end
 
 A scripted walkthrough of the seven steps a developer follows to understand
-one Git change with `orbit-graph-explorer`: **open a comparison, read the
-change list, inspect potential impact, review candidate tests, read the
-source evidence, explore further (outbound callees or search), and export a
-report to share.** Those seven steps are the shipped contract's three-pane
-[UI sketch](../../design/change-explorer.md#ui-sketch) plus the two capabilities
-the UI sketch's panes summarize but that this walkthrough exercises directly
-(directional exploration and the `report` export) — the explorer's own spec
-document that first enumerated "seven workflow steps" was not available in
-this task's context, so this list is derived from, and cross-checked against,
-the real running service rather than transcribed from memory.
+one Git change with `orbit-graph-explorer`: **open a comparison, build the
+snapshots, read the change list, inspect potential impact, follow source
+evidence, apply filters, and export a report to share.** Those seven steps are
+the required user workflow, exercised against the real running service.
 
 Every command below is copy-pasteable and was run for real against this
 repository's own history — `orbit-graph-explorer` exploring two commits of
@@ -25,7 +19,7 @@ to install the binary first. This walkthrough uses `curl` for the JSON
 routes so it runs the same in a terminal or a CI log; open the printed URL in
 a browser to see the same evidence in the three-pane UI instead.
 
-## 0. Pick a real base and head
+## Setup: pick a real base and head
 
 Any two commits work. This walkthrough uses two consecutive merged fixes in
 `orbit-graph`'s own history:
@@ -71,7 +65,50 @@ ready for whoever captures them next.
 - `screenshots/01-launch-terminal.png` (desktop) — the launch banner above.
 - `screenshots/01-launch-terminal-narrow.png` (narrow) — same, narrow viewport.
 
-## 2. Read the change list
+## 2. Build or load snapshots: status and scope
+
+Poll `GET /api/status` while the two snapshots build. These are consecutive
+responses from the same foreground launch, showing base progress, then head
+progress, then readiness:
+
+```sh
+for i in 1 2 3; do
+  curl -s -H "Authorization: Bearer $TOKEN" "$BASE_URL/api/status" \
+    | python3 -c 'import json,sys; d=json.load(sys.stdin); print([(side, d["indexing"][side]["state"], d["indexing"][side]["phase"], d["indexing"][side]["phase_progress"]) for side in ("base","head")])'
+  sleep 1
+done
+```
+
+```text
+[('base', 'indexing', 'resolving', {'done': 21500, 'total': 28565}), ('head', 'pending', None, None)]
+[('base', 'ready', None, None), ('head', 'indexing', 'resolving', {'done': 17000, 'total': 28721})]
+[('base', 'ready', None, None), ('head', 'ready', None, None)]
+```
+
+At readiness, `GET /api/status` reports `indexing_status: ready`, both sides
+index 225 files, and both expose `files_ignored: 0` and
+`unsupported_constructs: 0`. The same snapshot is available in the UI's
+indexing/status panel. Inspect the comparison payload for languages, counts,
+cache freshness, and changed files outside the extractor's supported scope:
+
+```sh
+curl -s -H "Authorization: Bearer $TOKEN" "$BASE_URL/api/comparison" \
+  | python3 -c 'import json,sys; d=json.load(sys.stdin); print({"languages": d["indexing"]["head"]["languages"], "snapshots": [{k: s[k] for k in ("side","files_indexed","files_written","cache","excluded")} for s in d["snapshots"]], "cache": d["cache"], "out_of_scope": "GET /api/changed-symbols"})'
+curl -s -H "Authorization: Bearer $TOKEN" "$BASE_URL/api/changed-symbols" \
+  | python3 -c 'import json,sys; print(json.load(sys.stdin)["out_of_scope"])'
+```
+
+```text
+{'languages': ['config', 'javascript', 'markdown', 'python', 'rust'], 'snapshots': [{'side': 'base', 'files_indexed': 225, 'files_written': 271, 'cache': 'miss', 'excluded': []}, {'side': 'head', 'files_indexed': 225, 'files_written': 271, 'cache': 'miss', 'excluded': []}], 'cache': {'directory': '.orbit-graph/explorer/snapshots', 'note': None, 'key': ['commit_sha', 'extractor_version', 'store_schema_version'], 'index_identity': {'extractor_version': 8, 'store_schema_version': 1}}, 'out_of_scope': 'GET /api/changed-symbols'}
+[{'path': 'crates/orbit-graph-explorer/ui/app.css', 'reason': 'unsupported_language', 'snapshot': 'base'}, {'path': 'crates/orbit-graph-explorer/ui/app.css', 'reason': 'unsupported_language', 'snapshot': 'head'}, {'path': 'crates/orbit-graph-explorer/ui/index.html', 'reason': 'unsupported_language', 'snapshot': 'base'}, {'path': 'crates/orbit-graph-explorer/ui/index.html', 'reason': 'unsupported_language', 'snapshot': 'head'}, {'path': 'docs/evaluation/change-explorer/scripts/progress-cancel.sh', 'reason': 'unsupported_language', 'snapshot': 'base'}, {'path': 'docs/evaluation/change-explorer/scripts/progress-cancel.sh', 'reason': 'unsupported_language', 'snapshot': 'head'}]
+```
+
+The `cache: miss` results are the cold-launch outcome; the `directory` is the
+freshness boundary, and the key shows why a later launch can reuse an entry.
+
+- `screenshots/02-snapshot-status.png` / `screenshots/02-snapshot-status-narrow.png` — pending.
+
+## 3. See changed files and symbols
 
 ```sh
 curl -s -H "Authorization: Bearer $TOKEN" "$BASE_URL/api/changed-symbols" \
@@ -84,9 +121,9 @@ the UI groups them by status (`added`, `removed`, `modified`, `uncertain`,
 dirty-working-tree notice when the repository you point `--repo` at has
 uncommitted changes — snapshots index committed revisions only.
 
-- `screenshots/02-change-list.png` / `screenshots/02-change-list-narrow.png` — pending.
+- `screenshots/03-change-list.png` / `screenshots/03-change-list-narrow.png` — pending.
 
-## 3. Inspect potential impact for one changed symbol
+## 4. Inspect impact, callers, callees, and candidate tests
 
 ```sh
 SELECTOR='symbol:crates/orbit-graph-explorer/src/evidence.rs#entry_points:method'
@@ -105,9 +142,9 @@ each with its relationship, evidence category, and confidence, with the
 bound (`depth=2` here) and the truncation flag printed above the list rather
 than hidden in a tooltip.
 
-- `screenshots/03-impact.png` / `screenshots/03-impact-narrow.png` — pending.
+- `screenshots/04-impact.png` / `screenshots/04-impact-narrow.png` — pending.
 
-## 4. Review candidate tests
+### Candidate tests
 
 ```sh
 curl -s -H "Authorization: Bearer $TOKEN" \
@@ -127,7 +164,7 @@ that claim is never made by this tool (see
 
 - `screenshots/04-candidate-tests.png` / `screenshots/04-candidate-tests-narrow.png` — pending.
 
-## 5. Read the source evidence
+## 5. Follow source evidence and open exact lines
 
 ```sh
 curl -s -H "Authorization: Bearer $TOKEN" \
@@ -149,7 +186,7 @@ head side by side.
 
 - `screenshots/05-source.png` / `screenshots/05-source-narrow.png` — pending.
 
-## 6. Explore further: outbound callees, or search
+### Aside: Explore further — outbound callees, or search
 
 Every evidence route defaults to inbound (what could reach this symbol).
 Ask what it reaches instead:
@@ -175,9 +212,42 @@ curl -s -H "Authorization: Bearer $TOKEN" "$BASE_URL/api/search?q=entry_points&s
 13 matches
 ```
 
-- `screenshots/06-outbound-or-search.png` / `screenshots/06-outbound-or-search-narrow.png` — pending.
+- `screenshots/04-outbound-or-search.png` / `screenshots/04-outbound-or-search-narrow.png` — pending.
 
-## 7. Export a report to share
+## 6. Filter evidence and inspect why-hidden
+
+Use the UI's filter bar, or apply the same controls to the evidence for the
+`entry_points` symbol. This request sets a confidence floor and keeps only
+`added` change-kind evidence; the response remains resolved but explains the
+two hidden candidates in `filtered_out`:
+
+```sh
+curl -s -H "Authorization: Bearer $TOKEN" \
+  "$BASE_URL/api/evidence?selector=$ENCODED&side=head&confidence=exact&change_kind=added&depth=1" \
+  | python3 -c 'import json,sys; d=json.load(sys.stdin); print({"resolved": d["resolved"], "paths": len(d["paths"]), "query_options": d["query_options"], "filtered_out": d["filtered_out"], "bounds_hit": d["bounds_hit"]})'
+```
+
+```text
+{'resolved': True, 'paths': 0, 'query_options': {'change_kind': ['added'], 'depth': 1, 'direction': 'inbound', 'kind': None, 'language': None, 'min_confidence': 'exact', 'node_cap': 200, 'scope': None, 'source_max_bytes': 65536, 'time_budget_ms': 5000}, 'filtered_out': [{'count': 2, 'examples': ['symbol:crates/orbit-graph-explorer/src/report.rs#build_report:function', 'symbol:crates/orbit-graph-explorer/src/service.rs#entry_points_route:function'], 'explanation': 'Excluded by the `change_kind` filter, which keeps only items whose symbol changed in one of the requested ways.', 'reason': 'change_kind'}], 'bounds_hit': [{'bound': 'depth', 'value': 1}]}
+```
+
+The UI's **why-hidden** `<details>` shows the same explanation. Raise the
+traversal depth while keeping the confidence floor and change-kind filter;
+the bound is now four hops and two paths are admitted:
+
+```sh
+curl -s -H "Authorization: Bearer $TOKEN" \
+  "$BASE_URL/api/evidence?selector=$ENCODED&side=head&confidence=fuzzy_name&change_kind=modified&depth=4" \
+  | python3 -c 'import json,sys; d=json.load(sys.stdin); print({"resolved": d["resolved"], "paths": len(d["paths"]), "filtered_out": d["filtered_out"], "bounds_hit": d["bounds_hit"], "query_options": d["query_options"]})'
+```
+
+```text
+{'resolved': True, 'paths': 2, 'filtered_out': [{'count': 44, 'examples': ['symbol:crates/orbit-graph-explorer/src/report.rs#build_report:function', 'symbol:crates/orbit-graph-explorer/src/service.rs#entry_points_route:function', 'file:crates/orbit-graph-explorer/src/main.rs', 'symbol:crates/orbit-graph-explorer/src/main.rs#report:function', 'file:crates/orbit-graph-explorer/src/service.rs'], 'explanation': 'Excluded by the `change_kind` filter, which keeps only items whose symbol changed in one of the requested ways.', 'reason': 'change_kind'}], 'bounds_hit': [{'bound': 'depth', 'value': 4}], 'query_options': {'change_kind': ['modified'], 'depth': 4, 'direction': 'inbound', 'kind': None, 'language': None, 'min_confidence': 'fuzzy_name', 'node_cap': 200, 'scope': None, 'source_max_bytes': 65536, 'time_budget_ms': 5000}}
+```
+
+- `screenshots/06-filters-why-hidden.png` / `screenshots/06-filters-why-hidden-narrow.png` — pending.
+
+## 7. Save or export a bounded report
 
 ```sh
 curl -s -X POST -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
@@ -206,8 +276,7 @@ above); both snapshot trees and their indexes are removed with it unless
 
 ## Screenshot backlog
 
-None of the eight files listed above (steps 1–6, desktop + narrow each,
-except step 1 which needs only the terminal banner) could be captured while
+None of the screenshot files listed above could be captured while
 authoring this document: no headless browser (`chromium`, `google-chrome`)
 was installed on the host, matching the same gap the evaluation recorded for
 its UI timing. Whoever next has a headless browser available should:
