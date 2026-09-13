@@ -307,6 +307,54 @@ this study is the one place in the re-run where the fix's incompleteness (no
 receiver-type inference, just a stricter refusal rule) produces a *new* wrong
 answer rather than only fixing an old one.
 
+## After ORB-12425 (re-run 2026-09-13)
+
+Re-run against `orbit-graph-explorer` built from this checkout (working tree,
+`EXTRACTOR_VERSION` 8, `STORE_SCHEMA_VERSION` 1 unchanged), same base/head pair
+(`148b668391f575466282eaa81aab0dc943846a87` /
+`82c24be9a49dbf9d775db9dc980c1de712d8bb8d`), corpus re-cloned locally with
+`clone-corpora.sh` (`--no-hardlinks`), service launched and queried in the
+foreground (no `--warm` re-use).
+
+The root cause was not the extractor: ORB-12416 still leaves
+`checker.supporting_paths(...)` at `fuzzy_name` (a receiver-typed call the
+extractor cannot statically type). It disappeared because `refs`' own
+`fallback` block only fires when the floor-filtered `refs` list is **empty**,
+and `supporting_paths` has seven same-file `exact` refs — so the `fuzzy_name`
+rows were computed but never surfaced. The fix (ORB-12425) is in the explorer,
+not the extractor: `EvidenceCollector` now discloses a node's `fuzzy_name`-only
+references unconditionally at the `import_resolved` and `same_module`
+(default) floors, instead of only when the node has no stronger reference at
+all.
+
+`GET /api/candidate-tests?selector=symbol:scripts/research_records.py%23supporting_paths:function&side=head`
+now returns **4** candidates, not the post-ORB-12416 regression's 1:
+
+| source | category | test | note |
+| --- | --- | --- | --- |
+| `call_path` | `heuristic_match` | `symbol:tests/test_research_records.py#test_landed_migration_survives_head_advance_and_refuses_source_drift:method` | call reference at `tests/test_research_records.py:113`; 1 hop |
+| `call_path` | `heuristic_match` | `symbol:tests/test_research_records.py#test_source_addition_and_deletion_fail_closed:method` | call reference at `tests/test_research_records.py:131`; 1 hop |
+| `call_path` | `heuristic_match` | `file:tests/test_research_records.py` | call reference at `tests/test_research_records.py:188`; 3 hops |
+| `naming_heuristic` | `heuristic_match` | `file:tests/test_research_records.py` | file name matches `scripts/research_records.py` |
+
+The two `:113`/`:131` candidates are exactly the pair the original Q3 verified
+and ORB-12416 silently dropped; they are back, now correctly labelled
+`heuristic_match` rather than the unlabelled `call_path`/`resolved_call`
+strength the original run gave them — study 5's own `.append` false positives
+have the identical disclosed-weak treatment, so the two failure modes this
+finding raised (a genuine call vs. a false-positive same-name match) are no
+longer indistinguishable.
+
+`GET /api/evidence?...&depth=3` for the same selector now returns **13** paths
+(was 7): the original 7 same-file `exact` paths into `research_records.py`,
+unchanged, plus 6 new `heuristic_match` paths rooted at the two test methods
+above and their own callers, distance 1–3. Re-querying with `&confidence=exact`
+returns exactly the original 7 `resolved_call` paths and none of the six new
+`heuristic_match` ones: `exact` is a strict, no-heuristics floor by design (a
+caller asking for guaranteed matches only must never receive a name-only guess
+in their place), so this finding's fix is opt-out for a caller that wants the
+old strict behavior, not merely opt-in for one that wants the disclosure.
+
 ## Scripted baseline versus the service — **agent-only, not a human usability study**
 
 | Arm | Command | Wall clock | What it answered |

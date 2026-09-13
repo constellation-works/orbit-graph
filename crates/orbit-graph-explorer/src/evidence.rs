@@ -1409,9 +1409,21 @@ impl<'a> EvidenceCollector<'a> {
                 });
                 continue;
             };
+            // A callee below the floor is dropped unless it is a `fuzzy_name`
+            // hop the floor should still disclose as weak evidence — see
+            // `should_surface_fuzzy_heuristics` and ORB-12425. `CalleeOpts::all()`
+            // already fetches every confidence down to `fuzzy_name`, so no
+            // second query is needed here, unlike the inbound direction.
+            let mut note = None;
             if !confidence_at_least(callee.confidence, min_confidence) {
-                skipped_low_confidence += 1;
-                continue;
+                if callee.confidence == RefConfidence::FuzzyName
+                    && should_surface_fuzzy_heuristics(min_confidence)
+                {
+                    note = Some(FUZZY_HEURISTIC_NOTE.to_string());
+                } else {
+                    skipped_low_confidence += 1;
+                    continue;
+                }
             }
             let Some(address) = self.qualified_index.get(qualified.as_str()).cloned() else {
                 // The core resolved this call to a qualified name this
@@ -1446,7 +1458,7 @@ impl<'a> EvidenceCollector<'a> {
                     file: node_file.clone(),
                     line: Some(callee.line),
                 },
-                note: None,
+                note,
             };
             let endpoint = EndpointRef {
                 selector: callee_selector,
@@ -1699,17 +1711,65 @@ impl<'a> EvidenceCollector<'a> {
                 origins,
             ));
         }
+        let mut seen: BTreeSet<(String, usize, &'static str)> = result
+            .refs
+            .iter()
+            .map(|entry| (entry.file.clone(), entry.line, kind_label(entry.kind)))
+            .collect();
         if let Some(fallback) = result.fallback.clone() {
             for entry in fallback.refs {
                 // A fallback block is name-only: it renders as a heuristic
                 // match with its note attached, never merged into the primary
                 // result.
+                seen.insert((entry.file.clone(), entry.line, kind_label(entry.kind)));
                 let mut edge = self.ref_edge(
                     &entry,
                     node_selector,
                     node_label,
                     commit_sha,
                     Some(fallback.note.as_str()),
+                    origins,
+                )?;
+                edge.category = EvidenceCategory::HeuristicMatch;
+                edges.push(edge);
+            }
+        }
+
+        // A `fuzzy_name` reference to this node is invisible above whenever
+        // the node also has at least one stronger reference, because the core
+        // `fallback` block above only fires when the floor-filtered `refs` is
+        // empty. Re-query at the `fuzzy_name` floor and surface whatever the
+        // stronger query missed, so a receiver of unknown type is disclosed
+        // as weak evidence instead of silently dropped — see ORB-12425.
+        if should_surface_fuzzy_heuristics(min_confidence) {
+            let fuzzy = self
+                .snapshot()
+                .refs(
+                    &parsed,
+                    &RefOpts {
+                        confidence: RefConfidence::FuzzyName,
+                        kind: None,
+                    },
+                )
+                .map_err(|error| EvidenceError::Query {
+                    operation: "query inbound fuzzy-name references",
+                    side: self.side,
+                    reason: error.to_string(),
+                })?;
+            for entry in fuzzy.refs {
+                if entry.confidence != RefConfidence::FuzzyName {
+                    continue;
+                }
+                let key = (entry.file.clone(), entry.line, kind_label(entry.kind));
+                if !seen.insert(key) {
+                    continue;
+                }
+                let mut edge = self.ref_edge(
+                    &entry,
+                    node_selector,
+                    node_label,
+                    commit_sha,
+                    Some(FUZZY_HEURISTIC_NOTE),
                     origins,
                 )?;
                 edge.category = EvidenceCategory::HeuristicMatch;
@@ -2417,6 +2477,31 @@ fn confidence_at_least(confidence: RefConfidence, floor: RefConfidence) -> bool 
         }
     }
     rank(confidence) >= rank(floor)
+}
+
+/// Note attached to a `fuzzy_name` edge surfaced only because of
+/// [`should_surface_fuzzy_heuristics`]: disclosed as weak evidence rather than
+/// silently excluded by a floor the edge does not otherwise meet.
+const FUZZY_HEURISTIC_NOTE: &str = "This edge resolved only at the `fuzzy_name` confidence floor — a name-only match that may \
+     be a different symbol sharing the name — and is shown even though the query's confidence \
+     floor would otherwise exclude it, so a receiver of unknown type does not silently hide a \
+     genuine call.";
+
+/// Whether a `fuzzy_name`-only edge should be surfaced as a disclosed
+/// `heuristic_match` at `floor`, rather than silently excluded.
+///
+/// `fuzzy_name` itself needs no special handling: at that floor every match
+/// already comes back through the ordinary query. `exact` is a strict,
+/// no-heuristics floor: a caller asking for guaranteed matches only never
+/// receives a name-only guess in its place. Between the two, `import_resolved`
+/// and `same_module` (the default) are where a receiver of unknown type would
+/// otherwise vanish whenever the same symbol also has a stronger reference —
+/// see ORB-12425.
+fn should_surface_fuzzy_heuristics(floor: RefConfidence) -> bool {
+    matches!(
+        floor,
+        RefConfidence::ImportResolved | RefConfidence::SameModule
+    )
 }
 
 /// A symbol selector split into the parts the entry-point rules read.
