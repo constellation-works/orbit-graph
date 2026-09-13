@@ -689,7 +689,7 @@ impl Snapshot {
 
         let files_ignored = materialization.excluded.len();
         let unsupported_constructs = unsupported_construct_count(&materialization);
-        let files_indexed = {
+        let (files_indexed, languages) = {
             // The handle is dropped before the entry is renamed into place, so
             // the database and its write-ahead log are closed when the
             // directory moves.
@@ -709,7 +709,7 @@ impl Snapshot {
             )?;
             drop(graph);
             match indexed {
-                Some(files_indexed) => files_indexed,
+                Some(outcome) => (outcome.files_indexed, outcome.languages),
                 None => {
                     cache.discard(staged).map_err(cache_error)?;
                     return Ok(None);
@@ -718,7 +718,10 @@ impl Snapshot {
         };
 
         let entry = cache
-            .publish(staged, stored_build(&materialization, files_indexed))
+            .publish(
+                staged,
+                stored_build(&materialization, files_indexed, languages),
+            )
             .map_err(cache_error)?;
         let tree_root = entry.tree();
         let db_path = entry.db();
@@ -789,7 +792,10 @@ impl Snapshot {
                 source,
             }
         })?;
-        let Some(files_indexed) = index_with_progress(
+        let Some(IndexOutcome {
+            files_indexed,
+            languages,
+        }) = index_with_progress(
             &graph,
             side,
             commit_sha.as_str(),
@@ -810,7 +816,7 @@ impl Snapshot {
                 files_indexed,
                 files_ignored,
                 unsupported_constructs,
-                languages: Vec::new(),
+                languages,
             },
         );
         Ok(Some(PreparedSnapshot {
@@ -883,10 +889,19 @@ impl SyncObserver for ProgressSyncObserver<'_> {
     }
 }
 
+/// Files indexed and languages observed by a completed [`index_with_progress`]
+/// call, carried forward into the side's terminal `ready` status and, for a
+/// freshly published cache entry, into its [`StoredBuild`] so a later cache
+/// hit can still report them.
+struct IndexOutcome {
+    files_indexed: usize,
+    languages: Vec<String>,
+}
+
 /// Index `graph`, reporting progress through `progress`.
 ///
-/// Returns the number of files indexed, or `None` if `progress` requested
-/// cancellation before indexing finished.
+/// Returns `None` if `progress` requested cancellation before indexing
+/// finished.
 fn index_with_progress(
     graph: &Graph,
     side: SnapshotSide,
@@ -894,7 +909,7 @@ fn index_with_progress(
     files_ignored: usize,
     unsupported_constructs: usize,
     progress: &dyn ComparisonProgress,
-) -> Result<Option<usize>, SnapshotError> {
+) -> Result<Option<IndexOutcome>, SnapshotError> {
     if progress.is_cancelled() {
         return Ok(None);
     }
@@ -922,8 +937,18 @@ fn index_with_progress(
             commit_sha: commit_sha.to_string(),
             source,
         })?;
+    let languages = observer
+        .languages
+        .into_inner()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .into_iter()
+        .map(str::to_string)
+        .collect();
     Ok(match outcome {
-        SyncOutcome::Completed(report) => Some(report.files_indexed),
+        SyncOutcome::Completed(report) => Some(IndexOutcome {
+            files_indexed: report.files_indexed,
+            languages,
+        }),
         SyncOutcome::Cancelled(_) => None,
     })
 }
@@ -951,7 +976,7 @@ fn ready_status(build: &StoredBuild) -> BuildStatus {
             .iter()
             .filter(|entry| entry.reason == "unsupported_kind")
             .count(),
-        languages: Vec::new(),
+        languages: build.languages.clone(),
     }
 }
 
@@ -991,7 +1016,11 @@ fn open_graph(
     })
 }
 
-fn stored_build(materialization: &MaterializationReport, files_indexed: usize) -> StoredBuild {
+fn stored_build(
+    materialization: &MaterializationReport,
+    files_indexed: usize,
+    languages: Vec<String>,
+) -> StoredBuild {
     StoredBuild {
         files_written: materialization.files_written,
         bytes_written: materialization.bytes_written,
@@ -1005,6 +1034,7 @@ fn stored_build(materialization: &MaterializationReport, files_indexed: usize) -
             })
             .collect(),
         files_indexed,
+        languages,
     }
 }
 
