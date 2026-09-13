@@ -229,7 +229,7 @@ body {
 }
 
 /* Narrow-viewport layout: panes stack instead of sitting side by side. */
-@media (max-width: 900px) {
+@media (max-width: 720px) {
   #panes {
     grid-template-columns: 1fr;
   }
@@ -237,6 +237,20 @@ body {
   #panes > section {
     border-right: none;
     border-bottom: 1px solid var(--border);
+    scroll-margin-top: 3em;
+  }
+
+  #pane-switcher {
+    display: flex;
+  }
+
+  #pane-source #symbol-source-panels,
+  #pane-source #reference-source-panel {
+    overflow-x: auto;
+  }
+
+  .source-lines {
+    max-width: 100%;
   }
 }
 
@@ -522,7 +536,7 @@ details.uncertain-candidates > summary {
   gap: 0.75em;
 }
 
-@media (max-width: 900px) {
+@media (max-width: 720px) {
   .source-side-by-side {
     grid-template-columns: 1fr;
   }
@@ -572,4 +586,420 @@ details.uncertain-candidates > summary {
 
 .source-line .line-marker::before {
   content: "  ";
+}
+
+/* ---------------------------------------------------------------------- */
+/* Utility                                                                  */
+/* ---------------------------------------------------------------------- */
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* ---------------------------------------------------------------------- */
+/* Error banners                                                           */
+/* ---------------------------------------------------------------------- */
+
+#error-banner-region {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4em;
+}
+
+#error-banner-region:empty {
+  display: none;
+}
+
+.error-banner {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1em;
+  padding: 0.6em 1em;
+  border: 2px solid var(--border);
+  border-left-width: 6px;
+  background: var(--bg-heuristic);
+}
+
+.error-banner-text {
+  min-width: 0;
+}
+
+.error-banner-code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-weight: 700;
+  margin-right: 0.5em;
+}
+
+.error-banner-dismiss {
+  font: inherit;
+  background: transparent;
+  color: inherit;
+  border: 1px solid var(--border);
+  padding: 0.1em 0.6em;
+  cursor: pointer;
+  flex: none;
+}
+
+/* ---------------------------------------------------------------------- */
+/* Pane switcher (sticky, narrow viewports only)                           */
+/* ---------------------------------------------------------------------- */
+
+#pane-switcher {
+  display: none;
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  gap: 0;
+  background: canvas;
+  border-bottom: 2px solid var(--border);
+}
+
+.pane-switch-button {
+  flex: 1;
+  font: inherit;
+  padding: 0.5em 0.25em;
+  background: transparent;
+  color: inherit;
+  border: none;
+  border-right: 1px solid var(--border);
+  cursor: pointer;
+}
+
+.pane-switch-button:last-child {
+  border-right: none;
+}
+
+.pane-switch-button[aria-current="true"] {
+  font-weight: 700;
+  background: var(--bg-group);
+}
+
+/* ---------------------------------------------------------------------- */
+/* Header: title row, search, indexing progress                           */
+/* ---------------------------------------------------------------------- */
+
+.header-top {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 1em;
+  flex-wrap: wrap;
+}
+
+#keyboard-help-open {
+  font: inherit;
+  font-size: 0.8rem;
+  background: transparent;
+  color: inherit;
+  border: 1px solid var(--border);
+  padding: 0.2em 0.6em;
+  cursor: pointer;
+}
+
+#search-bar {
+  position: relative;
+  margin-top: 0.6em;
+  display: flex;
+  gap: 0.5em;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+#search-bar label:not(.visually-hidden) {
+  font-weight: 600;
+  font-size: 0.85rem;
+}
+
+#search-input {
+  font: inherit;
+  padding: 0.25em 0.5em;
+  min-width: 16em;
+  flex: 1 1 16em;
+}
+
+#search-side {
+  font: inherit;
+  padding: 0.25em 0.4em;
+}
+
+#search-results {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  z-index: 6;
+  background: canvas;
+  border: 2px solid var(--border);
+  max-height: 60vh;
+  overflow-y: auto;
+  margin-top: 0.2em;
+}
+
+#search-results[hidden] {
+  display: none;
+}
+
+.search-result {
+  display: block;
+  width: 100%;
+  text-align: left;
+  font: inherit;
+  color: inherit;
+  background: transparent;
+  border: none;
+  border-bottom: 1px solid var(--border);
+  padding: 0.4em 0.6em;
+  cursor: pointer;
+}
+
+.search-result:hover,
+.search-result:focus {
+  background: var(--bg-group);
+}
+
+.search-result-empty {
+  padding: 0.5em;
+  font-size: 0.85rem;
+  opacity: 0.85;
+}
+
+#indexing-progress {
+  margin-top: 0.6em;
+  padding: 0.5em 0.75em;
+  border: 2px dashed var(--border);
+  display: flex;
+  flex-direction: column;
+  gap: 0.35em;
+}
+
+#indexing-progress[hidden] {
+  display: none;
+}
+
+.side-progress {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75em;
+  font-size: 0.85rem;
+}
+
+.side-progress-label {
+  font-weight: 700;
+  text-transform: uppercase;
+  font-size: 0.7rem;
+}
+
+.indexing-progress-actions {
+  display: flex;
+  gap: 0.5em;
+}
+
+.indexing-progress-actions button {
+  font: inherit;
+  padding: 0.25em 0.75em;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+
+.indexing-progress-actions button[hidden] {
+  display: none;
+}
+
+/* ---------------------------------------------------------------------- */
+/* Pane 1 / pane 2 empty states                                            */
+/* ---------------------------------------------------------------------- */
+
+#change-empty,
+#relationship-empty,
+#source-empty {
+  padding: 0.75em;
+  border: 2px dashed var(--border);
+  margin: 0.5em 0;
+}
+
+#change-empty[hidden] {
+  display: none;
+}
+
+.empty-state-clear-filters {
+  font: inherit;
+  background: transparent;
+  color: var(--focus);
+  border: none;
+  padding: 0;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+/* ---------------------------------------------------------------------- */
+/* Table / graph toggle                                                    */
+/* ---------------------------------------------------------------------- */
+
+#view-toggle {
+  display: flex;
+  gap: 0;
+  margin-bottom: 0.75em;
+}
+
+#view-toggle button {
+  font: inherit;
+  padding: 0.3em 0.9em;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+
+#view-toggle button + button {
+  border-left: none;
+}
+
+#view-toggle button[aria-pressed="true"] {
+  font-weight: 700;
+  background: var(--bg-group);
+}
+
+/* ---------------------------------------------------------------------- */
+/* Neighbourhood graph (hand-built inline SVG)                             */
+/* ---------------------------------------------------------------------- */
+
+#relationship-graph-view[hidden] {
+  display: none;
+}
+
+#graph-budget-notice {
+  padding: 0.5em;
+  border: 2px dashed var(--border);
+}
+
+#graph-budget-notice[hidden] {
+  display: none;
+}
+
+#relationship-graph {
+  width: 100%;
+  height: auto;
+  max-height: 70vh;
+  border: 1px solid var(--border);
+}
+
+.graph-node {
+  cursor: pointer;
+}
+
+.graph-node rect,
+.graph-node circle {
+  fill: canvas;
+  stroke: currentColor;
+  stroke-width: 1.5;
+}
+
+.graph-node.graph-node-focus rect,
+.graph-node.graph-node-focus circle {
+  stroke-width: 3;
+}
+
+.graph-node:focus-visible rect,
+.graph-node:focus-visible circle,
+.graph-expand:focus-visible circle,
+.graph-edge:focus-visible {
+  outline: 3px solid var(--focus);
+  outline-offset: 1px;
+}
+
+.graph-node-label,
+.graph-node-badge,
+.graph-expand-label {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 11px;
+  fill: currentColor;
+}
+
+.graph-edge-line {
+  stroke: currentColor;
+  fill: none;
+}
+
+.graph-edge-badge {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 9px;
+  fill: currentColor;
+}
+
+.graph-expand circle {
+  fill: canvas;
+  stroke: currentColor;
+  stroke-dasharray: 3 2;
+}
+
+/* ---------------------------------------------------------------------- */
+/* Keyboard help dialog                                                    */
+/* ---------------------------------------------------------------------- */
+
+#keyboard-help {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+#keyboard-help[hidden] {
+  display: none;
+}
+
+.keyboard-help-panel {
+  background: canvas;
+  color: canvastext;
+  border: 2px solid var(--border);
+  padding: 1.25em;
+  max-width: 30em;
+  width: 90%;
+  max-height: 85vh;
+  overflow-y: auto;
+}
+
+#keyboard-help-list {
+  margin: 0.75em 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4em;
+}
+
+#keyboard-help-list > div {
+  display: flex;
+  gap: 1em;
+  justify-content: space-between;
+}
+
+#keyboard-help-list dt {
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+#keyboard-help-list dd {
+  margin: 0;
+  text-align: right;
+}
+
+#keyboard-help-close {
+  font: inherit;
+  padding: 0.3em 0.9em;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
 }
