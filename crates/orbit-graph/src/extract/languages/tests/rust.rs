@@ -231,6 +231,48 @@ fn drive(runner: Runner) {
 }
 
 #[test]
+fn method_call_records_its_receiver_expression() {
+    let file = extract(
+        r#"
+impl WorkspaceCommand {
+    fn execute(self) {
+        match self.command {
+            Subcommand::List(args) => args.execute(),
+        }
+        self.log();
+        helper();
+    }
+}
+"#,
+    );
+
+    let dispatch = call_ref(&file, "execute");
+    assert_eq!(dispatch.unresolved_receiver.as_deref(), Some("args"));
+
+    // `self`/`Self` receivers name the enclosing definition's own type, so a
+    // same-file method of that name stays resolvable.
+    assert_eq!(call_ref(&file, "log").unresolved_receiver, None);
+    assert_eq!(call_ref(&file, "helper").unresolved_receiver, None);
+}
+
+#[test]
+fn chained_method_call_records_the_whole_receiver_expression() {
+    let file = extract(
+        r#"
+fn load() -> Option<i32> {
+    fetch()?.parse()
+}
+"#,
+    );
+
+    assert_eq!(
+        call_ref(&file, "parse").unresolved_receiver.as_deref(),
+        Some("fetch()?")
+    );
+    assert_eq!(call_ref(&file, "fetch").unresolved_receiver, None);
+}
+
+#[test]
 fn extracts_clap_subcommand_handlers_from_simple_match_arms() {
     let file = extract(
         r#"
@@ -336,6 +378,24 @@ fn run(_args: RunArgs) {}
         .find(|command| command.name == "job run")
         .map(|command| command.handler_symbol.as_deref());
     assert_eq!(command, Some(None));
+}
+
+fn call_ref<'a>(
+    file: &'a crate::extract::ExtractedFile,
+    target_name: &str,
+) -> &'a crate::extract::RawRef {
+    let mut matches = file
+        .refs
+        .iter()
+        .filter(|reference| reference.kind == "call" && reference.target_name == target_name);
+    let found = matches.next().unwrap_or_else(|| {
+        panic!("missing call ref for {target_name}");
+    });
+    assert!(
+        matches.next().is_none(),
+        "expected one call ref for {target_name}"
+    );
+    found
 }
 
 fn call_names(file: &crate::extract::ExtractedFile) -> Vec<&str> {

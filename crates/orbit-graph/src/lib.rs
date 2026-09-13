@@ -74,7 +74,13 @@ mod tests;
 /// under the implemented type's name, and pass 2 now excludes them from ref
 /// candidate lookups, so a type with any impl block resolves cross-file
 /// references instead of degrading every one of them to `fuzzy_name`.
-pub const EXTRACTOR_VERSION: u32 = 7;
+///
+/// Version 8 rebuilds stored refs once more: a method call whose receiver type
+/// the extractor cannot determine (`args.execute()`) is recorded with its
+/// receiver, and pass 2 no longer resolves such a call by short name alone, so
+/// a dispatcher no longer reports its own dispatch lines as `exact` inbound
+/// references to itself.
+pub const EXTRACTOR_VERSION: u32 = 8;
 
 /// SQLite schema version used by the graph store.
 pub const STORE_SCHEMA_VERSION: u32 = store::schema::SCHEMA_VERSION;

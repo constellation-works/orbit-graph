@@ -131,6 +131,9 @@ impl ExtractionState {
             target_qualified: None,
             kind: "call".to_string(),
             confidence: "fuzzy_name".to_string(),
+            // This extractor does not classify call receivers yet; see
+            // `RawRef::unresolved_receiver`.
+            unresolved_receiver: None,
         });
     }
 }

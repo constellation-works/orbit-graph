@@ -1,13 +1,17 @@
 use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::str::FromStr;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use crate::extract::RawRef;
 use rusqlite::{Connection, params};
 
 use crate::sync::pass1::ExtractedFileRefs;
-use crate::{EXTRACTOR_VERSION, Graph, SyncMode, SyncPolicy, resolve_db_path};
+use crate::{
+    EXTRACTOR_VERSION, Graph, RefConfidence, RefOpts, Selector, SyncMode, SyncPolicy,
+    resolve_db_path,
+};
 
 #[test]
 fn exact_resolution_prefers_unambiguous_same_file_symbol() {
@@ -424,6 +428,7 @@ fn raw_ref(from_file: &str, target_name: &str) -> RawRef {
         target_qualified: None,
         kind: "call".to_string(),
         confidence: super::CONFIDENCE_FUZZY_NAME.to_string(),
+        unresolved_receiver: None,
     }
 }
 
@@ -713,4 +718,187 @@ fn run(value: Complexity) -> bool {
         assert_eq!(row.confidence, super::CONFIDENCE_EXACT);
         assert_eq!(row.target_symbol_hint, Some(enum_id));
     }
+}
+
+#[test]
+fn dispatching_method_call_does_not_resolve_to_the_calling_file() {
+    let worktree = TestWorktree::new("method-dispatch");
+    let graph = Graph::open(worktree.path(), SyncPolicy::Manual).expect("open graph");
+    worktree.write(
+        "src/exec.rs",
+        r#"
+pub trait Execute {
+    fn execute(self);
+}
+"#,
+    );
+    worktree.write(
+        "src/list.rs",
+        r#"
+use crate::exec::Execute;
+
+pub struct ListArgs;
+
+impl Execute for ListArgs {
+    fn execute(self) {}
+}
+"#,
+    );
+    worktree.write(
+        "src/teardown.rs",
+        r#"
+use crate::exec::Execute;
+
+pub struct TeardownArgs;
+
+impl Execute for TeardownArgs {
+    fn execute(self) {}
+}
+"#,
+    );
+    // The dispatcher's own method has the same short name as every handler it
+    // dispatches to, which is exactly the shape that used to self-resolve.
+    worktree.write(
+        "src/command.rs",
+        r#"
+use crate::exec::Execute;
+
+pub struct WorkspaceCommand {
+    command: WorkspaceSubcommand,
+}
+
+pub enum WorkspaceSubcommand {
+    List(ListArgs),
+    Teardown(TeardownArgs),
+}
+
+impl Execute for WorkspaceCommand {
+    fn execute(self) {
+        self.log();
+        match self.command {
+            WorkspaceSubcommand::List(args) => args.execute(),
+            WorkspaceSubcommand::Teardown(args) => args.execute(),
+        }
+    }
+}
+
+impl WorkspaceCommand {
+    fn log(&self) {}
+}
+"#,
+    );
+    worktree.write(
+        "src/main.rs",
+        "mod command;\nmod exec;\nmod list;\nmod teardown;\n\nfn main() {}\n",
+    );
+
+    graph.sync(SyncMode::Full).expect("sync graph");
+
+    let conn = open_test_connection(worktree.path());
+    let dispatch_refs = refs_for_file(&conn, "src/command.rs")
+        .into_iter()
+        .filter(|row| row.kind == "call" && row.target_name == "execute")
+        .collect::<Vec<_>>();
+    assert_eq!(dispatch_refs.len(), 2, "expected both dispatch lines");
+    for row in &dispatch_refs {
+        assert_eq!(row.target_qualified, None, "{row:?}");
+        assert_eq!(row.target_symbol_hint, None, "{row:?}");
+        assert_eq!(row.confidence, super::CONFIDENCE_FUZZY_NAME, "{row:?}");
+    }
+
+    // A `self` receiver still names the enclosing type, so the same-file rung
+    // keeps resolving it.
+    let logged = call_ref(&conn, "src/command.rs", "log");
+    assert_eq!(logged.confidence, super::CONFIDENCE_EXACT);
+    assert_eq!(
+        logged.target_symbol_hint,
+        Some(symbol_id(
+            &conn,
+            "src/command.rs",
+            "<WorkspaceCommand>::log"
+        ))
+    );
+
+    // The dispatcher no longer reports its own dispatch lines as inbound refs.
+    let dispatcher = graph
+        .refs(
+            &Selector::from_str("symbol:src/command.rs#execute:method")
+                .expect("parse dispatcher selector"),
+            &RefOpts::default(),
+        )
+        .expect("query dispatcher refs");
+    assert!(
+        dispatcher.refs.is_empty(),
+        "dispatcher references itself: {:?}",
+        dispatcher.refs
+    );
+
+    // The real handler is reachable from the dispatch site at the confidence
+    // the resolver can honestly claim: a name-only match.
+    let handler = graph
+        .refs(
+            &Selector::from_str("symbol:src/teardown.rs#execute:method")
+                .expect("parse handler selector"),
+            &RefOpts::default(),
+        )
+        .expect("query handler refs");
+    let fallback = handler.fallback.expect("fuzzy fallback for the handler");
+    assert_eq!(fallback.confidence, RefConfidence::FuzzyName);
+    assert!(
+        fallback
+            .refs
+            .iter()
+            .any(|entry| entry.file == "src/command.rs"),
+        "dispatch site missing from the handler's fallback: {:?}",
+        fallback.refs
+    );
+}
+
+#[test]
+fn python_attribute_call_does_not_resolve_to_a_same_module_function() {
+    let worktree = TestWorktree::new("python-attribute");
+    let graph = Graph::open(worktree.path(), SyncPolicy::Manual).expect("open graph");
+    worktree.write(
+        "scripts/fixture.py",
+        r#"
+def append(value):
+    return value
+"#,
+    );
+    // An ordinary list `.append(` call must not be read as a call of the
+    // unrelated module-level `append` function.
+    worktree.write(
+        "sims/method.py",
+        r#"
+def run():
+    rows = []
+    rows.append(1)
+    return rows
+"#,
+    );
+    // A plain call of the same name is still name-resolvable: only the
+    // receiver-bearing form loses the short-name rungs.
+    worktree.write(
+        "sims/plain.py",
+        r#"
+def run():
+    return append(1)
+"#,
+    );
+
+    graph.sync(SyncMode::Full).expect("sync graph");
+
+    let conn = open_test_connection(worktree.path());
+    let method = call_ref(&conn, "sims/method.py", "append");
+    assert_eq!(method.target_qualified, None);
+    assert_eq!(method.target_symbol_hint, None);
+    assert_eq!(method.confidence, super::CONFIDENCE_FUZZY_NAME);
+
+    let plain = call_ref(&conn, "sims/plain.py", "append");
+    assert_eq!(plain.target_qualified.as_deref(), Some("append"));
+    assert_eq!(
+        plain.target_symbol_hint,
+        Some(symbol_id(&conn, "scripts/fixture.py", "append"))
+    );
+    assert_eq!(plain.confidence, super::CONFIDENCE_SAME_MODULE);
 }

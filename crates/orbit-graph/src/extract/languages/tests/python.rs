@@ -158,6 +158,28 @@ def dynamic():
 }
 
 #[test]
+fn attribute_call_records_its_receiver_expression() {
+    let source = r#"
+class Runner:
+    def run(self, rows):
+        rows.append(1)
+        self.start()
+        helper()
+"#;
+
+    let file = extract(source);
+
+    assert_eq!(
+        call_ref(&file, "append").unresolved_receiver.as_deref(),
+        Some("rows")
+    );
+    // `self`/`cls` receivers name the enclosing definition's own class, so a
+    // same-file attribute of that name stays resolvable.
+    assert_eq!(call_ref(&file, "start").unresolved_receiver, None);
+    assert_eq!(call_ref(&file, "helper").unresolved_receiver, None);
+}
+
+#[test]
 fn method_chain_receiver_calls_are_extracted() {
     let source = r#"
 def resolve_import(tx, imported_name):
@@ -178,4 +200,22 @@ def resolve_import(tx, imported_name):
             "missing callee {expected} from method chain receiver, got {call_names:?}"
         );
     }
+}
+
+fn call_ref<'a>(
+    file: &'a crate::extract::ExtractedFile,
+    target_name: &str,
+) -> &'a crate::extract::RawRef {
+    let mut matches = file
+        .refs
+        .iter()
+        .filter(|reference| reference.kind == "call" && reference.target_name == target_name);
+    let found = matches.next().unwrap_or_else(|| {
+        panic!("missing call ref for {target_name}");
+    });
+    assert!(
+        matches.next().is_none(),
+        "expected one call ref for {target_name}"
+    );
+    found
 }

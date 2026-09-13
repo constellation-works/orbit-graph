@@ -57,6 +57,17 @@ pub struct RawRef {
     pub kind: String,
     /// Confidence label from the graph confidence ladder.
     pub confidence: String,
+    /// Receiver expression text when the reference is a method-style call
+    /// whose receiver type the extractor could not determine, such as `args`
+    /// in `args.execute()`.
+    ///
+    /// `None` for plain path calls, for non-call references, and for
+    /// self-receivers (`self`, `Self`, `cls`), whose type is the enclosing
+    /// definition's own. Resolution must not treat a reference carrying a
+    /// receiver as a name-only match, because the bare method name says
+    /// nothing about which type's method is being called. Not stored: it is
+    /// an extraction-time hint consumed by pass 2.
+    pub unresolved_receiver: Option<String>,
 }
 
 /// Raw row for a structural relationship between two symbols.
