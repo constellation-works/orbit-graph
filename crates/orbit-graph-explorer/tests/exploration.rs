@@ -132,6 +132,249 @@ fn evidence_paths_chain_multiple_hops_back_to_the_changed_symbol() {
 }
 
 #[test]
+fn outbound_evidence_reaches_a_direct_callee_and_a_leaf_has_none() {
+    let service = Service::launch("direct-call");
+    service.wait_until_ready();
+
+    let entry_selector = percent_encode("symbol:src/lib.rs#entry:function");
+    let evidence = service
+        .authorized(
+            "GET",
+            format!("/api/evidence?selector={entry_selector}&side=head&direction=outbound")
+                .as_str(),
+            &[],
+        )
+        .json();
+    assert_eq!(
+        evidence["query_options"]["direction"], "outbound",
+        "{evidence}"
+    );
+    assert_eq!(evidence["impact"]["direction"], "outbound", "{evidence}");
+    assert_eq!(evidence["resolved"], true, "{evidence}");
+
+    let paths = evidence["paths"].as_array().expect("paths").clone();
+    assert_eq!(paths.len(), 1, "{evidence}");
+    let path = &paths[0];
+    assert_eq!(path["distance"], 1, "{path}");
+    assert_eq!(
+        path["from"]["selector"], "symbol:src/lib.rs#entry:function",
+        "outbound paths start at the queried symbol: {path}"
+    );
+    assert_eq!(
+        path["to"]["selector"], "symbol:src/lib.rs#helper:function",
+        "{path}"
+    );
+    let edges = path["edges"].as_array().expect("edges");
+    assert_eq!(edges.len(), 1, "{path}");
+    assert_eq!(
+        edges[0]["from_selector"], "symbol:src/lib.rs#entry:function",
+        "the first edge starts at the queried symbol: {path}"
+    );
+    assert_eq!(
+        edges[0]["to_selector"], "symbol:src/lib.rs#helper:function",
+        "the last edge points at the reached callee: {path}"
+    );
+    assert_eq!(edges[0]["relationship"], "call", "{path}");
+    for field in [
+        "relationship",
+        "category",
+        "confidence",
+        "snapshot",
+        "commit_sha",
+        "from_origin",
+    ] {
+        assert!(
+            edges[0].get(field).is_some(),
+            "edge missing `{field}`: {edges:?}"
+        );
+    }
+
+    // The changed symbol itself is a leaf: it calls nothing, so its outbound
+    // evidence is empty rather than fabricated.
+    let leaf = service
+        .authorized(
+            "GET",
+            format!("/api/evidence?selector={HELPER}&side=head&direction=outbound").as_str(),
+            &[],
+        )
+        .json();
+    assert_eq!(leaf["resolved"], true, "{leaf}");
+    assert!(
+        leaf["paths"].as_array().expect("paths").is_empty(),
+        "{leaf}"
+    );
+    assert!(
+        !leaf["no_path_reasons"]
+            .as_array()
+            .expect("no path reasons")
+            .is_empty(),
+        "{leaf}"
+    );
+    assert!(
+        leaf["unresolved_callees"]
+            .as_array()
+            .expect("unresolved_callees")
+            .is_empty(),
+        "{leaf}"
+    );
+}
+
+#[test]
+fn outbound_evidence_terminates_a_cycle_and_reports_the_node_cap() {
+    let service = Service::launch("cycle");
+    service.wait_until_ready();
+
+    let selector = percent_encode("symbol:src/lib.rs#is_even:function");
+    let evidence = service
+        .authorized(
+            "GET",
+            format!("/api/evidence?selector={selector}&side=head&depth=5&direction=outbound")
+                .as_str(),
+            &[],
+        )
+        .json();
+
+    let paths = evidence["paths"].as_array().expect("paths");
+    assert!(!paths.is_empty(), "{evidence}");
+    for path in paths {
+        let mut seen = vec![
+            path["from"]["selector"]
+                .as_str()
+                .unwrap_or_default()
+                .to_string(),
+        ];
+        for edge in path["edges"].as_array().expect("edges") {
+            let node = edge["to_selector"].as_str().unwrap_or_default().to_string();
+            assert!(!seen.contains(&node), "repeated node in {path}");
+            seen.push(node);
+        }
+    }
+    assert!(
+        evidence["cycles_pruned"].as_u64().unwrap_or_default() > 0,
+        "the mutual recursion must be pruned rather than walked: {evidence}"
+    );
+
+    let capped = Service::launch_case_with("cycle", &["--node-cap", "1"]);
+    capped.wait_until_ready();
+    let bounded = capped
+        .authorized(
+            "GET",
+            format!("/api/evidence?selector={selector}&side=head&depth=5&direction=outbound")
+                .as_str(),
+            &[],
+        )
+        .json();
+    assert_eq!(bounded["query_options"]["node_cap"], 1, "{bounded}");
+    assert_eq!(bounded["truncated"], true, "{bounded}");
+    assert_eq!(bounded["truncated_by"], "impact_node_cap", "{bounded}");
+    assert_eq!(
+        bounded["paths"].as_array().map(Vec::len),
+        Some(1),
+        "{bounded}"
+    );
+}
+
+#[test]
+fn outbound_evidence_crosses_the_rename_on_the_correct_side() {
+    let service = Service::launch("renamed-file");
+    service.wait_until_ready();
+
+    let selector = percent_encode("symbol:main.py#run:function");
+
+    let base = service
+        .authorized(
+            "GET",
+            format!("/api/evidence?selector={selector}&side=base&direction=outbound").as_str(),
+            &[],
+        )
+        .json();
+    let base_reached: Vec<String> = base["paths"]
+        .as_array()
+        .expect("paths")
+        .iter()
+        .map(|path| {
+            path["to"]["selector"]
+                .as_str()
+                .unwrap_or_default()
+                .to_string()
+        })
+        .collect();
+    assert!(
+        base_reached.contains(&"symbol:formatter.py#format_value:function".to_string()),
+        "{base_reached:?}"
+    );
+    assert!(
+        base_reached.contains(&"symbol:helper.py#helper_fn:function".to_string()),
+        "{base_reached:?}"
+    );
+
+    let head = service
+        .authorized(
+            "GET",
+            format!("/api/evidence?selector={selector}&side=head&direction=outbound").as_str(),
+            &[],
+        )
+        .json();
+    let head_reached: Vec<String> = head["paths"]
+        .as_array()
+        .expect("paths")
+        .iter()
+        .map(|path| {
+            path["to"]["selector"]
+                .as_str()
+                .unwrap_or_default()
+                .to_string()
+        })
+        .collect();
+    assert!(
+        head_reached.contains(&"symbol:formatting/formatter.py#format_value:function".to_string()),
+        "the callee path must cross the rename on the head side: {head_reached:?}"
+    );
+    assert!(
+        head_reached.contains(&"symbol:helpers.py#helper_fn:function".to_string()),
+        "the callee path must cross the rename on the head side: {head_reached:?}"
+    );
+}
+
+#[test]
+fn outbound_evidence_reports_an_unresolved_external_callee_without_fabricating_a_node() {
+    let (repository, base, head) = build_unresolved_callee_fixture();
+    let service = Service::launch_at(repository.path().to_path_buf(), base, head, Box::new(()));
+    service.wait_until_ready();
+
+    let selector = percent_encode("symbol:src/lib.rs#caller:function");
+    let evidence = service
+        .authorized(
+            "GET",
+            format!("/api/evidence?selector={selector}&side=head&direction=outbound").as_str(),
+            &[],
+        )
+        .json();
+    assert_eq!(
+        evidence["query_options"]["direction"], "outbound",
+        "{evidence}"
+    );
+    assert_eq!(evidence["resolved"], true, "{evidence}");
+    assert!(
+        evidence["paths"].as_array().expect("paths").is_empty(),
+        "an unresolved callee must never be fabricated as a node: {evidence}"
+    );
+    let unresolved = evidence["unresolved_callees"]
+        .as_array()
+        .expect("unresolved_callees");
+    assert_eq!(unresolved.len(), 1, "{evidence}");
+    assert_eq!(unresolved[0]["name"], "external_helper", "{evidence}");
+    assert_eq!(unresolved[0]["line"], 2, "{evidence}");
+    assert!(
+        !unresolved[0]["reason"]
+            .as_str()
+            .unwrap_or_default()
+            .is_empty(),
+        "{evidence}"
+    );
+}
+
+#[test]
 fn entry_points_report_the_rule_that_fired_and_the_shortest_path() {
     let (repository, base, head) = build_chain_fixture();
     let service = Service::launch_at(repository.path().to_path_buf(), base, head, Box::new(()));
@@ -831,6 +1074,33 @@ fn build_chain_fixture() -> (TempDir, String, String) {
         dir.path(),
         &[("src/lib.rs", lib("2").as_str())],
         "head: change the helper body",
+        1,
+    );
+    drop(repo);
+    (dir, base, head)
+}
+
+/// A repository whose one function calls a name never defined anywhere in
+/// the indexed tree — standing in for a call into an external crate. The
+/// extractor is syntax-driven, so the call site is still indexed; it just
+/// cannot resolve `target_qualified`.
+fn build_unresolved_callee_fixture() -> (TempDir, String, String) {
+    let lib =
+        |value: &str| format!("pub fn caller() -> i32 {{\n    external_helper({value})\n}}\n");
+    let dir = TempDir::new().expect("create fixture repository");
+    let repo = Repository::init(dir.path()).expect("init fixture repository");
+    let base = commit_files(
+        &repo,
+        dir.path(),
+        &[("src/lib.rs", lib("1").as_str())],
+        "base: a call to an unresolved external function",
+        0,
+    );
+    let head = commit_files(
+        &repo,
+        dir.path(),
+        &[("src/lib.rs", lib("2").as_str())],
+        "head: change the call argument",
         1,
     );
     drop(repo);

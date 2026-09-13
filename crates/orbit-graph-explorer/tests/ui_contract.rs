@@ -120,6 +120,13 @@ fn static_assets_resolve_to_the_embedded_source_without_a_token() {
         !js.body.contains("insertAdjacentHTML"),
         "insertAdjacentHTML referenced"
     );
+    // The graph view's right-hand side used to render a placeholder in place
+    // of real outbound (callee) data; it must now render real nodes instead.
+    assert!(
+        !js.body.contains("not available"),
+        "the outbound-not-available placeholder must be gone: {}",
+        js.body
+    );
 }
 
 #[test]
@@ -218,6 +225,68 @@ fn filter_state_round_trips_through_the_fragment_without_the_token() {
         !encode_body.contains("token"),
         "encodeFragment must never reference `token`: {encode_body}"
     );
+}
+
+/// The outbound side of `/api/evidence` (`direction=outbound`) carries the
+/// same data-contract fields as the inbound side, plus `unresolved_callees`,
+/// which the Callees table section and the graph's unresolved list both
+/// read.
+#[test]
+fn outbound_evidence_data_contract_matches_the_page() {
+    let service = Service::launch("direct-call");
+    service.wait_until_ready();
+
+    let entry_selector = percent_encode("symbol:src/lib.rs#entry:function");
+    let evidence = service
+        .authorized(
+            "GET",
+            format!("/api/evidence?selector={entry_selector}&side=head&direction=outbound")
+                .as_str(),
+            &[],
+        )
+        .json();
+    for field in [
+        "target",
+        "commit_sha",
+        "resolved",
+        "query_options",
+        "paths",
+        "skipped_low_confidence",
+        "truncated",
+        "truncated_by",
+        "bounds_hit",
+        "filtered_out",
+        "no_path_reasons",
+        "unresolved_callees",
+    ] {
+        assert!(
+            evidence.get(field).is_some(),
+            "outbound evidence.{field} missing: {evidence}"
+        );
+    }
+    assert_eq!(
+        evidence["query_options"]["direction"], "outbound",
+        "{evidence}"
+    );
+    assert_eq!(evidence["impact"]["direction"], "outbound", "{evidence}");
+    let paths = evidence["paths"].as_array().expect("paths array");
+    assert!(!paths.is_empty(), "{evidence}");
+    for path in paths {
+        for field in [
+            "from",
+            "to",
+            "distance",
+            "category",
+            "truncated",
+            "truncated_by",
+            "edges",
+        ] {
+            assert!(
+                path.get(field).is_some(),
+                "outbound path missing `{field}`: {path}"
+            );
+        }
+    }
 }
 
 /// Assert every field `crates/orbit-graph-explorer/ui/app.js` reads is present

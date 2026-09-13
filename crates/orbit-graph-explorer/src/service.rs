@@ -53,8 +53,8 @@ use tiny_http::{Header, Request, Response, Server};
 
 use crate::changes::{ChangedSymbols, OutOfScopeEntry};
 use crate::evidence::{
-    DEFAULT_TIME_BUDGET_MS, EVIDENCE_DEPTH, EvidenceBounds, EvidenceCollector, EvidenceQuery,
-    MAX_EVIDENCE_DEPTH, parse_confidence,
+    DEFAULT_TIME_BUDGET_MS, EVIDENCE_DEPTH, EvidenceBounds, EvidenceCollector, EvidenceDirection,
+    EvidenceQuery, MAX_EVIDENCE_DEPTH, parse_confidence,
 };
 use crate::filters::{FilterSet, split_terms};
 use crate::report::{ExcerptMode, ReportOptions, build_report};
@@ -1167,6 +1167,7 @@ fn changed_symbols_route(
         bounds,
         filters: filters.clone(),
         changes: None,
+        direction: EvidenceDirection::Inbound,
     };
 
     match ChangedSymbols::compute(comparison) {
@@ -1388,18 +1389,35 @@ fn reject_wrong_side(
     ))
 }
 
+/// Traversal direction for one `/api/evidence` request: `inbound` (the
+/// default) or `outbound`. The other evidence-backed routes (entry points,
+/// candidate tests) are inbound by definition and never parse this.
+fn direction_of(query: &BTreeMap<String, String>) -> Result<EvidenceDirection, Body> {
+    match query.get("direction").map(String::as_str) {
+        None | Some("") | Some("inbound") => Ok(EvidenceDirection::Inbound),
+        Some("outbound") => Ok(EvidenceDirection::Outbound),
+        Some(other) => Err(error_response(
+            400,
+            "invalid_direction",
+            format!("`direction` must be `inbound` or `outbound`, not `{other}`.").as_str(),
+        )),
+    }
+}
+
 /// Build the evidence query for one request, including the changed-symbol
 /// slice the `change_kind` filter and the side report need.
 fn evidence_query<'a>(
     scope: &Scope,
     query: &BTreeMap<String, String>,
     changes: Option<&'a ChangedSymbols>,
+    direction: EvidenceDirection,
 ) -> Result<EvidenceQuery<'a>, Body> {
     Ok(EvidenceQuery {
         min_confidence: confidence_of(query)?,
         bounds: bounds_of(scope, query)?,
         filters: filters_of(query),
         changes,
+        direction,
     })
 }
 
@@ -1416,8 +1434,12 @@ fn evidence_route(
         Ok(side) => side,
         Err(response) => return response,
     };
+    let direction = match direction_of(query) {
+        Ok(direction) => direction,
+        Err(response) => return response,
+    };
     let changes = ChangedSymbols::compute(comparison).ok();
-    let request = match evidence_query(scope, query, changes.as_ref()) {
+    let request = match evidence_query(scope, query, changes.as_ref(), direction) {
         Ok(request) => request,
         Err(response) => return response,
     };
@@ -1455,7 +1477,7 @@ fn entry_points_route(
         Err(response) => return response,
     };
     let changes = ChangedSymbols::compute(comparison).ok();
-    let request = match evidence_query(scope, query, changes.as_ref()) {
+    let request = match evidence_query(scope, query, changes.as_ref(), EvidenceDirection::Inbound) {
         Ok(request) => request,
         Err(response) => return response,
     };
@@ -1496,7 +1518,7 @@ fn candidate_tests_route(
         Err(response) => return response,
     };
     let changes = ChangedSymbols::compute(comparison).ok();
-    let request = match evidence_query(scope, query, changes.as_ref()) {
+    let request = match evidence_query(scope, query, changes.as_ref(), EvidenceDirection::Inbound) {
         Ok(request) => request,
         Err(response) => return response,
     };

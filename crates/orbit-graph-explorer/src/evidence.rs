@@ -46,9 +46,9 @@ use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::time::{Duration, Instant};
 
 use orbit_graph::{
-    Confidence, DEFAULT_IMPACT_DEPTH, DEFAULT_SHOW_MAX_BYTES, IMPACT_NODE_CAP, ImpactDirection,
-    ImpactOrigin, OverviewFormat, RefConfidence, RefEntry, RefKind, RefOpts, RelationEntry,
-    Selector,
+    CalleeOpts, Confidence, DEFAULT_IMPACT_DEPTH, DEFAULT_SHOW_MAX_BYTES, IMPACT_NODE_CAP,
+    ImpactDirection, ImpactOrigin, OverviewFormat, RefConfidence, RefEntry, RefKind, RefOpts,
+    RelationEntry, Selector,
 };
 use serde::Serialize;
 use thiserror::Error;
@@ -104,6 +104,40 @@ pub enum EvidenceError {
         /// Failure reason.
         reason: String,
     },
+}
+
+/// Traversal direction for [`EvidenceCollector::evidence`].
+///
+/// `Inbound` walks callers/reverse relations back to the queried symbol
+/// (the historical, and still default, behavior). `Outbound` walks callees
+/// forward from the queried symbol: paths are ordered from the queried
+/// symbol outward, so `edges[0].from` is the queried symbol and the last
+/// edge's `to` is the reached callee — the same hop-ordering contract as
+/// `Inbound`, with the arrow reversed.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum EvidenceDirection {
+    /// Callers/reverse relations, ending at the queried symbol.
+    #[default]
+    Inbound,
+    /// Callees/forward call edges, starting at the queried symbol.
+    Outbound,
+}
+
+impl EvidenceDirection {
+    /// Stable label used in `query_options.direction` and `impact.direction`.
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Inbound => "inbound",
+            Self::Outbound => "outbound",
+        }
+    }
+
+    fn impact_direction(self) -> ImpactDirection {
+        match self {
+            Self::Inbound => ImpactDirection::Inbound,
+            Self::Outbound => ImpactDirection::Outbound,
+        }
+    }
 }
 
 /// One of the design document's evidence categories.
@@ -371,18 +405,36 @@ pub struct EvidenceQuery<'a> {
     /// Changed-symbol slice, used by the `change_kind` filter and to report
     /// which sides carry evidence for the queried symbol.
     pub changes: Option<&'a ChangedSymbols>,
+    /// Traversal direction. Defaults to [`EvidenceDirection::Inbound`].
+    pub direction: EvidenceDirection,
 }
 
 impl EvidenceQuery<'_> {
-    /// A query at `min_confidence` with default bounds and no filters.
+    /// A query at `min_confidence` with default bounds, no filters, and
+    /// inbound direction.
     pub fn new(min_confidence: Confidence) -> Self {
         Self {
             min_confidence,
             bounds: EvidenceBounds::default(),
             filters: FilterSet::default(),
             changes: None,
+            direction: EvidenceDirection::default(),
         }
     }
+}
+
+/// One call the resolver could not bind to an indexed symbol: an external
+/// crate function, a dynamically dispatched call, or a name the extractor
+/// could not resolve in this snapshot. Reported explicitly rather than
+/// dropped or fabricated as a node.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct UnresolvedCallee {
+    /// Short name as written at the call site.
+    pub name: String,
+    /// One-based source line of the call site, in the calling symbol's file.
+    pub line: usize,
+    /// Why this call could not be bound to an indexed symbol.
+    pub reason: String,
 }
 
 /// Bounds and filters in force for one query.
@@ -390,7 +442,8 @@ impl EvidenceQuery<'_> {
 pub struct QueryOptions {
     /// Traversal depth in force.
     pub depth: u8,
-    /// Traversal direction. Always `inbound`: this is caller evidence.
+    /// Traversal direction: `inbound` (caller evidence, the default) or
+    /// `outbound` (callee evidence).
     pub direction: String,
     /// Confidence floor applied to the query.
     pub min_confidence: String,
@@ -416,7 +469,7 @@ impl QueryOptions {
     pub fn new(query: &EvidenceQuery<'_>) -> Self {
         Self {
             depth: query.bounds.effective_depth(),
-            direction: "inbound".to_string(),
+            direction: query.direction.label().to_string(),
             min_confidence: confidence_label(query.min_confidence).to_string(),
             kind: None,
             node_cap: query.bounds.effective_node_cap(),
@@ -440,7 +493,7 @@ impl QueryOptions {
 /// traversal was built on, and whether that set was itself truncated.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct ImpactSummary {
-    /// Traversal direction: always `inbound`.
+    /// Traversal direction the core query ran in.
     pub direction: String,
     /// Number of symbols the core query reached.
     pub visited_nodes: usize,
@@ -491,6 +544,11 @@ pub struct EvidenceReport {
     pub evidence_sides: Vec<String>,
     /// Why a path could be missing. Always populated when `paths` is empty.
     pub no_path_reasons: Vec<String>,
+    /// Outbound calls the resolver could not bind to an indexed symbol.
+    /// Always empty for [`EvidenceDirection::Inbound`]: an unresolved call is
+    /// an outbound-only concept, since inbound evidence is built from
+    /// resolved references into the queried symbol.
+    pub unresolved_callees: Vec<UnresolvedCallee>,
 }
 
 /// One disclosed entry-point rule.
@@ -689,6 +747,10 @@ pub struct EvidenceCollector<'a> {
     side: SnapshotSide,
     indexed_files: Vec<String>,
     symbols_by_file: BTreeMap<String, Vec<IndexedSymbol>>,
+    /// Reverse index from a qualified name to its `(path, name, kind)`
+    /// address, built once so an outbound call's resolved
+    /// `target_qualified` can be turned back into a canonical selector.
+    qualified_index: BTreeMap<String, SymbolAddress>,
     file_cache: BTreeMap<String, FileIndex>,
 }
 
@@ -715,6 +777,7 @@ impl<'a> EvidenceCollector<'a> {
 
         let mut indexed_files = Vec::new();
         let mut symbols_by_file = BTreeMap::new();
+        let mut qualified_index = BTreeMap::new();
         for file in overview.files {
             let symbols: Vec<IndexedSymbol> = file
                 .symbols
@@ -725,6 +788,16 @@ impl<'a> EvidenceCollector<'a> {
                     qualified: symbol.qualified,
                 })
                 .collect();
+            for symbol in &symbols {
+                qualified_index.insert(
+                    symbol.qualified.clone(),
+                    SymbolAddress {
+                        path: file.path.clone(),
+                        name: symbol.name.clone(),
+                        kind: symbol.kind.clone(),
+                    },
+                );
+            }
             symbols_by_file.insert(file.path.clone(), symbols);
             indexed_files.push(file.path);
         }
@@ -735,6 +808,7 @@ impl<'a> EvidenceCollector<'a> {
             side,
             indexed_files,
             symbols_by_file,
+            qualified_index,
             file_cache: BTreeMap::new(),
         })
     }
@@ -773,6 +847,18 @@ impl<'a> EvidenceCollector<'a> {
         selector: &str,
         query: &EvidenceQuery<'_>,
     ) -> Result<EvidenceReport, EvidenceError> {
+        match query.direction {
+            EvidenceDirection::Inbound => self.inbound_evidence(selector, query),
+            EvidenceDirection::Outbound => self.outbound_evidence(selector, query),
+        }
+    }
+
+    /// Bounded multi-hop inbound evidence for `selector`. See [`Self::evidence`].
+    fn inbound_evidence(
+        &mut self,
+        selector: &str,
+        query: &EvidenceQuery<'_>,
+    ) -> Result<EvidenceReport, EvidenceError> {
         let parsed = parse_selector(selector)?;
         let started = Instant::now();
         let depth = query.bounds.effective_depth();
@@ -801,7 +887,7 @@ impl<'a> EvidenceCollector<'a> {
                 &parsed,
                 depth,
                 query.min_confidence,
-                ImpactDirection::Inbound,
+                query.direction.impact_direction(),
             )
             .map_err(|error| EvidenceError::Query {
                 operation: "query inbound impact",
@@ -1017,6 +1103,363 @@ impl<'a> EvidenceCollector<'a> {
             change_status,
             evidence_sides,
             no_path_reasons,
+            unresolved_callees: Vec::new(),
+        })
+    }
+
+    /// Bounded multi-hop outbound (callee) evidence for `selector`. See
+    /// [`Self::evidence`].
+    ///
+    /// Paths are ordered from `selector` outward: `edges[0].from` is
+    /// `selector` itself and the last edge's `to` is the reached callee.
+    /// Each hop comes from [`orbit_graph::Graph::callees_with_options`]
+    /// rather than `refs`, since it is the callee direction's analogue of
+    /// the inbound side's reference query.
+    fn outbound_evidence(
+        &mut self,
+        selector: &str,
+        query: &EvidenceQuery<'_>,
+    ) -> Result<EvidenceReport, EvidenceError> {
+        let parsed = parse_selector(selector)?;
+        let started = Instant::now();
+        let depth = query.bounds.effective_depth();
+        let node_cap = query.bounds.effective_node_cap();
+        let budget = query.bounds.budget();
+        let commit_sha = self.commit_sha();
+        let side_label = self.side_label();
+        let target_label = endpoint_label(&parsed);
+
+        let view =
+            self.snapshot()
+                .graph()
+                .show(&parsed, 1)
+                .map_err(|error| EvidenceError::Query {
+                    operation: "resolve outbound query target",
+                    side: self.side,
+                    reason: error.to_string(),
+                })?;
+        let resolved = view.is_some();
+        let resolved_qualified = view.and_then(|view| view.metadata.qualified);
+
+        let target = EndpointRef {
+            selector: selector.to_string(),
+            snapshot: side_label.clone(),
+            label: target_label.clone(),
+            origin: origin_label(match parsed {
+                Selector::Symbol { .. } => ImpactOrigin::Symbol,
+                _ => ImpactOrigin::File,
+            })
+            .to_string(),
+        };
+
+        let impact = self
+            .snapshot()
+            .graph()
+            .impact_with_direction(
+                &parsed,
+                depth,
+                query.min_confidence,
+                query.direction.impact_direction(),
+            )
+            .map_err(|error| EvidenceError::Query {
+                operation: "query outbound impact",
+                side: self.side,
+                reason: error.to_string(),
+            })?;
+        let impact_summary = ImpactSummary {
+            direction: EvidenceDirection::Outbound.label().to_string(),
+            visited_nodes: impact.visited_nodes,
+            truncated: impact.truncated,
+            node_cap: IMPACT_NODE_CAP,
+            fallback_note: impact
+                .fallback
+                .as_ref()
+                .map(|fallback| fallback.note.clone()),
+        };
+
+        let mut queue: VecDeque<Frontier> = VecDeque::new();
+        queue.push_back(Frontier {
+            selector: selector.to_string(),
+            label: target_label.clone(),
+            path: Vec::new(),
+        });
+        // Nodes already expanded, the queried symbol included: a node is
+        // expanded once, on its shortest chain from the queried symbol.
+        let mut expanded: BTreeSet<String> = BTreeSet::from([selector.to_string()]);
+        let mut paths: Vec<EvidencePath> = Vec::new();
+        let mut unresolved_callees: Vec<UnresolvedCallee> = Vec::new();
+        let mut cycles_pruned = 0usize;
+        let mut skipped_low_confidence = 0usize;
+        let mut hit_depth = false;
+        let mut hit_node_cap = false;
+        let mut hit_time_budget = false;
+
+        'traversal: while let Some(frontier) = queue.pop_front() {
+            if started.elapsed() >= budget {
+                hit_time_budget = true;
+                break;
+            }
+            let hop = frontier.path.len();
+            if hop >= usize::from(depth) {
+                hit_depth = true;
+                continue;
+            }
+
+            let outbound = self.outbound_edges(
+                frontier.selector.as_str(),
+                query.min_confidence,
+                commit_sha.as_str(),
+                side_label.as_str(),
+            )?;
+            if hop == 0 {
+                skipped_low_confidence = outbound.skipped_low_confidence;
+            }
+            unresolved_callees.extend(outbound.unresolved);
+
+            let mut on_path: BTreeSet<&str> = BTreeSet::from([frontier.selector.as_str()]);
+            on_path.insert(selector);
+            for edge in &frontier.path {
+                on_path.insert(edge.to_selector.as_str());
+            }
+
+            for (edge, callee_endpoint) in outbound.edges {
+                if on_path.contains(callee_endpoint.selector.as_str()) {
+                    // Re-entering a node already on this path would repeat
+                    // it, so a mutually recursive call graph terminates
+                    // here.
+                    cycles_pruned += 1;
+                    continue;
+                }
+                if paths.len() >= node_cap {
+                    hit_node_cap = true;
+                    break 'traversal;
+                }
+
+                let callee_selector = callee_endpoint.selector.clone();
+                let callee_label = callee_endpoint.label.clone();
+                let mut chain = Vec::with_capacity(frontier.path.len() + 1);
+                chain.extend(frontier.path.iter().cloned());
+                chain.push(edge);
+                let distance = chain.len();
+                let category = chain
+                    .iter()
+                    .map(|edge| edge.category)
+                    .max()
+                    .unwrap_or(EvidenceCategory::HeuristicMatch);
+                paths.push(EvidencePath {
+                    schema_version: EVIDENCE_SCHEMA_VERSION,
+                    path_id: String::new(),
+                    from: target.clone(),
+                    to: callee_endpoint,
+                    distance,
+                    category,
+                    truncated: false,
+                    truncated_by: None,
+                    edges: chain.clone(),
+                });
+
+                if distance >= usize::from(depth) {
+                    // A callee left unexpanded because the depth bound
+                    // stopped here.
+                    hit_depth = true;
+                }
+                let expandable = distance < usize::from(depth);
+                if expandable && !expanded.contains(callee_selector.as_str()) {
+                    if expanded.len() >= node_cap {
+                        hit_node_cap = true;
+                        break 'traversal;
+                    }
+                    expanded.insert(callee_selector.clone());
+                    queue.push_back(Frontier {
+                        selector: callee_selector,
+                        label: callee_label,
+                        path: chain,
+                    });
+                }
+            }
+        }
+
+        // Strongest evidence first, then shortest chain, matching the
+        // inbound ordering.
+        paths.sort_by(|left, right| {
+            left.category
+                .cmp(&right.category)
+                .then(left.distance.cmp(&right.distance))
+                .then(left.to.selector.cmp(&right.to.selector))
+        });
+        unresolved_callees
+            .sort_by(|left, right| left.name.cmp(&right.name).then(left.line.cmp(&right.line)));
+
+        let mut log = FilterLog::default();
+        log.record_count(FilterReason::Confidence, skipped_low_confidence);
+        let paths = self.apply_filters(paths, query, &mut log);
+
+        let mut paths = paths;
+        for (index, path) in paths.iter_mut().enumerate() {
+            path.path_id = format!("p-{}", index + 1);
+        }
+
+        let mut bounds_hit = Vec::new();
+        if hit_time_budget {
+            bounds_hit.push(BoundHit {
+                bound: "time_budget".to_string(),
+                value: budget.as_millis().try_into().unwrap_or(u64::MAX),
+            });
+        }
+        if hit_node_cap {
+            bounds_hit.push(BoundHit {
+                bound: "impact_node_cap".to_string(),
+                value: node_cap as u64,
+            });
+        }
+        if hit_depth {
+            bounds_hit.push(BoundHit {
+                bound: "depth".to_string(),
+                value: u64::from(depth),
+            });
+        }
+        let truncated_by = bounds_hit.first().map(|hit| hit.bound.clone());
+        let truncated = truncated_by.is_some();
+
+        let (change_status, evidence_sides) = self.side_context(selector, query.changes);
+        let no_path_reasons = if paths.is_empty() {
+            self.no_path_reasons_for(
+                EvidenceDirection::Outbound,
+                resolved,
+                skipped_low_confidence,
+                query.min_confidence,
+                bounds_hit.as_slice(),
+            )
+        } else {
+            Vec::new()
+        };
+
+        Ok(EvidenceReport {
+            schema_version: EVIDENCE_SCHEMA_VERSION,
+            target,
+            commit_sha,
+            resolved,
+            resolved_qualified,
+            query_options: QueryOptions::new(query),
+            impact: impact_summary,
+            paths,
+            skipped_low_confidence,
+            cycles_pruned,
+            truncated,
+            truncated_by,
+            bounds_hit,
+            filtered_out: log.into_filtered_out(),
+            change_status,
+            evidence_sides,
+            no_path_reasons,
+            unresolved_callees,
+        })
+    }
+
+    /// Outbound call edges from `node_selector`, split into edges resolved to
+    /// an indexed callee (paired with that callee's endpoint) and calls the
+    /// resolver could not bind to one.
+    fn outbound_edges(
+        &mut self,
+        node_selector: &str,
+        min_confidence: Confidence,
+        commit_sha: &str,
+        side_label: &str,
+    ) -> Result<OutboundEdges, EvidenceError> {
+        let parsed = parse_selector(node_selector)?;
+        let node_label = endpoint_label(&parsed);
+        let node_file = match &parsed {
+            Selector::Symbol { path, .. } => path.clone(),
+            other => other.path().to_string(),
+        };
+        let callees = self
+            .snapshot()
+            .graph()
+            .callees_with_options(&parsed, &CalleeOpts::all())
+            .map_err(|error| EvidenceError::Query {
+                operation: "query outbound callees",
+                side: self.side,
+                reason: error.to_string(),
+            })?;
+
+        let mut edges = Vec::new();
+        let mut unresolved = Vec::new();
+        let mut skipped_low_confidence = 0usize;
+        for callee in callees {
+            let Some(qualified) = callee.target_qualified.clone() else {
+                // A name-only or unbindable call: never fabricated as a node,
+                // reported here instead, regardless of the confidence floor.
+                unresolved.push(UnresolvedCallee {
+                    name: callee.target_name.clone(),
+                    line: callee.line,
+                    reason: format!(
+                        "`{}` did not resolve to an indexed symbol in the {} snapshot; a common \
+                         cause is a call into an external crate or dependency, a dynamically \
+                         dispatched call, or a name the extractor could not bind.",
+                        callee.target_name,
+                        self.side.label()
+                    ),
+                });
+                continue;
+            };
+            if !confidence_at_least(callee.confidence, min_confidence) {
+                skipped_low_confidence += 1;
+                continue;
+            }
+            let Some(address) = self.qualified_index.get(qualified.as_str()).cloned() else {
+                // The core resolved this call to a qualified name this
+                // snapshot's own symbol index does not carry; treat it the
+                // same as unresolved rather than fabricate a node for it.
+                unresolved.push(UnresolvedCallee {
+                    name: callee.target_name.clone(),
+                    line: callee.line,
+                    reason: format!(
+                        "`{}` resolved to `{qualified}`, which this snapshot's symbol index does \
+                         not carry.",
+                        callee.target_name
+                    ),
+                });
+                continue;
+            };
+            let callee_selector =
+                format!("symbol:{}#{}:{}", address.path, address.name, address.kind);
+            let callee_label = format!("{}#{}", address.path, address.name);
+            let edge = EvidenceEdge {
+                from: node_label.clone(),
+                from_selector: node_selector.to_string(),
+                from_origin: origin_label(ImpactOrigin::Symbol).to_string(),
+                to: callee_label.clone(),
+                to_selector: callee_selector.clone(),
+                relationship: kind_label(RefKind::Call).to_string(),
+                category: categorize(RefKind::Call, callee.confidence),
+                confidence: confidence_label(callee.confidence).to_string(),
+                snapshot: side_label.to_string(),
+                commit_sha: commit_sha.to_string(),
+                source: EvidenceSource {
+                    file: node_file.clone(),
+                    line: Some(callee.line),
+                },
+                note: None,
+            };
+            let endpoint = EndpointRef {
+                selector: callee_selector,
+                snapshot: side_label.to_string(),
+                label: callee_label,
+                origin: origin_label(ImpactOrigin::Symbol).to_string(),
+            };
+            edges.push((edge, endpoint));
+        }
+        edges.sort_by(|(left, _), (right, _)| {
+            left.category
+                .cmp(&right.category)
+                .then(left.source.line.cmp(&right.source.line))
+                .then(left.to.cmp(&right.to))
+        });
+
+        Ok(OutboundEdges {
+            edges,
+            unresolved,
+            skipped_low_confidence,
         })
     }
 
@@ -1136,23 +1579,43 @@ impl<'a> EvidenceCollector<'a> {
         }
         let mut kept = Vec::with_capacity(paths.len());
         for path in paths {
-            let file = path
-                .edges
-                .first()
-                .map(|edge| edge.source.file.clone())
-                .unwrap_or_default();
+            // The "far" endpoint is the one the traversal discovered: the
+            // affected symbol for inbound, the reached callee for outbound.
+            let far_selector = match query.direction {
+                EvidenceDirection::Inbound => path.from.selector.as_str(),
+                EvidenceDirection::Outbound => path.to.selector.as_str(),
+            };
+            let file = match query.direction {
+                EvidenceDirection::Inbound => path
+                    .edges
+                    .first()
+                    .map(|edge| edge.source.file.clone())
+                    .unwrap_or_default(),
+                // The last edge's own `source.file` is where the second-to-last
+                // node made the deepest call, not the reached callee's own
+                // file; the callee's file is only recoverable from its own
+                // selector.
+                EvidenceDirection::Outbound => symbol_address(far_selector)
+                    .map(|address| address.path)
+                    .unwrap_or_else(|| {
+                        path.edges
+                            .last()
+                            .map(|edge| edge.source.file.clone())
+                            .unwrap_or_default()
+                    }),
+            };
             if !query.filters.language_admits(file.as_str()) {
-                log.record(FilterReason::Language, path.from.selector.as_str());
+                log.record(FilterReason::Language, far_selector);
                 continue;
             }
             if !query.filters.scope_admits(file.as_str()) {
-                log.record(FilterReason::Scope, path.from.selector.as_str());
+                log.record(FilterReason::Scope, far_selector);
                 continue;
             }
             if !query.filters.change_kind.is_empty() {
-                let status = change_status_of(query.changes, path.from.selector.as_str());
+                let status = change_status_of(query.changes, far_selector);
                 if !query.filters.change_kind_admits(status.as_deref()) {
-                    log.record(FilterReason::ChangeKind, path.from.selector.as_str());
+                    log.record(FilterReason::ChangeKind, far_selector);
                     continue;
                 }
             }
@@ -1661,11 +2124,32 @@ impl<'a> EvidenceCollector<'a> {
         min_confidence: RefConfidence,
         bounds_hit: &[BoundHit],
     ) -> Vec<String> {
+        self.no_path_reasons_for(
+            EvidenceDirection::Inbound,
+            resolved,
+            skipped_low_confidence,
+            min_confidence,
+            bounds_hit,
+        )
+    }
+
+    fn no_path_reasons_for(
+        &self,
+        direction: EvidenceDirection,
+        resolved: bool,
+        skipped_low_confidence: usize,
+        min_confidence: RefConfidence,
+        bounds_hit: &[BoundHit],
+    ) -> Vec<String> {
         let mut reasons = Vec::new();
         if !resolved {
+            let noun = match direction {
+                EvidenceDirection::Inbound => "inbound reference",
+                EvidenceDirection::Outbound => "outbound call",
+            };
             reasons.push(format!(
                 "The selector did not resolve to an indexed symbol in the {} snapshot, so no \
-                 inbound reference could be attributed to it.",
+                 {noun} could be attributed to it.",
                 self.side.label()
             ));
         }
@@ -1870,6 +2354,29 @@ struct InboundEdges {
     resolved: bool,
     qualified: Option<String>,
     skipped_low_confidence: usize,
+}
+
+/// The outbound (callee) edges of one node, resolved edges paired with their
+/// reached endpoint, plus the calls that could not be bound to one.
+struct OutboundEdges {
+    edges: Vec<(EvidenceEdge, EndpointRef)>,
+    unresolved: Vec<UnresolvedCallee>,
+    skipped_low_confidence: usize,
+}
+
+/// Whether `confidence` meets `floor`, using the same strength order as
+/// `orbit_graph`'s own (private) floor check: `Exact` is strongest,
+/// `FuzzyName` weakest.
+fn confidence_at_least(confidence: RefConfidence, floor: RefConfidence) -> bool {
+    fn rank(confidence: RefConfidence) -> u8 {
+        match confidence {
+            RefConfidence::Exact => 3,
+            RefConfidence::ImportResolved => 2,
+            RefConfidence::SameModule => 1,
+            RefConfidence::FuzzyName => 0,
+        }
+    }
+    rank(confidence) >= rank(floor)
 }
 
 /// A symbol selector split into the parts the entry-point rules read.

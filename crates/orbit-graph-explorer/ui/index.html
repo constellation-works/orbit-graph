@@ -146,6 +146,7 @@
         <div id="relationship-graph-view" hidden>
           <p id="graph-budget-notice" hidden></p>
           <svg id="relationship-graph" role="group" aria-label="Neighbourhood graph" focusable="false"></svg>
+          <div id="graph-unresolved-callees"></div>
         </div>
 
         <div id="relationship-table-view">
@@ -157,6 +158,17 @@
             <div id="evidence-primary"></div>
             <div id="evidence-heuristic"></div>
             <p id="evidence-no-path" hidden></p>
+          </section>
+
+          <section aria-labelledby="callees-heading">
+            <h4 id="callees-heading">Callees (potential impact, outbound)</h4>
+            <p id="callees-bounds"></p>
+            <p id="callees-summary"></p>
+            <div id="callees-hidden-by-filters"></div>
+            <div id="callees-primary"></div>
+            <div id="callees-heuristic"></div>
+            <p id="callees-no-path" hidden></p>
+            <div id="callees-unresolved"></div>
           </section>
 
           <section aria-labelledby="entry-points-heading">
