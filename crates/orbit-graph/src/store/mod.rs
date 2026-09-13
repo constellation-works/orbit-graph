@@ -121,6 +121,7 @@ impl GitContext {
 
         let branch = if head.is_branch() {
             head.shorthand()
+                .ok()
                 .filter(|name| !name.is_empty())
                 .unwrap_or("HEAD")
                 .to_string()

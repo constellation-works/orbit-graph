@@ -888,7 +888,7 @@ pub fn working_tree_state(repo: &Repository) -> Result<WorkingTreeState, Snapsho
         let path = entry
             .path()
             .map(str::to_string)
-            .unwrap_or_else(|| String::from_utf8_lossy(entry.path_bytes()).into_owned());
+            .unwrap_or_else(|_| String::from_utf8_lossy(entry.path_bytes()).into_owned());
         if is_graph_scratch(path.as_str()) {
             // `.orbit-graph/` is graph scratch state, including this crate's
             // own snapshot cache. It is never source, so it is not reported as
@@ -983,7 +983,7 @@ fn materialize_tree(
         let name = entry
             .name()
             .map(str::to_string)
-            .unwrap_or_else(|| String::from_utf8_lossy(entry.name_bytes()).into_owned());
+            .unwrap_or_else(|_| String::from_utf8_lossy(entry.name_bytes()).into_owned());
         let path = if prefix.is_empty() {
             name.clone()
         } else {
@@ -1062,7 +1062,7 @@ fn materialize_blob(
 
     // Written without the executable bit: the explorer never runs repository
     // content, and a non-executable tree cannot be invoked by accident.
-    let Some(name) = entry.name() else {
+    let Ok(name) = entry.name() else {
         report.excluded.push(ExcludedEntry {
             path,
             reason: ExclusionReason::UnsafeName,

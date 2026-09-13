@@ -862,7 +862,7 @@ fn detached_commit_is_unreachable(
         let reference = reference.map_err(|source| {
             GraphError::invalid_data("read git ref for graph DB cleanup", source.to_string())
         })?;
-        let Some(name) = reference.name() else {
+        let Ok(name) = reference.name() else {
             continue;
         };
         if !name.starts_with("refs/") {

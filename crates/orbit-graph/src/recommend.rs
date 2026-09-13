@@ -1181,7 +1181,7 @@ impl TargetTree {
         let mut files = BTreeMap::new();
         tree.walk(TreeWalkMode::PreOrder, |root, entry| {
             if entry.kind() == Some(ObjectType::Blob)
-                && let Some(name) = entry.name()
+                && let Ok(name) = entry.name()
             {
                 files.insert(format!("{root}{name}"), entry.id());
             }
