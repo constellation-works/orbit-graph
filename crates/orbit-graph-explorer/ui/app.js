@@ -36,8 +36,8 @@
 //   evidence:    target.selector, commit_sha, query_options.depth,
 //                query_options.node_cap, query_options.time_budget_ms,
 //                query_options.min_confidence, query_options.source_max_bytes,
-//                truncated, truncated_by, bounds_hit[].bound,
-//                bounds_hit[].value, filtered_out,
+//                query_options.direction, truncated, truncated_by,
+//                bounds_hit[].bound, bounds_hit[].value, filtered_out,
 //                paths[].from.label, paths[].to.label, paths[].distance,
 //                paths[].category, paths[].truncated, paths[].truncated_by,
 //                paths[].edges[].from, paths[].edges[].from_selector,
@@ -45,7 +45,11 @@
 //                paths[].edges[].relationship, paths[].edges[].category,
 //                paths[].edges[].confidence, paths[].edges[].snapshot,
 //                paths[].edges[].source.file, paths[].edges[].source.line,
-//                paths[].edges[].note, no_path_reasons
+//                paths[].edges[].note, no_path_reasons,
+//                unresolved_callees[].name, unresolved_callees[].line,
+//                unresolved_callees[].reason (outbound only; `direction=outbound`
+//                on the same `/api/evidence` request fetches callee evidence,
+//                ordered from the queried symbol outward)
 //   entry-points: target, commit_sha, query_options, rules[].id,
 //                rules[].description, entry_points[].node,
 //                entry_points[].rule, entry_points[].rule_description,
@@ -134,7 +138,7 @@ let focusStack = [];
 /** Most recent evidence/entry-points/candidate-tests reports for the current
  * focus, kept so the graph view can be (re)built without a network call when
  * the table/graph toggle flips. */
-let lastReports = { evidence: null, entryPoints: null, candidateTests: null };
+let lastReports = { evidence: null, outboundEvidence: null, entryPoints: null, candidateTests: null };
 
 /** Error thrown by `apiGet`/`apiFetch` for a non-2xx or error-shaped `/api/*`
  * response, carrying the stable machine code and structured details the
@@ -182,6 +186,8 @@ function main() {
   enableArrowNavigation(document.getElementById("change-groups"));
   enableArrowNavigation(document.getElementById("evidence-primary"));
   enableArrowNavigation(document.getElementById("evidence-heuristic"));
+  enableArrowNavigation(document.getElementById("callees-primary"));
+  enableArrowNavigation(document.getElementById("callees-heuristic"));
   enableArrowNavigation(document.getElementById("entry-points-list"));
   enableArrowNavigation(document.getElementById("candidate-tests"));
 
@@ -1253,9 +1259,14 @@ async function loadFocus(entry) {
     setText(document.getElementById("evidence-summary"), "");
     clear(document.getElementById("evidence-primary"));
     clear(document.getElementById("evidence-heuristic"));
+    setText(document.getElementById("callees-bounds"), "");
+    setText(document.getElementById("callees-summary"), "");
+    clear(document.getElementById("callees-primary"));
+    clear(document.getElementById("callees-heuristic"));
+    clear(document.getElementById("callees-unresolved"));
     clear(document.getElementById("entry-points-list"));
     setText(document.getElementById("entry-points-bounds"), "");
-    lastReports = { evidence: null, entryPoints: null, candidateTests: null, focus: null };
+    lastReports = { evidence: null, outboundEvidence: null, entryPoints: null, candidateTests: null, focus: null };
     renderRelationshipView();
     return;
   }
@@ -1265,13 +1276,15 @@ async function loadFocus(entry) {
 
 async function loadFocusEvidence(entry) {
   const params = { selector: entry.selector, side: entry.side, ...activeFilterParams(currentFilters) };
-  const [evidence, entryPoints, candidates] = await Promise.all([
+  const [evidence, outboundEvidence, entryPoints, candidates] = await Promise.all([
     apiGet("/api/evidence", params),
+    apiGet("/api/evidence", { ...params, direction: "outbound" }),
     apiGet("/api/entry-points", params),
     apiGet("/api/candidate-tests", params),
   ]);
-  lastReports = { evidence, entryPoints, candidateTests: candidates, focus: entry };
+  lastReports = { evidence, outboundEvidence, entryPoints, candidateTests: candidates, focus: entry };
   renderEvidence(evidence);
+  renderCallees(outboundEvidence);
   renderEntryPoints(entryPoints);
   renderCandidateTests(candidates);
   renderRelationshipView();
@@ -1325,6 +1338,85 @@ function renderEvidence(evidence) {
   } else {
     noPath.hidden = true;
   }
+}
+
+/** The outbound (callee) mirror of `renderEvidence`: same bounds/summary/
+ * hidden-by-filters/primary/heuristic/no-path structure, plus the small
+ * unresolved-callees list. Path and hop rendering (`renderEvidencePathRow`/
+ * `renderHop`) are reused unchanged: an outbound path's `from`/`to`/`edges`
+ * shape is the inbound shape with the arrow reversed. */
+function renderCallees(report) {
+  renderFilteredOut(document.getElementById("callees-hidden-by-filters"), report.filtered_out);
+
+  setText(document.getElementById("callees-bounds"), boundsLine(report.query_options || {}, report.skipped_low_confidence));
+  setText(
+    document.getElementById("callees-summary"),
+    truncationSummary(report, (report.paths || []).length, "path", "paths"),
+  );
+
+  const primary = document.getElementById("callees-primary");
+  const heuristic = document.getElementById("callees-heuristic");
+  clear(primary);
+  clear(heuristic);
+
+  const primaryList = el("ul", { className: "evidence-list" });
+  const heuristicList = el("ul", { className: "evidence-list" });
+  let primaryCount = 0;
+  let heuristicCount = 0;
+
+  for (const path of report.paths || []) {
+    const row = el("li", null, [renderEvidencePathRow(path)]);
+    if (path.category === "heuristic_match") {
+      heuristicList.appendChild(row);
+      heuristicCount += 1;
+    } else {
+      primaryList.appendChild(row);
+      primaryCount += 1;
+    }
+  }
+
+  if (primaryCount > 0) primary.appendChild(primaryList);
+
+  if (heuristicCount > 0) {
+    heuristic.appendChild(
+      el("div", { className: "evidence-heuristic-group" }, [
+        el("h5", { text: "Heuristic / fallback matches" }),
+        heuristicList,
+      ]),
+    );
+  }
+
+  const noPath = document.getElementById("callees-no-path");
+  if ((report.paths || []).length === 0 && (report.no_path_reasons || []).length > 0) {
+    setText(noPath, `No callees found — reasons: ${report.no_path_reasons.join(" ")}`);
+    noPath.hidden = false;
+  } else {
+    noPath.hidden = true;
+  }
+
+  renderUnresolvedCalleesList(document.getElementById("callees-unresolved"), report.unresolved_callees || []);
+}
+
+/** A small disclosure list of calls the resolver could not bind to an
+ * indexed symbol: never rendered as nodes/rows, always disclosed with the
+ * reason. Shared by the table view's Callees section and the graph view. */
+function renderUnresolvedCalleesList(container, entries) {
+  clear(container);
+  if (entries.length === 0) return;
+  const summary = el("summary", { text: `Unresolved callees: ${entries.length}` });
+  const list = el("ul", { className: "candidate-list" });
+  for (const entry of entries) {
+    list.appendChild(
+      el("li", null, [
+        el("span", { className: "row-line" }, [
+          el("span", { className: "row-name", text: entry.name }),
+          badge(`line ${entry.line}`),
+        ]),
+        el("p", { className: "row-file", text: entry.reason }),
+      ]),
+    );
+  }
+  container.appendChild(el("details", { className: "unresolved-callees" }, [summary, list]));
 }
 
 function categoryLabel(category) {
@@ -1681,15 +1773,14 @@ function renderSourceLines(text, startLine, highlightLine) {
 // Pane 2 graph view — hand-built inline SVG, built with DOM APIs only.
 //
 // Built entirely from data already fetched for the table view
-// (`/api/evidence`, `/api/entry-points`, `/api/candidate-tests`): no extra
-// network call, and expand-on-demand is purely a client-side reveal over
-// that already-fetched neighbourhood, never a fresh request. `/api/evidence`
-// only ever reports *inbound* evidence (callers/importers of the focused
-// symbol — see the module doc comment at the top of this file), so every
-// real edge here points toward the focus from the left. There is no service
-// endpoint for outbound (callee) evidence, and adding one would be a service
-// API shape change outside this task's boundaries, so the graph's right side
-// names that gap explicitly instead of fabricating edges.
+// (`/api/evidence` in both directions, `/api/entry-points`,
+// `/api/candidate-tests`): no extra network call, and expand-on-demand is
+// purely a client-side reveal over that already-fetched neighbourhood, never
+// a fresh request. Inbound evidence (callers/importers, plus entry points)
+// lays out to the left of the focus; outbound evidence (callees, from the
+// `direction=outbound` fetch) lays out to the right, in depth layers the
+// same way. Unresolved callees are never rendered as nodes — see
+// `renderUnresolvedCalleesList`.
 // ---------------------------------------------------------------------------
 
 const SVG_NS = "http://www.w3.org/2000/svg";
@@ -1744,18 +1835,20 @@ function renderRelationshipView() {
   }
 }
 
-/** Build the neighbourhood graph model from the already-fetched evidence,
- * entry-points, and candidate-tests reports: nodes keyed by selector, with
- * their minimum hop distance from the focus, and the deduplicated edges that
- * connect them. Nodes with no known chain back to the focus are dropped:
- * there is no honest layer to place them in. */
+/** Build the neighbourhood graph model from the already-fetched evidence
+ * (both directions), entry-points, and candidate-tests reports: nodes keyed
+ * by selector, tagged `"focus"`, `"inbound"`, or `"outbound"`, with their
+ * minimum hop distance from the focus, and the deduplicated inbound/outbound
+ * edges that connect them. Nodes with no known chain back to the focus are
+ * dropped: there is no honest layer to place them in. */
 function buildGraphModel() {
-  const { evidence, entryPoints, candidateTests } = lastReports;
+  const { evidence, outboundEvidence, entryPoints, candidateTests } = lastReports;
   const nodes = new Map();
-  const edges = [];
+  const inboundEdges = [];
+  const outboundEdges = [];
   const edgeKeys = new Set();
 
-  const ensureNode = (selector, snapshot, label, origin) => {
+  const ensureNode = (selector, snapshot, label, origin, direction) => {
     let node = nodes.get(selector);
     if (!node) {
       node = {
@@ -1763,6 +1856,7 @@ function buildGraphModel() {
         snapshot,
         label,
         origin,
+        direction,
         depth: Infinity,
         isFocus: false,
         isEntryPoint: false,
@@ -1776,32 +1870,32 @@ function buildGraphModel() {
   };
 
   const focus = evidence.target;
-  const focusNode = ensureNode(focus.selector, focus.snapshot, focus.label, focus.origin);
+  const focusNode = ensureNode(focus.selector, focus.snapshot, focus.label, focus.origin, "focus");
   focusNode.isFocus = true;
   focusNode.depth = 0;
 
-  const ingestPath = (path) => {
+  const ingestInboundPath = (path) => {
     let depthCursor = path.distance;
     for (const edge of path.edges) {
-      const fromNode = ensureNode(edge.from_selector, edge.snapshot, edge.from, edge.from_origin);
+      const fromNode = ensureNode(edge.from_selector, edge.snapshot, edge.from, edge.from_origin, "inbound");
       if (depthCursor < fromNode.depth) fromNode.depth = depthCursor;
       const rank = CONFIDENCE_RANK[edge.confidence] || 0;
       if (!fromNode.bestConfidence || rank > CONFIDENCE_RANK[fromNode.bestConfidence]) {
         fromNode.bestConfidence = edge.confidence;
       }
       depthCursor -= 1;
-      const key = `${edge.from_selector}=>${edge.to_selector}`;
+      const key = `in:${edge.from_selector}=>${edge.to_selector}`;
       if (!edgeKeys.has(key)) {
         edgeKeys.add(key);
-        edges.push(edge);
+        inboundEdges.push(edge);
       }
     }
   };
 
-  for (const path of evidence.paths || []) ingestPath(path);
+  for (const path of evidence.paths || []) ingestInboundPath(path);
   for (const entry of (entryPoints && entryPoints.entry_points) || []) {
-    if (entry.path && entry.path.edges && entry.path.edges.length > 0) ingestPath(entry.path);
-    const node = ensureNode(entry.node.selector, entry.node.snapshot, entry.node.label, entry.node.origin);
+    if (entry.path && entry.path.edges && entry.path.edges.length > 0) ingestInboundPath(entry.path);
+    const node = ensureNode(entry.node.selector, entry.node.snapshot, entry.node.label, entry.node.origin, "inbound");
     node.isEntryPoint = true;
     node.entryRule = entry.rule;
   }
@@ -1810,10 +1904,42 @@ function buildGraphModel() {
     if (node) node.isCandidateTest = true;
   }
 
+  // Outbound paths are ordered from the focus outward: `edges[0].from` is the
+  // focus and the last edge's `to` is the reached callee. The node reached by
+  // edge `i` is that edge's `to`; its origin comes from the next edge's
+  // `from_origin` (the same node, one hop closer), or from `path.to` for the
+  // final edge, which the API sets directly since no later edge exists.
+  const ingestOutboundPath = (path) => {
+    let depthCursor = 1;
+    path.edges.forEach((edge, index) => {
+      const isLast = index === path.edges.length - 1;
+      const origin = isLast ? path.to.origin : path.edges[index + 1].from_origin;
+      const label = isLast ? path.to.label : path.edges[index + 1].from;
+      const toNode = ensureNode(edge.to_selector, edge.snapshot, label, origin, "outbound");
+      if (depthCursor < toNode.depth) toNode.depth = depthCursor;
+      const rank = CONFIDENCE_RANK[edge.confidence] || 0;
+      if (!toNode.bestConfidence || rank > CONFIDENCE_RANK[toNode.bestConfidence]) {
+        toNode.bestConfidence = edge.confidence;
+      }
+      depthCursor += 1;
+      const key = `out:${edge.from_selector}=>${edge.to_selector}`;
+      if (!edgeKeys.has(key)) {
+        edgeKeys.add(key);
+        outboundEdges.push(edge);
+      }
+    });
+  };
+  for (const path of (outboundEvidence && outboundEvidence.paths) || []) ingestOutboundPath(path);
+
   for (const selector of Array.from(nodes.keys())) {
     if (nodes.get(selector).depth === Infinity) nodes.delete(selector);
   }
-  const filteredEdges = edges.filter((edge) => nodes.has(edge.from_selector) && nodes.has(edge.to_selector));
+  const filteredInboundEdges = inboundEdges.filter(
+    (edge) => nodes.has(edge.from_selector) && nodes.has(edge.to_selector),
+  );
+  const filteredOutboundEdges = outboundEdges.filter(
+    (edge) => nodes.has(edge.from_selector) && nodes.has(edge.to_selector),
+  );
 
   if (graphRevealedFor !== focus.selector) {
     graphRevealed = new Set();
@@ -1825,16 +1951,39 @@ function buildGraphModel() {
     graphRevealed.add(focus.selector);
   }
 
-  return { nodes, edges: filteredEdges, focusSelector: focus.selector };
+  return {
+    nodes,
+    edges: [...filteredInboundEdges, ...filteredOutboundEdges],
+    inboundEdges: filteredInboundEdges,
+    outboundEdges: filteredOutboundEdges,
+    focusSelector: focus.selector,
+    unresolvedCallees: (outboundEvidence && outboundEvidence.unresolved_callees) || [],
+  };
 }
 
-/** Nodes one hop farther from the focus than `node`, not yet revealed: the
- * count a "+N" affordance on `node` promises to reveal. */
-function unrevealedChildrenOf(model, node) {
+/** Inbound nodes one hop farther from the focus than `node`, not yet
+ * revealed: the count a "+N" affordance on `node`'s inbound (caller) side
+ * promises to reveal. */
+function unrevealedInboundChildren(model, node) {
   const children = [];
-  for (const edge of model.edges) {
+  for (const edge of model.inboundEdges) {
     if (edge.to_selector !== node.selector) continue;
     const child = model.nodes.get(edge.from_selector);
+    if (child && child.depth === node.depth + 1 && !graphRevealed.has(child.selector)) {
+      children.push(child);
+    }
+  }
+  return children;
+}
+
+/** Outbound nodes one hop farther from the focus than `node`, not yet
+ * revealed: the count a "+N" affordance on `node`'s outbound (callee) side
+ * promises to reveal. */
+function unrevealedOutboundChildren(model, node) {
+  const children = [];
+  for (const edge of model.outboundEdges) {
+    if (edge.from_selector !== node.selector) continue;
+    const child = model.nodes.get(edge.to_selector);
     if (child && child.depth === node.depth + 1 && !graphRevealed.has(child.selector)) {
       children.push(child);
     }
@@ -1869,30 +2018,55 @@ function renderGraph() {
   }
   notice.hidden = true;
   drawGraph(svg, model);
+  renderUnresolvedCalleesList(document.getElementById("graph-unresolved-callees"), model.unresolvedCallees);
 }
 
+/** Inbound nodes (callers, entry points, and the focus) lay out to the left
+ * in depth layers exactly as before; outbound nodes (callees) lay out to the
+ * right in depth layers the same way, so the focus sits at the seam between
+ * the two neighbourhoods. */
 function drawGraph(svg, model) {
   const revealedNodes = Array.from(model.nodes.values()).filter((node) => graphRevealed.has(node.selector));
-  const maxDepth = revealedNodes.reduce((max, node) => Math.max(max, node.depth), 0);
-  const layers = new Map();
-  for (const node of revealedNodes) {
-    if (!layers.has(node.depth)) layers.set(node.depth, []);
-    layers.get(node.depth).push(node);
+  const inboundNodes = revealedNodes.filter((node) => node.direction !== "outbound");
+  const outboundNodes = revealedNodes.filter((node) => node.direction === "outbound");
+
+  const maxInboundDepth = inboundNodes.reduce((max, node) => Math.max(max, node.depth), 0);
+  const maxOutboundDepth = outboundNodes.reduce((max, node) => Math.max(max, node.depth), 0);
+
+  const inboundLayers = new Map();
+  for (const node of inboundNodes) {
+    if (!inboundLayers.has(node.depth)) inboundLayers.set(node.depth, []);
+    inboundLayers.get(node.depth).push(node);
   }
-  for (const list of layers.values()) {
+  const outboundLayers = new Map();
+  for (const node of outboundNodes) {
+    if (!outboundLayers.has(node.depth)) outboundLayers.set(node.depth, []);
+    outboundLayers.get(node.depth).push(node);
+  }
+  for (const list of [...inboundLayers.values(), ...outboundLayers.values()]) {
     list.sort((left, right) => left.label.localeCompare(right.label));
   }
 
-  const focusX = GRAPH_MARGIN + maxDepth * GRAPH_LAYER_GAP + GRAPH_NODE_WIDTH / 2;
-  const rightPlaceholderX = focusX + GRAPH_LAYER_GAP;
-  const maxRows = Math.max(1, ...Array.from(layers.values()).map((list) => list.length));
+  const focusX = GRAPH_MARGIN + maxInboundDepth * GRAPH_LAYER_GAP + GRAPH_NODE_WIDTH / 2;
+  const maxRows = Math.max(
+    1,
+    ...Array.from(inboundLayers.values()).map((list) => list.length),
+    ...Array.from(outboundLayers.values()).map((list) => list.length),
+  );
   const height = GRAPH_MARGIN * 2 + maxRows * GRAPH_ROW_GAP;
-  const width = rightPlaceholderX + GRAPH_NODE_WIDTH + GRAPH_MARGIN;
+  const width = focusX + GRAPH_NODE_WIDTH / 2 + maxOutboundDepth * GRAPH_LAYER_GAP + GRAPH_MARGIN;
   svg.setAttribute("viewBox", `0 0 ${width} ${height}`);
 
   const positions = new Map();
-  for (const [depth, list] of layers.entries()) {
-    const x = GRAPH_MARGIN + (maxDepth - depth) * GRAPH_LAYER_GAP + GRAPH_NODE_WIDTH / 2;
+  for (const [depth, list] of inboundLayers.entries()) {
+    const x = GRAPH_MARGIN + (maxInboundDepth - depth) * GRAPH_LAYER_GAP + GRAPH_NODE_WIDTH / 2;
+    const rowHeight = height / (list.length + 1);
+    list.forEach((node, index) => {
+      positions.set(node.selector, { x, y: rowHeight * (index + 1) });
+    });
+  }
+  for (const [depth, list] of outboundLayers.entries()) {
+    const x = focusX + depth * GRAPH_LAYER_GAP;
     const rowHeight = height / (list.length + 1);
     list.forEach((node, index) => {
       positions.set(node.selector, { x, y: rowHeight * (index + 1) });
@@ -1908,17 +2082,6 @@ function drawGraph(svg, model) {
   }
   for (const node of revealedNodes) {
     svg.appendChild(drawNode(model, node, positions.get(node.selector)));
-  }
-
-  const focusPosition = positions.get(model.focusSelector);
-  if (focusPosition) {
-    svg.appendChild(
-      svgText("outbound (callees) — not available from this service's API", {
-        x: rightPlaceholderX - GRAPH_NODE_WIDTH / 2,
-        y: focusPosition.y,
-        class: "graph-node-badge",
-      }),
-    );
   }
 }
 
@@ -2018,41 +2181,56 @@ function drawNode(model, node, position) {
     }
   });
 
-  const unrevealed = unrevealedChildrenOf(model, node);
-  if (unrevealed.length === 0) {
+  const expandBubble = (unrevealed, x, verb) => {
+    if (unrevealed.length === 0) return null;
+    const bubble = svgEl(
+      "g",
+      {
+        class: "graph-expand",
+        tabindex: "0",
+        role: "button",
+        "aria-label": `Show ${unrevealed.length} more ${verb} of ${node.label}`,
+      },
+      [
+        svgEl("circle", { cx: x, cy: position.y, r: 11 }),
+        svgText(`+${unrevealed.length}`, {
+          x,
+          y: position.y + 3,
+          class: "graph-expand-label",
+          "text-anchor": "middle",
+        }),
+      ],
+    );
+    const expand = () => {
+      for (const child of unrevealed) graphRevealed.add(child.selector);
+      renderGraph();
+    };
+    bubble.addEventListener("click", expand);
+    bubble.addEventListener("keydown", (event) => {
+      if (event.key === "Enter" || event.key === " ") {
+        event.preventDefault();
+        expand();
+      }
+    });
+    return bubble;
+  };
+
+  // A caller's deeper callers lie farther left; a callee's deeper callees
+  // lie farther right. The focus can have both.
+  const inboundBubble = expandBubble(
+    unrevealedInboundChildren(model, node),
+    position.x - GRAPH_NODE_WIDTH / 2 - GRAPH_EXPAND_OFFSET,
+    "caller(s)",
+  );
+  const outboundBubble = expandBubble(
+    unrevealedOutboundChildren(model, node),
+    position.x + GRAPH_NODE_WIDTH / 2 + GRAPH_EXPAND_OFFSET,
+    "callee(s)",
+  );
+  if (!inboundBubble && !outboundBubble) {
     return group;
   }
-  const expandX = position.x + GRAPH_NODE_WIDTH / 2 + GRAPH_EXPAND_OFFSET;
-  const expandGroup = svgEl(
-    "g",
-    {
-      class: "graph-expand",
-      tabindex: "0",
-      role: "button",
-      "aria-label": `Show ${unrevealed.length} more caller(s) of ${node.label}`,
-    },
-    [
-      svgEl("circle", { cx: expandX, cy: position.y, r: 11 }),
-      svgText(`+${unrevealed.length}`, {
-        x: expandX,
-        y: position.y + 3,
-        class: "graph-expand-label",
-        "text-anchor": "middle",
-      }),
-    ],
-  );
-  const expand = () => {
-    for (const child of unrevealed) graphRevealed.add(child.selector);
-    renderGraph();
-  };
-  expandGroup.addEventListener("click", expand);
-  expandGroup.addEventListener("keydown", (event) => {
-    if (event.key === "Enter" || event.key === " ") {
-      event.preventDefault();
-      expand();
-    }
-  });
-  return svgEl("g", null, [group, expandGroup]);
+  return svgEl("g", null, [group, inboundBubble, outboundBubble]);
 }
 
 function truncateLabel(label) {

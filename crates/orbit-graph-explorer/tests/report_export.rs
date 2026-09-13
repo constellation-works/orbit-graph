@@ -79,6 +79,10 @@ fn direct_call_report_matches_the_exported_contract() {
             .is_empty(),
         "{json}"
     );
+    // `helper` (the changed symbol) is a leaf here, so its own outbound side
+    // is an empty array, not fabricated or omitted; the schema still carries
+    // the key.
+    assert!(json["outbound_paths"].is_array(), "{json}");
     assert!(json["entry_points"].is_array());
     assert!(json["candidate_tests"]["candidates"].is_array());
     assert!(json["unresolved"].is_array());
@@ -237,6 +241,25 @@ fn cycle_with_a_small_depth_cap_reports_truncation() {
             .any(|flag| flag["bound"] == "depth" && flag["value"] == 1),
         "{json}"
     );
+
+    // `is_even` (the changed symbol) outbound-calls `is_odd`, so this
+    // fixture's `outbound_paths` is non-empty too, with the same
+    // embedded/reference marking as `evidence_paths`.
+    let outbound_paths = json["outbound_paths"]
+        .as_array()
+        .expect("outbound_paths array");
+    assert!(!outbound_paths.is_empty(), "{json}");
+    for path in outbound_paths {
+        for field in ["from", "to", "distance", "category", "edges"] {
+            assert!(
+                path.get(field).is_some(),
+                "outbound path missing `{field}`: {path}"
+            );
+        }
+        for edge in path["edges"].as_array().expect("edges array") {
+            assert!(edge.get("rendering").is_some(), "{edge}");
+        }
+    }
 
     let html = read_html(out.path(), "report");
     assert!(html.contains("truncated"), "{html}");

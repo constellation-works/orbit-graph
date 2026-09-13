@@ -50,8 +50,8 @@ use crate::changes::{
 };
 use crate::evidence::{
     CandidateSource, CandidateTest, EndpointRef, EntryPointReport, EvidenceBounds,
-    EvidenceCategory, EvidenceCollector, EvidenceEdge, EvidenceError, EvidencePath, EvidenceQuery,
-    QueryOptions,
+    EvidenceCategory, EvidenceCollector, EvidenceDirection, EvidenceEdge, EvidenceError,
+    EvidencePath, EvidenceQuery, QueryOptions,
 };
 use crate::filters::{FilterSet, FilteredOut};
 use crate::snapshot::{
@@ -541,8 +541,13 @@ pub struct ExportedReport {
     pub query_options: ReportQueryOptions,
     /// The changed-symbol slice in scope for this report.
     pub changed_symbols: ReportChangedSymbols,
-    /// Evidence paths for every queried changed symbol, flattened.
+    /// Inbound evidence paths for every queried changed symbol, flattened.
     pub evidence_paths: Vec<ReportEvidencePath>,
+    /// Outbound (callee) evidence paths for every queried changed symbol,
+    /// flattened: `edges[0].from` is the changed symbol and the last edge's
+    /// `to` is the reached callee, mirroring `evidence_paths` with the arrow
+    /// reversed.
+    pub outbound_paths: Vec<ReportEvidencePath>,
     /// Entry points for every queried changed symbol, flattened.
     pub entry_points: Vec<ReportEntryPoint>,
     /// Candidate tests for every queried changed symbol.
@@ -904,6 +909,7 @@ pub fn build_report(
 
     let mut collectors = Collectors::new(comparison);
     let mut evidence_paths = Vec::new();
+    let mut outbound_paths = Vec::new();
     let mut entry_points = Vec::new();
     let mut candidates = Vec::new();
     let mut unresolved = Vec::new();
@@ -927,6 +933,11 @@ pub fn build_report(
                 bounds: options.bounds,
                 filters: options.filters.clone(),
                 changes: Some(&changed),
+                direction: EvidenceDirection::Inbound,
+            };
+            let outbound_query = EvidenceQuery {
+                direction: EvidenceDirection::Outbound,
+                ..query.clone()
             };
 
             let collector = collectors.get(side)?;
@@ -948,6 +959,26 @@ pub fn build_report(
             }
             for path in &evidence.paths {
                 evidence_paths.push(render_path(&mut state, path, mode));
+            }
+
+            let outbound_evidence = collector.evidence(selector_text, &outbound_query)?;
+            for hit in &outbound_evidence.bounds_hit {
+                state.note_truncation(
+                    format!("outbound_evidence:{selector_text}@{side_label}"),
+                    hit.bound.clone(),
+                    hit.value,
+                );
+            }
+            if !outbound_evidence.no_path_reasons.is_empty() {
+                unresolved.push(UnresolvedArea {
+                    selector: selector_text.to_string(),
+                    snapshot: side_label.clone(),
+                    kind: "outbound_evidence".to_string(),
+                    reasons: outbound_evidence.no_path_reasons.clone(),
+                });
+            }
+            for path in &outbound_evidence.paths {
+                outbound_paths.push(render_path(&mut state, path, mode));
             }
 
             let entry_report = collector.entry_points(selector_text, &query)?;
@@ -1034,6 +1065,7 @@ pub fn build_report(
         bounds: options.bounds,
         filters: options.filters.clone(),
         changes: None,
+        direction: EvidenceDirection::Inbound,
     };
     let query_options = ReportQueryOptions {
         evidence: QueryOptions::new(&evidence_query_template),
@@ -1055,6 +1087,7 @@ pub fn build_report(
             filtered_out,
         },
         evidence_paths,
+        outbound_paths,
         entry_points,
         candidate_tests: ReportCandidateTests {
             schema_version: crate::evidence::EVIDENCE_SCHEMA_VERSION,

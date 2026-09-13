@@ -370,6 +370,29 @@ table above. `confidence` is the `orbit_graph` label for a derived edge and is
 can never silently cross revisions. `source.line` may be `null` when a call site
 could not be attributed to a line; `source.file` is always present.
 
+`GET /api/evidence` accepts a `direction` parameter, `inbound` (the default) or
+`outbound`, echoed in `query_options.direction` and `impact.direction`. Both
+directions share every bound, category, and side-separation rule above; only
+the traversal edge and the hop ordering differ. `inbound` walks callers and
+reverse relations back to the queried symbol: `edges[0].from` is the affected
+(farthest) symbol and the last edge's `to` is the queried symbol, so a reader
+walks the chain in the direction the change propagates. `outbound` walks
+callees forward from the queried symbol, using `orbit_graph::Graph::callees`
+in place of `refs` for each hop: the ordering is the same contract with the
+arrow reversed, so `edges[0].from` is the queried symbol and the last edge's
+`to` is the reached callee. A call the resolver could not bind to an indexed
+symbol — an external crate function, a dynamically dispatched call, or a name
+the extractor could not resolve — is never dropped or fabricated as a node;
+it is reported instead in a report-level `unresolved_callees` list:
+
+```json
+{"unresolved_callees": [{"name": "log_event", "line": 42, "reason": "…"}]}
+```
+
+`GET /api/entry-points` and `GET /api/candidate-tests` are inbound only, by
+definition: an entry point and a candidate test are both about what could
+reach the queried symbol, not what it reaches.
+
 ### Candidate tests
 
 ```json
@@ -419,7 +442,8 @@ candidate is never presented as coverage, and the list is never described as
   },
   "query_options": {"depth": 3, "min_confidence": "same_module", "limit": 20, "time_budget_ms": 5000},
   "changed_symbols": {"…": "the changed-symbol payload"},
-  "evidence_paths": [{"…": "evidence path payloads"}],
+  "evidence_paths": [{"…": "inbound evidence path payloads"}],
+  "outbound_paths": [{"…": "outbound (callee) evidence path payloads, same shape, arrow reversed"}],
   "candidate_tests": {"…": "the candidate-test payload"},
   "scope": {
     "truncated": [{"what": "impact", "bound": "impact_node_cap", "value": 200}],
@@ -442,6 +466,12 @@ SHAs, the extractor and schema versions, the index identity, the query options,
 and the complete truncated/unsupported/excluded scope are always present, even
 when empty.
 
+`outbound_paths` carries the same per-location `embedded`/`reference` marking
+as `evidence_paths`, for every queried changed symbol's outbound (callee)
+evidence; it is always present, even when empty (a leaf changed symbol calls
+nothing). Two exports of the same inputs remain byte-identical with
+`outbound_paths` populated, the same as every other field.
+
 ## Service surface
 
 All endpoints are served on `127.0.0.1` only, under one repository scope fixed
@@ -457,7 +487,7 @@ rejected — the scope is never inferred from the request.
 | `GET /` | Embedded UI shell | HTML from the binary; never from the repository |
 | `GET /api/comparison` | The resolved comparison for the launch scope | Resolved comparison payload |
 | `GET /api/changed-symbols` | Changed-symbol slice (milestone 2) | Changed-symbol payload |
-| `GET /api/evidence?selector=…&side=…&depth=…&confidence=…` | Relationship evidence for one symbol in one snapshot | Evidence-path payloads |
+| `GET /api/evidence?selector=…&side=…&depth=…&confidence=…&direction=inbound\|outbound` | Relationship evidence for one symbol in one snapshot, inbound (default) or outbound | Evidence-path payloads |
 | `GET /api/candidate-tests?selector=…&side=…&confidence=…` | Candidate tests for one changed symbol in one snapshot | Candidate-test payload |
 | `GET /api/source?selector=…&side=…` | Bounded source excerpt for an evidence location | `{"file","span","bytes_or_text","truncated","snapshot"}` |
 | `GET /api/search?q=…&side=…&kind=…&lang=…&limit=…` | Full-text search over one snapshot's symbols, strings, and config keys (milestone 4) | Selector-addressed matches, each labelled with its changed-symbol status |
