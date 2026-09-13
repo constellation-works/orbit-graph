@@ -494,10 +494,10 @@ pub enum CurrentSymbolStatus {
 
 pub(crate) fn repository_identity(repo: &Repository) -> Result<String, GraphError> {
     if let Ok(remote) = repo.find_remote("origin")
-        && let Some(url) = remote.url()
+        && let Some(url) = remote.url().map_or(None, |url| Some(url.to_string()))
         && !url.trim().is_empty()
     {
-        return Ok(url.to_string());
+        return Ok(url);
     }
     let workdir = repo.workdir().ok_or_else(|| {
         GraphError::invalid_data(
