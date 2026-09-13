@@ -233,6 +233,9 @@ pub struct ReportEntryPoint {
     pub rules: Vec<String>,
     /// Hops from the entry point to the queried symbol.
     pub distance: usize,
+    /// Weakest evidence category on `path`, mirroring `path.category` at the
+    /// top level.
+    pub category: EvidenceCategory,
     /// Shortest evidence path from this entry point to the queried symbol.
     pub path: ReportEvidencePath,
     /// What the rule observed.
@@ -1198,6 +1201,7 @@ fn render_entry_point(
         rule_description: entry_point.rule_description.clone(),
         rules: entry_point.rules.clone(),
         distance: entry_point.distance,
+        category: entry_point.category,
         path: render_path(state, &entry_point.path, mode),
         note: entry_point.note.clone(),
     }

@@ -520,6 +520,73 @@ fn a_changed_test_is_classified_as_a_test_entry_point() {
 }
 
 #[test]
+fn crate_root_public_item_never_fires_under_a_test_classified_path() {
+    let (repository, base, head) = build_test_classified_root_fixture();
+    let service = Service::launch_at(repository.path().to_path_buf(), base, head, Box::new(()));
+    service.wait_until_ready();
+
+    let selector =
+        percent_encode("symbol:tests/fixtures/vendored/src/lib.rs#vendored_helper:function");
+    let report = service
+        .authorized(
+            "GET",
+            format!("/api/entry-points?selector={selector}&side=head").as_str(),
+            &[],
+        )
+        .json();
+    let entry = report["entry_points"]
+        .as_array()
+        .expect("entry points")
+        .iter()
+        .find(|entry| {
+            entry["node"]["selector"]
+                == "symbol:tests/fixtures/vendored/src/lib.rs#vendored_helper:function"
+        })
+        .unwrap_or_else(|| panic!("the queried symbol is its own entry point: {report}"));
+    assert_ne!(
+        entry["rule"], "crate_root_public_item",
+        "a `lib.rs` checked into a test-classified fixture tree is not this repository's own \
+         crate root: {entry}"
+    );
+    assert_eq!(
+        entry["rule"], "test_function",
+        "still visible, correctly labelled as weak/test evidence: {entry}"
+    );
+}
+
+#[test]
+fn an_entry_point_reached_only_through_a_fuzzy_name_hop_is_labelled_heuristic() {
+    let (repository, base, head) = build_fuzzy_hop_fixture();
+    let service = Service::launch_at(repository.path().to_path_buf(), base, head, Box::new(()));
+    service.wait_until_ready();
+
+    let selector = percent_encode("symbol:src/lib.rs#run:function");
+    let report = service
+        .authorized(
+            "GET",
+            format!("/api/entry-points?selector={selector}&side=head").as_str(),
+            &[],
+        )
+        .json();
+    let entry = report["entry_points"]
+        .as_array()
+        .expect("entry points")
+        .iter()
+        .find(|entry| entry["node"]["selector"] == "symbol:src/lib.rs#drive:function")
+        .unwrap_or_else(|| panic!("`drive` must be reached as an entry point: {report}"));
+    assert_eq!(entry["rule"], "crate_root_public_item", "{entry}");
+    assert_eq!(
+        entry["category"], "heuristic_match",
+        "the only path to `drive` is a method call on a receiver whose type is not tracked, so \
+         it resolves by name alone: {entry}"
+    );
+    assert_eq!(
+        entry["category"], entry["path"]["category"],
+        "the top-level category must mirror the weakest category on the path: {entry}"
+    );
+}
+
+#[test]
 fn removed_symbol_evidence_is_base_only_and_head_says_so() {
     let service = Service::launch("removed-symbol");
     service.wait_until_ready();
@@ -1074,6 +1141,66 @@ fn build_chain_fixture() -> (TempDir, String, String) {
         dir.path(),
         &[("src/lib.rs", lib("2").as_str())],
         "head: change the helper body",
+        1,
+    );
+    drop(repo);
+    (dir, base, head)
+}
+
+/// A repository whose only source file is a `lib.rs` checked into a
+/// test-classified fixture directory — standing in for a fixture tree vendored
+/// under `tests/` in the repository under analysis. `root_module_kind` still
+/// matches the file name, so this exercises whether `crate_root_public_item`
+/// additionally requires the path not to be test-classified.
+fn build_test_classified_root_fixture() -> (TempDir, String, String) {
+    let lib = |value: &str| format!("pub fn vendored_helper() -> i32 {{\n    {value}\n}}\n");
+    let dir = TempDir::new().expect("create fixture repository");
+    let repo = Repository::init(dir.path()).expect("init fixture repository");
+    let base = commit_files(
+        &repo,
+        dir.path(),
+        &[("tests/fixtures/vendored/src/lib.rs", lib("1").as_str())],
+        "base: a lib.rs vendored under a test-classified path",
+        0,
+    );
+    let head = commit_files(
+        &repo,
+        dir.path(),
+        &[("tests/fixtures/vendored/src/lib.rs", lib("2").as_str())],
+        "head: change the vendored helper body",
+        1,
+    );
+    drop(repo);
+    (dir, base, head)
+}
+
+/// A repository whose crate root (`src/lib.rs`) has a public function `run`,
+/// called only through `Runner::run` — a method call whose receiver type the
+/// extractor does not track, so the call resolves by name alone
+/// (`heuristic_match`) rather than as a resolved call. `drive`, the caller, is
+/// a real `crate_root_public_item` entry point, but the only path to it is
+/// that name-only hop.
+fn build_fuzzy_hop_fixture() -> (TempDir, String, String) {
+    let lib = |value: &str| {
+        format!(
+            "pub struct Runner;\n\npub fn run() -> i32 {{\n    {value}\n}}\n\npub fn drive(r: \
+             Runner) -> i32 {{\n    r.run()\n}}\n"
+        )
+    };
+    let dir = TempDir::new().expect("create fixture repository");
+    let repo = Repository::init(dir.path()).expect("init fixture repository");
+    let base = commit_files(
+        &repo,
+        dir.path(),
+        &[("src/lib.rs", lib("1").as_str())],
+        "base: run reached only through a fuzzy-name method call",
+        0,
+    );
+    let head = commit_files(
+        &repo,
+        dir.path(),
+        &[("src/lib.rs", lib("2").as_str())],
+        "head: change run's body",
         1,
     );
     drop(repo);
