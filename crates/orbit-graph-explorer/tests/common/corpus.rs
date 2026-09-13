@@ -45,6 +45,7 @@ pub const CASES: &[&str] = &[
     "generated-unsupported",
     "cycle",
     "branch-divergence",
+    "import-name-collision",
 ];
 
 /// One materialized corpus case.

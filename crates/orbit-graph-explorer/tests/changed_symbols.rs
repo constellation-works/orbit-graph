@@ -495,6 +495,49 @@ fn branch_divergence_is_reported_as_the_direct_reading_it_is() {
 }
 
 #[test]
+fn import_of_a_same_named_symbol_in_another_module_is_a_naming_heuristic_not_an_import_relationship()
+ {
+    let case = Case::open("import-name-collision");
+    case.assert_manifest_presence();
+
+    let main = case.single("symbol:pkg_a/run.py#main:function");
+    assert_eq!(main.status, ChangeStatus::Modified);
+
+    // pkg_b/cli.py#main is untouched and unrelated; it must not be reported as
+    // a changed symbol just because it shares a bare name with pkg_a's `main`.
+    assert!(
+        case.changed
+            .entries_for("symbol:pkg_b/cli.py#main:function")
+            .is_empty(),
+        "{:?}",
+        case.selectors()
+    );
+
+    // tests/test_cli.py imports `pkg_b.cli.main`, which shares pkg_a's `main`'s
+    // bare name but not its module. That import asserts no relationship to
+    // pkg_a/run.py at all, so it must never be promoted to
+    // `import_relationship` — at most it is a name-only `naming_heuristic`.
+    let candidates = case.candidate_tests(SnapshotSide::Head, "symbol:pkg_a/run.py#main:function");
+    assert!(
+        candidates.iter().all(|(source, selector, _)| {
+            !(*source == CandidateSource::ImportRelationship
+                && selector == "file:tests/test_cli.py")
+        }),
+        "a bare-name match on an import from an unrelated module must not be reported as \
+         import_relationship: {candidates:?}"
+    );
+    assert!(
+        candidates.iter().any(|(source, selector, category)| {
+            *source == CandidateSource::NamingHeuristic
+                && selector == "file:tests/test_cli.py"
+                && *category == EvidenceCategory::HeuristicMatch
+        }),
+        "the name-only association must still surface, weakly, as a naming heuristic: \
+         {candidates:?}"
+    );
+}
+
+#[test]
 fn every_case_produces_a_deterministic_payload() {
     for case_id in corpus::CASES {
         let case = Case::open(case_id);

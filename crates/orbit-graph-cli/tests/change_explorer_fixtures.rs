@@ -25,6 +25,7 @@ const CASES: &[&str] = &[
     "generated-unsupported",
     "cycle",
     "branch-divergence",
+    "import-name-collision",
 ];
 
 const FIXTURE_AUTHOR_NAME: &str = "Orbit Graph Fixture";
@@ -98,6 +99,11 @@ fn cycle_case_produces_expected_evidence() {
 #[test]
 fn branch_divergence_case_produces_expected_evidence() {
     verify_case("branch-divergence");
+}
+
+#[test]
+fn import_name_collision_case_produces_expected_evidence() {
+    verify_case("import-name-collision");
 }
 
 /// Build a case, verify commit SHAs are reproducible, index every snapshot,
