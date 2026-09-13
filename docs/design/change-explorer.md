@@ -253,6 +253,28 @@ Consequences that must be stated wherever impact is shown:
 - A `fallback` block returned by `refs` or `impact` is rendered as
   `heuristic_match` with its note attached, never silently merged into the
   primary result.
+- `refs`'s own `fallback` only fires when its floor-filtered `refs` list is
+  **empty**: a symbol with even one same-file `exact` reference gets no
+  `fallback` at all, so every `fuzzy_name` reference to it — for example a
+  method call on a receiver of unresolvable type — would otherwise be
+  invisible, not merely downgraded (ORB-12425). At the `import_resolved` and
+  `same_module` floors (the default), the explorer's evidence and outbound
+  traversal disclose these unconditionally: inbound evidence issues a second,
+  `fuzzy_name`-floor `refs` query per node and adds whatever the
+  floor-filtered query missed as `heuristic_match` edges; outbound evidence
+  already receives every confidence from `callees_with_options` and keeps a
+  `fuzzy_name`-only edge instead of dropping it. Each such edge carries a note
+  explaining it resolved only at `fuzzy_name`. This is expansion-local: only
+  edges incident to the node currently being expanded are checked, so the
+  extra query is one per node, not a second traversal, and the node cap and
+  depth bound apply exactly as they do to every other edge. The strict
+  `exact` floor never receives these — a caller asking for guaranteed matches
+  only never receives a name-only guess in their place — and the `fuzzy_name`
+  floor needs no special handling, since every match already comes back
+  through the ordinary query at that floor. A `call_path` candidate test whose
+  weakest hop is one of these edges is a `heuristic_match` candidate through
+  the same category-propagation rule as any other path, so a test reaching the
+  symbol only that way is disclosed as weak rather than absent.
 
 ## Bounds and truncation
 

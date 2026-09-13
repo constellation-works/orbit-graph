@@ -587,6 +587,111 @@ fn an_entry_point_reached_only_through_a_fuzzy_name_hop_is_labelled_heuristic() 
 }
 
 #[test]
+fn a_fuzzy_name_caller_is_disclosed_even_when_an_exact_caller_also_exists() {
+    // ORB-12425: the core `fallback` block `refs` returns only fires when the
+    // floor-filtered `refs` list is empty, so a symbol with at least one
+    // strong (same-file) caller used to hide every `fuzzy_name` caller
+    // entirely — invisible even at `fuzzy_name` depth, not merely
+    // downgraded. `use_it`'s receiver-typed call must now be disclosed as
+    // `heuristic_match` at the default floor, alongside the unaffected exact
+    // caller, and must still be excluded at the strict `exact` floor.
+    let (repository, base, head) = build_fuzzy_hop_with_exact_caller_fixture();
+    let service = Service::launch_at(repository.path().to_path_buf(), base, head, Box::new(()));
+    service.wait_until_ready();
+
+    let selector = percent_encode("symbol:src/lib.rs#target:function");
+
+    let report = service
+        .authorized(
+            "GET",
+            format!("/api/evidence?selector={selector}&side=head").as_str(),
+            &[],
+        )
+        .json();
+    let paths = report["paths"].as_array().expect("paths");
+    let exact = paths
+        .iter()
+        .find(|path| path["from"]["selector"] == "symbol:src/lib.rs#caller:function")
+        .unwrap_or_else(|| panic!("the same-file exact caller must still appear: {report}"));
+    assert_eq!(exact["category"], "resolved_call", "{exact}");
+    let fuzzy = paths
+        .iter()
+        .find(|path| path["from"]["selector"] == "symbol:src/lib.rs#use_it:function")
+        .unwrap_or_else(|| {
+            panic!(
+                "the fuzzy-name receiver call must be disclosed even though `target` also has \
+                 an exact caller: {report}"
+            )
+        });
+    assert_eq!(fuzzy["category"], "heuristic_match", "{fuzzy}");
+    assert!(
+        fuzzy["edges"][0]["note"]
+            .as_str()
+            .is_some_and(|note| note.contains("fuzzy_name")),
+        "a disclosed heuristic edge must explain why: {fuzzy}"
+    );
+
+    // `exact` is a strict, no-heuristics floor: the receiver-typed call must
+    // not appear, while the genuine exact caller still does.
+    let strict = service
+        .authorized(
+            "GET",
+            format!("/api/evidence?selector={selector}&side=head&confidence=exact").as_str(),
+            &[],
+        )
+        .json();
+    let strict_paths = strict["paths"].as_array().expect("paths");
+    assert!(
+        strict_paths
+            .iter()
+            .all(|path| path["from"]["selector"] != "symbol:src/lib.rs#use_it:function"),
+        "the fuzzy-name receiver call must not appear at the `exact` floor: {strict}"
+    );
+    assert!(
+        strict_paths
+            .iter()
+            .any(|path| path["from"]["selector"] == "symbol:src/lib.rs#caller:function"),
+        "the exact same-file caller must still appear at the `exact` floor: {strict}"
+    );
+}
+
+#[test]
+fn a_call_path_candidate_reached_only_by_a_fuzzy_name_hop_is_disclosed_as_weak() {
+    // Same fixture, from the candidate-tests side: `use_it` is not itself a
+    // test, so this only exercises evidence disclosure, not the test
+    // classification. `call_path_candidates` builds on `evidence`, so once
+    // the fuzzy caller is disclosed as a path, a test-classified caller
+    // reaching the symbol only that way is reported as a `heuristic_match`
+    // `call_path` candidate rather than being absent — see ORB-12425 point 2.
+    let (repository, base, head) = build_fuzzy_hop_candidate_test_fixture();
+    let service = Service::launch_at(repository.path().to_path_buf(), base, head, Box::new(()));
+    service.wait_until_ready();
+
+    let selector = percent_encode("symbol:src/lib.rs#target:function");
+    let report = service
+        .authorized(
+            "GET",
+            format!("/api/candidate-tests?selector={selector}&side=head").as_str(),
+            &[],
+        )
+        .json();
+    let candidates = report["candidates"].as_array().expect("candidates");
+    let candidate = candidates
+        .iter()
+        .find(|candidate| {
+            candidate["test"]["selector"] == "symbol:tests/test_use.rs#test_use_it:function"
+        })
+        .unwrap_or_else(|| {
+            panic!(
+                "the test reaching `target` only through a fuzzy-name receiver call must still \
+                 be disclosed as a weak candidate: {report}"
+            )
+        });
+    assert_eq!(candidate["source"], "call_path", "{candidate}");
+    assert_eq!(candidate["category"], "heuristic_match", "{candidate}");
+}
+
+#[test]
 fn removed_symbol_evidence_is_base_only_and_head_says_so() {
     let service = Service::launch("removed-symbol");
     service.wait_until_ready();
@@ -1201,6 +1306,77 @@ fn build_fuzzy_hop_fixture() -> (TempDir, String, String) {
         dir.path(),
         &[("src/lib.rs", lib("2").as_str())],
         "head: change run's body",
+        1,
+    );
+    drop(repo);
+    (dir, base, head)
+}
+
+/// A repository whose crate root (`src/lib.rs`) has a public function
+/// `target`, reached two ways: `caller`, in the same file, calls it by bare
+/// name (an `exact` reference); `use_it` calls it as `w.target()` on a
+/// receiver whose type the extractor does not track (a `fuzzy_name`
+/// reference, the same mechanism as [`build_fuzzy_hop_fixture`]). Before
+/// ORB-12425, `target` having any exact reference at all made the
+/// `fuzzy_name` one invisible at every floor above `fuzzy_name`: the core
+/// `fallback` block only fires when the floor-filtered `refs` list is empty.
+fn build_fuzzy_hop_with_exact_caller_fixture() -> (TempDir, String, String) {
+    let lib = |value: &str| {
+        format!(
+            "pub struct Widget;\n\npub fn target() -> i32 {{\n    {value}\n}}\n\npub fn caller() \
+             -> i32 {{\n    target()\n}}\n\npub fn use_it(w: Widget) -> i32 {{\n    w.target()\n}}\n"
+        )
+    };
+    let dir = TempDir::new().expect("create fixture repository");
+    let repo = Repository::init(dir.path()).expect("init fixture repository");
+    let base = commit_files(
+        &repo,
+        dir.path(),
+        &[("src/lib.rs", lib("1").as_str())],
+        "base: target has an exact same-file caller and a fuzzy-name receiver call",
+        0,
+    );
+    let head = commit_files(
+        &repo,
+        dir.path(),
+        &[("src/lib.rs", lib("2").as_str())],
+        "head: change target's body",
+        1,
+    );
+    drop(repo);
+    (dir, base, head)
+}
+
+/// Same shape as [`build_fuzzy_hop_with_exact_caller_fixture`], except the
+/// `fuzzy_name` receiver call lives in a test-classified file
+/// (`tests/test_use.rs`), so it can also be checked as a `call_path`
+/// candidate test.
+fn build_fuzzy_hop_candidate_test_fixture() -> (TempDir, String, String) {
+    let lib = |value: &str| {
+        format!(
+            "pub fn target() -> i32 {{\n    {value}\n}}\n\npub fn caller() -> i32 {{\n    \
+             target()\n}}\n"
+        )
+    };
+    let test = "pub struct Widget;\n\nfn test_use_it() {\n    let w = Widget;\n    let _ = \
+                w.target();\n}\n";
+    let dir = TempDir::new().expect("create fixture repository");
+    let repo = Repository::init(dir.path()).expect("init fixture repository");
+    let base = commit_files(
+        &repo,
+        dir.path(),
+        &[
+            ("src/lib.rs", lib("1").as_str()),
+            ("tests/test_use.rs", test),
+        ],
+        "base: a test reaches target only through a fuzzy-name receiver call",
+        0,
+    );
+    let head = commit_files(
+        &repo,
+        dir.path(),
+        &[("src/lib.rs", lib("2").as_str())],
+        "head: change target's body",
         1,
     );
     drop(repo);
