@@ -11,8 +11,8 @@ use rusqlite::Connection;
 
 use crate::sync::{SyncLeaderGate, set_sync_after_scan_gate};
 use crate::{
-    EXTRACTOR_VERSION, Graph, SyncMode, SyncObserver, SyncOutcome, SyncPolicy, SyncProgress,
-    resolve_db_path,
+    EXTRACTOR_VERSION, Graph, SyncMode, SyncObserver, SyncOutcome, SyncPhase, SyncPolicy,
+    SyncProgress, resolve_db_path,
 };
 
 /// Records every [`SyncProgress`] event and cancels once `threshold` files
@@ -33,11 +33,15 @@ impl CancelAfterObserver {
         }
     }
 
+    /// Files pass 1 (extraction) touched. Excludes pass 2 (resolving)
+    /// reports, whose `current_path` is frozen at pass 1's last file rather
+    /// than naming a file newly touched by that phase.
     fn touched_paths(&self) -> Vec<String> {
         self.events
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
             .iter()
+            .filter(|event| event.phase == SyncPhase::Extracting)
             .filter_map(|event| event.current_path.clone())
             .collect()
     }
@@ -93,6 +97,60 @@ fn observer_sees_every_file_a_full_sync_touches() {
         previous = event.files_indexed;
     }
     assert_eq!(events.last().expect("at least one event").files_indexed, 3);
+}
+
+#[test]
+fn resolving_phase_is_reported_after_extracting_with_matching_ref_total() {
+    let worktree = TestWorktree::new("resolving-phase");
+    worktree.write("src/a.rs", "pub fn a() { b(); }\n");
+    worktree.write("src/b.rs", "pub fn b() {}\n");
+    let graph = Graph::open(worktree.path(), SyncPolicy::Manual).expect("open graph");
+
+    let observer = CancelAfterObserver::new(usize::MAX);
+    let outcome = graph
+        .sync_with_observer(SyncMode::Full, &observer)
+        .expect("observed sync succeeds");
+    assert!(matches!(outcome, SyncOutcome::Completed(_)));
+
+    let events = observer
+        .events
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+
+    // Phase never goes backwards: once a Resolving report appears, no later
+    // report returns to Extracting.
+    let mut seen_resolving = false;
+    for event in events.iter() {
+        match event.phase {
+            SyncPhase::Extracting => assert!(!seen_resolving, "phase went backwards: {event:?}"),
+            SyncPhase::Resolving => seen_resolving = true,
+        }
+    }
+    assert!(seen_resolving, "no Resolving report was ever sent");
+
+    let resolving_reports: Vec<_> = events
+        .iter()
+        .filter(|event| event.phase == SyncPhase::Resolving)
+        .collect();
+    let expected_total = resolving_reports
+        .first()
+        .expect("at least one resolving report")
+        .units_total;
+    assert!(
+        expected_total > 0,
+        "pass 1 must have produced at least one ref for pass 2 to resolve"
+    );
+    for report in &resolving_reports {
+        assert_eq!(
+            report.units_total, expected_total,
+            "units_total must not change mid-phase"
+        );
+    }
+
+    let last_resolving = resolving_reports
+        .last()
+        .expect("at least one resolving report");
+    assert_eq!(last_resolving.units_done, last_resolving.units_total);
 }
 
 #[test]

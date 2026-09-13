@@ -798,6 +798,11 @@ details.uncertain-candidates > summary {
   font-size: 0.7rem;
 }
 
+.side-progress-bar {
+  width: 8em;
+  height: 0.6em;
+}
+
 .indexing-progress-actions {
   display: flex;
   gap: 0.5em;

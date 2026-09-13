@@ -319,6 +319,9 @@ fn duplicate_import_targets_remain_fuzzy_and_unhinted() {
             file_path: "src/caller.rs".to_string(),
             refs: vec![raw_ref("src/caller.rs", "target")],
         }],
+        None,
+        0,
+        None,
     )
     .expect("run pass2");
 
@@ -399,6 +402,9 @@ fn pass2_failure_rolls_back_ref_rewrites_and_meta_update() {
                 refs: vec![raw_ref("src/missing.rs", "missing")],
             },
         ],
+        None,
+        0,
+        None,
     );
 
     assert!(result.is_err());

@@ -25,35 +25,85 @@ use crate::extract::RawRef;
 use rusqlite::{Connection, Transaction, TransactionBehavior, params};
 
 use super::pass1::ExtractedFileRefs;
-use crate::{GraphError, SyncMode};
+use crate::{GraphError, SyncMode, SyncObserver, SyncPhase, SyncProgress};
 
 const CONFIDENCE_EXACT: &str = "exact";
 const CONFIDENCE_IMPORT_RESOLVED: &str = "import_resolved";
 const CONFIDENCE_SAME_MODULE: &str = "same_module";
 const CONFIDENCE_FUZZY_NAME: &str = "fuzzy_name";
 
+/// How many refs pass 2 resolves between progress reports. Reporting per ref
+/// would call the observer far too often on a large corpus; this cadence
+/// keeps the call count bounded while still moving visibly.
+const RESOLVE_PROGRESS_CADENCE: usize = 500;
+
 pub(crate) fn run(
     db_path: &Path,
     mode: SyncMode,
     refs_by_file: Vec<ExtractedFileRefs>,
+    observer: Option<&dyn SyncObserver>,
+    files_seen: usize,
+    current_path: Option<String>,
 ) -> Result<(), GraphError> {
     let mut conn = open_writer_connection(db_path)?;
     let tx = conn
         .transaction_with_behavior(TransactionBehavior::Immediate)
         .map_err(|source| GraphError::sqlite("begin pass2 refs transaction", source))?;
 
+    let units_total: usize = refs_by_file
+        .iter()
+        .map(|file_refs| file_refs.refs.len())
+        .sum();
+    let mut units_done = 0usize;
+    if let Some(observer) = observer {
+        report_resolving_progress(observer, files_seen, &current_path, units_done, units_total);
+    }
+
     for file_refs in refs_by_file {
         delete_refs_for_file(&tx, &file_refs.file_path)?;
         for raw_ref in &file_refs.refs {
             let resolved = resolve_ref(&tx, &file_refs.file_path, raw_ref)?;
             insert_ref(&tx, &file_refs.file_path, raw_ref, &resolved)?;
+            units_done += 1;
+            if let Some(observer) = observer
+                && units_done.is_multiple_of(RESOLVE_PROGRESS_CADENCE)
+            {
+                report_resolving_progress(
+                    observer,
+                    files_seen,
+                    &current_path,
+                    units_done,
+                    units_total,
+                );
+            }
         }
+    }
+
+    if let Some(observer) = observer {
+        report_resolving_progress(observer, files_seen, &current_path, units_done, units_total);
     }
 
     update_sync_meta(&tx, mode)?;
     tx.commit()
         .map_err(|source| GraphError::sqlite("commit pass2 refs transaction", source))?;
     Ok(())
+}
+
+fn report_resolving_progress(
+    observer: &dyn SyncObserver,
+    files_seen: usize,
+    current_path: &Option<String>,
+    units_done: usize,
+    units_total: usize,
+) {
+    observer.on_progress(&SyncProgress {
+        phase: SyncPhase::Resolving,
+        files_seen,
+        files_indexed: files_seen,
+        current_path: current_path.clone(),
+        units_done,
+        units_total,
+    });
 }
 
 fn open_writer_connection(db_path: &Path) -> Result<Connection, GraphError> {

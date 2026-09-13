@@ -42,7 +42,16 @@ fn run_once(
         });
     }
     let pass1 = pass1::run(db_path, worktree_root, mode, &diff, None)?;
-    pass2::run(db_path, mode, pass1.refs)?;
+    let total_files = pass1.total_files;
+    let last_touched_path = pass1.last_touched_path.clone();
+    pass2::run(
+        db_path,
+        mode,
+        pass1.refs,
+        None,
+        total_files,
+        last_touched_path,
+    )?;
     let duration = started.elapsed();
 
     Ok(SyncReport {
@@ -88,7 +97,16 @@ pub(crate) fn run_with_observer(
             duration,
         }));
     }
-    pass2::run(db_path, mode, pass1.refs)?;
+    let total_files = pass1.total_files;
+    let last_touched_path = pass1.last_touched_path.clone();
+    pass2::run(
+        db_path,
+        mode,
+        pass1.refs,
+        Some(observer),
+        total_files,
+        last_touched_path,
+    )?;
     let duration = started.elapsed();
 
     Ok(SyncOutcome::Completed(SyncReport {

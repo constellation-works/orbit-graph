@@ -69,9 +69,11 @@
 //   status:      indexing_status, indexing.base.state,
 //                indexing.base.files_seen, indexing.base.files_indexed,
 //                indexing.base.languages, indexing.base.elapsed_ms,
+//                indexing.base.phase, indexing.base.phase_progress,
 //                indexing.head.state, indexing.head.files_seen,
 //                indexing.head.files_indexed, indexing.head.languages,
-//                indexing.head.elapsed_ms
+//                indexing.head.elapsed_ms, indexing.head.phase,
+//                indexing.head.phase_progress
 //   cancel:      cancelling, indexing
 //   error envelope (every non-2xx /api/* response): error.code,
 //                error.message, error.details
@@ -746,7 +748,26 @@ function renderIndexingProgress(status) {
     const report = indexing[side] || {};
     const row = panel.querySelector(`.side-progress[data-side="${side}"]`);
     if (!row) continue;
-    setText(row.querySelector(".side-progress-state"), `state: ${report.state || "pending"}`);
+    const state = report.state || "pending";
+    setText(row.querySelector(".side-progress-state"), `state: ${state}`);
+    setText(row.querySelector(".side-progress-phase"), `phase: ${report.phase || state}`);
+
+    // `phase_progress` (files while extracting, resolved refs while
+    // resolving) drives the bar when present; `files_indexed`/`files_seen`
+    // only cover extraction, so they are the fallback, not a general
+    // indexing percentage. Either way the bar is clamped below 100% until
+    // the side is actually `ready`: extraction reaching its own total does
+    // not mean the side is done, since resolving still has to run.
+    const phaseProgress = report.phase_progress;
+    const hasPhaseProgress = phaseProgress && phaseProgress.total > 0;
+    const done = hasPhaseProgress ? phaseProgress.done : (report.files_indexed ?? 0);
+    const total = hasPhaseProgress ? phaseProgress.total : (report.files_seen ?? 0);
+    const bar = row.querySelector(".side-progress-bar");
+    if (bar) {
+      const rawPercent = total > 0 ? Math.floor((done / total) * 100) : 0;
+      bar.value = state === "ready" ? 100 : Math.min(rawPercent, 99);
+    }
+
     setText(
       row.querySelector(".side-progress-files"),
       `files ${report.files_indexed ?? 0}/${report.files_seen ?? 0}`,
