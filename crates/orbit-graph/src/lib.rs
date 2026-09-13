@@ -180,6 +180,31 @@ impl Graph {
         Ok(report)
     }
 
+    /// Synchronize like [`Graph::sync`], but report per-file progress to
+    /// `observer` and stop early once it requests cancellation.
+    ///
+    /// This method is strictly additive: `Graph::sync` keeps its own
+    /// behavior, error surface, and coalescing across concurrent callers on
+    /// the same database. This method does not coalesce, and is intended for
+    /// a single dedicated indexing thread, such as the change-explorer
+    /// service's cold-build worker, that owns its database exclusively.
+    pub fn sync_with_observer(
+        &self,
+        mode: SyncMode,
+        observer: &dyn SyncObserver,
+    ) -> Result<SyncOutcome, GraphError> {
+        let outcome = sync::run_with_observer(
+            self.db_path.path(),
+            self.worktree_root.as_path(),
+            mode,
+            observer,
+        )?;
+        if mode == SyncMode::Auto && matches!(outcome, SyncOutcome::Completed(_)) {
+            self.record_auto_sync_now()?;
+        }
+        Ok(outcome)
+    }
+
     /// Return the resolved database path backing this graph handle.
     pub fn db_path(&self) -> &GraphDbPath {
         &self.db_path
@@ -569,6 +594,45 @@ pub struct SyncReport {
     pub files_removed: usize,
     /// Wall-clock duration spent syncing.
     pub duration: Duration,
+}
+
+/// Progress observed while [`Graph::sync_with_observer`] processes files.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SyncProgress {
+    /// Total files this sync will touch, written or removed.
+    pub files_seen: usize,
+    /// Files this sync has processed so far; increases monotonically up to
+    /// `files_seen`.
+    pub files_indexed: usize,
+    /// Path of the file most recently processed, once any has been.
+    pub current_path: Option<String>,
+}
+
+/// Observes per-file [`Graph::sync_with_observer`] progress and can request
+/// cancellation.
+///
+/// The cancel check runs between files, so a cancelled sync always leaves the
+/// store consistent: every file fully written before cancellation is indexed
+/// as normal, and every file not yet touched still looks unsynced to the next
+/// sync, incremental or full, which then indexes it and resolves its
+/// references in the ordinary way.
+pub trait SyncObserver: Send + Sync {
+    /// Called once before the first file, with the total already known, and
+    /// again after each file this sync touches.
+    fn on_progress(&self, progress: &SyncProgress);
+    /// Checked between files; once this returns `true`, no further file in
+    /// this sync starts.
+    fn is_cancelled(&self) -> bool;
+}
+
+/// Outcome of a sync run through [`Graph::sync_with_observer`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum SyncOutcome {
+    /// The sync processed every file it found.
+    Completed(SyncReport),
+    /// The observer requested cancellation; the report covers exactly the
+    /// files processed before that point.
+    Cancelled(SyncReport),
 }
 
 /// Resolved, worktree-scoped graph database path.

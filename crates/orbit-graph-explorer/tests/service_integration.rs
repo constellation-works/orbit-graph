@@ -10,14 +10,17 @@
 #![allow(clippy::expect_used)]
 
 use std::net::TcpStream;
+use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
+use git2::Repository;
 use serde_json::Value;
+use tempfile::TempDir;
 
 mod common;
 
-use common::corpus;
 use common::http_service::{Service, percent_encode};
+use common::{commit_files, corpus};
 use orbit_graph_explorer::service::ServeOptions;
 
 #[test]
@@ -371,6 +374,333 @@ fn invalid_parameters_are_refused_with_a_reason() {
         );
         assert_eq!(response.json()["error"]["code"], code, "{route}");
     }
+}
+
+#[test]
+fn search_finds_a_changed_symbol_on_both_sides_with_its_changed_status() {
+    let service = Service::launch("direct-call");
+    service.wait_until_ready();
+
+    for side in ["base", "head"] {
+        let response = service.authorized(
+            "GET",
+            format!("/api/search?q=helper&side={side}").as_str(),
+            &[],
+        );
+        assert_eq!(response.status, 200, "{response:?}");
+        let body = response.json();
+        assert_eq!(body["q"], "helper");
+        assert_eq!(body["snapshot"], side);
+        assert_eq!(body["limit"], 20);
+        assert_eq!(body["truncated"], false);
+        assert_eq!(body["truncated_by"], Value::Null);
+        assert_scope(&body, &service);
+        let matches = body["matches"].as_array().expect("matches");
+        // The FTS5 tokenizer splits `test_helper` into `test` and `helper`,
+        // so the query also matches the test that calls `helper`; only the
+        // exact `helper` entry is asserted on here.
+        assert!(!matches.is_empty(), "{body}");
+        let found = matches
+            .iter()
+            .find(|found| found["label"] == "helper")
+            .unwrap_or_else(|| panic!("no `helper` match in {body}"));
+        assert_eq!(found["kind"], "symbol");
+        assert_eq!(found["file"], "src/lib.rs");
+        assert_eq!(found["selector"], "symbol:src/lib.rs#helper:function");
+        // `helper`'s body changed on both sides of a fixed selector, so both
+        // sides report the same `modified` status for it.
+        assert_eq!(found["changed"], "modified", "{body}");
+    }
+
+    // `entry` never changed and is not in the changed-symbol list at all.
+    let unchanged = service
+        .authorized("GET", "/api/search?q=entry&side=head", &[])
+        .json();
+    let matches = unchanged["matches"].as_array().expect("matches");
+    assert_eq!(matches.len(), 1, "{unchanged}");
+    assert_eq!(matches[0]["changed"], "unchanged", "{unchanged}");
+    assert_eq!(
+        matches[0]["selector"], "symbol:src/lib.rs#entry:function",
+        "{unchanged}"
+    );
+}
+
+#[test]
+fn search_with_no_hits_returns_an_empty_list_with_the_query_echoed() {
+    let service = Service::launch("direct-call");
+    service.wait_until_ready();
+
+    let response = service.authorized("GET", "/api/search?q=no_such_symbol_anywhere", &[]);
+    assert_eq!(response.status, 200, "{response:?}");
+    let body = response.json();
+    assert_eq!(body["q"], "no_such_symbol_anywhere");
+    assert_eq!(body["matches"].as_array(), Some(&Vec::new()));
+    assert_eq!(body["truncated"], false);
+}
+
+#[test]
+fn malformed_search_query_is_a_400_not_a_500() {
+    let service = Service::launch("direct-call");
+    service.wait_until_ready();
+
+    // An embedded NUL byte defeats SQLite's C-string binding, producing a
+    // genuine FTS5 syntax error from the query text alone: the query is
+    // always bound as data, never interpolated into SQL.
+    let response = service.authorized("GET", "/api/search?q=foo%00bar", &[]);
+    assert_eq!(response.status, 400, "{response:?}");
+    let body = response.json();
+    assert_eq!(body["error"]["code"], "invalid_query", "{body}");
+    assert!(body["error"]["details"].is_object(), "{body}");
+}
+
+#[test]
+fn search_parameters_are_refused_with_a_reason() {
+    let service = Service::launch("direct-call");
+    service.wait_until_ready();
+
+    for (route, code) in [
+        ("/api/search?q=helper&kind=bogus", "invalid_kind"),
+        ("/api/search?q=helper&limit=0", "invalid_limit"),
+        ("/api/search?q=helper&limit=not-a-number", "invalid_limit"),
+        ("/api/search?q=helper&limit=99999", "unsupported_limit"),
+        ("/api/search?q=helper&side=sideways", "invalid_side"),
+    ] {
+        let response = service.authorized("GET", route, &[]);
+        assert_eq!(response.status, 400, "{route}: {response:?}");
+        assert_eq!(response.json()["error"]["code"], code, "{route}");
+    }
+}
+
+#[test]
+fn status_reports_monotonic_progress_during_a_cold_build_of_this_repository() {
+    let (base, head) = workspace_head_and_parent();
+    let service = Service::launch_at(workspace_root(), base, head, Box::new(()));
+
+    let mut previous = [0u64, 0u64];
+    let mut ready = [false, false];
+    let deadline = Instant::now() + Duration::from_secs(120);
+    loop {
+        let status = service.authorized("GET", "/api/status", &[]).json();
+        for (index, side) in ["base", "head"].iter().enumerate() {
+            let files_indexed = status["indexing"][*side]["files_indexed"]
+                .as_u64()
+                .unwrap_or_default();
+            assert!(
+                files_indexed >= previous[index],
+                "{side} files_indexed must never regress: {} -> {files_indexed}",
+                previous[index]
+            );
+            previous[index] = files_indexed;
+            if status["indexing"][*side]["state"] == "ready" {
+                ready[index] = true;
+            }
+        }
+        if ready[0] && ready[1] {
+            break;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "indexing did not finish within the deadline: {status}"
+        );
+        std::thread::sleep(Duration::from_millis(5));
+    }
+    assert!(previous[0] > 0, "base indexed at least one file");
+    assert!(previous[1] > 0, "head indexed at least one file");
+}
+
+#[test]
+fn post_cancel_stops_a_cold_build_discards_its_cache_entry_and_a_later_request_restarts_it() {
+    let (repository, base, head) = build_large_repo(4_000);
+    let cache_dir = TempDir::new().expect("create cache directory");
+    let cache_dir_str = cache_dir.path().to_string_lossy().into_owned();
+
+    let service = Service::launch_at_with(
+        repository.path().to_path_buf(),
+        base.clone(),
+        head.clone(),
+        Box::new(repository),
+        &["--cache-dir", cache_dir_str.as_str()],
+    );
+
+    // A cold build of 4,000 files takes long enough to reliably observe a
+    // genuine side-not-ready refusal and a genuine cancellation; a
+    // `direct-call`-sized fixture would too often finish before either
+    // request lands.
+    let first = service.authorized("GET", "/api/comparison", &[]);
+    if first.status != 200 {
+        assert_eq!(first.status, 409, "{first:?}");
+        assert_eq!(first.json()["error"]["code"], "side_not_ready");
+    }
+
+    let cancel = service.authorized("POST", "/api/cancel", &[]);
+    assert!(matches!(cancel.status, 200 | 409), "{cancel:?}");
+
+    let deadline = Instant::now() + Duration::from_secs(60);
+    let mut cancelled = false;
+    loop {
+        let status = service.authorized("GET", "/api/status", &[]).json();
+        let states: Vec<&str> = ["base", "head"]
+            .iter()
+            .map(|side| {
+                status["indexing"][*side]["state"]
+                    .as_str()
+                    .unwrap_or_default()
+            })
+            .collect();
+        if states.contains(&"cancelled") {
+            cancelled = true;
+            break;
+        }
+        if states.iter().all(|state| *state == "ready") {
+            break;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "the build neither cancelled nor finished within the deadline: {status}"
+        );
+        std::thread::sleep(Duration::from_millis(5));
+    }
+    assert!(
+        cancelled,
+        "the build must have been cancelled rather than racing to completion; \
+         raise the file count in `build_large_repo` if this is flaky"
+    );
+
+    // No half-indexed cache entry survives under either SHA.
+    for sha in [base.as_str(), head.as_str()] {
+        assert!(
+            !cache_dir.path().join(sha).exists(),
+            "a cancelled build must not leave a cache entry for {sha}"
+        );
+    }
+
+    // The next request restarts the build, and it completes normally.
+    let restarted = service.authorized("GET", "/api/comparison", &[]);
+    assert!(matches!(restarted.status, 200 | 409), "{restarted:?}");
+    service.wait_until_ready();
+    let ready = service.authorized("GET", "/api/comparison", &[]);
+    assert_eq!(ready.status, 200, "{ready:?}");
+    for sha in [base.as_str(), head.as_str()] {
+        assert!(
+            cache_dir.path().join(sha).exists(),
+            "the restarted build must publish a cache entry for {sha}"
+        );
+    }
+}
+
+#[test]
+fn post_cancel_with_nothing_in_progress_is_refused() {
+    let service = Service::launch("direct-call");
+    service.wait_until_ready();
+
+    let response = service.authorized("POST", "/api/cancel", &[]);
+    assert_eq!(response.status, 409, "{response:?}");
+    assert_eq!(response.json()["error"]["code"], "not_indexing");
+}
+
+#[test]
+fn changed_symbols_reports_why_an_empty_list_is_empty() {
+    // Comparing a revision to itself is a real, valid comparison with
+    // nothing to report: no changed file, so no changed symbol either.
+    let case = corpus::build_case("direct-call");
+    let same_revision = case.base().to_string();
+    let service = Service::launch_at(
+        case.repository.clone(),
+        same_revision.clone(),
+        same_revision,
+        Box::new(case),
+    );
+    service.wait_until_ready();
+
+    let no_diff = service
+        .authorized("GET", "/api/changed-symbols", &[])
+        .json();
+    assert_eq!(no_diff["symbols"].as_array().map(Vec::len), Some(0));
+    assert_eq!(no_diff["reason"], "no_diff", "{no_diff}");
+
+    // The real base/head pair has one changed symbol, which a language
+    // filter that admits nothing removes entirely.
+    let other = Service::launch("direct-call");
+    other.wait_until_ready();
+    let all_filtered = other
+        .authorized(
+            "GET",
+            "/api/changed-symbols?language=cobol-does-not-exist",
+            &[],
+        )
+        .json();
+    assert_eq!(all_filtered["symbols"].as_array().map(Vec::len), Some(0));
+    assert_eq!(all_filtered["reason"], "all_filtered", "{all_filtered}");
+    assert!(
+        !all_filtered["filtered_out"]
+            .as_array()
+            .expect("filtered_out")
+            .is_empty(),
+        "{all_filtered}"
+    );
+
+    // A non-empty result carries no reason: there is nothing to explain.
+    let present = other.authorized("GET", "/api/changed-symbols", &[]).json();
+    assert_eq!(present["symbols"].as_array().map(Vec::len), Some(1));
+    assert_eq!(present["reason"], Value::Null, "{present}");
+}
+
+/// Build a throwaway repository with `file_count` files on each side, the
+/// same content shifted by one, so materializing and indexing it takes long
+/// enough to observe an in-progress build instead of racing it.
+fn build_large_repo(file_count: usize) -> (TempDir, String, String) {
+    let dir = TempDir::new().expect("create large fixture repository");
+    let repo = Repository::init(dir.path()).expect("init large fixture repository");
+
+    let base_files: Vec<(String, String)> = (0..file_count)
+        .map(|index| {
+            (
+                format!("src/file_{index}.rs"),
+                format!("pub fn marker_{index}() -> i32 {{\n    {index}\n}}\n"),
+            )
+        })
+        .collect();
+    let base_refs: Vec<(&str, &str)> = base_files
+        .iter()
+        .map(|(path, contents)| (path.as_str(), contents.as_str()))
+        .collect();
+    let base = commit_files(&repo, dir.path(), base_refs.as_slice(), "base", 0);
+
+    let head_files: Vec<(String, String)> = (0..file_count)
+        .map(|index| {
+            (
+                format!("src/file_{index}.rs"),
+                format!("pub fn marker_{index}() -> i32 {{\n    {}\n}}\n", index + 1),
+            )
+        })
+        .collect();
+    let head_refs: Vec<(&str, &str)> = head_files
+        .iter()
+        .map(|(path, contents)| (path.as_str(), contents.as_str()))
+        .collect();
+    let head = commit_files(&repo, dir.path(), head_refs.as_slice(), "head", 1);
+
+    (dir, base, head)
+}
+
+/// Workspace root two directories above this crate: `crates/<this>/../..`.
+fn workspace_root() -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../..")
+        .canonicalize()
+        .expect("resolve workspace root")
+}
+
+/// `HEAD` and its first parent in the workspace repository, for a cold build
+/// large enough to observe real indexing progress.
+fn workspace_head_and_parent() -> (String, String) {
+    let repo = Repository::discover(workspace_root()).expect("discover workspace repository");
+    let head = repo
+        .head()
+        .and_then(|reference| reference.peel_to_commit())
+        .expect("resolve workspace HEAD");
+    let parent = head.parent(0).expect("workspace HEAD has a parent commit");
+    (parent.id().to_string(), head.id().to_string())
 }
 
 /// The in-process lifecycle: a service owns its snapshot trees and releases

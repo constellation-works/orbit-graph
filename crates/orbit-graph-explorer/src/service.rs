@@ -38,13 +38,13 @@ use std::io::{self, Cursor, Read};
 use std::net::{Ipv4Addr, SocketAddr, SocketAddrV4};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
-use std::sync::{Arc, RwLock};
+use std::sync::{Arc, Mutex, RwLock};
 use std::thread::{self, JoinHandle};
 use std::time::Duration;
 
 use orbit_graph::{
-    Confidence, DEFAULT_SHOW_MAX_BYTES, EXTRACTOR_VERSION, IMPACT_NODE_CAP, RefConfidence,
-    STORE_SCHEMA_VERSION, Selector,
+    Confidence, DEFAULT_SEARCH_LIMIT, DEFAULT_SHOW_MAX_BYTES, EXTRACTOR_VERSION, IMPACT_NODE_CAP,
+    Match, RefConfidence, STORE_SCHEMA_VERSION, SearchKind, SearchQuery, Selector,
 };
 use serde::Serialize;
 use serde_json::{Value, json};
@@ -58,7 +58,10 @@ use crate::evidence::{
 };
 use crate::filters::{FilterSet, split_terms};
 use crate::report::{ExcerptMode, ReportOptions, build_report};
-use crate::snapshot::{Comparison, ComparisonOptions, Snapshot, SnapshotSide};
+use crate::snapshot::{
+    Comparison, ComparisonOptions, ComparisonOutcome, Snapshot, SnapshotError, SnapshotSide,
+};
+use crate::status::{ServiceProgress, StatusBoard};
 
 /// Schema version of every payload this service serves.
 pub const SERVICE_SCHEMA_VERSION: u32 = 1;
@@ -173,6 +176,9 @@ pub enum IndexingStatus {
     Ready,
     /// Indexing failed; the reason is served with the status.
     Failed,
+    /// `POST /api/cancel` stopped the build. `GET /api/comparison` (or any
+    /// other `/api/*` route) restarts it on the next request.
+    Cancelled,
 }
 
 impl IndexingStatus {
@@ -182,6 +188,7 @@ impl IndexingStatus {
             Self::Indexing => "indexing",
             Self::Ready => "ready",
             Self::Failed => "failed",
+            Self::Cancelled => "cancelled",
         }
     }
 }
@@ -190,6 +197,7 @@ enum IndexState {
     Indexing,
     Ready(Box<Comparison>),
     Failed(String),
+    Cancelled,
 }
 
 impl IndexState {
@@ -198,6 +206,7 @@ impl IndexState {
             Self::Indexing => IndexingStatus::Indexing,
             Self::Ready(_) => IndexingStatus::Ready,
             Self::Failed(_) => IndexingStatus::Failed,
+            Self::Cancelled => IndexingStatus::Cancelled,
         }
     }
 }
@@ -215,6 +224,9 @@ struct Scope {
     /// Traversal bounds fixed at launch. A request may lower `depth`; it can
     /// never raise a bound, because a bound a caller controls is not a bound.
     bounds: EvidenceBounds,
+    /// Cache policy fixed at launch, reused by every index build attempt,
+    /// including a restart after cancellation.
+    comparison_options: ComparisonOptions,
 }
 
 impl Scope {
@@ -240,7 +252,10 @@ pub struct Service {
     /// Handlers that have not yet left their receive loop.
     live_workers: Arc<AtomicUsize>,
     workers: Vec<JoinHandle<()>>,
-    indexer: Option<JoinHandle<()>>,
+    /// The currently running (or most recently finished) index build. `POST
+    /// /api/cancel` followed by a later `/api/*` request replaces this with a
+    /// fresh handle, so it is shared rather than owned outright.
+    indexer: Arc<Mutex<Option<JoinHandle<()>>>>,
 }
 
 impl Service {
@@ -289,42 +304,30 @@ impl Service {
                 node_cap: options.node_cap.max(1),
                 time_budget_ms: options.time_budget_ms,
             },
+            comparison_options: ComparisonOptions {
+                cache_dir: options.cache_dir.clone(),
+                no_cache: options.no_cache,
+            },
         });
 
         let server = Arc::new(server);
         let index = Arc::new(RwLock::new(IndexState::Indexing));
+        let board = Arc::new(StatusBoard::new());
+        let cancel = Arc::new(AtomicBool::new(false));
         let shutdown = Arc::new(AtomicBool::new(false));
 
-        let indexer = Some({
-            let index = Arc::clone(&index);
-            let repository = scope.repository.clone();
-            let base = scope.base_sha.clone();
-            let head = scope.head_sha.clone();
-            let comparison_options = ComparisonOptions {
-                cache_dir: options.cache_dir.clone(),
-                no_cache: options.no_cache,
-            };
-            thread::Builder::new()
-                .name("orbit-graph-explorer-index".to_string())
-                .spawn(move || {
-                    let next = match Comparison::open_with_options(
-                        repository.as_path(),
-                        &base,
-                        &head,
-                        &comparison_options,
-                    ) {
-                        Ok(comparison) => IndexState::Ready(Box::new(comparison)),
-                        Err(error) => IndexState::Failed(error.to_string()),
-                    };
-                    if let Ok(mut state) = index.write() {
-                        *state = next;
-                    }
-                })
-                .map_err(|error| ServiceError::Thread {
-                    name: "indexing",
-                    reason: error.to_string(),
-                })?
-        });
+        let indexer = Arc::new(Mutex::new(Some(
+            spawn_indexer(
+                Arc::clone(&scope),
+                Arc::clone(&index),
+                Arc::clone(&board),
+                Arc::clone(&cancel),
+            )
+            .map_err(|error| ServiceError::Thread {
+                name: "indexing",
+                reason: error.to_string(),
+            })?,
+        )));
 
         // A service that could not start every handler would accept
         // connections it never answers, so a spawn failure is fatal rather
@@ -335,6 +338,9 @@ impl Service {
             let server = Arc::clone(&server);
             let scope = Arc::clone(&scope);
             let index = Arc::clone(&index);
+            let board = Arc::clone(&board);
+            let cancel = Arc::clone(&cancel);
+            let indexer = Arc::clone(&indexer);
             let shutdown = Arc::clone(&shutdown);
             let worker_live = Arc::clone(&live_workers);
             let handle = thread::Builder::new()
@@ -343,7 +349,8 @@ impl Service {
                     while !shutdown.load(Ordering::Relaxed) {
                         match server.recv() {
                             Ok(mut request) => {
-                                let response = handle(&scope, &index, &mut request);
+                                let response =
+                                    handle(&scope, &index, &board, &cancel, &indexer, &mut request);
                                 let _ = request.respond(response);
                             }
                             // One failed accept must not retire a handler for
@@ -417,7 +424,12 @@ impl Service {
         for worker in self.workers {
             let _ = worker.join();
         }
-        if let Some(indexer) = self.indexer {
+        if let Some(indexer) = self
+            .indexer
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .take()
+        {
             let _ = indexer.join();
         }
     }
@@ -438,8 +450,117 @@ impl Service {
         for worker in self.workers {
             let _ = worker.join();
         }
-        if let Some(indexer) = self.indexer {
+        // Every worker has left its receive loop, so no request still in
+        // flight can restart the indexer after this point.
+        if let Some(indexer) = self
+            .indexer
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .take()
+        {
             let _ = indexer.join();
+        }
+    }
+}
+
+/// Start a fresh index build for `scope`, resetting `board` and `cancel`
+/// first.
+///
+/// Used both for the initial build at [`Service::start`] and for a restart
+/// after `POST /api/cancel`.
+fn spawn_indexer(
+    scope: Arc<Scope>,
+    index: Arc<RwLock<IndexState>>,
+    board: Arc<StatusBoard>,
+    cancel: Arc<AtomicBool>,
+) -> io::Result<JoinHandle<()>> {
+    board.reset();
+    cancel.store(false, Ordering::Relaxed);
+    thread::Builder::new()
+        .name("orbit-graph-explorer-index".to_string())
+        .spawn(move || {
+            let progress = ServiceProgress::new(Arc::clone(&board), Arc::clone(&cancel));
+            let next = match Comparison::open_with_progress(
+                scope.repository.as_path(),
+                scope.base_sha.as_str(),
+                scope.head_sha.as_str(),
+                &scope.comparison_options,
+                &progress,
+            ) {
+                Ok(ComparisonOutcome::Ready(comparison)) => IndexState::Ready(comparison),
+                Ok(ComparisonOutcome::Cancelled) => {
+                    board.mark_cancelled();
+                    IndexState::Cancelled
+                }
+                Err(error) => {
+                    board.mark_failed(error_side(&error), error.to_string().as_str());
+                    IndexState::Failed(error.to_string())
+                }
+            };
+            if let Ok(mut state) = index.write() {
+                *state = next;
+            }
+        })
+}
+
+/// Which side a [`SnapshotError`] is attributable to, when it is known.
+///
+/// Most variants — an unreadable repository, an unresolvable ref, a cache
+/// directory that cannot be created — are not about either side in
+/// particular, so `None` marks both sides failed rather than guessing one.
+fn error_side(error: &SnapshotError) -> Option<SnapshotSide> {
+    match error {
+        SnapshotError::Graph { side, .. } => Some(*side),
+        _ => None,
+    }
+}
+
+/// Restart indexing if the current attempt was cancelled.
+///
+/// Called before every `/api/*` request that needs a ready comparison, so a
+/// cancelled build restarts on the next such request rather than requiring a
+/// dedicated "resume" call. A restart that is already under way, started by a
+/// concurrent request, is not duplicated: the state is re-checked once the
+/// indexer lock is held.
+fn maybe_restart_index(
+    scope: &Arc<Scope>,
+    index: &Arc<RwLock<IndexState>>,
+    board: &Arc<StatusBoard>,
+    cancel: &Arc<AtomicBool>,
+    indexer: &Arc<Mutex<Option<JoinHandle<()>>>>,
+) {
+    let cancelled = matches!(
+        &*index
+            .read()
+            .unwrap_or_else(std::sync::PoisonError::into_inner),
+        IndexState::Cancelled
+    );
+    if !cancelled {
+        return;
+    }
+    let mut indexer_guard = indexer
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let mut state = index
+        .write()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    if !matches!(&*state, IndexState::Cancelled) {
+        // A concurrent request already restarted this build.
+        return;
+    }
+    *state = IndexState::Indexing;
+    drop(state);
+    match spawn_indexer(
+        Arc::clone(scope),
+        Arc::clone(index),
+        Arc::clone(board),
+        Arc::clone(cancel),
+    ) {
+        Ok(handle) => *indexer_guard = Some(handle),
+        Err(error) => {
+            if let Ok(mut state) = index.write() {
+                *state = IndexState::Failed(format!("restart the indexing thread: {error}"));
+            }
         }
     }
 }
@@ -615,12 +736,20 @@ fn json_response(status: u16, value: &Value) -> Body {
     response
 }
 
+/// Every `/api/*` non-2xx response uses this envelope: `error.code` is a
+/// stable snake_case identifier, `error.message` is for a human, and
+/// `error.details` is a JSON object with whatever structured context the
+/// caller found useful — empty when there is none.
 fn error_response(status: u16, code: &str, message: &str) -> Body {
+    error_response_with_details(status, code, message, json!({}))
+}
+
+fn error_response_with_details(status: u16, code: &str, message: &str, details: Value) -> Body {
     json_response(
         status,
         &json!({
             "schema_version": SERVICE_SCHEMA_VERSION,
-            "error": {"code": code, "message": message},
+            "error": {"code": code, "message": message, "details": details},
         }),
     )
 }
@@ -654,7 +783,14 @@ fn js_response(body: &'static str) -> Body {
 }
 
 /// Route one request, after the three launch-scope defences have passed.
-fn handle(scope: &Scope, index: &RwLock<IndexState>, request: &mut Request) -> Body {
+fn handle(
+    scope: &Arc<Scope>,
+    index: &Arc<RwLock<IndexState>>,
+    board: &Arc<StatusBoard>,
+    cancel: &Arc<AtomicBool>,
+    indexer: &Arc<Mutex<Option<JoinHandle<()>>>>,
+    request: &mut Request,
+) -> Body {
     if let Some(rejection) = reject(scope, request) {
         return rejection;
     }
@@ -665,10 +801,15 @@ fn handle(scope: &Scope, index: &RwLock<IndexState>, request: &mut Request) -> B
         ("GET", "/ui/app.css") => css_response(SHELL_CSS),
         ("GET", "/ui/app.js") => js_response(SHELL_JS),
         ("GET", "/api/health") => json_response(200, &health_payload(scope, index)),
-        ("POST", "/api/report") => report_request(scope, index, request),
-        ("GET", path) if path.starts_with("/api/") => with_comparison(scope, index, |comparison| {
-            api(scope, comparison, path, &info.query)
-        }),
+        ("POST", "/api/report") => report_request(scope, index, board, request),
+        ("GET", "/api/status") => json_response(200, &status_payload(scope, index, board)),
+        ("POST", "/api/cancel") => cancel_route(index, board, cancel),
+        ("GET", path) if path.starts_with("/api/") => {
+            maybe_restart_index(scope, index, board, cancel, indexer);
+            with_comparison(scope, index, board, |comparison| {
+                api(scope, comparison, path, &info.query, board)
+            })
+        }
         ("GET", _) => error_response(404, "not_found", "No such route."),
         _ => error_response(
             405,
@@ -737,10 +878,17 @@ fn is_public_asset(request: &Request) -> bool {
     matches!(path, "/" | "/ui/app.css" | "/ui/app.js")
 }
 
-/// Run `run` against a ready comparison, or report the indexing status.
+/// Run `run` against a ready comparison, or report that at least one side is
+/// not ready yet.
+///
+/// A side that is still `indexing` and a side left `cancelled` by
+/// `POST /api/cancel` are reported the same way: `maybe_restart_index` runs
+/// before this on every `/api/*` request, so a cancelled build is already
+/// restarting again by the time this responds.
 fn with_comparison(
     scope: &Scope,
     index: &RwLock<IndexState>,
+    board: &StatusBoard,
     run: impl FnOnce(&Comparison) -> Body,
 ) -> Body {
     let Ok(state) = index.read() else {
@@ -752,15 +900,17 @@ fn with_comparison(
     };
     match &*state {
         IndexState::Ready(comparison) => run(comparison),
-        IndexState::Indexing => json_response(
-            503,
+        IndexState::Indexing | IndexState::Cancelled => json_response(
+            409,
             &json!({
                 "schema_version": SERVICE_SCHEMA_VERSION,
-                "scope": scope_envelope(scope, None, IndexingStatus::Indexing, None),
+                "scope": scope_envelope(scope, None, state.status(), None),
                 "error": {
-                    "code": "indexing",
-                    "message": "Both revisions are still being indexed. `GET /api/health` stays \
-                                responsive while this runs.",
+                    "code": "side_not_ready",
+                    "message": "At least one side is not ready yet. `GET /api/health` stays \
+                                responsive while this runs; `GET /api/status` reports per-side \
+                                progress. Retry once both sides report `ready`.",
+                    "details": {"indexing": board.to_json()},
                 },
             }),
         ),
@@ -769,10 +919,62 @@ fn with_comparison(
             &json!({
                 "schema_version": SERVICE_SCHEMA_VERSION,
                 "scope": scope_envelope(scope, None, IndexingStatus::Failed, Some(reason)),
-                "error": {"code": "indexing_failed", "message": reason},
+                "error": {
+                    "code": "indexing_failed",
+                    "message": reason,
+                    "details": {"indexing": board.to_json()},
+                },
             }),
         ),
     }
+}
+
+/// Live per-side build status, for `GET /api/status`.
+fn status_payload(scope: &Scope, index: &RwLock<IndexState>, board: &StatusBoard) -> Value {
+    let status = index
+        .read()
+        .map(|state| state.status())
+        .unwrap_or(IndexingStatus::Failed);
+    json!({
+        "schema_version": SERVICE_SCHEMA_VERSION,
+        "repository": scope.repository.display().to_string(),
+        "base_sha": scope.base_sha,
+        "head_sha": scope.head_sha,
+        "indexing_status": status.label(),
+        "indexing": board.to_json(),
+    })
+}
+
+/// Abort an in-progress index build.
+///
+/// Non-blocking: this only raises the cancellation flag the build checks
+/// between files. `GET /api/status` reports the eventual transition to
+/// `cancelled`, and the next `/api/*` request restarts the build.
+fn cancel_route(index: &RwLock<IndexState>, board: &StatusBoard, cancel: &AtomicBool) -> Body {
+    let in_progress = matches!(
+        index
+            .read()
+            .map(|state| state.status())
+            .unwrap_or(IndexingStatus::Failed),
+        IndexingStatus::Indexing
+    );
+    if !in_progress {
+        return error_response_with_details(
+            409,
+            "not_indexing",
+            "No index build is in progress for this scope; there is nothing to cancel.",
+            json!({"indexing": board.to_json()}),
+        );
+    }
+    cancel.store(true, Ordering::Relaxed);
+    json_response(
+        200,
+        &json!({
+            "schema_version": SERVICE_SCHEMA_VERSION,
+            "cancelling": true,
+            "indexing": board.to_json(),
+        }),
+    )
 }
 
 fn api(
@@ -780,6 +982,7 @@ fn api(
     comparison: &Comparison,
     path: &str,
     query: &BTreeMap<String, String>,
+    board: &StatusBoard,
 ) -> Body {
     if let Some(requested) = query.get("repo")
         && !scope.owns(requested.as_str())
@@ -793,12 +996,13 @@ fn api(
     }
 
     match path {
-        "/api/comparison" => json_response(200, &comparison_payload(scope, comparison)),
+        "/api/comparison" => json_response(200, &comparison_payload(scope, comparison, board)),
         "/api/changed-symbols" => changed_symbols_route(scope, comparison, query),
         "/api/evidence" => evidence_route(scope, comparison, query),
         "/api/entry-points" => entry_points_route(scope, comparison, query),
         "/api/candidate-tests" => candidate_tests_route(scope, comparison, query),
         "/api/source" => source_route(scope, comparison, query),
+        "/api/search" => search_route(scope, comparison, query),
         _ => error_response(404, "not_found", "No such route."),
     }
 }
@@ -857,6 +1061,7 @@ fn health_payload(scope: &Scope, index: &RwLock<IndexState>) -> Value {
             IndexState::Ready(_) => (IndexingStatus::Ready, None),
             IndexState::Indexing => (IndexingStatus::Indexing, None),
             IndexState::Failed(reason) => (IndexingStatus::Failed, Some(reason.clone())),
+            IndexState::Cancelled => (IndexingStatus::Cancelled, None),
         },
         Err(_) => (
             IndexingStatus::Failed,
@@ -904,10 +1109,11 @@ fn snapshot_payload(snapshot: &Snapshot) -> Value {
     })
 }
 
-fn comparison_payload(scope: &Scope, comparison: &Comparison) -> Value {
+fn comparison_payload(scope: &Scope, comparison: &Comparison, board: &StatusBoard) -> Value {
     let mut payload = scope_envelope(scope, Some(comparison), IndexingStatus::Ready, None);
     if let Some(object) = payload.as_object_mut() {
         object.insert("schema_version".to_string(), json!(SERVICE_SCHEMA_VERSION));
+        object.insert("indexing".to_string(), board.to_json());
         object.insert(
             "snapshots".to_string(),
             json!([
@@ -964,11 +1170,29 @@ fn changed_symbols_route(
     };
 
     match ChangedSymbols::compute(comparison) {
-        Ok(changed) => {
-            let (changed, filtered_out) = changed.filtered(&filters);
+        Ok(unfiltered) => {
+            // An empty list is explicit about why it is empty, rather than
+            // reading the same as "no filters were applied and nothing
+            // changed": no changed file produced symbol evidence at all
+            // (`no_diff`), every changed file was out of the extractor's
+            // scope (`all_out_of_scope`), or every changed symbol was
+            // present but removed by `filters` (`all_filtered`).
+            let had_symbols_before_filtering = !unfiltered.symbols.is_empty();
+            let had_out_of_scope_files = !unfiltered.out_of_scope.is_empty();
+            let (changed, filtered_out) = unfiltered.filtered(&filters);
+            let reason = if !changed.symbols.is_empty() {
+                None
+            } else if had_symbols_before_filtering {
+                Some("all_filtered")
+            } else if had_out_of_scope_files {
+                Some("all_out_of_scope")
+            } else {
+                Some("no_diff")
+            };
             let mut payload = serialized(&changed);
             if let Some(object) = payload.as_object_mut() {
                 object.insert("scope".to_string(), envelope_for(scope, comparison));
+                object.insert("reason".to_string(), json!(reason));
                 object.insert("filtered_out".to_string(), serialized(&filtered_out));
                 object.insert(
                     "query_options".to_string(),
@@ -1158,6 +1382,7 @@ fn reject_wrong_side(
                     side.label(),
                     other.label()
                 ),
+                "details": {"selector": selector, "snapshot": side.label(), "evidence_sides": [other.label()]},
             },
         }),
     ))
@@ -1336,6 +1561,7 @@ fn source_route(scope: &Scope, comparison: &Comparison, query: &BTreeMap<String,
                          revision is evidence about that revision only.",
                         side.label()
                     ),
+                    "details": {"selector": selector, "snapshot": side.label()},
                 },
             }),
         );
@@ -1477,14 +1703,19 @@ fn report_options_from_body(scope: &Scope, body: &Value) -> Result<ReportOptions
 /// come from an optional JSON body rather than the query string, because the
 /// selection list and filters are more naturally structured than one query
 /// string would make them.
-fn report_request(scope: &Scope, index: &RwLock<IndexState>, request: &mut Request) -> Body {
+fn report_request(
+    scope: &Scope,
+    index: &RwLock<IndexState>,
+    board: &StatusBoard,
+    request: &mut Request,
+) -> Body {
     let body = match read_json_body(request) {
         Ok(body) => body,
         Err(message) => {
             return error_response(400, "invalid_request_body", message.as_str());
         }
     };
-    with_comparison(scope, index, |comparison| {
+    with_comparison(scope, index, board, |comparison| {
         let options = match report_options_from_body(scope, &body) {
             Ok(options) => options,
             Err(response) => return response,
@@ -1497,6 +1728,216 @@ fn report_request(scope: &Scope, index: &RwLock<IndexState>, request: &mut Reque
             Err(error) => error_response(500, "report_failed", error.to_string().as_str()),
         }
     })
+}
+
+/// Requests beyond this many search results are refused, not silently
+/// clamped: a bound a request can raise without limit is not a bound, the
+/// same rule [`depth_of`] applies to evidence traversal depth.
+const MAX_SEARCH_LIMIT: usize = 200;
+
+/// Search indexed symbols, strings, and config keys in one side's snapshot.
+///
+/// Every match carries the canonical selector `/api/evidence`,
+/// `/api/entry-points`, `/api/candidate-tests`, and `/api/source` accept, plus
+/// its status in the current comparison's changed-symbol list (`unchanged`
+/// when the selector is not in that list). Malformed query text — an
+/// embedded NUL byte defeats SQLite's C-string binding, for example — is a
+/// `400`, never a `500`: the query text is always passed to FTS5 as bound
+/// data, never interpolated into SQL.
+fn search_route(scope: &Scope, comparison: &Comparison, query: &BTreeMap<String, String>) -> Body {
+    let side = match side_of(query) {
+        Ok(side) => side,
+        Err(response) => return response,
+    };
+    let limit = match search_limit_of(query) {
+        Ok(limit) => limit,
+        Err(response) => return response,
+    };
+    let kind = match query.get("kind").map(String::as_str) {
+        None | Some("") => None,
+        Some(label) => match SearchKind::parse(label) {
+            Some(kind) => Some(kind),
+            None => {
+                return error_response_with_details(
+                    400,
+                    "invalid_kind",
+                    format!("`kind` must be `symbol`, `string`, or `config`, not `{label}`.")
+                        .as_str(),
+                    json!({"kind": label}),
+                );
+            }
+        },
+    };
+    let lang = query
+        .get("lang")
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty());
+    let raw_query = query
+        .get("q")
+        .map(|value| value.trim().to_string())
+        .unwrap_or_default();
+
+    let snapshot = comparison.snapshot(side);
+    let result = match snapshot.graph().search(&SearchQuery {
+        query: raw_query.clone(),
+        kind,
+        lang,
+        limit: Some(limit),
+    }) {
+        Ok(result) => result,
+        Err(error) => {
+            return error_response_with_details(
+                400,
+                "invalid_query",
+                format!("`q` is not a valid search query: {error}").as_str(),
+                json!({"q": raw_query}),
+            );
+        }
+    };
+
+    let changed = ChangedSymbols::compute(comparison).ok();
+    let truncated = result.matches.len() >= limit;
+    let matches: Vec<Value> = result
+        .matches
+        .iter()
+        .map(|matched| search_match_payload(snapshot, matched, changed.as_ref()))
+        .collect();
+
+    json_response(
+        200,
+        &json!({
+            "schema_version": SERVICE_SCHEMA_VERSION,
+            "scope": envelope_for(scope, comparison),
+            "snapshot": side.label(),
+            "q": raw_query,
+            "limit": limit,
+            "truncated": truncated,
+            "truncated_by": if truncated { Some("limit") } else { None },
+            "matches": matches,
+        }),
+    )
+}
+
+/// Search result limit for one request: [`DEFAULT_SEARCH_LIMIT`] when
+/// omitted, refused above [`MAX_SEARCH_LIMIT`] rather than clamped.
+fn search_limit_of(query: &BTreeMap<String, String>) -> Result<usize, Body> {
+    match query.get("limit").map(String::as_str) {
+        None | Some("") => Ok(DEFAULT_SEARCH_LIMIT),
+        Some(raw) => {
+            let limit = raw.parse::<usize>().map_err(|_| {
+                error_response_with_details(
+                    400,
+                    "invalid_limit",
+                    format!("`limit` must be a whole number, not `{raw}`.").as_str(),
+                    json!({"limit": raw}),
+                )
+            })?;
+            if limit == 0 {
+                return Err(error_response_with_details(
+                    400,
+                    "invalid_limit",
+                    "`limit` must be at least 1, not `0`.",
+                    json!({"limit": raw}),
+                ));
+            }
+            if limit > MAX_SEARCH_LIMIT {
+                return Err(error_response_with_details(
+                    400,
+                    "unsupported_limit",
+                    format!(
+                        "`limit={limit}` exceeds the maximum of {MAX_SEARCH_LIMIT}. A bound a \
+                         request can raise without limit is not a bound."
+                    )
+                    .as_str(),
+                    json!({"limit": limit, "max_limit": MAX_SEARCH_LIMIT}),
+                ));
+            }
+            Ok(limit)
+        }
+    }
+}
+
+/// One search match, addressed by its canonical selector and labelled with
+/// its status in the current comparison's changed-symbol list.
+///
+/// A symbol match resolves its real kind by scanning its file's overview,
+/// since `orbit_graph::Match` does not carry one and `Graph::show` requires
+/// an exact kind to resolve a symbol selector at all; a string or config
+/// match has no symbol identity of its own, so it is addressed by the file
+/// that contains it instead. Either way the selector is exactly what the
+/// other selector-addressed routes accept.
+fn search_match_payload(
+    snapshot: &Snapshot,
+    matched: &Match,
+    changed: Option<&ChangedSymbols>,
+) -> Value {
+    let (kind_label, path, line, label, selector) = match matched {
+        Match::Symbol { name, path, line } => {
+            let kind = symbol_kind_at(snapshot, path.as_str(), name.as_str());
+            let selector = Selector::Symbol {
+                path: path.clone(),
+                symbol: name.clone(),
+                kind,
+            };
+            ("symbol", path.clone(), Some(*line), name.clone(), selector)
+        }
+        Match::StringLiteral { value, path, line } => (
+            "string",
+            path.clone(),
+            Some(*line),
+            value.clone(),
+            Selector::File { path: path.clone() },
+        ),
+        Match::Config { value, path, line } => (
+            "config",
+            path.clone(),
+            Some(*line),
+            value.clone(),
+            Selector::File { path: path.clone() },
+        ),
+    };
+    let selector_text = selector.to_string();
+    let changed_status = changed
+        .and_then(|changed| {
+            changed
+                .entries_for(selector_text.as_str())
+                .into_iter()
+                .next()
+        })
+        .map(|entry| entry.status.label())
+        .unwrap_or("unchanged");
+    json!({
+        "kind": kind_label,
+        "selector": selector_text,
+        "label": label,
+        "file": path,
+        "line": line,
+        "changed": changed_status,
+    })
+}
+
+/// A symbol's kind, by scanning the overview of the file that contains it.
+///
+/// `"unknown"` when the file's overview no longer lists a symbol with this
+/// name — the index changed underneath this request, for example — rather
+/// than failing the whole search over one match.
+fn symbol_kind_at(snapshot: &Snapshot, path: &str, name: &str) -> String {
+    let scope = Selector::File {
+        path: path.to_string(),
+    };
+    snapshot
+        .graph()
+        .overview(Some(&scope), orbit_graph::OverviewFormat::Full)
+        .ok()
+        .and_then(|overview| {
+            overview
+                .files
+                .into_iter()
+                .flat_map(|file| file.symbols)
+                .find(|symbol| symbol.name == name)
+                .map(|symbol| symbol.kind)
+        })
+        .unwrap_or_else(|| "unknown".to_string())
 }
 
 /// Print the launch banner to standard error, exactly once.
@@ -1600,6 +2041,7 @@ mod tests {
             authority: "127.0.0.1:9999".to_string(),
             token: "t".repeat(64),
             bounds: EvidenceBounds::default(),
+            comparison_options: ComparisonOptions::default(),
         }
     }
 }

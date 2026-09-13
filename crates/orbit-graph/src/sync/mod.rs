@@ -12,7 +12,7 @@ use std::time::Instant;
 
 use rusqlite::Connection;
 
-use crate::{GraphError, SyncMode, SyncReport};
+use crate::{GraphError, SyncMode, SyncObserver, SyncOutcome, SyncReport};
 
 pub(crate) fn run(
     db_path: &Path,
@@ -41,7 +41,7 @@ fn run_once(
             duration,
         });
     }
-    let pass1 = pass1::run(db_path, worktree_root, mode, &diff)?;
+    let pass1 = pass1::run(db_path, worktree_root, mode, &diff, None)?;
     pass2::run(db_path, mode, pass1.refs)?;
     let duration = started.elapsed();
 
@@ -51,6 +51,52 @@ fn run_once(
         files_removed: pass1.files_removed,
         duration,
     })
+}
+
+/// Observer-driven sync used by [`crate::Graph::sync_with_observer`].
+///
+/// Deliberately does not go through [`coalesced`]: it is intended for a
+/// single dedicated indexing thread that owns its database exclusively, so
+/// the concurrent-caller dedup that `run` needs does not apply here.
+pub(crate) fn run_with_observer(
+    db_path: &Path,
+    worktree_root: &Path,
+    mode: SyncMode,
+    observer: &dyn SyncObserver,
+) -> Result<SyncOutcome, GraphError> {
+    let started = Instant::now();
+    let _lock = scanner::DbLockGuard::acquire(db_path)?;
+    let diff = scanner::scan_diff_with_lock_held(db_path, worktree_root, mode)?;
+    maybe_fail_after_scan(db_path)?;
+    maybe_wait_after_scan(db_path);
+    if !diff.has_changes() {
+        let duration = started.elapsed();
+        return Ok(SyncOutcome::Completed(SyncReport {
+            files_indexed: count_indexed_files(db_path)?,
+            files_changed: 0,
+            files_removed: 0,
+            duration,
+        }));
+    }
+    let pass1 = pass1::run(db_path, worktree_root, mode, &diff, Some(observer))?;
+    if pass1.cancelled {
+        let duration = started.elapsed();
+        return Ok(SyncOutcome::Cancelled(SyncReport {
+            files_indexed: pass1.files_indexed,
+            files_changed: pass1.files_written,
+            files_removed: pass1.files_removed,
+            duration,
+        }));
+    }
+    pass2::run(db_path, mode, pass1.refs)?;
+    let duration = started.elapsed();
+
+    Ok(SyncOutcome::Completed(SyncReport {
+        files_indexed: pass1.files_indexed,
+        files_changed: pass1.files_written,
+        files_removed: pass1.files_removed,
+        duration,
+    }))
 }
 
 type SyncResult = Result<SyncReport, GraphError>;
