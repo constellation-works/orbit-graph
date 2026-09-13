@@ -4,7 +4,13 @@ Every number here comes from
 [`scripts/performance.sh`](scripts/performance.sh) and
 [`scripts/progress-cancel.sh`](scripts/progress-cancel.sh) run against
 `orbit-graph-explorer` at commit `c1332cf13a4daa7f3695950fa6767622ed61fd28`,
-release profile, `EXTRACTOR_VERSION` 6, `STORE_SCHEMA_VERSION` 1.
+release profile, `EXTRACTOR_VERSION` 6, `STORE_SCHEMA_VERSION` 1, unless marked
+otherwise. **Studies 1, 2, 3 and 5 were re-measured on 2026-09-13** against
+commit `ab6e3e303689742910c5452d6acc700552428b89` (`agent-main`, after
+ORB-12416 and ORB-12417), `EXTRACTOR_VERSION` 8, `STORE_SCHEMA_VERSION` 1
+(unchanged), same hardware, same `performance.sh 25`; see *Re-run warm-cache
+latency* below. Study 4 and the cold-indexing/corpus-size numbers were not
+re-measured (same corpora and commits, no code path either fix touches).
 
 ## Reference hardware and environment
 
@@ -157,6 +163,89 @@ heading.
 | `GET /api/evidence` depth 3 | **1 141.2** | **1 340.1** | **1 417.9** |
 | `GET /api/entry-points` depth 3 | **1 065.4** | **1 186.5** | **1 580.2** |
 | `GET /api/candidate-tests` | **1 473.9** | **2 017.1** | **2 032.8** |
+
+## Re-run warm-cache latency (2026-09-13, after ORB-12416 / ORB-12417)
+
+Same method as above (`curl -w '%{time_total}'`, 25 runs per endpoint, warm
+cache, no cold build in the measurement), same query subjects, run against
+`orbit-graph-explorer` at `ab6e3e303689742910c5452d6acc700552428b89`,
+`EXTRACTOR_VERSION` 8. Cold-index and corpus-size numbers were not re-measured
+(same corpora, same commits, no code path either fix touches); cold walls
+observed incidentally while re-measuring (`cold_wall_seconds` from
+`scripts/performance.sh`) were 3.51 s (study 1), 469.44 s (study 2), 431.89 s
+(study 3) and 1.18 s (study 5) — consistent with the original 5.46/441.09/398.87/1.52 s
+range, confirming cold-indexing cost is unaffected by either fix.
+
+### Study 1 — `orbit-graph`, subject `symbol:src/sync/pass2.rs#resolve_ref:function`
+
+| Endpoint | p50 (ms) | p95 (ms) | max (ms) | vs. original p50 |
+| --- | --- | --- | --- | --- |
+| `GET /api/comparison` | 0.4 | 0.6 | 0.6 | unchanged |
+| `GET /api/changed-symbols` | 24.3 | 29.8 | 31.3 | +1.7 ms |
+| `GET /api/search` | 21.6 | 25.9 | 26.4 | −1.6 ms |
+| `GET /api/evidence` depth 1 | 27.4 | 32.0 | 33.3 | −1.1 ms |
+| `GET /api/evidence` depth 2 | 35.8 | 39.1 | 39.2 | −3.4 ms |
+| `GET /api/evidence` depth 3 | 73.8 | 81.3 | 83.1 | −1.8 ms |
+| `GET /api/entry-points` depth 3 | 78.0 | 82.4 | 86.8 | +0.9 ms |
+| `GET /api/candidate-tests` | 98.1 | 105.4 | 110.8 | +0.4 ms |
+
+### Study 2 — `orbit`, subject `symbol:crates/orbit-cli/src/command/workspace/teardown.rs#resolve_teardown_target:function`
+
+| Endpoint | p50 (ms) | p95 (ms) | max (ms) | vs. original p50 |
+| --- | --- | --- | --- | --- |
+| `GET /api/comparison` | 0.5 | 0.8 | 0.8 | unchanged |
+| `GET /api/changed-symbols` | 120.1 | 140.9 | 151.1 | −9.3 ms |
+| `GET /api/search` | 117.7 | 134.9 | 136.0 | +7.8 ms |
+| `GET /api/evidence` depth 1 | 203.0 | 218.2 | 225.0 | +27.4 ms |
+| `GET /api/evidence` depth 2 | 321.9 | 355.9 | 376.8 | +46.8 ms |
+| `GET /api/evidence` depth 3 | 321.7 | 442.8 | 449.3 | +42.1 ms |
+| `GET /api/entry-points` depth 3 | 319.7 | 349.5 | 353.5 | +35.0 ms |
+| `GET /api/candidate-tests` | **800.0** | 994.1 | 1173.5 | +58.5 ms |
+
+### Study 3 — `orbit`, subject `symbol:crates/orbit-types/src/task/model.rs#TaskComplexity:enum`
+
+| Endpoint | p50 (ms) | p95 (ms) | max (ms) | vs. original p50 |
+| --- | --- | --- | --- | --- |
+| `GET /api/comparison` | 0.5 | 0.8 | 0.9 | unchanged |
+| `GET /api/search` | 124.2 | 133.5 | 136.0 | −1.3 ms |
+| `GET /api/changed-symbols` | 127.3 | 176.1 | 176.7 | **−178.9 ms** |
+| `GET /api/evidence` depth 1 | 235.8 | 334.6 | 338.0 | −63.0 ms |
+| `GET /api/evidence` depth 2 | 863.5 | 1055.2 | 1215.9 | **+422.1 ms** |
+| `GET /api/evidence` depth 3 | **854.0** | 882.0 | 1055.1 | **−287.2 ms** |
+| `GET /api/entry-points` depth 3 | **882.8** | 924.4 | 1227.7 | **−182.6 ms** |
+| `GET /api/candidate-tests` | **1298.2** | 1687.2 | 1818.4 | **−175.7 ms** |
+
+### Study 5 — `orrery`, subject `symbol:scripts/research_records.py#supporting_paths:function`
+
+| Endpoint | p50 (ms) | p95 (ms) | max (ms) | vs. original p50 |
+| --- | --- | --- | --- | --- |
+| `GET /api/comparison` | 0.5 | 0.6 | 0.8 | unchanged |
+| `GET /api/changed-symbols` | 25.0 | 29.0 | 33.4 | −1.1 ms |
+| `GET /api/search` | 24.7 | 28.5 | 29.6 | −1.0 ms |
+| `GET /api/evidence` depth 1 | 27.3 | 29.4 | 29.9 | −2.4 ms |
+| `GET /api/evidence` depth 2 | 29.4 | 31.8 | 32.1 | −16.6 ms |
+| `GET /api/evidence` depth 3 | 29.3 | 31.6 | 31.6 | −17.5 ms |
+| `GET /api/entry-points` depth 3 | 29.9 | 32.4 | 33.6 | −7.3 ms |
+| `GET /api/candidate-tests` | 51.8 | 59.0 | 60.5 | −5.6 ms |
+
+**Reading the deltas.** Study 3's move is the most informative one: `evidence`
+depth 3, `entry-points` and `candidate-tests` p50 all dropped by 175–290 ms even
+though the fixed `TaskComplexity` refs are still categorized `heuristic_match`
+(see the study's After section) — the drop is consistent with the resolver no
+longer walking a null-target dead end for every one of the 56 references before
+falling back, though this report did not instrument the resolver internals to
+confirm that mechanism directly. Studies 1 and 5 (small corpora, few affected
+symbols) move by single-digit milliseconds in both directions — noise at this
+sample size. Study 2 moved consistently *up* by tens of milliseconds on
+`evidence`/`entry-points`/`candidate-tests`; plausibly the extra
+`resolved_call`/`observed_reference` categorization work now needed to
+distinguish the (fixed) self-loop-free paths from the (unfixed) fuzzy fan-out,
+but this report did not isolate the cause. **The one-second-target verdict is
+unchanged**: still met on the three small corpora, still missed on `orbit`
+(`candidate-tests` p50 800.0 ms / 1298.2 ms on studies 2 and 3, both under the
+original's 741.5 ms / 1473.9 ms baseline but still within the same order of
+magnitude), for the same underlying reason — the 200-node budget on `orbit` is
+still filled predominantly by name-only matches, just slightly fewer of them.
 
 ## Memory
 

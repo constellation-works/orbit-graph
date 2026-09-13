@@ -1,10 +1,27 @@
 # Change-explorer evaluation (Milestone 5)
 
-Five real change studies across two orbit-graph-supported language ecosystems, run
+Five real change studies across two orbit-graph-supported language ecosystems.
+
+The original run was against `orbit-graph-explorer` at commit
+`c1332cf13a4daa7f3695950fa6767622ed61fd28`, `EXTRACTOR_VERSION` 6,
+`STORE_SCHEMA_VERSION` 1. **Studies 1, 2, 3 and 5 were re-run on 2026-09-13**
 against `orbit-graph-explorer` at commit
-`c1332cf13a4daa7f3695950fa6767622ed61fd28` with `EXTRACTOR_VERSION` 6 and
-`STORE_SCHEMA_VERSION` 1. Every number here is reproducible from
-[`scripts/`](scripts/); every claim cites a selector and a `file:line@sha`.
+`ab6e3e303689742910c5452d6acc700552428b89` (`agent-main`), `EXTRACTOR_VERSION` 8,
+`STORE_SCHEMA_VERSION` 1 (unchanged) — after ORB-12416 (same-named-method
+self-loops) and ORB-12417 (impl-block cross-file resolution), the two resolver
+defects the original run found dominating the Rust studies, both merged. Two
+other fixes filed by the original evaluation landed in the same binary and show
+up incidentally in the re-run data: ORB-12410 (`command:` selector span error)
+and ORB-12411 (`import_relationship` bare-name matching). Study 4 was not
+re-run: ORB-12416 also touches Python bare-name method-call resolution, which
+study 5 exercises, but nothing in study 4's diff does (`git show` on the
+ORB-12416 commit touches `python.rs`'s attribute-call handling only, and study
+4's changed lines are in `run.py`/`metrics.py` argument and CSV handling, not
+attribute calls with an unresolved receiver). Every number here is reproducible
+from [`scripts/`](scripts/); every claim cites a selector and a `file:line@sha`.
+Each affected study file below carries the original findings plus a dated
+"After ORB-12416 / ORB-12417" section — read both to see what changed and what
+did not.
 
 **There is no accuracy percentage anywhere in this directory, by design.** A single
 number would average a correct 200-path answer together with a resolver defect that
@@ -37,6 +54,11 @@ paths — which is itself the finding. Regenerate at any depth with
 `DEPTH=3 scripts/export-reports.sh`.
 
 ## Per study: what was right, what was wrong, what is unknown
+
+The lists below describe the original run at `c1332cf`, `EXTRACTOR_VERSION` 6,
+kept intact as the historical record. For studies 1, 2, 3 and 5, the linked
+study file's dated "After ORB-12416 / ORB-12417" section is the current
+picture at `ab6e3e3`, `EXTRACTOR_VERSION` 8.
 
 ### Study 1 — `orbit-graph`, ORB-12372
 
@@ -266,46 +288,90 @@ rather than fixed here.
 
 Ordered by how much they distort an answer.
 
-1. **Rust reference resolution is the binding constraint, not the explorer.**
-   ORB-12417 and ORB-12416 between them mean that, in a Cargo workspace, a type with
-   impl blocks and a method dispatched on a value both fall back to name-only
-   matching. Studies 2 and 3 — the two large-corpus studies — are dominated by that
-   fallback: 496/512 and 645/650 of their entry points ride a fuzzy hop. Until those
-   are fixed, "affected callers" on a Rust workspace is a name search with extra
-   steps, and the payload's `confidence` field is the only thing keeping that honest.
-2. **A weak hop is disclosed per edge but not per row.** The evidence pane groups
-   `heuristic_match` separately; the entry-point list does not, and a `call_path`
-   candidate can carry `category: heuristic_match`. Both fields are in the payload
-   and both badges render, but the strong label reads first (ORB-12413).
-3. **Ambiguous selectors inflate the changed-symbol list.** Ten of study 3's twelve
-   `uncertain` rows and all five of study 1's are provably unchanged. The
-   contract's refusal to guess is right; the cost is that a reader cannot tell an
-   ambiguous-and-changed row from an ambiguous-and-unchanged one.
-4. **Intra-file renames are never paired.** Rung 4 of the ladder needs Git
-   file-rename evidence, so a rename inside an otherwise-modified file always
-   surfaces as `removed` + `added`. Seen in studies 1 and 4.
-5. **Runtime invocation is invisible, and it is how Python test suites drive CLI
-   entry points.** Study 4's `assessment` and study 5's six subprocess-driven tests
-   are real coverage the tool cannot see. The disclosure is generic ("the index is
-   syntax-driven"), not specific to the subprocess call.
-6. **Nested functions are not symbols.** Study 5's `snapshot` → `snap` rename is
+1. **Receiver-type-unaware call resolution is now the binding constraint, not
+   the two defects that used to mask it.** ORB-12416 and ORB-12417 are both
+   fixed and verified in the 2026-09-13 re-run (see each study's dated After
+   section): `WorkspaceCommand::execute`'s false self-loop is gone and its real
+   caller is now found (study 2), and `TaskComplexity`'s 56 cross-crate
+   references now resolve to a real target instead of `NULL` (study 3). What
+   remains is the defect underneath both: the resolver has no receiver-type
+   inference, so any method call on a value of unknown static type still falls
+   back to a name-only match against every same-named method in the corpus.
+   Studies 2 and 3 are still dominated by that fallback — 442/470 (94.0%,
+   was 496/512) and 288/288 `call_path` candidates still 100% `heuristic_match`
+   — because a same-name method call was never what either fix targeted. Until
+   the resolver can distinguish call sites by receiver type, "affected callers"
+   on a Rust workspace this size is still mostly a name search with extra
+   steps, and the payload's `confidence` field is the only thing keeping that
+   honest. A related, narrower gap surfaced by the fix: `TaskComplexity`'s
+   references now resolve at `same_module` confidence rather than `NULL`, but
+   the candidate-test/entry-point *category* classifier still buckets
+   `same_module` under `heuristic_match`, same as before the fix — the
+   underlying data improved without the surfaced category changing (study 3's
+   After section).
+2. **A weak hop is disclosed per edge but not per row.** Unaffected by either
+   fix and confirmed unchanged in the re-run: study 2's `call_path` candidates
+   still split 442 `heuristic_match` / 12 `resolved_call` behind one `source`
+   label, same shape as the original 496/12. The evidence pane groups
+   `heuristic_match` separately; the entry-point list does not, and a
+   `call_path` candidate can carry `category: heuristic_match`. Both fields are
+   in the payload and both badges render, but the strong label reads first
+   (ORB-12413).
+3. **Ambiguous selectors inflate the changed-symbol list.** Unaffected by
+   either fix. Re-confirmed in the 2026-09-13 re-run: `scripts/span-overlap.sh 3
+   crates/orbit-types/src/task/model.rs` still finds ten of study 3's twelve
+   `uncertain` rows, and `scripts/summarize-study.sh 1` still finds all five of
+   study 1's, provably unchanged. The contract's refusal to guess is right; the
+   cost is that a reader cannot tell an ambiguous-and-changed row from an
+   ambiguous-and-unchanged one.
+4. **Intra-file renames are never paired.** Unaffected by either fix.
+   Re-confirmed in the re-run: study 1's `changed-symbols.json` still reports
+   `ResolvedRef::qualified` → `::candidate` and
+   `unique_candidate_qualified` → `unique_candidate` as `removed` + `added`
+   pairs, not renames. Rung 4 of the ladder needs Git file-rename evidence, so
+   a rename inside an otherwise-modified file always surfaces this way. Seen in
+   studies 1 and 4.
+5. **Runtime invocation is invisible, and it is how Python test suites drive
+   CLI entry points.** Unaffected by either fix, and the re-run adds a second,
+   sharper example: study 5's `checker.supporting_paths(...)` call (a
+   receiver-typed call on an `importlib`-loaded module) is no longer even
+   fuzzy-matched after ORB-12416's Python-side change, so this is now also a
+   *resolution* gap, not only a runtime-invisibility one — filed as
+   **ORB-12425**. Study 4's `assessment` and study 5's six subprocess-driven
+   tests remain real coverage the tool cannot see; the disclosure is still
+   generic ("the index is syntax-driven"), not specific to the subprocess
+   call.
+6. **Nested functions are not symbols.** Unaffected by either fix. Re-confirmed
+   in the re-run: `GET /api/search?q=snap` against the re-built study-5 index
+   returns zero matches, so study 5's `snapshot` → `snap` rename is still
    absent from the graph with no gap recorded.
-7. **The one-second interaction target is met on the small corpora and missed on
-   `orbit`.** On study 3's subject, with a warm cache and no cold build,
-   `/api/candidate-tests` is 1 474 ms p50 / 2 017 ms p95, `/api/evidence` at depth 3
-   is 1 141 ms p50 / 1 340 ms p95 and `/api/entry-points` at depth 3 is 1 065 ms p50
-   / 1 187 ms p95. The cause is the same name-only fan-out as item 1, so
-   ORB-12416 and ORB-12417 are latency defects as well as correctness defects.
-   Cold indexing is separate and larger: 6.6–8.7 minutes for `orbit`, with the two
-   sides built sequentially; warm launch is 0.02–1.03 s. See
-   [performance.md](performance.md).
+7. **The one-second interaction target is met on the small corpora and missed
+   on `orbit`, by a smaller margin than before the fixes.** Re-measured
+   2026-09-13 (warm cache, no cold build, same subjects, `EXTRACTOR_VERSION`
+   8): on study 3's subject, `/api/candidate-tests` is now 1 298 ms p50 / 1 687
+   ms p95 (was 1 474 / 2 017), `/api/evidence` at depth 3 is 854 ms p50 / 882 ms
+   p95 (was 1 141 / 1 340) and `/api/entry-points` at depth 3 is 883 ms p50 /
+   924 ms p95 (was 1 065 / 1 187) — all improved, none under target. Study 2's
+   subject moved the other way on some endpoints (`/api/candidate-tests` 800 ms
+   p50, up from 741, but still below the study-3 figure). The cause is
+   unchanged from item 1: the same name-only fan-out, now with fewer false
+   entries in it. Full tables in [performance.md](performance.md). Cold
+   indexing was not re-measured (unaffected by either fix; observed
+   incidentally at 3.5–470 s across the four re-run studies, consistent with
+   the original 1.5–441 s range) — still 6.6–8.7 minutes for `orbit`, with the
+   two sides built sequentially; warm launch 0.02–1.03 s.
 8. **Depth 3 plus a 200-node cap is a presentation choice, not a completeness
-   claim.** Raising both changed the answer for 36/54, 12/25, 13/26, 1/43 and 17/76
-   symbols in studies 1–5. On `orbit` the extra material is more fuzzy fan-out, and
-   the one genuinely missing caller stays missing at every bound.
+   claim.** Re-measured 2026-09-13: raising both changed the answer for 36/54
+   (study 1, unchanged), 11/25 (study 2, was 12/25), 11/26 (study 3, was
+   13/26), 1/43 (study 4, not re-run) and 12/76 (study 5, was 17/76 — the drop
+   tracks the eight false `main_function` associations ORB-12416 removed) of
+   the symbols in studies 1–5. On `orbit` the extra material is still more
+   fuzzy fan-out, and study 2's one previously-missing real caller is no longer
+   missing at any bound, including the shipped one (study 2's After section).
 9. **This evaluation is agent-only.** Every baseline-versus-service comparison
-   measures commands an agent issues. No human used the UI, and no headless browser
-   was available on this host, so no browser timing was recorded.
+   measures commands an agent issues. No human used the UI, and no headless
+   browser was available on this host, so no browser timing was recorded — true
+   of the original run and, unchanged, of the 2026-09-13 re-run.
 
 ## Reproduce everything
 

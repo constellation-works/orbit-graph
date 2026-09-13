@@ -242,6 +242,71 @@ complete at the shipped bounds, which is consistent with their `truncated: false
 Raising the bounds neither found a new caller for them nor changed their strongest
 path.
 
+## After ORB-12416 / ORB-12417 (re-run 2026-09-13)
+
+Re-run against `orbit-graph-explorer` at `ab6e3e303689742910c5452d6acc700552428b89`
+(`agent-main`), `EXTRACTOR_VERSION` 8, `STORE_SCHEMA_VERSION` 1 (unchanged), same
+base/head pair, same scripts. Study 5 is re-run (not just 1–3) because
+ORB-12416's fix touches Python bare-name attribute-call resolution
+(`crates/orbit-graph/src/extract/languages/python.rs`), and this study is where
+that side of the defect was filed.
+
+**The Python false-positive (Q5 finding 2) is fixed.** The four unrelated
+simulation scripts previously attached to
+`scripts/native_registration_fixture.py#append:function` because each contains
+an ordinary list `.append(` call are gone. `main_function` entry-point
+classifications: **33 (was 41)** — exactly the eight false ones removed. The
+two real `main_function` symbols now account for all 33:
+`scripts/research_records.py#main` (26) and
+`scripts/native_registration_fixture.py#main` (7); zero classifications remain
+for `lattice-two-source-superposition`, `scarcity-rotation-curve-fit`,
+`flowing-lattice-photon-propagation` or `lattice-photon-propagation`'s
+`main.py#main`. Directly querying
+`GET /api/entry-points?selector=symbol:scripts/native_registration_fixture.py%23append:function&side=head&depth=3`
+now returns exactly the one real entry point
+(`scripts/native_registration_fixture.py#main`), not five.
+
+**But the same fix silently drops a genuinely correct call this study's own Q3
+verified.** `tests/test_research_records.py:113` and `:131` call
+`checker.supporting_paths(checkout, baseline_catalogs)`, where `checker` is a
+module object returned by `importlib.util.spec_from_file_location`
+(`load_checker`, `tests/test_research_records.py:36-37`) — a real call, in the
+new two-argument form, that the original Q3 explicitly verified as "really
+exercises the change." After the fix, `GET /api/candidate-tests` for
+`symbol:scripts/research_records.py#supporting_paths:function` returns exactly
+**one** candidate (`naming_heuristic`, `file:tests/test_research_records.py`);
+the two `call_path` candidates from the original run are gone, and
+`GET /api/evidence?...&depth=3` for the same selector returns only the 7 same-file
+`exact` calls inside `research_records.py` — the `checker.supporting_paths(...)`
+edge is absent at **every** confidence, including `fuzzy_name`. The receiver
+`checker` has no statically-known type, so it now falls into the same
+"receiver unknown, refuse to match" bucket as the `list.append` false positive
+— correctly for `.append`, incorrectly here. **Filed as ORB-12425**: the fix
+traded a disclosed false positive for a silent false negative, and nothing in
+the response distinguishes "genuinely uncalled" from "receiver-typed call
+refused."
+
+**Everything else in Q1/Q5/Q6 unaffected.** `scripts/span-overlap.sh`-style
+manual checks confirm the nested-function rename gap is unchanged: searching
+the head snapshot for `snap` returns zero matches (`GET /api/search?q=snap`), so
+`snapshot` → `snap` inside `browser-check.py` is still invisible, as before —
+this is the "nested `def`s are not symbols" limitation, untouched by either fix.
+The nine-test subprocess-invisibility finding (Q5, "missed real caller" #3) is
+unaffected: none of the six `subprocess.run`-driven tests in
+`tests/test_research_records.py` were ever attached to `supporting_paths`
+before or after.
+
+**Q6 bounds-probe: 12 of 76 symbols change when the bounds are raised** (was 17
+of 76) — a real drop, consistent with the eight false `main_function`
+associations no longer existing to be probed. `symbols_probed	76` /
+`symbols_changed_by_raising	12`.
+
+**Net verdict.** The Python side of ORB-12416 is a genuine, verified fix for the
+false positive it targeted, with a genuine, verified regression alongside it —
+this study is the one place in the re-run where the fix's incompleteness (no
+receiver-type inference, just a stricter refusal rule) produces a *new* wrong
+answer rather than only fixing an old one.
+
 ## Scripted baseline versus the service — **agent-only, not a human usability study**
 
 | Arm | Command | Wall clock | What it answered |

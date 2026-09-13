@@ -235,6 +235,71 @@ paths per handler are more of the same fuzzy `execute` fan-out, and the one real
 missing caller stays missing. On a corpus this size the node cap is doing the work
 of hiding a resolver defect.
 
+## After ORB-12416 / ORB-12417 (re-run 2026-09-13)
+
+Re-run against `orbit-graph-explorer` at `ab6e3e303689742910c5452d6acc700552428b89`
+(`agent-main`), `EXTRACTOR_VERSION` 8, `STORE_SCHEMA_VERSION` 1 (unchanged), same
+base/head pair, same scripts (`scripts/service-study.sh 2`, `bounds-probe.sh 2`,
+`summarize-study.sh 2`).
+
+**Finding 1 (Q5) — the self-loop is gone.** Scanning every `evidence-d1/d2/d3.json`
+edge whose `source.file` is `crates/orbit-cli/src/command/workspace/command.rs`
+for `confidence: "exact"` and a target ending in `command.rs#execute` returns
+**zero** matches at any depth (was 7, all at `exact`,
+`command.rs:53-62@5a5b45fe`). `WorkspaceCommand::execute` no longer records
+calling itself.
+
+**Finding 1 (Q5, "missed real caller") — the real caller is found.** The edge at
+`crates/orbit-cli/src/command/workspace/command.rs:61@5a5b45fe`
+(`WorkspaceSubcommand::Teardown(args) => args.execute(runtime),`) now appears in
+the evidence graph at every depth (1, 2 and 3), `truncated: false`, resolving —
+at `fuzzy_name` confidence, not `exact` — to
+`crates/orbit-cli/src/command/workspace/teardown.rs#execute:method`, the correct
+target. Before the fix this edge did not exist in the graph at any bound,
+including `--depth 10 --node-cap 5000`; it now surfaces at the shipped depth-1
+bound. This is the specific "missed real caller" the original Q4/Q5 named.
+
+**Finding 2 (Q5) — the broader fuzzy-`execute` fan-out is unaffected, as
+expected: it is a different mechanism.** ORB-12416 only stops a bare method name
+from matching the *calling file's own* same-named method; it does not add
+receiver-type inference, so any `.execute(...)` call whose receiver type is
+unknown still falls back to a name-only match against every `execute` in the
+corpus. New counts (`scripts/summarize-study.sh 2`, entry-points and
+candidate-tests responses):
+
+| | Before (`c1332cf`) | After (`ab6e3e3`) |
+| --- | --- | --- |
+| Total entry points | 512 | 470 |
+| … riding a `heuristic_match`/fuzzy hop | 496 (96.9%) | 442 (94.0%) |
+| … `resolved_call` or `observed_reference` | 16 (3.1%) | 28 (6.0%): 12 `resolved_call`, 16 `observed_reference` |
+| `call_path` candidate tests | 508 | 454 |
+| … `category: resolved_call` | 12 | 12 |
+| New production functions with a resolved-call-backed test (of 8) | 2 | 2 (`format_teardown_plan`, `partition_bundle_count` — same two) |
+
+The fuzzy-fan-out share improved slightly (96.9% → 94.0%) but the qualitative
+finding is unchanged: on this corpus, "affected callers" is still mostly a name
+search with extra steps. This is the corpus-size-dependent limitation now
+rewritten in `README.md`'s Limitations item 1.
+
+**ORB-12410 incidental fix confirmed: zero HTTP errors.** All 25
+`GET /api/entry-points` queries now return 200 (was 3 failures with
+`entry_points_failed` for the `WorkspaceTeardownArgs` selectors and
+`teardown:function`). `cli_command_handler` still classifies zero entry points —
+that rule firing at all is untested by any corpus in this evaluation and is not
+part of either fix.
+
+**Q6 bounds-probe: 11 of 25 symbols change when the bounds are raised** (was 12
+of 25). `scripts/bounds-probe.sh 2` at the new SHA:
+`symbols_probed	25` / `symbols_changed_by_raising	11`. The one-symbol
+difference is consistent with the self-loop's removal changing one borderline
+answer; the remainder is the same fuzzy-fan-out enlargement as before.
+
+**Net verdict.** ORB-12416 fixed exactly what it targeted — a wrong self-loop
+and a hidden real caller — and did so completely and verifiably for this study's
+subject. It did not, and was never claimed to, fix the deeper limitation that
+`orbit`'s CLI has hundreds of same-named `execute` methods and the resolver has
+no receiver-type inference to disambiguate them.
+
 ## Scripted baseline versus the service — **agent-only, not a human usability study**
 
 | Arm | Command | Wall clock | What it answered |

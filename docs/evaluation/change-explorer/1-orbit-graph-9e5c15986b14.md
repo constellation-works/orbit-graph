@@ -267,6 +267,57 @@ none at depth 3. The additional material is overwhelmingly transitive and
 fuzzy-name; the shipped bounds are what make the answer readable, and the payload
 says so every time (`truncated: true`, `truncated_by`, `bounds_hit`).
 
+## After ORB-12416 / ORB-12417 (re-run 2026-09-13)
+
+Re-run against `orbit-graph-explorer` at `ab6e3e303689742910c5452d6acc700552428b89`
+(`agent-main`), `EXTRACTOR_VERSION` 8, `STORE_SCHEMA_VERSION` 1 (unchanged), same
+base/head pair, same scripts. This corpus is a single small crate, and neither
+defect's trigger condition (a Rust method call whose receiver's real type differs
+from a same-named method in the *calling* file, ORB-12416; a type with any `impl`
+block being consulted from a different file, ORB-12417) occurs at scale here, so
+the effect on this study is small.
+
+**Q1 unchanged.** All 61 rows keep the same status counts (27 `modified`, 20
+`added`, 7 `removed`, 5 `uncertain`, 2 `signature_changed`); the same five
+`uncertain` selectors (`GraphError:impl`, `from_db`, `line_for`, `new`,
+`TestWorktree:impl`) are still symbols the source proves unchanged, and the same
+two intra-file renames are still reported as `removed` + `added`.
+
+**Q2 close but not identical: 73/12/169 vs 71/12/178.** `crate_root_public_item`
+73 (was 71), `main_function` 12 (unchanged), `test_function` 169 (was 178).
+`scripts/summarize-study.sh 1` at the new SHA gives these directly; the shift is
+small enough, and orthogonal enough to what ORB-12416/ORB-12417 touch, that it is
+attributed to the two other already-merged commits carried in this binary
+(ORB-12406's outbound-evidence feature and ORB-12411's `import_relationship`
+bare-name fix — see `README.md`'s header) rather than to the two resolver fixes
+this task is re-running for.
+
+**The closure gap (ORB-12379) is still closed at version 8.**
+`scripts/closure-gap-probe.sh` re-run against the new binary extracts all four
+shapes the same way as before: `resolve_target`, `qualified_matches_import` and
+`fetch` all still `exact`, turbofish-chain method names still `fuzzy_name`. No
+regression from either fix.
+
+**Q4 unchanged.** Both question-4 evidence chains
+(`src/sync/pass2.rs#resolve_ref` ← `run` at `src/sync/pass2.rs:37@9e5c15986b14`;
+`src/query/refs.rs#resolve_target` ← `run` ← `refs`) are still exact end to end
+at the new extractor version — neither defect's fix had anything to correct here,
+since this crate's own `impl` blocks and same-named methods do not hit either
+bug's trigger.
+
+**Q6 bounds-probe unchanged: 36 of 54 symbols still change when the bounds are
+raised** (`scripts/bounds-probe.sh 1` at the new SHA reports
+`symbols_changed_by_raising	36` against `symbols_probed	54`, identical to the
+original count). Raising the bounds still does not change either Q4 strongest
+path.
+
+**Net effect on this study: none of the "Right"/"Wrong"/"Unknown" verdicts above
+change.** Study 1 is the control case — a single crate too small to exhibit the
+cross-file `impl`-block or same-file same-named-method collisions the two fixes
+address — which is itself informative: the two defects are corpus-size- and
+cross-crate-structure-dependent, not universal, and studies 2 and 3 (below and in
+their own files) are where the fixes show up.
+
 ## Scripted baseline versus the service — **agent-only, not a human usability study**
 
 | Arm | Command | Wall clock | What it answered |
