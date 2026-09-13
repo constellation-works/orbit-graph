@@ -27,7 +27,7 @@
         "commit_sha": "8ff25d082567cf8d22b25e393160565f3490f9f1",
         "files_indexed": 177,
         "files_written": 203,
-        "extractor_version": 6,
+        "extractor_version": 8,
         "excluded": []
       },
       {
@@ -36,18 +36,18 @@
         "commit_sha": "9e5c15986b14c51665145b1df84de7623c70dcd2",
         "files_indexed": 177,
         "files_written": 203,
-        "extractor_version": 6,
+        "extractor_version": 8,
         "excluded": []
       }
     ]
   },
   "index_identity": {
-    "extractor_version": 6,
+    "extractor_version": 8,
     "store_schema_version": 1,
     "orbit_graph_version": "0.9.2",
     "explorer_version": "0.9.2",
-    "base_index_identity": "blake3:513a08de0284d3f1c355595053c3de39e6869e0618627309aa06517d830a1d02",
-    "head_index_identity": "blake3:fecdfdaa466a6c174a26cc1843a0086e71c3a5e0f14dbb2733f0a7072de193a7"
+    "base_index_identity": "blake3:d97228cf7c9690f8f5e940eb74d0cbf30ee54a9085d7e394ad29803106d2cae6",
+    "head_index_identity": "blake3:4983d06643e893663fb4556324055673b8c8ab2d8c56be728749048358755935"
   },
   "query_options": {
     "depth": 1,
@@ -1824,6 +1824,828 @@
       ]
     }
   ],
+  "outbound_paths": [
+    {
+      "schema_version": 1,
+      "path_id": "p-1",
+      "from": {
+        "selector": "symbol:src/query/refs.rs#resolve_target:function",
+        "snapshot": "base",
+        "label": "src/query/refs.rs#resolve_target",
+        "origin": "symbol"
+      },
+      "to": {
+        "selector": "symbol:src/extract/selector.rs#Err:type_alias",
+        "snapshot": "base",
+        "label": "src/extract/selector.rs#Err",
+        "origin": "symbol"
+      },
+      "distance": 1,
+      "category": "observed_reference",
+      "truncated": false,
+      "truncated_by": null,
+      "edges": [
+        {
+          "from": "src/query/refs.rs#resolve_target",
+          "from_selector": "symbol:src/query/refs.rs#resolve_target:function",
+          "from_origin": "symbol",
+          "to": "src/extract/selector.rs#Err",
+          "to_selector": "symbol:src/extract/selector.rs#Err:type_alias",
+          "relationship": "call",
+          "category": "observed_reference",
+          "confidence": "same_module",
+          "snapshot": "base",
+          "commit_sha": "8ff25d082567cf8d22b25e393160565f3490f9f1",
+          "source": {
+            "file": "src/query/refs.rs",
+            "line": 165
+          },
+          "note": null,
+          "rendering": "reference",
+          "reference": "src/query/refs.rs:165@8ff25d082567cf8d22b25e393160565f3490f9f1"
+        }
+      ]
+    },
+    {
+      "schema_version": 1,
+      "path_id": "p-2",
+      "from": {
+        "selector": "symbol:src/query/refs.rs#resolve_target:function",
+        "snapshot": "base",
+        "label": "src/query/refs.rs#resolve_target",
+        "origin": "symbol"
+      },
+      "to": {
+        "selector": "symbol:src/lib.rs#sqlite:method",
+        "snapshot": "base",
+        "label": "src/lib.rs#sqlite",
+        "origin": "symbol"
+      },
+      "distance": 1,
+      "category": "observed_reference",
+      "truncated": false,
+      "truncated_by": null,
+      "edges": [
+        {
+          "from": "src/query/refs.rs#resolve_target",
+          "from_selector": "symbol:src/query/refs.rs#resolve_target:function",
+          "from_origin": "symbol",
+          "to": "src/lib.rs#sqlite",
+          "to_selector": "symbol:src/lib.rs#sqlite:method",
+          "relationship": "call",
+          "category": "observed_reference",
+          "confidence": "same_module",
+          "snapshot": "base",
+          "commit_sha": "8ff25d082567cf8d22b25e393160565f3490f9f1",
+          "source": {
+            "file": "src/query/refs.rs",
+            "line": 151
+          },
+          "note": null,
+          "rendering": "reference",
+          "reference": "src/query/refs.rs:151@8ff25d082567cf8d22b25e393160565f3490f9f1"
+        }
+      ]
+    },
+    {
+      "schema_version": 1,
+      "path_id": "p-3",
+      "from": {
+        "selector": "symbol:src/query/refs.rs#resolve_target:function",
+        "snapshot": "base",
+        "label": "src/query/refs.rs#resolve_target",
+        "origin": "symbol"
+      },
+      "to": {
+        "selector": "symbol:src/lib.rs#sqlite:method",
+        "snapshot": "base",
+        "label": "src/lib.rs#sqlite",
+        "origin": "symbol"
+      },
+      "distance": 1,
+      "category": "observed_reference",
+      "truncated": false,
+      "truncated_by": null,
+      "edges": [
+        {
+          "from": "src/query/refs.rs#resolve_target",
+          "from_selector": "symbol:src/query/refs.rs#resolve_target:function",
+          "from_origin": "symbol",
+          "to": "src/lib.rs#sqlite",
+          "to_selector": "symbol:src/lib.rs#sqlite:method",
+          "relationship": "call",
+          "category": "observed_reference",
+          "confidence": "same_module",
+          "snapshot": "base",
+          "commit_sha": "8ff25d082567cf8d22b25e393160565f3490f9f1",
+          "source": {
+            "file": "src/query/refs.rs",
+            "line": 165
+          },
+          "note": null,
+          "rendering": "reference",
+          "reference": "src/query/refs.rs:165@8ff25d082567cf8d22b25e393160565f3490f9f1"
+        }
+      ]
+    },
+    {
+      "schema_version": 1,
+      "path_id": "p-1",
+      "from": {
+        "selector": "symbol:src/query/refs.rs#resolve_target:function",
+        "snapshot": "head",
+        "label": "src/query/refs.rs#resolve_target",
+        "origin": "symbol"
+      },
+      "to": {
+        "selector": "symbol:src/extract/selector.rs#Err:type_alias",
+        "snapshot": "head",
+        "label": "src/extract/selector.rs#Err",
+        "origin": "symbol"
+      },
+      "distance": 1,
+      "category": "observed_reference",
+      "truncated": false,
+      "truncated_by": null,
+      "edges": [
+        {
+          "from": "src/query/refs.rs#resolve_target",
+          "from_selector": "symbol:src/query/refs.rs#resolve_target:function",
+          "from_origin": "symbol",
+          "to": "src/extract/selector.rs#Err",
+          "to_selector": "symbol:src/extract/selector.rs#Err:type_alias",
+          "relationship": "call",
+          "category": "observed_reference",
+          "confidence": "same_module",
+          "snapshot": "head",
+          "commit_sha": "9e5c15986b14c51665145b1df84de7623c70dcd2",
+          "source": {
+            "file": "src/query/refs.rs",
+            "line": 178
+          },
+          "note": null,
+          "rendering": "reference",
+          "reference": "src/query/refs.rs:178@9e5c15986b14c51665145b1df84de7623c70dcd2"
+        }
+      ]
+    },
+    {
+      "schema_version": 1,
+      "path_id": "p-2",
+      "from": {
+        "selector": "symbol:src/query/refs.rs#resolve_target:function",
+        "snapshot": "head",
+        "label": "src/query/refs.rs#resolve_target",
+        "origin": "symbol"
+      },
+      "to": {
+        "selector": "symbol:src/lib.rs#sqlite:method",
+        "snapshot": "head",
+        "label": "src/lib.rs#sqlite",
+        "origin": "symbol"
+      },
+      "distance": 1,
+      "category": "observed_reference",
+      "truncated": false,
+      "truncated_by": null,
+      "edges": [
+        {
+          "from": "src/query/refs.rs#resolve_target",
+          "from_selector": "symbol:src/query/refs.rs#resolve_target:function",
+          "from_origin": "symbol",
+          "to": "src/lib.rs#sqlite",
+          "to_selector": "symbol:src/lib.rs#sqlite:method",
+          "relationship": "call",
+          "category": "observed_reference",
+          "confidence": "same_module",
+          "snapshot": "head",
+          "commit_sha": "9e5c15986b14c51665145b1df84de7623c70dcd2",
+          "source": {
+            "file": "src/query/refs.rs",
+            "line": 158
+          },
+          "note": null,
+          "rendering": "reference",
+          "reference": "src/query/refs.rs:158@9e5c15986b14c51665145b1df84de7623c70dcd2"
+        }
+      ]
+    },
+    {
+      "schema_version": 1,
+      "path_id": "p-3",
+      "from": {
+        "selector": "symbol:src/query/refs.rs#resolve_target:function",
+        "snapshot": "head",
+        "label": "src/query/refs.rs#resolve_target",
+        "origin": "symbol"
+      },
+      "to": {
+        "selector": "symbol:src/lib.rs#sqlite:method",
+        "snapshot": "head",
+        "label": "src/lib.rs#sqlite",
+        "origin": "symbol"
+      },
+      "distance": 1,
+      "category": "observed_reference",
+      "truncated": false,
+      "truncated_by": null,
+      "edges": [
+        {
+          "from": "src/query/refs.rs#resolve_target",
+          "from_selector": "symbol:src/query/refs.rs#resolve_target:function",
+          "from_origin": "symbol",
+          "to": "src/lib.rs#sqlite",
+          "to_selector": "symbol:src/lib.rs#sqlite:method",
+          "relationship": "call",
+          "category": "observed_reference",
+          "confidence": "same_module",
+          "snapshot": "head",
+          "commit_sha": "9e5c15986b14c51665145b1df84de7623c70dcd2",
+          "source": {
+            "file": "src/query/refs.rs",
+            "line": 178
+          },
+          "note": null,
+          "rendering": "reference",
+          "reference": "src/query/refs.rs:178@9e5c15986b14c51665145b1df84de7623c70dcd2"
+        }
+      ]
+    },
+    {
+      "schema_version": 1,
+      "path_id": "p-1",
+      "from": {
+        "selector": "symbol:src/sync/pass2.rs#resolve_ref:function",
+        "snapshot": "base",
+        "label": "src/sync/pass2.rs#resolve_ref",
+        "origin": "symbol"
+      },
+      "to": {
+        "selector": "symbol:src/sync/pass2.rs#qualified:method",
+        "snapshot": "base",
+        "label": "src/sync/pass2.rs#qualified",
+        "origin": "symbol"
+      },
+      "distance": 1,
+      "category": "resolved_call",
+      "truncated": false,
+      "truncated_by": null,
+      "edges": [
+        {
+          "from": "src/sync/pass2.rs#resolve_ref",
+          "from_selector": "symbol:src/sync/pass2.rs#resolve_ref:function",
+          "from_origin": "symbol",
+          "to": "src/sync/pass2.rs#qualified",
+          "to_selector": "symbol:src/sync/pass2.rs#qualified:method",
+          "relationship": "call",
+          "category": "resolved_call",
+          "confidence": "exact",
+          "snapshot": "base",
+          "commit_sha": "8ff25d082567cf8d22b25e393160565f3490f9f1",
+          "source": {
+            "file": "src/sync/pass2.rs",
+            "line": 101
+          },
+          "note": null,
+          "rendering": "reference",
+          "reference": "src/sync/pass2.rs:101@8ff25d082567cf8d22b25e393160565f3490f9f1"
+        }
+      ]
+    },
+    {
+      "schema_version": 1,
+      "path_id": "p-2",
+      "from": {
+        "selector": "symbol:src/sync/pass2.rs#resolve_ref:function",
+        "snapshot": "base",
+        "label": "src/sync/pass2.rs#resolve_ref",
+        "origin": "symbol"
+      },
+      "to": {
+        "selector": "symbol:src/sync/pass2.rs#qualified:method",
+        "snapshot": "base",
+        "label": "src/sync/pass2.rs#qualified",
+        "origin": "symbol"
+      },
+      "distance": 1,
+      "category": "resolved_call",
+      "truncated": false,
+      "truncated_by": null,
+      "edges": [
+        {
+          "from": "src/sync/pass2.rs#resolve_ref",
+          "from_selector": "symbol:src/sync/pass2.rs#resolve_ref:function",
+          "from_origin": "symbol",
+          "to": "src/sync/pass2.rs#qualified",
+          "to_selector": "symbol:src/sync/pass2.rs#qualified:method",
+          "relationship": "call",
+          "category": "resolved_call",
+          "confidence": "exact",
+          "snapshot": "base",
+          "commit_sha": "8ff25d082567cf8d22b25e393160565f3490f9f1",
+          "source": {
+            "file": "src/sync/pass2.rs",
+            "line": 104
+          },
+          "note": null,
+          "rendering": "reference",
+          "reference": "src/sync/pass2.rs:104@8ff25d082567cf8d22b25e393160565f3490f9f1"
+        }
+      ]
+    },
+    {
+      "schema_version": 1,
+      "path_id": "p-3",
+      "from": {
+        "selector": "symbol:src/sync/pass2.rs#resolve_ref:function",
+        "snapshot": "base",
+        "label": "src/sync/pass2.rs#resolve_ref",
+        "origin": "symbol"
+      },
+      "to": {
+        "selector": "symbol:src/sync/pass2.rs#qualified:method",
+        "snapshot": "base",
+        "label": "src/sync/pass2.rs#qualified",
+        "origin": "symbol"
+      },
+      "distance": 1,
+      "category": "resolved_call",
+      "truncated": false,
+      "truncated_by": null,
+      "edges": [
+        {
+          "from": "src/sync/pass2.rs#resolve_ref",
+          "from_selector": "symbol:src/sync/pass2.rs#resolve_ref:function",
+          "from_origin": "symbol",
+          "to": "src/sync/pass2.rs#qualified",
+          "to_selector": "symbol:src/sync/pass2.rs#qualified:method",
+          "relationship": "call",
+          "category": "resolved_call",
+          "confidence": "exact",
+          "snapshot": "base",
+          "commit_sha": "8ff25d082567cf8d22b25e393160565f3490f9f1",
+          "source": {
+            "file": "src/sync/pass2.rs",
+            "line": 110
+          },
+          "note": null,
+          "rendering": "reference",
+          "reference": "src/sync/pass2.rs:110@8ff25d082567cf8d22b25e393160565f3490f9f1"
+        }
+      ]
+    },
+    {
+      "schema_version": 1,
+      "path_id": "p-4",
+      "from": {
+        "selector": "symbol:src/sync/pass2.rs#resolve_ref:function",
+        "snapshot": "base",
+        "label": "src/sync/pass2.rs#resolve_ref",
+        "origin": "symbol"
+      },
+      "to": {
+        "selector": "symbol:src/sync/pass2.rs#resolve_exact:function",
+        "snapshot": "base",
+        "label": "src/sync/pass2.rs#resolve_exact",
+        "origin": "symbol"
+      },
+      "distance": 1,
+      "category": "resolved_call",
+      "truncated": false,
+      "truncated_by": null,
+      "edges": [
+        {
+          "from": "src/sync/pass2.rs#resolve_ref",
+          "from_selector": "symbol:src/sync/pass2.rs#resolve_ref:function",
+          "from_origin": "symbol",
+          "to": "src/sync/pass2.rs#resolve_exact",
+          "to_selector": "symbol:src/sync/pass2.rs#resolve_exact:function",
+          "relationship": "call",
+          "category": "resolved_call",
+          "confidence": "exact",
+          "snapshot": "base",
+          "commit_sha": "8ff25d082567cf8d22b25e393160565f3490f9f1",
+          "source": {
+            "file": "src/sync/pass2.rs",
+            "line": 100
+          },
+          "note": null,
+          "rendering": "reference",
+          "reference": "src/sync/pass2.rs:100@8ff25d082567cf8d22b25e393160565f3490f9f1"
+        }
+      ]
+    },
+    {
+      "schema_version": 1,
+      "path_id": "p-5",
+      "from": {
+        "selector": "symbol:src/sync/pass2.rs#resolve_ref:function",
+        "snapshot": "base",
+        "label": "src/sync/pass2.rs#resolve_ref",
+        "origin": "symbol"
+      },
+      "to": {
+        "selector": "symbol:src/sync/pass2.rs#resolve_import:function",
+        "snapshot": "base",
+        "label": "src/sync/pass2.rs#resolve_import",
+        "origin": "symbol"
+      },
+      "distance": 1,
+      "category": "resolved_call",
+      "truncated": false,
+      "truncated_by": null,
+      "edges": [
+        {
+          "from": "src/sync/pass2.rs#resolve_ref",
+          "from_selector": "symbol:src/sync/pass2.rs#resolve_ref:function",
+          "from_origin": "symbol",
+          "to": "src/sync/pass2.rs#resolve_import",
+          "to_selector": "symbol:src/sync/pass2.rs#resolve_import:function",
+          "relationship": "call",
+          "category": "resolved_call",
+          "confidence": "exact",
+          "snapshot": "base",
+          "commit_sha": "8ff25d082567cf8d22b25e393160565f3490f9f1",
+          "source": {
+            "file": "src/sync/pass2.rs",
+            "line": 103
+          },
+          "note": null,
+          "rendering": "reference",
+          "reference": "src/sync/pass2.rs:103@8ff25d082567cf8d22b25e393160565f3490f9f1"
+        }
+      ]
+    },
+    {
+      "schema_version": 1,
+      "path_id": "p-6",
+      "from": {
+        "selector": "symbol:src/sync/pass2.rs#resolve_ref:function",
+        "snapshot": "base",
+        "label": "src/sync/pass2.rs#resolve_ref",
+        "origin": "symbol"
+      },
+      "to": {
+        "selector": "symbol:src/sync/pass2.rs#resolve_same_module:function",
+        "snapshot": "base",
+        "label": "src/sync/pass2.rs#resolve_same_module",
+        "origin": "symbol"
+      },
+      "distance": 1,
+      "category": "resolved_call",
+      "truncated": false,
+      "truncated_by": null,
+      "edges": [
+        {
+          "from": "src/sync/pass2.rs#resolve_ref",
+          "from_selector": "symbol:src/sync/pass2.rs#resolve_ref:function",
+          "from_origin": "symbol",
+          "to": "src/sync/pass2.rs#resolve_same_module",
+          "to_selector": "symbol:src/sync/pass2.rs#resolve_same_module:function",
+          "relationship": "call",
+          "category": "resolved_call",
+          "confidence": "exact",
+          "snapshot": "base",
+          "commit_sha": "8ff25d082567cf8d22b25e393160565f3490f9f1",
+          "source": {
+            "file": "src/sync/pass2.rs",
+            "line": 109
+          },
+          "note": null,
+          "rendering": "reference",
+          "reference": "src/sync/pass2.rs:109@8ff25d082567cf8d22b25e393160565f3490f9f1"
+        }
+      ]
+    },
+    {
+      "schema_version": 1,
+      "path_id": "p-1",
+      "from": {
+        "selector": "symbol:src/sync/pass2.rs#resolve_ref:function",
+        "snapshot": "head",
+        "label": "src/sync/pass2.rs#resolve_ref",
+        "origin": "symbol"
+      },
+      "to": {
+        "selector": "symbol:src/sync/pass2.rs#candidate:method",
+        "snapshot": "head",
+        "label": "src/sync/pass2.rs#candidate",
+        "origin": "symbol"
+      },
+      "distance": 1,
+      "category": "resolved_call",
+      "truncated": false,
+      "truncated_by": null,
+      "edges": [
+        {
+          "from": "src/sync/pass2.rs#resolve_ref",
+          "from_selector": "symbol:src/sync/pass2.rs#resolve_ref:function",
+          "from_origin": "symbol",
+          "to": "src/sync/pass2.rs#candidate",
+          "to_selector": "symbol:src/sync/pass2.rs#candidate:method",
+          "relationship": "call",
+          "category": "resolved_call",
+          "confidence": "exact",
+          "snapshot": "head",
+          "commit_sha": "9e5c15986b14c51665145b1df84de7623c70dcd2",
+          "source": {
+            "file": "src/sync/pass2.rs",
+            "line": 97
+          },
+          "note": null,
+          "rendering": "reference",
+          "reference": "src/sync/pass2.rs:97@9e5c15986b14c51665145b1df84de7623c70dcd2"
+        }
+      ]
+    },
+    {
+      "schema_version": 1,
+      "path_id": "p-2",
+      "from": {
+        "selector": "symbol:src/sync/pass2.rs#resolve_ref:function",
+        "snapshot": "head",
+        "label": "src/sync/pass2.rs#resolve_ref",
+        "origin": "symbol"
+      },
+      "to": {
+        "selector": "symbol:src/sync/pass2.rs#candidate:method",
+        "snapshot": "head",
+        "label": "src/sync/pass2.rs#candidate",
+        "origin": "symbol"
+      },
+      "distance": 1,
+      "category": "resolved_call",
+      "truncated": false,
+      "truncated_by": null,
+      "edges": [
+        {
+          "from": "src/sync/pass2.rs#resolve_ref",
+          "from_selector": "symbol:src/sync/pass2.rs#resolve_ref:function",
+          "from_origin": "symbol",
+          "to": "src/sync/pass2.rs#candidate",
+          "to_selector": "symbol:src/sync/pass2.rs#candidate:method",
+          "relationship": "call",
+          "category": "resolved_call",
+          "confidence": "exact",
+          "snapshot": "head",
+          "commit_sha": "9e5c15986b14c51665145b1df84de7623c70dcd2",
+          "source": {
+            "file": "src/sync/pass2.rs",
+            "line": 101
+          },
+          "note": null,
+          "rendering": "reference",
+          "reference": "src/sync/pass2.rs:101@9e5c15986b14c51665145b1df84de7623c70dcd2"
+        }
+      ]
+    },
+    {
+      "schema_version": 1,
+      "path_id": "p-3",
+      "from": {
+        "selector": "symbol:src/sync/pass2.rs#resolve_ref:function",
+        "snapshot": "head",
+        "label": "src/sync/pass2.rs#resolve_ref",
+        "origin": "symbol"
+      },
+      "to": {
+        "selector": "symbol:src/sync/pass2.rs#candidate:method",
+        "snapshot": "head",
+        "label": "src/sync/pass2.rs#candidate",
+        "origin": "symbol"
+      },
+      "distance": 1,
+      "category": "resolved_call",
+      "truncated": false,
+      "truncated_by": null,
+      "edges": [
+        {
+          "from": "src/sync/pass2.rs#resolve_ref",
+          "from_selector": "symbol:src/sync/pass2.rs#resolve_ref:function",
+          "from_origin": "symbol",
+          "to": "src/sync/pass2.rs#candidate",
+          "to_selector": "symbol:src/sync/pass2.rs#candidate:method",
+          "relationship": "call",
+          "category": "resolved_call",
+          "confidence": "exact",
+          "snapshot": "head",
+          "commit_sha": "9e5c15986b14c51665145b1df84de7623c70dcd2",
+          "source": {
+            "file": "src/sync/pass2.rs",
+            "line": 116
+          },
+          "note": null,
+          "rendering": "reference",
+          "reference": "src/sync/pass2.rs:116@9e5c15986b14c51665145b1df84de7623c70dcd2"
+        }
+      ]
+    },
+    {
+      "schema_version": 1,
+      "path_id": "p-4",
+      "from": {
+        "selector": "symbol:src/sync/pass2.rs#resolve_ref:function",
+        "snapshot": "head",
+        "label": "src/sync/pass2.rs#resolve_ref",
+        "origin": "symbol"
+      },
+      "to": {
+        "selector": "symbol:src/sync/pass2.rs#candidate:method",
+        "snapshot": "head",
+        "label": "src/sync/pass2.rs#candidate",
+        "origin": "symbol"
+      },
+      "distance": 1,
+      "category": "resolved_call",
+      "truncated": false,
+      "truncated_by": null,
+      "edges": [
+        {
+          "from": "src/sync/pass2.rs#resolve_ref",
+          "from_selector": "symbol:src/sync/pass2.rs#resolve_ref:function",
+          "from_origin": "symbol",
+          "to": "src/sync/pass2.rs#candidate",
+          "to_selector": "symbol:src/sync/pass2.rs#candidate:method",
+          "relationship": "call",
+          "category": "resolved_call",
+          "confidence": "exact",
+          "snapshot": "head",
+          "commit_sha": "9e5c15986b14c51665145b1df84de7623c70dcd2",
+          "source": {
+            "file": "src/sync/pass2.rs",
+            "line": 119
+          },
+          "note": null,
+          "rendering": "reference",
+          "reference": "src/sync/pass2.rs:119@9e5c15986b14c51665145b1df84de7623c70dcd2"
+        }
+      ]
+    },
+    {
+      "schema_version": 1,
+      "path_id": "p-5",
+      "from": {
+        "selector": "symbol:src/sync/pass2.rs#resolve_ref:function",
+        "snapshot": "head",
+        "label": "src/sync/pass2.rs#resolve_ref",
+        "origin": "symbol"
+      },
+      "to": {
+        "selector": "symbol:src/sync/pass2.rs#resolve_exact:function",
+        "snapshot": "head",
+        "label": "src/sync/pass2.rs#resolve_exact",
+        "origin": "symbol"
+      },
+      "distance": 1,
+      "category": "resolved_call",
+      "truncated": false,
+      "truncated_by": null,
+      "edges": [
+        {
+          "from": "src/sync/pass2.rs#resolve_ref",
+          "from_selector": "symbol:src/sync/pass2.rs#resolve_ref:function",
+          "from_origin": "symbol",
+          "to": "src/sync/pass2.rs#resolve_exact",
+          "to_selector": "symbol:src/sync/pass2.rs#resolve_exact:function",
+          "relationship": "call",
+          "category": "resolved_call",
+          "confidence": "exact",
+          "snapshot": "head",
+          "commit_sha": "9e5c15986b14c51665145b1df84de7623c70dcd2",
+          "source": {
+            "file": "src/sync/pass2.rs",
+            "line": 96
+          },
+          "note": null,
+          "rendering": "reference",
+          "reference": "src/sync/pass2.rs:96@9e5c15986b14c51665145b1df84de7623c70dcd2"
+        }
+      ]
+    },
+    {
+      "schema_version": 1,
+      "path_id": "p-6",
+      "from": {
+        "selector": "symbol:src/sync/pass2.rs#resolve_ref:function",
+        "snapshot": "head",
+        "label": "src/sync/pass2.rs#resolve_ref",
+        "origin": "symbol"
+      },
+      "to": {
+        "selector": "symbol:src/sync/pass2.rs#resolve_import:function",
+        "snapshot": "head",
+        "label": "src/sync/pass2.rs#resolve_import",
+        "origin": "symbol"
+      },
+      "distance": 1,
+      "category": "resolved_call",
+      "truncated": false,
+      "truncated_by": null,
+      "edges": [
+        {
+          "from": "src/sync/pass2.rs#resolve_ref",
+          "from_selector": "symbol:src/sync/pass2.rs#resolve_ref:function",
+          "from_origin": "symbol",
+          "to": "src/sync/pass2.rs#resolve_import",
+          "to_selector": "symbol:src/sync/pass2.rs#resolve_import:function",
+          "relationship": "call",
+          "category": "resolved_call",
+          "confidence": "exact",
+          "snapshot": "head",
+          "commit_sha": "9e5c15986b14c51665145b1df84de7623c70dcd2",
+          "source": {
+            "file": "src/sync/pass2.rs",
+            "line": 99
+          },
+          "note": null,
+          "rendering": "reference",
+          "reference": "src/sync/pass2.rs:99@9e5c15986b14c51665145b1df84de7623c70dcd2"
+        }
+      ]
+    },
+    {
+      "schema_version": 1,
+      "path_id": "p-7",
+      "from": {
+        "selector": "symbol:src/sync/pass2.rs#resolve_ref:function",
+        "snapshot": "head",
+        "label": "src/sync/pass2.rs#resolve_ref",
+        "origin": "symbol"
+      },
+      "to": {
+        "selector": "symbol:src/sync/pass2.rs#resolve_qualified:function",
+        "snapshot": "head",
+        "label": "src/sync/pass2.rs#resolve_qualified",
+        "origin": "symbol"
+      },
+      "distance": 1,
+      "category": "resolved_call",
+      "truncated": false,
+      "truncated_by": null,
+      "edges": [
+        {
+          "from": "src/sync/pass2.rs#resolve_ref",
+          "from_selector": "symbol:src/sync/pass2.rs#resolve_ref:function",
+          "from_origin": "symbol",
+          "to": "src/sync/pass2.rs#resolve_qualified",
+          "to_selector": "symbol:src/sync/pass2.rs#resolve_qualified:function",
+          "relationship": "call",
+          "category": "resolved_call",
+          "confidence": "exact",
+          "snapshot": "head",
+          "commit_sha": "9e5c15986b14c51665145b1df84de7623c70dcd2",
+          "source": {
+            "file": "src/sync/pass2.rs",
+            "line": 115
+          },
+          "note": null,
+          "rendering": "reference",
+          "reference": "src/sync/pass2.rs:115@9e5c15986b14c51665145b1df84de7623c70dcd2"
+        }
+      ]
+    },
+    {
+      "schema_version": 1,
+      "path_id": "p-8",
+      "from": {
+        "selector": "symbol:src/sync/pass2.rs#resolve_ref:function",
+        "snapshot": "head",
+        "label": "src/sync/pass2.rs#resolve_ref",
+        "origin": "symbol"
+      },
+      "to": {
+        "selector": "symbol:src/sync/pass2.rs#resolve_same_module:function",
+        "snapshot": "head",
+        "label": "src/sync/pass2.rs#resolve_same_module",
+        "origin": "symbol"
+      },
+      "distance": 1,
+      "category": "resolved_call",
+      "truncated": false,
+      "truncated_by": null,
+      "edges": [
+        {
+          "from": "src/sync/pass2.rs#resolve_ref",
+          "from_selector": "symbol:src/sync/pass2.rs#resolve_ref:function",
+          "from_origin": "symbol",
+          "to": "src/sync/pass2.rs#resolve_same_module",
+          "to_selector": "symbol:src/sync/pass2.rs#resolve_same_module:function",
+          "relationship": "call",
+          "category": "resolved_call",
+          "confidence": "exact",
+          "snapshot": "head",
+          "commit_sha": "9e5c15986b14c51665145b1df84de7623c70dcd2",
+          "source": {
+            "file": "src/sync/pass2.rs",
+            "line": 118
+          },
+          "note": null,
+          "rendering": "reference",
+          "reference": "src/sync/pass2.rs:118@9e5c15986b14c51665145b1df84de7623c70dcd2"
+        }
+      ]
+    }
+  ],
   "entry_points": [],
   "candidate_tests": {
     "schema_version": 1,
@@ -2455,6 +3277,26 @@
       },
       {
         "what": "evidence:symbol:src/sync/pass2.rs#resolve_ref:function@head",
+        "bound": "depth",
+        "value": 1
+      },
+      {
+        "what": "outbound_evidence:symbol:src/query/refs.rs#resolve_target:function@base",
+        "bound": "depth",
+        "value": 1
+      },
+      {
+        "what": "outbound_evidence:symbol:src/query/refs.rs#resolve_target:function@head",
+        "bound": "depth",
+        "value": 1
+      },
+      {
+        "what": "outbound_evidence:symbol:src/sync/pass2.rs#resolve_ref:function@base",
+        "bound": "depth",
+        "value": 1
+      },
+      {
+        "what": "outbound_evidence:symbol:src/sync/pass2.rs#resolve_ref:function@head",
         "bound": "depth",
         "value": 1
       }
