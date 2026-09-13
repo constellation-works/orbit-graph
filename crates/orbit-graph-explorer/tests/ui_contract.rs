@@ -110,6 +110,16 @@ fn static_assets_resolve_to_the_embedded_source_without_a_token() {
         !js.body.contains(".innerHTML"),
         "innerHTML property referenced"
     );
+    // The hand-built SVG neighbourhood graph is built with DOM APIs
+    // (`document.createElementNS`, `setAttribute`, `textContent`) only.
+    assert!(
+        !js.body.contains(".outerHTML"),
+        "outerHTML property referenced"
+    );
+    assert!(
+        !js.body.contains("insertAdjacentHTML"),
+        "insertAdjacentHTML referenced"
+    );
 }
 
 #[test]
@@ -139,8 +149,9 @@ fn ambiguous_same_name_data_contract_matches_the_page() {
     assert_data_contract("ambiguous-same-name");
 }
 
-/// Filter state must round-trip through the URL fragment the page parses,
-/// and the per-launch token must never be written back into it.
+/// Filter, search, and table/graph-toggle state must round-trip through the
+/// URL fragment the page parses, and the per-launch token must never be
+/// written back into it.
 ///
 /// The fragment is client-side state: nothing in the real HTTP contract
 /// encodes it. This asserts the invariant against the served `app.js` itself
@@ -154,13 +165,22 @@ fn filter_state_round_trips_through_the_fragment_without_the_token() {
     assert_eq!(js.status, 200, "{js:?}");
     let body = js.body.as_str();
 
-    // Exactly the query parameters the service accepts as filters are ever
-    // persisted, so a bookmarked or copied URL carries filters, never a
-    // credential.
-    for key in ["confidence", "language", "change_kind", "depth", "scope"] {
+    // Exactly the query parameters the service accepts as filters, plus the
+    // search and view-toggle keys, are ever persisted, so a bookmarked or
+    // copied URL carries all three kinds of state, never a credential.
+    for key in [
+        "confidence",
+        "language",
+        "change_kind",
+        "depth",
+        "scope",
+        "q",
+        "search_side",
+        "view",
+    ] {
         assert!(
             body.contains(format!("\"{key}\"").as_str()),
-            "app.js must persist the `{key}` filter in FILTER_KEYS: missing from the served asset"
+            "app.js must persist the `{key}` key in FRAGMENT_KEYS: missing from the served asset"
         );
     }
 
@@ -183,7 +203,7 @@ fn filter_state_round_trips_through_the_fragment_without_the_token() {
         "app.js must expose the fragment writer used on every filter change"
     );
 
-    // The encoder's own scan is bounded to `FILTER_KEYS`, so `token` cannot
+    // The encoder's own scan is bounded to `FRAGMENT_KEYS`, so `token` cannot
     // reach the fragment through that path even if a caller mishandled it
     // upstream.
     let encode_start = body
@@ -191,8 +211,8 @@ fn filter_state_round_trips_through_the_fragment_without_the_token() {
         .expect("encodeFragment is defined");
     let encode_body = &body[encode_start..encode_start + 400.min(body.len() - encode_start)];
     assert!(
-        encode_body.contains("FILTER_KEYS"),
-        "encodeFragment must iterate FILTER_KEYS, not an unbounded set of params: {encode_body}"
+        encode_body.contains("FRAGMENT_KEYS"),
+        "encodeFragment must iterate FRAGMENT_KEYS, not an unbounded set of params: {encode_body}"
     );
     assert!(
         !encode_body.contains("token"),
@@ -524,6 +544,128 @@ fn assert_data_contract(case_id: &str) {
         assert!(source["span"].get("start").is_some(), "{source}");
         assert!(source["span"].get("end").is_some(), "{source}");
     }
+
+    // The search box's data contract: `label`/`selector` name what the page
+    // resolves to, `changed` is what a search result's "not changed in this
+    // comparison" wording reads.
+    let search_term = symbol_name(selector.as_str());
+    let search = service
+        .authorized(
+            "GET",
+            format!("/api/search?q={}&side={side}", percent_encode(search_term)).as_str(),
+            &[],
+        )
+        .json();
+    for field in [
+        "scope",
+        "snapshot",
+        "q",
+        "limit",
+        "truncated",
+        "truncated_by",
+        "matches",
+    ] {
+        assert!(
+            search.get(field).is_some(),
+            "search.{field} missing: {search}"
+        );
+    }
+    let matches = search["matches"].as_array().expect("matches array");
+    assert!(
+        !matches.is_empty(),
+        "{case_id} fixture must have at least one search match for `{search_term}`: {search}"
+    );
+    for one_match in matches {
+        for field in ["kind", "selector", "label", "file", "line", "changed"] {
+            assert!(
+                one_match.get(field).is_some(),
+                "search match missing `{field}`: {one_match}"
+            );
+        }
+    }
+
+    // The `invalid_kind` error envelope the search box relies on when a
+    // caller (never the UI itself, which only ever sends `symbol`/`string`/
+    // `config`) mis-specifies `kind`.
+    let bad_kind = service.authorized("GET", "/api/search?kind=not-a-kind", &[]);
+    assert_eq!(bad_kind.status, 400, "{bad_kind:?}");
+    let bad_kind_body = bad_kind.json();
+    assert_eq!(
+        bad_kind_body["error"]["code"], "invalid_kind",
+        "{bad_kind_body}"
+    );
+    assert!(
+        bad_kind_body["error"].get("message").is_some(),
+        "{bad_kind_body}"
+    );
+    assert!(
+        bad_kind_body["error"].get("details").is_some(),
+        "{bad_kind_body}"
+    );
+
+    // The indexing-progress header's data contract: per-side state, file
+    // counts, languages, and elapsed time, plus the top-level status the
+    // Cancel/Retry affordance reads.
+    let status = service.authorized("GET", "/api/status", &[]).json();
+    for field in [
+        "schema_version",
+        "repository",
+        "base_sha",
+        "head_sha",
+        "indexing_status",
+        "indexing",
+    ] {
+        assert!(
+            status.get(field).is_some(),
+            "status.{field} missing: {status}"
+        );
+    }
+    assert_eq!(status["indexing_status"], "ready", "{status}");
+    for side in ["base", "head"] {
+        for field in [
+            "state",
+            "files_seen",
+            "files_indexed",
+            "files_ignored",
+            "unsupported_constructs",
+            "languages",
+            "started_at",
+            "elapsed_ms",
+            "error",
+        ] {
+            assert!(
+                status["indexing"][side].get(field).is_some(),
+                "status.indexing.{side}.{field} missing: {status}"
+            );
+        }
+        assert_eq!(status["indexing"][side]["state"], "ready", "{status}");
+    }
+
+    // `POST /api/cancel` once indexing has already finished: the `409
+    // not_indexing` error envelope the Cancel button's error banner renders.
+    let cancel = service.authorized("POST", "/api/cancel", &[]);
+    assert_eq!(cancel.status, 409, "{cancel:?}");
+    let cancel_body = cancel.json();
+    assert_eq!(
+        cancel_body["error"]["code"], "not_indexing",
+        "{cancel_body}"
+    );
+    assert!(
+        cancel_body["error"]["details"].get("indexing").is_some(),
+        "{cancel_body}"
+    );
+}
+
+/// The bare symbol name out of a canonical `symbol:<path>#<name>:<kind>`
+/// selector, the same identity `app.js`'s `parseSelector` extracts — used
+/// here as a search term guaranteed to be indexed for the fixture it came
+/// from.
+fn symbol_name(selector: &str) -> &str {
+    let after_hash = selector.split('#').nth(1).unwrap_or(selector);
+    after_hash
+        .rsplit_once(':')
+        .map(|(name, _)| name)
+        .unwrap_or(after_hash)
 }
 
 #[test]

@@ -19,8 +19,21 @@
 </div>
 
 <div id="app" hidden>
+  <div id="error-banner-region"></div>
+
+  <nav id="pane-switcher" aria-label="Pane switcher">
+    <button type="button" class="pane-switch-button" data-pane="pane-changes" aria-current="true">1. Changes</button>
+    <button type="button" class="pane-switch-button" data-pane="pane-relationships">2. Focus</button>
+    <button type="button" class="pane-switch-button" data-pane="pane-source">3. Source</button>
+  </nav>
+
   <header id="app-header">
-    <h1>orbit-graph change explorer</h1>
+    <div class="header-top">
+      <h1>orbit-graph change explorer</h1>
+      <button type="button" id="keyboard-help-open" aria-haspopup="dialog" aria-controls="keyboard-help">
+        Keyboard shortcuts (<kbd>?</kbd>)
+      </button>
+    </div>
     <dl id="scope-summary">
       <div class="scope-item">
         <dt>base</dt>
@@ -38,6 +51,39 @@
     <dl id="cache-status" class="cache-status" hidden></dl>
     <p id="dirty-notice" hidden></p>
     <p id="indexing-notice" role="status"></p>
+
+    <div id="indexing-progress" hidden>
+      <div class="side-progress" data-side="base">
+        <span class="side-progress-label">base</span>
+        <span class="side-progress-state"></span>
+        <span class="side-progress-files"></span>
+        <span class="side-progress-languages"></span>
+        <span class="side-progress-elapsed"></span>
+      </div>
+      <div class="side-progress" data-side="head">
+        <span class="side-progress-label">head</span>
+        <span class="side-progress-state"></span>
+        <span class="side-progress-files"></span>
+        <span class="side-progress-languages"></span>
+        <span class="side-progress-elapsed"></span>
+      </div>
+      <div class="indexing-progress-actions">
+        <button type="button" id="cancel-index-button">Cancel</button>
+        <button type="button" id="retry-index-button" hidden>Retry</button>
+      </div>
+    </div>
+
+    <form id="search-bar" role="search" aria-labelledby="search-bar-heading">
+      <h2 id="search-bar-heading" class="visually-hidden">Search</h2>
+      <label for="search-input">Search</label>
+      <input id="search-input" type="search" name="q" placeholder="symbol, string, or config key" autocomplete="off">
+      <label for="search-side" class="visually-hidden">Side to search</label>
+      <select id="search-side" name="search_side">
+        <option value="head">head</option>
+        <option value="base">base</option>
+      </select>
+      <div id="search-results" role="listbox" aria-label="Search results" hidden></div>
+    </form>
   </header>
 
   <form id="filter-bar" aria-labelledby="filter-bar-heading">
@@ -80,40 +126,52 @@
     <section id="pane-changes" aria-labelledby="pane-changes-heading">
       <h2 id="pane-changes-heading">1. Change list</h2>
       <div id="change-hidden-by-filters"></div>
+      <div id="change-empty" hidden></div>
       <div id="change-groups"></div>
       <footer id="out-of-scope-footer"></footer>
     </section>
 
     <section id="pane-relationships" aria-labelledby="pane-relationships-heading">
       <h2 id="pane-relationships-heading">2. Focused relationship view</h2>
-      <div id="relationship-empty">Select a changed symbol from pane 1 to see its evidence.</div>
+      <div id="relationship-empty">Select a changed symbol from pane 1, or use search, to see its evidence.</div>
       <div id="relationship-content" hidden>
+        <div id="view-toggle" role="group" aria-label="Table or graph view">
+          <button type="button" id="view-toggle-table" aria-pressed="true">Table</button>
+          <button type="button" id="view-toggle-graph" aria-pressed="false">Graph</button>
+        </div>
         <nav id="focus-breadcrumb" aria-label="Focused symbol trail" hidden></nav>
         <h3 id="selected-symbol-heading"></h3>
         <p id="selected-symbol-selector"></p>
 
-        <section aria-labelledby="evidence-heading">
-          <h4 id="evidence-heading">Inbound evidence (potential impact)</h4>
-          <p id="evidence-bounds"></p>
-          <p id="evidence-summary"></p>
-          <div id="evidence-hidden-by-filters"></div>
-          <div id="evidence-primary"></div>
-          <div id="evidence-heuristic"></div>
-          <p id="evidence-no-path" hidden></p>
-        </section>
+        <div id="relationship-graph-view" hidden>
+          <p id="graph-budget-notice" hidden></p>
+          <svg id="relationship-graph" role="group" aria-label="Neighbourhood graph" focusable="false"></svg>
+        </div>
 
-        <section aria-labelledby="entry-points-heading">
-          <h4 id="entry-points-heading">Entry points</h4>
-          <p id="entry-points-bounds"></p>
-          <div id="entry-points-hidden-by-filters"></div>
-          <div id="entry-points-list"></div>
-          <p id="entry-points-none" hidden></p>
-        </section>
+        <div id="relationship-table-view">
+          <section aria-labelledby="evidence-heading">
+            <h4 id="evidence-heading">Inbound evidence (potential impact)</h4>
+            <p id="evidence-bounds"></p>
+            <p id="evidence-summary"></p>
+            <div id="evidence-hidden-by-filters"></div>
+            <div id="evidence-primary"></div>
+            <div id="evidence-heuristic"></div>
+            <p id="evidence-no-path" hidden></p>
+          </section>
 
-        <section aria-labelledby="candidate-tests-heading">
-          <h4 id="candidate-tests-heading">Candidate tests</h4>
-          <div id="candidate-tests"></div>
-        </section>
+          <section aria-labelledby="entry-points-heading">
+            <h4 id="entry-points-heading">Entry points</h4>
+            <p id="entry-points-bounds"></p>
+            <div id="entry-points-hidden-by-filters"></div>
+            <div id="entry-points-list"></div>
+            <p id="entry-points-none" hidden></p>
+          </section>
+
+          <section aria-labelledby="candidate-tests-heading">
+            <h4 id="candidate-tests-heading">Candidate tests</h4>
+            <div id="candidate-tests"></div>
+          </section>
+        </div>
       </div>
     </section>
 
@@ -131,6 +189,23 @@
       </div>
     </section>
   </main>
+
+  <div id="keyboard-help" hidden role="dialog" aria-modal="true" aria-labelledby="keyboard-help-heading">
+    <div class="keyboard-help-panel">
+      <h2 id="keyboard-help-heading">Keyboard shortcuts</h2>
+      <dl id="keyboard-help-list">
+        <div><dt><kbd>1</kbd> / <kbd>2</kbd> / <kbd>3</kbd></dt><dd>Jump to pane 1, 2, or 3</dd></div>
+        <div><dt><kbd>↑</kbd> / <kbd>↓</kbd></dt><dd>Move between rows in a list</dd></div>
+        <div><dt><kbd>Enter</kbd> / <kbd>Space</kbd></dt><dd>Open the focused row, hop, or node</dd></div>
+        <div><dt><kbd>g</kbd></dt><dd>Toggle graph / table view</dd></div>
+        <div><dt><kbd>/</kbd></dt><dd>Focus the search box</dd></div>
+        <div><dt><kbd>Backspace</kbd></dt><dd>Clear filters</dd></div>
+        <div><dt><kbd>Esc</kbd></dt><dd>Dismiss a banner, close this help, or step back one path hop</dd></div>
+        <div><dt><kbd>?</kbd></dt><dd>Open this keyboard map</dd></div>
+      </dl>
+      <button type="button" id="keyboard-help-close">Close</button>
+    </div>
+  </div>
 </div>
 
 <script type="module" src="/ui/app.js"></script>
