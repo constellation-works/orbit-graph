@@ -223,6 +223,11 @@ fn resolve_same_module(
     Ok(unique_candidate(&candidates))
 }
 
+/// Symbols a textual ref can resolve to. Rust `impl` blocks are stored under the
+/// implemented type's `name` (qualified as `<Type>` or `<Type as Trait>`), but a
+/// `call`/`type`/`use`/`trait_bound` ref never targets an impl block itself, so they
+/// are excluded here. Otherwise a type with even one impl block yields several
+/// same-named candidates and every uniqueness test in the ladder fails.
 fn symbols_in_file_by_name(
     tx: &Transaction<'_>,
     from_file: &str,
@@ -231,7 +236,7 @@ fn symbols_in_file_by_name(
     let mut stmt = tx
         .prepare_cached(
             "SELECT id, file_path, name, qualified FROM symbols
-             WHERE file_path = ?1 AND name = ?2
+             WHERE file_path = ?1 AND name = ?2 AND kind <> 'impl'
              ORDER BY qualified, id",
         )
         .map_err(|source| GraphError::sqlite("prepare exact symbol lookup", source))?;
@@ -242,11 +247,13 @@ fn symbols_in_file_by_name(
         .map_err(|source| GraphError::sqlite("collect symbols for ref resolution", source))
 }
 
+/// Cross-file counterpart of [`symbols_in_file_by_name`]; applies the same
+/// `impl` exclusion.
 fn symbols_by_name(tx: &Transaction<'_>, name: &str) -> Result<Vec<SymbolCandidate>, GraphError> {
     let mut stmt = tx
         .prepare_cached(
             "SELECT id, file_path, name, qualified FROM symbols
-             WHERE name = ?1
+             WHERE name = ?1 AND kind <> 'impl'
              ORDER BY qualified, id",
         )
         .map_err(|source| GraphError::sqlite("prepare name symbol lookup", source))?;

@@ -513,6 +513,29 @@ fn call_refs_by_name(conn: &Connection, from_file: &str) -> BTreeMap<String, Sto
     .collect()
 }
 
+fn ref_by_kind(conn: &Connection, from_file: &str, target_name: &str, kind: &str) -> StoredRef {
+    let mut rows = query_refs(
+        conn,
+        "SELECT id, from_file, from_span_start, from_span_end, target_name, target_qualified,
+                target_symbol_hint, kind, confidence
+         FROM refs
+         WHERE from_file = ?1 AND target_name = ?2 AND kind = ?3
+         ORDER BY id",
+        params![from_file, target_name, kind],
+    );
+    assert_eq!(rows.len(), 1, "expected one {kind} ref for {target_name}");
+    rows.remove(0)
+}
+
+fn symbol_id(conn: &Connection, file_path: &str, qualified: &str) -> i64 {
+    conn.query_row(
+        "SELECT id FROM symbols WHERE file_path = ?1 AND qualified = ?2",
+        params![file_path, qualified],
+        |row| row.get(0),
+    )
+    .expect("read symbol id")
+}
+
 fn refs_for_file(conn: &Connection, from_file: &str) -> Vec<StoredRef> {
     query_refs(
         conn,
@@ -619,5 +642,75 @@ impl TestWorktree {
 impl Drop for TestWorktree {
     fn drop(&mut self) {
         let _ = fs::remove_dir_all(&self.path);
+    }
+}
+
+#[test]
+fn type_with_impl_blocks_still_resolves_cross_file_references() {
+    let worktree = TestWorktree::new("impl-blocks");
+    let graph = Graph::open(worktree.path(), SyncPolicy::Manual).expect("open graph");
+    // The enum carries one inherent and one trait impl; both are stored as `impl`
+    // symbols named `Complexity`, so they must not defeat ref resolution.
+    worktree.write(
+        "src/model.rs",
+        r#"
+pub enum Complexity {
+    Low,
+    High,
+}
+
+pub fn describe(value: Complexity) -> &'static str {
+    match value {
+        Complexity::Low => "low",
+        Complexity::High => "high",
+    }
+}
+
+impl Complexity {
+    pub fn is_low(&self) -> bool {
+        matches!(self, Complexity::Low)
+    }
+}
+
+impl std::fmt::Display for Complexity {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(describe(*self))
+    }
+}
+"#,
+    );
+    worktree.write(
+        "src/caller.rs",
+        r#"
+use crate::model::Complexity;
+
+fn run(value: Complexity) -> bool {
+    value.is_low()
+}
+"#,
+    );
+
+    graph.sync(SyncMode::Full).expect("sync graph");
+
+    let conn = open_test_connection(worktree.path());
+    let enum_id = symbol_id(&conn, "src/model.rs", "Complexity");
+    for kind in ["use", "type"] {
+        let row = ref_by_kind(&conn, "src/caller.rs", "Complexity", kind);
+        assert_eq!(
+            row.target_qualified.as_deref(),
+            Some("Complexity"),
+            "{kind}"
+        );
+        assert_eq!(row.confidence, super::CONFIDENCE_IMPORT_RESOLVED, "{kind}");
+        assert_eq!(row.target_symbol_hint, Some(enum_id), "{kind}");
+    }
+
+    // Same-file references keep pointing at the enum rather than an impl block.
+    for row in refs_for_file(&conn, "src/model.rs")
+        .into_iter()
+        .filter(|row| row.target_name == "Complexity")
+    {
+        assert_eq!(row.confidence, super::CONFIDENCE_EXACT);
+        assert_eq!(row.target_symbol_hint, Some(enum_id));
     }
 }

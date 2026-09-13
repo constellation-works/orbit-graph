@@ -69,7 +69,12 @@ mod tests;
 /// now recurse into method-chain receivers (previously dropped) and no
 /// longer emit a chain receiver's full source text as a bogus callee name
 /// for turbofish method calls (`x.collect::<Vec<_>>()`).
-pub const EXTRACTOR_VERSION: u32 = 6;
+///
+/// Version 7 rebuilds stored refs once more: Rust `impl` blocks are indexed
+/// under the implemented type's name, and pass 2 now excludes them from ref
+/// candidate lookups, so a type with any impl block resolves cross-file
+/// references instead of degrading every one of them to `fuzzy_name`.
+pub const EXTRACTOR_VERSION: u32 = 7;
 
 /// SQLite schema version used by the graph store.
 pub const STORE_SCHEMA_VERSION: u32 = store::schema::SCHEMA_VERSION;
