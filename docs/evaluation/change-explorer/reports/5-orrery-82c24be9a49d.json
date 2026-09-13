@@ -1,0 +1,3322 @@
+{
+  "schema_version": 1,
+  "generated_at": "2026-09-13T00:00:00Z",
+  "comparison": {
+    "schema_version": 1,
+    "repository": null,
+    "mode": "direct_base_head",
+    "base": {
+      "requested_ref": "148b668391f575466282eaa81aab0dc943846a87",
+      "commit_sha": "148b668391f575466282eaa81aab0dc943846a87"
+    },
+    "head": {
+      "requested_ref": "82c24be9a49dbf9d775db9dc980c1de712d8bb8d",
+      "commit_sha": "82c24be9a49dbf9d775db9dc980c1de712d8bb8d"
+    },
+    "effective_base_sha": "148b668391f575466282eaa81aab0dc943846a87",
+    "working_tree": {
+      "dirty": false,
+      "notice": null,
+      "truncated": false,
+      "entries": []
+    },
+    "snapshots": [
+      {
+        "side": "base",
+        "requested_ref": "148b668391f575466282eaa81aab0dc943846a87",
+        "commit_sha": "148b668391f575466282eaa81aab0dc943846a87",
+        "files_indexed": 162,
+        "files_written": 216,
+        "extractor_version": 6,
+        "excluded": [
+          {
+            "path": "AGENTS.md",
+            "reason": "symlink",
+            "snapshot": "base"
+          }
+        ]
+      },
+      {
+        "side": "head",
+        "requested_ref": "82c24be9a49dbf9d775db9dc980c1de712d8bb8d",
+        "commit_sha": "82c24be9a49dbf9d775db9dc980c1de712d8bb8d",
+        "files_indexed": 354,
+        "files_written": 430,
+        "extractor_version": 6,
+        "excluded": [
+          {
+            "path": "AGENTS.md",
+            "reason": "symlink",
+            "snapshot": "head"
+          }
+        ]
+      }
+    ]
+  },
+  "index_identity": {
+    "extractor_version": 6,
+    "store_schema_version": 1,
+    "orbit_graph_version": "0.9.2",
+    "explorer_version": "0.9.2",
+    "base_index_identity": "blake3:849a0ad9f9b876d20044906d6070ab76d4adb46a53e20b1688771e678d9ef788",
+    "head_index_identity": "blake3:0f6568934e29cfb103454a5f254ad1bfd55a09885c61a43b8b8d3ae222521a29"
+  },
+  "query_options": {
+    "depth": 1,
+    "direction": "inbound",
+    "min_confidence": "same_module",
+    "kind": null,
+    "node_cap": 200,
+    "time_budget_ms": 5000,
+    "source_max_bytes": 65536,
+    "language": null,
+    "change_kind": [],
+    "scope": null,
+    "excerpts": "none",
+    "excerpt_radius_lines": 5,
+    "selection": [
+      "symbol:scripts/research_records.py#supporting_paths:function",
+      "symbol:lab/sims/oscillating-electron-retarded-fields/browser-check.py#summary:function"
+    ]
+  },
+  "changed_symbols": {
+    "schema_version": 1,
+    "symbols": [
+      {
+        "status": "modified",
+        "pairing": "same_selector",
+        "pairing_evidence": "selector",
+        "base": {
+          "selector": "symbol:README.md#Add a sim:heading",
+          "snapshot": "base",
+          "commit_sha": "148b668391f575466282eaa81aab0dc943846a87",
+          "rendering": "reference",
+          "reference": "README.md@148b668391f575466282eaa81aab0dc943846a87"
+        },
+        "head": {
+          "selector": "symbol:README.md#Add a sim:heading",
+          "snapshot": "head",
+          "commit_sha": "82c24be9a49dbf9d775db9dc980c1de712d8bb8d",
+          "rendering": "reference",
+          "reference": "README.md@82c24be9a49dbf9d775db9dc980c1de712d8bb8d"
+        },
+        "supporting_snapshots": [
+          "base",
+          "head"
+        ],
+        "file_change": "modified",
+        "base_path": "README.md",
+        "head_path": "README.md",
+        "uncertain_candidates": [],
+        "note": "body changed; signature line is unchanged"
+      },
+      {
+        "status": "added",
+        "pairing": "same_selector",
+        "pairing_evidence": "selector",
+        "base": null,
+        "head": {
+          "selector": "symbol:README.md#Research records:heading",
+          "snapshot": "head",
+          "commit_sha": "82c24be9a49dbf9d775db9dc980c1de712d8bb8d",
+          "rendering": "reference",
+          "reference": "README.md@82c24be9a49dbf9d775db9dc980c1de712d8bb8d"
+        },
+        "supporting_snapshots": [
+          "head"
+        ],
+        "file_change": "modified",
+        "base_path": "README.md",
+        "head_path": "README.md",
+        "uncertain_candidates": [],
+        "note": "Present in head and absent from base. This is not a claim that it did not exist under another identity."
+      },
+      {
+        "status": "modified",
+        "pairing": "same_selector",
+        "pairing_evidence": "selector",
+        "base": {
+          "selector": "symbol:README.md#orrery:heading",
+          "snapshot": "base",
+          "commit_sha": "148b668391f575466282eaa81aab0dc943846a87",
+          "rendering": "reference",
+          "reference": "README.md@148b668391f575466282eaa81aab0dc943846a87"
+        },
+        "head": {
+          "selector": "symbol:README.md#orrery:heading",
+          "snapshot": "head",
+          "commit_sha": "82c24be9a49dbf9d775db9dc980c1de712d8bb8d",
+          "rendering": "reference",
+          "reference": "README.md@82c24be9a49dbf9d775db9dc980c1de712d8bb8d"
+        },
+        "supporting_snapshots": [
+          "base",
+          "head"
+        ],
+        "file_change": "modified",
+        "base_path": "README.md",
+        "head_path": "README.md",
+        "uncertain_candidates": [],
+        "note": "body changed; signature line is unchanged"
+      },
+      {
+        "status": "added",
+        "pairing": "same_selector",
+        "pairing_evidence": "selector",
+        "base": null,
+        "head": {
+          "selector": "symbol:docs/research-records.md#Inventory and compatibility:heading",
+          "snapshot": "head",
+          "commit_sha": "82c24be9a49dbf9d775db9dc980c1de712d8bb8d",
+          "rendering": "reference",
+          "reference": "docs/research-records.md@82c24be9a49dbf9d775db9dc980c1de712d8bb8d"
+        },
+        "supporting_snapshots": [
+          "head"
+        ],
+        "file_change": "added",
+        "base_path": null,
+        "head_path": "docs/research-records.md",
+        "uncertain_candidates": [],
+        "note": "Present in head and absent from base. This is not a claim that it did not exist under another identity."
+      },
+      {
+        "status": "added",
+        "pairing": "same_selector",
+        "pairing_evidence": "selector",
+        "base": null,
+        "head": {
+          "selector": "symbol:docs/research-records.md#Native registration boundary:heading",
+          "snapshot": "head",
+          "commit_sha": "82c24be9a49dbf9d775db9dc980c1de712d8bb8d",
+          "rendering": "reference",
+          "reference": "docs/research-records.md@82c24be9a49dbf9d775db9dc980c1de712d8bb8d"
+        },
+        "supporting_snapshots": [
+          "head"
+        ],
+        "file_change": "added",
+        "base_path": null,
+        "head_path": "docs/research-records.md",
+        "uncertain_candidates": [],
+        "note": "Present in head and absent from base. This is not a claim that it did not exist under another identity."
+      },
+      {
+        "status": "added",
+        "pairing": "same_selector",
+        "pairing_evidence": "selector",
+        "base": null,
+        "head": {
+          "selector": "symbol:docs/research-records.md#Orrery research records:heading",
+          "snapshot": "head",
+          "commit_sha": "82c24be9a49dbf9d775db9dc980c1de712d8bb8d",
+          "rendering": "reference",
+          "reference": "docs/research-records.md@82c24be9a49dbf9d775db9dc980c1de712d8bb8d"
+        },
+        "supporting_snapshots": [
+          "head"
+        ],
+        "file_change": "added",
+        "base_path": null,
+        "head_path": "docs/research-records.md",
+        "uncertain_candidates": [],
+        "note": "Present in head and absent from base. This is not a claim that it did not exist under another identity."
+      },
+      {
+        "status": "added",
+        "pairing": "same_selector",
+        "pairing_evidence": "selector",
+        "base": null,
+        "head": {
+          "selector": "symbol:docs/research-records.md#Wide-binary historical chain:heading",
+          "snapshot": "head",
+          "commit_sha": "82c24be9a49dbf9d775db9dc980c1de712d8bb8d",
+          "rendering": "reference",
+          "reference": "docs/research-records.md@82c24be9a49dbf9d775db9dc980c1de712d8bb8d"
+        },
+        "supporting_snapshots": [
+          "head"
+        ],
+        "file_change": "added",
+        "base_path": null,
+        "head_path": "docs/research-records.md",
+        "uncertain_candidates": [],
+        "note": "Present in head and absent from base. This is not a claim that it did not exist under another identity."
+      },
+      {
+        "status": "added",
+        "pairing": "same_selector",
+        "pairing_evidence": "selector",
+        "base": null,
+        "head": {
+          "selector": "symbol:lab/sims/oscillating-electron-retarded-fields/README.md#Before / turn / outward / after evidence:heading",
+          "snapshot": "head",
+          "commit_sha": "82c24be9a49dbf9d775db9dc980c1de712d8bb8d",
+          "rendering": "reference",
+          "reference": "lab/sims/oscillating-electron-retarded-fields/README.md@82c24be9a49dbf9d775db9dc980c1de712d8bb8d"
+        },
+        "supporting_snapshots": [
+          "head"
+        ],
+        "file_change": "modified",
+        "base_path": "lab/sims/oscillating-electron-retarded-fields/README.md",
+        "head_path": "lab/sims/oscillating-electron-retarded-fields/README.md",
+        "uncertain_candidates": [],
+        "note": "Present in head and absent from base. This is not a claim that it did not exist under another identity."
+      },
+      {
+        "status": "removed",
+        "pairing": "same_selector",
+        "pairing_evidence": "selector",
+        "base": {
+          "selector": "symbol:lab/sims/oscillating-electron-retarded-fields/README.md#Computed geometry versus guides:heading",
+          "snapshot": "base",
+          "commit_sha": "148b668391f575466282eaa81aab0dc943846a87",
+          "rendering": "reference",
+          "reference": "lab/sims/oscillating-electron-retarded-fields/README.md@148b668391f575466282eaa81aab0dc943846a87"
+        },
+        "head": null,
+        "supporting_snapshots": [
+          "base"
+        ],
+        "file_change": "modified",
+        "base_path": "lab/sims/oscillating-electron-retarded-fields/README.md",
+        "head_path": "lab/sims/oscillating-electron-retarded-fields/README.md",
+        "uncertain_candidates": [],
+        "note": "Present in base and absent from head. This is not a claim that nothing replaced it."
+      },
+      {
+        "status": "removed",
+        "pairing": "same_selector",
+        "pairing_evidence": "selector",
+        "base": {
+          "selector": "symbol:lab/sims/oscillating-electron-retarded-fields/README.md#Lineage:heading",
+          "snapshot": "base",
+          "commit_sha": "148b668391f575466282eaa81aab0dc943846a87",
+          "rendering": "reference",
+          "reference": "lab/sims/oscillating-electron-retarded-fields/README.md@148b668391f575466282eaa81aab0dc943846a87"
+        },
+        "head": null,
+        "supporting_snapshots": [
+          "base"
+        ],
+        "file_change": "modified",
+        "base_path": "lab/sims/oscillating-electron-retarded-fields/README.md",
+        "head_path": "lab/sims/oscillating-electron-retarded-fields/README.md",
+        "uncertain_candidates": [],
+        "note": "Present in base and absent from head. This is not a claim that nothing replaced it."
+      },
+      {
+        "status": "removed",
+        "pairing": "same_selector",
+        "pairing_evidence": "selector",
+        "base": {
+          "selector": "symbol:lab/sims/oscillating-electron-retarded-fields/README.md#Measured performance and limits:heading",
+          "snapshot": "base",
+          "commit_sha": "148b668391f575466282eaa81aab0dc943846a87",
+          "rendering": "reference",
+          "reference": "lab/sims/oscillating-electron-retarded-fields/README.md@148b668391f575466282eaa81aab0dc943846a87"
+        },
+        "head": null,
+        "supporting_snapshots": [
+          "base"
+        ],
+        "file_change": "modified",
+        "base_path": "lab/sims/oscillating-electron-retarded-fields/README.md",
+        "head_path": "lab/sims/oscillating-electron-retarded-fields/README.md",
+        "uncertain_candidates": [],
+        "note": "Present in base and absent from head. This is not a claim that nothing replaced it."
+      },
+      {
+        "status": "added",
+        "pairing": "same_selector",
+        "pairing_evidence": "selector",
+        "base": null,
+        "head": {
+          "selector": "symbol:lab/sims/oscillating-electron-retarded-fields/README.md#Numerical and browser validation:heading",
+          "snapshot": "head",
+          "commit_sha": "82c24be9a49dbf9d775db9dc980c1de712d8bb8d",
+          "rendering": "reference",
+          "reference": "lab/sims/oscillating-electron-retarded-fields/README.md@82c24be9a49dbf9d775db9dc980c1de712d8bb8d"
+        },
+        "supporting_snapshots": [
+          "head"
+        ],
+        "file_change": "modified",
+        "base_path": "lab/sims/oscillating-electron-retarded-fields/README.md",
+        "head_path": "lab/sims/oscillating-electron-retarded-fields/README.md",
+        "uncertain_candidates": [],
+        "note": "Present in head and absent from base. This is not a claim that it did not exist under another identity."
+      },
+      {
+        "status": "added",
+        "pairing": "same_selector",
+        "pairing_evidence": "selector",
+        "base": null,
+        "head": {
+          "selector": "symbol:lab/sims/oscillating-electron-retarded-fields/README.md#Playback and what the marks mean:heading",
+          "snapshot": "head",
+          "commit_sha": "82c24be9a49dbf9d775db9dc980c1de712d8bb8d",
+          "rendering": "reference",
+          "reference": "lab/sims/oscillating-electron-retarded-fields/README.md@82c24be9a49dbf9d775db9dc980c1de712d8bb8d"
+        },
+        "supporting_snapshots": [
+          "head"
+        ],
+        "file_change": "modified",
+        "base_path": "lab/sims/oscillating-electron-retarded-fields/README.md",
+        "head_path": "lab/sims/oscillating-electron-retarded-fields/README.md",
+        "uncertain_candidates": [],
+        "note": "Present in head and absent from base. This is not a claim that it did not exist under another identity."
+      },
+      {
+        "status": "removed",
+        "pairing": "same_selector",
+        "pairing_evidence": "selector",
+        "base": {
+          "selector": "symbol:lab/sims/oscillating-electron-retarded-fields/README.md#Reproducible validation:heading",
+          "snapshot": "base",
+          "commit_sha": "148b668391f575466282eaa81aab0dc943846a87",
+          "rendering": "reference",
+          "reference": "lab/sims/oscillating-electron-retarded-fields/README.md@148b668391f575466282eaa81aab0dc943846a87"
+        },
+        "head": null,
+        "supporting_snapshots": [
+          "base"
+        ],
+        "file_change": "modified",
+        "base_path": "lab/sims/oscillating-electron-retarded-fields/README.md",
+        "head_path": "lab/sims/oscillating-electron-retarded-fields/README.md",
+        "uncertain_candidates": [],
+        "note": "Present in base and absent from head. This is not a claim that nothing replaced it."
+      },
+      {
+        "status": "added",
+        "pairing": "same_selector",
+        "pairing_evidence": "selector",
+        "base": null,
+        "head": {
+          "selector": "symbol:lab/sims/oscillating-electron-retarded-fields/README.md#Smooth bounded trajectory and field:heading",
+          "snapshot": "head",
+          "commit_sha": "82c24be9a49dbf9d775db9dc980c1de712d8bb8d",
+          "rendering": "reference",
+          "reference": "lab/sims/oscillating-electron-retarded-fields/README.md@82c24be9a49dbf9d775db9dc980c1de712d8bb8d"
+        },
+        "supporting_snapshots": [
+          "head"
+        ],
+        "file_change": "modified",
+        "base_path": "lab/sims/oscillating-electron-retarded-fields/README.md",
+        "head_path": "lab/sims/oscillating-electron-retarded-fields/README.md",
+        "uncertain_candidates": [],
+        "note": "Present in head and absent from base. This is not a claim that it did not exist under another identity."
+      },
+      {
+        "status": "removed",
+        "pairing": "same_selector",
+        "pairing_evidence": "selector",
+        "base": {
+          "selector": "symbol:lab/sims/oscillating-electron-retarded-fields/README.md#Trajectory, units and physics:heading",
+          "snapshot": "base",
+          "commit_sha": "148b668391f575466282eaa81aab0dc943846a87",
+          "rendering": "reference",
+          "reference": "lab/sims/oscillating-electron-retarded-fields/README.md@148b668391f575466282eaa81aab0dc943846a87"
+        },
+        "head": null,
+        "supporting_snapshots": [
+          "base"
+        ],
+        "file_change": "modified",
+        "base_path": "lab/sims/oscillating-electron-retarded-fields/README.md",
+        "head_path": "lab/sims/oscillating-electron-retarded-fields/README.md",
+        "uncertain_candidates": [],
+        "note": "Present in base and absent from head. This is not a claim that nothing replaced it."
+      },
+      {
+        "status": "added",
+        "pairing": "same_selector",
+        "pairing_evidence": "selector",
+        "base": null,
+        "head": {
+          "selector": "symbol:lab/sims/oscillating-electron-retarded-fields/README.md#Turning electron — dense retarded field:heading",
+          "snapshot": "head",
+          "commit_sha": "82c24be9a49dbf9d775db9dc980c1de712d8bb8d",
+          "rendering": "reference",
+          "reference": "lab/sims/oscillating-electron-retarded-fields/README.md@82c24be9a49dbf9d775db9dc980c1de712d8bb8d"
+        },
+        "supporting_snapshots": [
+          "head"
+        ],
+        "file_change": "modified",
+        "base_path": "lab/sims/oscillating-electron-retarded-fields/README.md",
+        "head_path": "lab/sims/oscillating-electron-retarded-fields/README.md",
+        "uncertain_candidates": [],
+        "note": "Present in head and absent from base. This is not a claim that it did not exist under another identity."
+      },
+      {
+        "status": "removed",
+        "pairing": "same_selector",
+        "pairing_evidence": "selector",
+        "base": {
+          "selector": "symbol:lab/sims/oscillating-electron-retarded-fields/README.md#Turning electron — retarded fields:heading",
+          "snapshot": "base",
+          "commit_sha": "148b668391f575466282eaa81aab0dc943846a87",
+          "rendering": "reference",
+          "reference": "lab/sims/oscillating-electron-retarded-fields/README.md@148b668391f575466282eaa81aab0dc943846a87"
+        },
+        "head": null,
+        "supporting_snapshots": [
+          "base"
+        ],
+        "file_change": "modified",
+        "base_path": "lab/sims/oscillating-electron-retarded-fields/README.md",
+        "head_path": "lab/sims/oscillating-electron-retarded-fields/README.md",
+        "uncertain_candidates": [],
+        "note": "Present in base and absent from head. This is not a claim that nothing replaced it."
+      },
+      {
+        "status": "removed",
+        "pairing": "same_selector",
+        "pairing_evidence": "selector",
+        "base": {
+          "selector": "symbol:lab/sims/oscillating-electron-retarded-fields/README.md#Watch the turn:heading",
+          "snapshot": "base",
+          "commit_sha": "148b668391f575466282eaa81aab0dc943846a87",
+          "rendering": "reference",
+          "reference": "lab/sims/oscillating-electron-retarded-fields/README.md@148b668391f575466282eaa81aab0dc943846a87"
+        },
+        "head": null,
+        "supporting_snapshots": [
+          "base"
+        ],
+        "file_change": "modified",
+        "base_path": "lab/sims/oscillating-electron-retarded-fields/README.md",
+        "head_path": "lab/sims/oscillating-electron-retarded-fields/README.md",
+        "uncertain_candidates": [],
+        "note": "Present in base and absent from head. This is not a claim that nothing replaced it."
+      },
+      {
+        "status": "removed",
+        "pairing": "same_selector",
+        "pairing_evidence": "selector",
+        "base": {
+          "selector": "symbol:lab/sims/oscillating-electron-retarded-fields/app.js#arrow:function",
+          "snapshot": "base",
+          "commit_sha": "148b668391f575466282eaa81aab0dc943846a87",
+          "rendering": "reference",
+          "reference": "lab/sims/oscillating-electron-retarded-fields/app.js@148b668391f575466282eaa81aab0dc943846a87"
+        },
+        "head": null,
+        "supporting_snapshots": [
+          "base"
+        ],
+        "file_change": "modified",
+        "base_path": "lab/sims/oscillating-electron-retarded-fields/app.js",
+        "head_path": "lab/sims/oscillating-electron-retarded-fields/app.js",
+        "uncertain_candidates": [],
+        "note": "Present in base and absent from head. This is not a claim that nothing replaced it."
+      },
+      {
+        "status": "removed",
+        "pairing": "same_selector",
+        "pairing_evidence": "selector",
+        "base": {
+          "selector": "symbol:lab/sims/oscillating-electron-retarded-fields/app.js#buildSamples:function",
+          "snapshot": "base",
+          "commit_sha": "148b668391f575466282eaa81aab0dc943846a87",
+          "rendering": "reference",
+          "reference": "lab/sims/oscillating-electron-retarded-fields/app.js@148b668391f575466282eaa81aab0dc943846a87"
+        },
+        "head": null,
+        "supporting_snapshots": [
+          "base"
+        ],
+        "file_change": "modified",
+        "base_path": "lab/sims/oscillating-electron-retarded-fields/app.js",
+        "head_path": "lab/sims/oscillating-electron-retarded-fields/app.js",
+        "uncertain_candidates": [],
+        "note": "Present in base and absent from head. This is not a claim that nothing replaced it."
+      },
+      {
+        "status": "removed",
+        "pairing": "same_selector",
+        "pairing_evidence": "selector",
+        "base": {
+          "selector": "symbol:lab/sims/oscillating-electron-retarded-fields/app.js#compress:function",
+          "snapshot": "base",
+          "commit_sha": "148b668391f575466282eaa81aab0dc943846a87",
+          "rendering": "reference",
+          "reference": "lab/sims/oscillating-electron-retarded-fields/app.js@148b668391f575466282eaa81aab0dc943846a87"
+        },
+        "head": null,
+        "supporting_snapshots": [
+          "base"
+        ],
+        "file_change": "modified",
+        "base_path": "lab/sims/oscillating-electron-retarded-fields/app.js",
+        "head_path": "lab/sims/oscillating-electron-retarded-fields/app.js",
+        "uncertain_candidates": [],
+        "note": "Present in base and absent from head. This is not a claim that nothing replaced it."
+      },
+      {
+        "status": "removed",
+        "pairing": "same_selector",
+        "pairing_evidence": "selector",
+        "base": {
+          "selector": "symbol:lab/sims/oscillating-electron-retarded-fields/app.js#dispose:function",
+          "snapshot": "base",
+          "commit_sha": "148b668391f575466282eaa81aab0dc943846a87",
+          "rendering": "reference",
+          "reference": "lab/sims/oscillating-electron-retarded-fields/app.js@148b668391f575466282eaa81aab0dc943846a87"
+        },
+        "head": null,
+        "supporting_snapshots": [
+          "base"
+        ],
+        "file_change": "modified",
+        "base_path": "lab/sims/oscillating-electron-retarded-fields/app.js",
+        "head_path": "lab/sims/oscillating-electron-retarded-fields/app.js",
+        "uncertain_candidates": [],
+        "note": "Present in base and absent from head. This is not a claim that nothing replaced it."
+      },
+      {
+        "status": "removed",
+        "pairing": "same_selector",
+        "pairing_evidence": "selector",
+        "base": {
+          "selector": "symbol:lab/sims/oscillating-electron-retarded-fields/app.js#drawArrow:function",
+          "snapshot": "base",
+          "commit_sha": "148b668391f575466282eaa81aab0dc943846a87",
+          "rendering": "reference",
+          "reference": "lab/sims/oscillating-electron-retarded-fields/app.js@148b668391f575466282eaa81aab0dc943846a87"
+        },
+        "head": null,
+        "supporting_snapshots": [
+          "base"
+        ],
+        "file_change": "modified",
+        "base_path": "lab/sims/oscillating-electron-retarded-fields/app.js",
+        "head_path": "lab/sims/oscillating-electron-retarded-fields/app.js",
+        "uncertain_candidates": [],
+        "note": "Present in base and absent from head. This is not a claim that nothing replaced it."
+      },
+      {
+        "status": "added",
+        "pairing": "same_selector",
+        "pairing_evidence": "selector",
+        "base": null,
+        "head": {
+          "selector": "symbol:lab/sims/oscillating-electron-retarded-fields/app.js#drawElectron:function",
+          "snapshot": "head",
+          "commit_sha": "82c24be9a49dbf9d775db9dc980c1de712d8bb8d",
+          "rendering": "reference",
+          "reference": "lab/sims/oscillating-electron-retarded-fields/app.js@82c24be9a49dbf9d775db9dc980c1de712d8bb8d"
+        },
+        "supporting_snapshots": [
+          "head"
+        ],
+        "file_change": "modified",
+        "base_path": "lab/sims/oscillating-electron-retarded-fields/app.js",
+        "head_path": "lab/sims/oscillating-electron-retarded-fields/app.js",
+        "uncertain_candidates": [],
+        "note": "Present in head and absent from base. This is not a claim that it did not exist under another identity."
+      },
+      {
+        "status": "added",
+        "pairing": "same_selector",
+        "pairing_evidence": "selector",
+        "base": null,
+        "head": {
+          "selector": "symbol:lab/sims/oscillating-electron-retarded-fields/app.js#drawGuide:function",
+          "snapshot": "head",
+          "commit_sha": "82c24be9a49dbf9d775db9dc980c1de712d8bb8d",
+          "rendering": "reference",
+          "reference": "lab/sims/oscillating-electron-retarded-fields/app.js@82c24be9a49dbf9d775db9dc980c1de712d8bb8d"
+        },
+        "supporting_snapshots": [
+          "head"
+        ],
+        "file_change": "modified",
+        "base_path": "lab/sims/oscillating-electron-retarded-fields/app.js",
+        "head_path": "lab/sims/oscillating-electron-retarded-fields/app.js",
+        "uncertain_candidates": [],
+        "note": "Present in head and absent from base. This is not a claim that it did not exist under another identity."
+      },
+      {
+        "status": "added",
+        "pairing": "same_selector",
+        "pairing_evidence": "selector",
+        "base": null,
+        "head": {
+          "selector": "symbol:lab/sims/oscillating-electron-retarded-fields/app.js#drawPath:function",
+          "snapshot": "head",
+          "commit_sha": "82c24be9a49dbf9d775db9dc980c1de712d8bb8d",
+          "rendering": "reference",
+          "reference": "lab/sims/oscillating-electron-retarded-fields/app.js@82c24be9a49dbf9d775db9dc980c1de712d8bb8d"
+        },
+        "supporting_snapshots": [
+          "head"
+        ],
+        "file_change": "modified",
+        "base_path": "lab/sims/oscillating-electron-retarded-fields/app.js",
+        "head_path": "lab/sims/oscillating-electron-retarded-fields/app.js",
+        "uncertain_candidates": [],
+        "note": "Present in head and absent from base. This is not a claim that it did not exist under another identity."
+      },
+      {
+        "status": "removed",
+        "pairing": "same_selector",
+        "pairing_evidence": "selector",
+        "base": {
+          "selector": "symbol:lab/sims/oscillating-electron-retarded-fields/app.js#drawPower:function",
+          "snapshot": "base",
+          "commit_sha": "148b668391f575466282eaa81aab0dc943846a87",
+          "rendering": "reference",
+          "reference": "lab/sims/oscillating-electron-retarded-fields/app.js@148b668391f575466282eaa81aab0dc943846a87"
+        },
+        "head": null,
+        "supporting_snapshots": [
+          "base"
+        ],
+        "file_change": "modified",
+        "base_path": "lab/sims/oscillating-electron-retarded-fields/app.js",
+        "head_path": "lab/sims/oscillating-electron-retarded-fields/app.js",
+        "uncertain_candidates": [],
+        "note": "Present in base and absent from head. This is not a claim that nothing replaced it."
+      },
+      {
+        "status": "added",
+        "pairing": "same_selector",
+        "pairing_evidence": "selector",
+        "base": null,
+        "head": {
+          "selector": "symbol:lab/sims/oscillating-electron-retarded-fields/app.js#drawSamples:function",
+          "snapshot": "head",
+          "commit_sha": "82c24be9a49dbf9d775db9dc980c1de712d8bb8d",
+          "rendering": "reference",
+          "reference": "lab/sims/oscillating-electron-retarded-fields/app.js@82c24be9a49dbf9d775db9dc980c1de712d8bb8d"
+        },
+        "supporting_snapshots": [
+          "head"
+        ],
+        "file_change": "modified",
+        "base_path": "lab/sims/oscillating-electron-retarded-fields/app.js",
+        "head_path": "lab/sims/oscillating-electron-retarded-fields/app.js",
+        "uncertain_candidates": [],
+        "note": "Present in head and absent from base. This is not a claim that it did not exist under another identity."
+      },
+      {
+        "status": "removed",
+        "pairing": "same_selector",
+        "pairing_evidence": "selector",
+        "base": {
+          "selector": "symbol:lab/sims/oscillating-electron-retarded-fields/app.js#drawStreams:function",
+          "snapshot": "base",
+          "commit_sha": "148b668391f575466282eaa81aab0dc943846a87",
+          "rendering": "reference",
+          "reference": "lab/sims/oscillating-electron-retarded-fields/app.js@148b668391f575466282eaa81aab0dc943846a87"
+        },
+        "head": null,
+        "supporting_snapshots": [
+          "base"
+        ],
+        "file_change": "modified",
+        "base_path": "lab/sims/oscillating-electron-retarded-fields/app.js",
+        "head_path": "lab/sims/oscillating-electron-retarded-fields/app.js",
+        "uncertain_candidates": [],
+        "note": "Present in base and absent from head. This is not a claim that nothing replaced it."
+      },
+      {
+        "status": "removed",
+        "pairing": "same_selector",
+        "pairing_evidence": "selector",
+        "base": {
+          "selector": "symbol:lab/sims/oscillating-electron-retarded-fields/app.js#dynamicGeometry:function",
+          "snapshot": "base",
+          "commit_sha": "148b668391f575466282eaa81aab0dc943846a87",
+          "rendering": "reference",
+          "reference": "lab/sims/oscillating-electron-retarded-fields/app.js@148b668391f575466282eaa81aab0dc943846a87"
+        },
+        "head": null,
+        "supporting_snapshots": [
+          "base"
+        ],
+        "file_change": "modified",
+        "base_path": "lab/sims/oscillating-electron-retarded-fields/app.js",
+        "head_path": "lab/sims/oscillating-electron-retarded-fields/app.js",
+        "uncertain_candidates": [],
+        "note": "Present in base and absent from head. This is not a claim that nothing replaced it."
+      },
+      {
+        "status": "removed",
+        "pairing": "same_selector",
+        "pairing_evidence": "selector",
+        "base": {
+          "selector": "symbol:lab/sims/oscillating-electron-retarded-fields/app.js#homeCamera:function",
+          "snapshot": "base",
+          "commit_sha": "148b668391f575466282eaa81aab0dc943846a87",
+          "rendering": "reference",
+          "reference": "lab/sims/oscillating-electron-retarded-fields/app.js@148b668391f575466282eaa81aab0dc943846a87"
+        },
+        "head": null,
+        "supporting_snapshots": [
+          "base"
+        ],
+        "file_change": "modified",
+        "base_path": "lab/sims/oscillating-electron-retarded-fields/app.js",
+        "head_path": "lab/sims/oscillating-electron-retarded-fields/app.js",
+        "uncertain_candidates": [],
+        "note": "Present in base and absent from head. This is not a claim that nothing replaced it."
+      },
+      {
+        "status": "removed",
+        "pairing": "same_selector",
+        "pairing_evidence": "selector",
+        "base": {
+          "selector": "symbol:lab/sims/oscillating-electron-retarded-fields/app.js#line:function",
+          "snapshot": "base",
+          "commit_sha": "148b668391f575466282eaa81aab0dc943846a87",
+          "rendering": "reference",
+          "reference": "lab/sims/oscillating-electron-retarded-fields/app.js@148b668391f575466282eaa81aab0dc943846a87"
+        },
+        "head": null,
+        "supporting_snapshots": [
+          "base"
+        ],
+        "file_change": "modified",
+        "base_path": "lab/sims/oscillating-electron-retarded-fields/app.js",
+        "head_path": "lab/sims/oscillating-electron-retarded-fields/app.js",
+        "uncertain_candidates": [],
+        "note": "Present in base and absent from head. This is not a claim that nothing replaced it."
+      },
+      {
+        "status": "signature_changed",
+        "pairing": "signature_changed",
+        "pairing_evidence": "signature",
+        "base": {
+          "selector": "symbol:lab/sims/oscillating-electron-retarded-fields/app.js#motionNow:function",
+          "snapshot": "base",
+          "commit_sha": "148b668391f575466282eaa81aab0dc943846a87",
+          "rendering": "reference",
+          "reference": "lab/sims/oscillating-electron-retarded-fields/app.js@148b668391f575466282eaa81aab0dc943846a87"
+        },
+        "head": {
+          "selector": "symbol:lab/sims/oscillating-electron-retarded-fields/app.js#motionNow:function",
+          "snapshot": "head",
+          "commit_sha": "82c24be9a49dbf9d775db9dc980c1de712d8bb8d",
+          "rendering": "reference",
+          "reference": "lab/sims/oscillating-electron-retarded-fields/app.js@82c24be9a49dbf9d775db9dc980c1de712d8bb8d"
+        },
+        "supporting_snapshots": [
+          "base",
+          "head"
+        ],
+        "file_change": "modified",
+        "base_path": "lab/sims/oscillating-electron-retarded-fields/app.js",
+        "head_path": "lab/sims/oscillating-electron-retarded-fields/app.js",
+        "uncertain_candidates": [],
+        "note": "signature changed: `motionNow = () => state.motion === 'turn' ? hairpin(state.beta) : sinusoid(state.beta)` -> `motionNow = () => ({`"
+      },
+      {
+        "status": "modified",
+        "pairing": "same_selector",
+        "pairing_evidence": "selector",
+        "base": {
+          "selector": "symbol:lab/sims/oscillating-electron-retarded-fields/app.js#play:function",
+          "snapshot": "base",
+          "commit_sha": "148b668391f575466282eaa81aab0dc943846a87",
+          "rendering": "reference",
+          "reference": "lab/sims/oscillating-electron-retarded-fields/app.js@148b668391f575466282eaa81aab0dc943846a87"
+        },
+        "head": {
+          "selector": "symbol:lab/sims/oscillating-electron-retarded-fields/app.js#play:function",
+          "snapshot": "head",
+          "commit_sha": "82c24be9a49dbf9d775db9dc980c1de712d8bb8d",
+          "rendering": "reference",
+          "reference": "lab/sims/oscillating-electron-retarded-fields/app.js@82c24be9a49dbf9d775db9dc980c1de712d8bb8d"
+        },
+        "supporting_snapshots": [
+          "base",
+          "head"
+        ],
+        "file_change": "modified",
+        "base_path": "lab/sims/oscillating-electron-retarded-fields/app.js",
+        "head_path": "lab/sims/oscillating-electron-retarded-fields/app.js",
+        "uncertain_candidates": [],
+        "note": "body changed; signature line is unchanged"
+      },
+      {
+        "status": "added",
+        "pairing": "same_selector",
+        "pairing_evidence": "selector",
+        "base": null,
+        "head": {
+          "selector": "symbol:lab/sims/oscillating-electron-retarded-fields/app.js#project:function",
+          "snapshot": "head",
+          "commit_sha": "82c24be9a49dbf9d775db9dc980c1de712d8bb8d",
+          "rendering": "reference",
+          "reference": "lab/sims/oscillating-electron-retarded-fields/app.js@82c24be9a49dbf9d775db9dc980c1de712d8bb8d"
+        },
+        "supporting_snapshots": [
+          "head"
+        ],
+        "file_change": "modified",
+        "base_path": "lab/sims/oscillating-electron-retarded-fields/app.js",
+        "head_path": "lab/sims/oscillating-electron-retarded-fields/app.js",
+        "uncertain_candidates": [],
+        "note": "Present in head and absent from base. This is not a claim that it did not exist under another identity."
+      },
+      {
+        "status": "modified",
+        "pairing": "same_selector",
+        "pairing_evidence": "selector",
+        "base": {
+          "selector": "symbol:lab/sims/oscillating-electron-retarded-fields/app.js#render:function",
+          "snapshot": "base",
+          "commit_sha": "148b668391f575466282eaa81aab0dc943846a87",
+          "rendering": "reference",
+          "reference": "lab/sims/oscillating-electron-retarded-fields/app.js@148b668391f575466282eaa81aab0dc943846a87"
+        },
+        "head": {
+          "selector": "symbol:lab/sims/oscillating-electron-retarded-fields/app.js#render:function",
+          "snapshot": "head",
+          "commit_sha": "82c24be9a49dbf9d775db9dc980c1de712d8bb8d",
+          "rendering": "reference",
+          "reference": "lab/sims/oscillating-electron-retarded-fields/app.js@82c24be9a49dbf9d775db9dc980c1de712d8bb8d"
+        },
+        "supporting_snapshots": [
+          "base",
+          "head"
+        ],
+        "file_change": "modified",
+        "base_path": "lab/sims/oscillating-electron-retarded-fields/app.js",
+        "head_path": "lab/sims/oscillating-electron-retarded-fields/app.js",
+        "uncertain_candidates": [],
+        "note": "body changed; signature line is unchanged"
+      },
+      {
+        "status": "added",
+        "pairing": "same_selector",
+        "pairing_evidence": "selector",
+        "base": null,
+        "head": {
+          "selector": "symbol:lab/sims/oscillating-electron-retarded-fields/app.js#renderFrame:function",
+          "snapshot": "head",
+          "commit_sha": "82c24be9a49dbf9d775db9dc980c1de712d8bb8d",
+          "rendering": "reference",
+          "reference": "lab/sims/oscillating-electron-retarded-fields/app.js@82c24be9a49dbf9d775db9dc980c1de712d8bb8d"
+        },
+        "supporting_snapshots": [
+          "head"
+        ],
+        "file_change": "modified",
+        "base_path": "lab/sims/oscillating-electron-retarded-fields/app.js",
+        "head_path": "lab/sims/oscillating-electron-retarded-fields/app.js",
+        "uncertain_candidates": [],
+        "note": "Present in head and absent from base. This is not a claim that it did not exist under another identity."
+      },
+      {
+        "status": "removed",
+        "pairing": "same_selector",
+        "pairing_evidence": "selector",
+        "base": {
+          "selector": "symbol:lab/sims/oscillating-electron-retarded-fields/app.js#resize:function",
+          "snapshot": "base",
+          "commit_sha": "148b668391f575466282eaa81aab0dc943846a87",
+          "rendering": "reference",
+          "reference": "lab/sims/oscillating-electron-retarded-fields/app.js@148b668391f575466282eaa81aab0dc943846a87"
+        },
+        "head": null,
+        "supporting_snapshots": [
+          "base"
+        ],
+        "file_change": "modified",
+        "base_path": "lab/sims/oscillating-electron-retarded-fields/app.js",
+        "head_path": "lab/sims/oscillating-electron-retarded-fields/app.js",
+        "uncertain_candidates": [],
+        "note": "Present in base and absent from head. This is not a claim that nothing replaced it."
+      },
+      {
+        "status": "added",
+        "pairing": "same_selector",
+        "pairing_evidence": "selector",
+        "base": null,
+        "head": {
+          "selector": "symbol:lab/sims/oscillating-electron-retarded-fields/app.js#seek:function",
+          "snapshot": "head",
+          "commit_sha": "82c24be9a49dbf9d775db9dc980c1de712d8bb8d",
+          "rendering": "reference",
+          "reference": "lab/sims/oscillating-electron-retarded-fields/app.js@82c24be9a49dbf9d775db9dc980c1de712d8bb8d"
+        },
+        "supporting_snapshots": [
+          "head"
+        ],
+        "file_change": "modified",
+        "base_path": "lab/sims/oscillating-electron-retarded-fields/app.js",
+        "head_path": "lab/sims/oscillating-electron-retarded-fields/app.js",
+        "uncertain_candidates": [],
+        "note": "Present in head and absent from base. This is not a claim that it did not exist under another identity."
+      },
+      {
+        "status": "added",
+        "pairing": "same_selector",
+        "pairing_evidence": "selector",
+        "base": null,
+        "head": {
+          "selector": "symbol:lab/sims/oscillating-electron-retarded-fields/app.js#segment:function",
+          "snapshot": "head",
+          "commit_sha": "82c24be9a49dbf9d775db9dc980c1de712d8bb8d",
+          "rendering": "reference",
+          "reference": "lab/sims/oscillating-electron-retarded-fields/app.js@82c24be9a49dbf9d775db9dc980c1de712d8bb8d"
+        },
+        "supporting_snapshots": [
+          "head"
+        ],
+        "file_change": "modified",
+        "base_path": "lab/sims/oscillating-electron-retarded-fields/app.js",
+        "head_path": "lab/sims/oscillating-electron-retarded-fields/app.js",
+        "uncertain_candidates": [],
+        "note": "Present in head and absent from base. This is not a claim that it did not exist under another identity."
+      },
+      {
+        "status": "removed",
+        "pairing": "same_selector",
+        "pairing_evidence": "selector",
+        "base": {
+          "selector": "symbol:lab/sims/oscillating-electron-retarded-fields/app.js#selected:function",
+          "snapshot": "base",
+          "commit_sha": "148b668391f575466282eaa81aab0dc943846a87",
+          "rendering": "reference",
+          "reference": "lab/sims/oscillating-electron-retarded-fields/app.js@148b668391f575466282eaa81aab0dc943846a87"
+        },
+        "head": null,
+        "supporting_snapshots": [
+          "base"
+        ],
+        "file_change": "modified",
+        "base_path": "lab/sims/oscillating-electron-retarded-fields/app.js",
+        "head_path": "lab/sims/oscillating-electron-retarded-fields/app.js",
+        "uncertain_candidates": [],
+        "note": "Present in base and absent from head. This is not a claim that nothing replaced it."
+      },
+      {
+        "status": "removed",
+        "pairing": "same_selector",
+        "pairing_evidence": "selector",
+        "base": {
+          "selector": "symbol:lab/sims/oscillating-electron-retarded-fields/app.js#sphere:function",
+          "snapshot": "base",
+          "commit_sha": "148b668391f575466282eaa81aab0dc943846a87",
+          "rendering": "reference",
+          "reference": "lab/sims/oscillating-electron-retarded-fields/app.js@148b668391f575466282eaa81aab0dc943846a87"
+        },
+        "head": null,
+        "supporting_snapshots": [
+          "base"
+        ],
+        "file_change": "modified",
+        "base_path": "lab/sims/oscillating-electron-retarded-fields/app.js",
+        "head_path": "lab/sims/oscillating-electron-retarded-fields/app.js",
+        "uncertain_candidates": [],
+        "note": "Present in base and absent from head. This is not a claim that nothing replaced it."
+      },
+      {
+        "status": "added",
+        "pairing": "same_selector",
+        "pairing_evidence": "selector",
+        "base": null,
+        "head": {
+          "selector": "symbol:lab/sims/oscillating-electron-retarded-fields/app.js#textAt:function",
+          "snapshot": "head",
+          "commit_sha": "82c24be9a49dbf9d775db9dc980c1de712d8bb8d",
+          "rendering": "reference",
+          "reference": "lab/sims/oscillating-electron-retarded-fields/app.js@82c24be9a49dbf9d775db9dc980c1de712d8bb8d"
+        },
+        "supporting_snapshots": [
+          "head"
+        ],
+        "file_change": "modified",
+        "base_path": "lab/sims/oscillating-electron-retarded-fields/app.js",
+        "head_path": "lab/sims/oscillating-electron-retarded-fields/app.js",
+        "uncertain_candidates": [],
+        "note": "Present in head and absent from base. This is not a claim that it did not exist under another identity."
+      },
+      {
+        "status": "removed",
+        "pairing": "same_selector",
+        "pairing_evidence": "selector",
+        "base": {
+          "selector": "symbol:lab/sims/oscillating-electron-retarded-fields/app.js#updateCamera:function",
+          "snapshot": "base",
+          "commit_sha": "148b668391f575466282eaa81aab0dc943846a87",
+          "rendering": "reference",
+          "reference": "lab/sims/oscillating-electron-retarded-fields/app.js@148b668391f575466282eaa81aab0dc943846a87"
+        },
+        "head": null,
+        "supporting_snapshots": [
+          "base"
+        ],
+        "file_change": "modified",
+        "base_path": "lab/sims/oscillating-electron-retarded-fields/app.js",
+        "head_path": "lab/sims/oscillating-electron-retarded-fields/app.js",
+        "uncertain_candidates": [],
+        "note": "Present in base and absent from head. This is not a claim that nothing replaced it."
+      },
+      {
+        "status": "removed",
+        "pairing": "same_selector",
+        "pairing_evidence": "selector",
+        "base": {
+          "selector": "symbol:lab/sims/oscillating-electron-retarded-fields/app.js#updateFields:function",
+          "snapshot": "base",
+          "commit_sha": "148b668391f575466282eaa81aab0dc943846a87",
+          "rendering": "reference",
+          "reference": "lab/sims/oscillating-electron-retarded-fields/app.js@148b668391f575466282eaa81aab0dc943846a87"
+        },
+        "head": null,
+        "supporting_snapshots": [
+          "base"
+        ],
+        "file_change": "modified",
+        "base_path": "lab/sims/oscillating-electron-retarded-fields/app.js",
+        "head_path": "lab/sims/oscillating-electron-retarded-fields/app.js",
+        "uncertain_candidates": [],
+        "note": "Present in base and absent from head. This is not a claim that nothing replaced it."
+      },
+      {
+        "status": "removed",
+        "pairing": "same_selector",
+        "pairing_evidence": "selector",
+        "base": {
+          "selector": "symbol:lab/sims/oscillating-electron-retarded-fields/app.js#updateGeometry:function",
+          "snapshot": "base",
+          "commit_sha": "148b668391f575466282eaa81aab0dc943846a87",
+          "rendering": "reference",
+          "reference": "lab/sims/oscillating-electron-retarded-fields/app.js@148b668391f575466282eaa81aab0dc943846a87"
+        },
+        "head": null,
+        "supporting_snapshots": [
+          "base"
+        ],
+        "file_change": "modified",
+        "base_path": "lab/sims/oscillating-electron-retarded-fields/app.js",
+        "head_path": "lab/sims/oscillating-electron-retarded-fields/app.js",
+        "uncertain_candidates": [],
+        "note": "Present in base and absent from head. This is not a claim that nothing replaced it."
+      },
+      {
+        "status": "added",
+        "pairing": "same_selector",
+        "pairing_evidence": "selector",
+        "base": null,
+        "head": {
+          "selector": "symbol:lab/sims/oscillating-electron-retarded-fields/app.js#worldScale:function",
+          "snapshot": "head",
+          "commit_sha": "82c24be9a49dbf9d775db9dc980c1de712d8bb8d",
+          "rendering": "reference",
+          "reference": "lab/sims/oscillating-electron-retarded-fields/app.js@82c24be9a49dbf9d775db9dc980c1de712d8bb8d"
+        },
+        "supporting_snapshots": [
+          "head"
+        ],
+        "file_change": "modified",
+        "base_path": "lab/sims/oscillating-electron-retarded-fields/app.js",
+        "head_path": "lab/sims/oscillating-electron-retarded-fields/app.js",
+        "uncertain_candidates": [],
+        "note": "Present in head and absent from base. This is not a claim that it did not exist under another identity."
+      },
+      {
+        "status": "signature_changed",
+        "pairing": "signature_changed",
+        "pairing_evidence": "signature",
+        "base": {
+          "selector": "symbol:lab/sims/oscillating-electron-retarded-fields/browser-check.py#summary:function",
+          "snapshot": "base",
+          "commit_sha": "148b668391f575466282eaa81aab0dc943846a87",
+          "rendering": "reference",
+          "reference": "lab/sims/oscillating-electron-retarded-fields/browser-check.py@148b668391f575466282eaa81aab0dc943846a87"
+        },
+        "head": {
+          "selector": "symbol:lab/sims/oscillating-electron-retarded-fields/browser-check.py#summary:function",
+          "snapshot": "head",
+          "commit_sha": "82c24be9a49dbf9d775db9dc980c1de712d8bb8d",
+          "rendering": "reference",
+          "reference": "lab/sims/oscillating-electron-retarded-fields/browser-check.py@82c24be9a49dbf9d775db9dc980c1de712d8bb8d"
+        },
+        "supporting_snapshots": [
+          "base",
+          "head"
+        ],
+        "file_change": "modified",
+        "base_path": "lab/sims/oscillating-electron-retarded-fields/browser-check.py",
+        "head_path": "lab/sims/oscillating-electron-retarded-fields/browser-check.py",
+        "uncertain_candidates": [],
+        "note": "signature changed: `def summary(values):` -> `def summary(v):`"
+      },
+      {
+        "status": "added",
+        "pairing": "same_selector",
+        "pairing_evidence": "selector",
+        "base": null,
+        "head": {
+          "selector": "symbol:scripts/native_registration_fixture.py#append:function",
+          "snapshot": "head",
+          "commit_sha": "82c24be9a49dbf9d775db9dc980c1de712d8bb8d",
+          "rendering": "reference",
+          "reference": "scripts/native_registration_fixture.py@82c24be9a49dbf9d775db9dc980c1de712d8bb8d"
+        },
+        "supporting_snapshots": [
+          "head"
+        ],
+        "file_change": "added",
+        "base_path": null,
+        "head_path": "scripts/native_registration_fixture.py",
+        "uncertain_candidates": [],
+        "note": "Present in head and absent from base. This is not a claim that it did not exist under another identity."
+      },
+      {
+        "status": "added",
+        "pairing": "same_selector",
+        "pairing_evidence": "selector",
+        "base": null,
+        "head": {
+          "selector": "symbol:scripts/native_registration_fixture.py#cli:function",
+          "snapshot": "head",
+          "commit_sha": "82c24be9a49dbf9d775db9dc980c1de712d8bb8d",
+          "rendering": "reference",
+          "reference": "scripts/native_registration_fixture.py@82c24be9a49dbf9d775db9dc980c1de712d8bb8d"
+        },
+        "supporting_snapshots": [
+          "head"
+        ],
+        "file_change": "added",
+        "base_path": null,
+        "head_path": "scripts/native_registration_fixture.py",
+        "uncertain_candidates": [],
+        "note": "Present in head and absent from base. This is not a claim that it did not exist under another identity."
+      },
+      {
+        "status": "added",
+        "pairing": "same_selector",
+        "pairing_evidence": "selector",
+        "base": null,
+        "head": {
+          "selector": "symbol:scripts/native_registration_fixture.py#commit:function",
+          "snapshot": "head",
+          "commit_sha": "82c24be9a49dbf9d775db9dc980c1de712d8bb8d",
+          "rendering": "reference",
+          "reference": "scripts/native_registration_fixture.py@82c24be9a49dbf9d775db9dc980c1de712d8bb8d"
+        },
+        "supporting_snapshots": [
+          "head"
+        ],
+        "file_change": "added",
+        "base_path": null,
+        "head_path": "scripts/native_registration_fixture.py",
+        "uncertain_candidates": [],
+        "note": "Present in head and absent from base. This is not a claim that it did not exist under another identity."
+      },
+      {
+        "status": "added",
+        "pairing": "same_selector",
+        "pairing_evidence": "selector",
+        "base": null,
+        "head": {
+          "selector": "symbol:scripts/native_registration_fixture.py#git:function",
+          "snapshot": "head",
+          "commit_sha": "82c24be9a49dbf9d775db9dc980c1de712d8bb8d",
+          "rendering": "reference",
+          "reference": "scripts/native_registration_fixture.py@82c24be9a49dbf9d775db9dc980c1de712d8bb8d"
+        },
+        "supporting_snapshots": [
+          "head"
+        ],
+        "file_change": "added",
+        "base_path": null,
+        "head_path": "scripts/native_registration_fixture.py",
+        "uncertain_candidates": [],
+        "note": "Present in head and absent from base. This is not a claim that it did not exist under another identity."
+      },
+      {
+        "status": "added",
+        "pairing": "same_selector",
+        "pairing_evidence": "selector",
+        "base": null,
+        "head": {
+          "selector": "symbol:scripts/native_registration_fixture.py#main:function",
+          "snapshot": "head",
+          "commit_sha": "82c24be9a49dbf9d775db9dc980c1de712d8bb8d",
+          "rendering": "reference",
+          "reference": "scripts/native_registration_fixture.py@82c24be9a49dbf9d775db9dc980c1de712d8bb8d"
+        },
+        "supporting_snapshots": [
+          "head"
+        ],
+        "file_change": "added",
+        "base_path": null,
+        "head_path": "scripts/native_registration_fixture.py",
+        "uncertain_candidates": [],
+        "note": "Present in head and absent from base. This is not a claim that it did not exist under another identity."
+      },
+      {
+        "status": "added",
+        "pairing": "same_selector",
+        "pairing_evidence": "selector",
+        "base": null,
+        "head": {
+          "selector": "symbol:scripts/native_registration_fixture.py#publish:function",
+          "snapshot": "head",
+          "commit_sha": "82c24be9a49dbf9d775db9dc980c1de712d8bb8d",
+          "rendering": "reference",
+          "reference": "scripts/native_registration_fixture.py@82c24be9a49dbf9d775db9dc980c1de712d8bb8d"
+        },
+        "supporting_snapshots": [
+          "head"
+        ],
+        "file_change": "added",
+        "base_path": null,
+        "head_path": "scripts/native_registration_fixture.py",
+        "uncertain_candidates": [],
+        "note": "Present in head and absent from base. This is not a claim that it did not exist under another identity."
+      },
+      {
+        "status": "added",
+        "pairing": "same_selector",
+        "pairing_evidence": "selector",
+        "base": null,
+        "head": {
+          "selector": "symbol:scripts/native_registration_fixture.py#run:function",
+          "snapshot": "head",
+          "commit_sha": "82c24be9a49dbf9d775db9dc980c1de712d8bb8d",
+          "rendering": "reference",
+          "reference": "scripts/native_registration_fixture.py@82c24be9a49dbf9d775db9dc980c1de712d8bb8d"
+        },
+        "supporting_snapshots": [
+          "head"
+        ],
+        "file_change": "added",
+        "base_path": null,
+        "head_path": "scripts/native_registration_fixture.py",
+        "uncertain_candidates": [],
+        "note": "Present in head and absent from base. This is not a claim that it did not exist under another identity."
+      },
+      {
+        "status": "added",
+        "pairing": "same_selector",
+        "pairing_evidence": "selector",
+        "base": null,
+        "head": {
+          "selector": "symbol:scripts/research_records.py#baseline_source_report:function",
+          "snapshot": "head",
+          "commit_sha": "82c24be9a49dbf9d775db9dc980c1de712d8bb8d",
+          "rendering": "reference",
+          "reference": "scripts/research_records.py@82c24be9a49dbf9d775db9dc980c1de712d8bb8d"
+        },
+        "supporting_snapshots": [
+          "head"
+        ],
+        "file_change": "added",
+        "base_path": null,
+        "head_path": "scripts/research_records.py",
+        "uncertain_candidates": [],
+        "note": "Present in head and absent from base. This is not a claim that it did not exist under another identity."
+      },
+      {
+        "status": "added",
+        "pairing": "same_selector",
+        "pairing_evidence": "selector",
+        "base": null,
+        "head": {
+          "selector": "symbol:scripts/research_records.py#blob_pin:function",
+          "snapshot": "head",
+          "commit_sha": "82c24be9a49dbf9d775db9dc980c1de712d8bb8d",
+          "rendering": "reference",
+          "reference": "scripts/research_records.py@82c24be9a49dbf9d775db9dc980c1de712d8bb8d"
+        },
+        "supporting_snapshots": [
+          "head"
+        ],
+        "file_change": "added",
+        "base_path": null,
+        "head_path": "scripts/research_records.py",
+        "uncertain_candidates": [],
+        "note": "Present in head and absent from base. This is not a claim that it did not exist under another identity."
+      },
+      {
+        "status": "added",
+        "pairing": "same_selector",
+        "pairing_evidence": "selector",
+        "base": null,
+        "head": {
+          "selector": "symbol:scripts/research_records.py#build:function",
+          "snapshot": "head",
+          "commit_sha": "82c24be9a49dbf9d775db9dc980c1de712d8bb8d",
+          "rendering": "reference",
+          "reference": "scripts/research_records.py@82c24be9a49dbf9d775db9dc980c1de712d8bb8d"
+        },
+        "supporting_snapshots": [
+          "head"
+        ],
+        "file_change": "added",
+        "base_path": null,
+        "head_path": "scripts/research_records.py",
+        "uncertain_candidates": [],
+        "note": "Present in head and absent from base. This is not a claim that it did not exist under another identity."
+      },
+      {
+        "status": "added",
+        "pairing": "same_selector",
+        "pairing_evidence": "selector",
+        "base": null,
+        "head": {
+          "selector": "symbol:scripts/research_records.py#check:function",
+          "snapshot": "head",
+          "commit_sha": "82c24be9a49dbf9d775db9dc980c1de712d8bb8d",
+          "rendering": "reference",
+          "reference": "scripts/research_records.py@82c24be9a49dbf9d775db9dc980c1de712d8bb8d"
+        },
+        "supporting_snapshots": [
+          "head"
+        ],
+        "file_change": "added",
+        "base_path": null,
+        "head_path": "scripts/research_records.py",
+        "uncertain_candidates": [],
+        "note": "Present in head and absent from base. This is not a claim that it did not exist under another identity."
+      },
+      {
+        "status": "added",
+        "pairing": "same_selector",
+        "pairing_evidence": "selector",
+        "base": null,
+        "head": {
+          "selector": "symbol:scripts/research_records.py#digest:function",
+          "snapshot": "head",
+          "commit_sha": "82c24be9a49dbf9d775db9dc980c1de712d8bb8d",
+          "rendering": "reference",
+          "reference": "scripts/research_records.py@82c24be9a49dbf9d775db9dc980c1de712d8bb8d"
+        },
+        "supporting_snapshots": [
+          "head"
+        ],
+        "file_change": "added",
+        "base_path": null,
+        "head_path": "scripts/research_records.py",
+        "uncertain_candidates": [],
+        "note": "Present in head and absent from base. This is not a claim that it did not exist under another identity."
+      },
+      {
+        "status": "added",
+        "pairing": "same_selector",
+        "pairing_evidence": "selector",
+        "base": null,
+        "head": {
+          "selector": "symbol:scripts/research_records.py#encoded:function",
+          "snapshot": "head",
+          "commit_sha": "82c24be9a49dbf9d775db9dc980c1de712d8bb8d",
+          "rendering": "reference",
+          "reference": "scripts/research_records.py@82c24be9a49dbf9d775db9dc980c1de712d8bb8d"
+        },
+        "supporting_snapshots": [
+          "head"
+        ],
+        "file_change": "added",
+        "base_path": null,
+        "head_path": "scripts/research_records.py",
+        "uncertain_candidates": [],
+        "note": "Present in head and absent from base. This is not a claim that it did not exist under another identity."
+      },
+      {
+        "status": "added",
+        "pairing": "same_selector",
+        "pairing_evidence": "selector",
+        "base": null,
+        "head": {
+          "selector": "symbol:scripts/research_records.py#external_index:function",
+          "snapshot": "head",
+          "commit_sha": "82c24be9a49dbf9d775db9dc980c1de712d8bb8d",
+          "rendering": "reference",
+          "reference": "scripts/research_records.py@82c24be9a49dbf9d775db9dc980c1de712d8bb8d"
+        },
+        "supporting_snapshots": [
+          "head"
+        ],
+        "file_change": "added",
+        "base_path": null,
+        "head_path": "scripts/research_records.py",
+        "uncertain_candidates": [],
+        "note": "Present in head and absent from base. This is not a claim that it did not exist under another identity."
+      },
+      {
+        "status": "added",
+        "pairing": "same_selector",
+        "pairing_evidence": "selector",
+        "base": null,
+        "head": {
+          "selector": "symbol:scripts/research_records.py#external_record:function",
+          "snapshot": "head",
+          "commit_sha": "82c24be9a49dbf9d775db9dc980c1de712d8bb8d",
+          "rendering": "reference",
+          "reference": "scripts/research_records.py@82c24be9a49dbf9d775db9dc980c1de712d8bb8d"
+        },
+        "supporting_snapshots": [
+          "head"
+        ],
+        "file_change": "added",
+        "base_path": null,
+        "head_path": "scripts/research_records.py",
+        "uncertain_candidates": [],
+        "note": "Present in head and absent from base. This is not a claim that it did not exist under another identity."
+      },
+      {
+        "status": "added",
+        "pairing": "same_selector",
+        "pairing_evidence": "selector",
+        "base": null,
+        "head": {
+          "selector": "symbol:scripts/research_records.py#finish_record:function",
+          "snapshot": "head",
+          "commit_sha": "82c24be9a49dbf9d775db9dc980c1de712d8bb8d",
+          "rendering": "reference",
+          "reference": "scripts/research_records.py@82c24be9a49dbf9d775db9dc980c1de712d8bb8d"
+        },
+        "supporting_snapshots": [
+          "head"
+        ],
+        "file_change": "added",
+        "base_path": null,
+        "head_path": "scripts/research_records.py",
+        "uncertain_candidates": [],
+        "note": "Present in head and absent from base. This is not a claim that it did not exist under another identity."
+      },
+      {
+        "status": "added",
+        "pairing": "same_selector",
+        "pairing_evidence": "selector",
+        "base": null,
+        "head": {
+          "selector": "symbol:scripts/research_records.py#git:function",
+          "snapshot": "head",
+          "commit_sha": "82c24be9a49dbf9d775db9dc980c1de712d8bb8d",
+          "rendering": "reference",
+          "reference": "scripts/research_records.py@82c24be9a49dbf9d775db9dc980c1de712d8bb8d"
+        },
+        "supporting_snapshots": [
+          "head"
+        ],
+        "file_change": "added",
+        "base_path": null,
+        "head_path": "scripts/research_records.py",
+        "uncertain_candidates": [],
+        "note": "Present in head and absent from base. This is not a claim that it did not exist under another identity."
+      },
+      {
+        "status": "added",
+        "pairing": "same_selector",
+        "pairing_evidence": "selector",
+        "base": null,
+        "head": {
+          "selector": "symbol:scripts/research_records.py#load_cached_external:function",
+          "snapshot": "head",
+          "commit_sha": "82c24be9a49dbf9d775db9dc980c1de712d8bb8d",
+          "rendering": "reference",
+          "reference": "scripts/research_records.py@82c24be9a49dbf9d775db9dc980c1de712d8bb8d"
+        },
+        "supporting_snapshots": [
+          "head"
+        ],
+        "file_change": "added",
+        "base_path": null,
+        "head_path": "scripts/research_records.py",
+        "uncertain_candidates": [],
+        "note": "Present in head and absent from base. This is not a claim that it did not exist under another identity."
+      },
+      {
+        "status": "added",
+        "pairing": "same_selector",
+        "pairing_evidence": "selector",
+        "base": null,
+        "head": {
+          "selector": "symbol:scripts/research_records.py#load_external:function",
+          "snapshot": "head",
+          "commit_sha": "82c24be9a49dbf9d775db9dc980c1de712d8bb8d",
+          "rendering": "reference",
+          "reference": "scripts/research_records.py@82c24be9a49dbf9d775db9dc980c1de712d8bb8d"
+        },
+        "supporting_snapshots": [
+          "head"
+        ],
+        "file_change": "added",
+        "base_path": null,
+        "head_path": "scripts/research_records.py",
+        "uncertain_candidates": [],
+        "note": "Present in head and absent from base. This is not a claim that it did not exist under another identity."
+      },
+      {
+        "status": "added",
+        "pairing": "same_selector",
+        "pairing_evidence": "selector",
+        "base": null,
+        "head": {
+          "selector": "symbol:scripts/research_records.py#main:function",
+          "snapshot": "head",
+          "commit_sha": "82c24be9a49dbf9d775db9dc980c1de712d8bb8d",
+          "rendering": "reference",
+          "reference": "scripts/research_records.py@82c24be9a49dbf9d775db9dc980c1de712d8bb8d"
+        },
+        "supporting_snapshots": [
+          "head"
+        ],
+        "file_change": "added",
+        "base_path": null,
+        "head_path": "scripts/research_records.py",
+        "uncertain_candidates": [],
+        "note": "Present in head and absent from base. This is not a claim that it did not exist under another identity."
+      },
+      {
+        "status": "added",
+        "pairing": "same_selector",
+        "pairing_evidence": "selector",
+        "base": null,
+        "head": {
+          "selector": "symbol:scripts/research_records.py#package_check:function",
+          "snapshot": "head",
+          "commit_sha": "82c24be9a49dbf9d775db9dc980c1de712d8bb8d",
+          "rendering": "reference",
+          "reference": "scripts/research_records.py@82c24be9a49dbf9d775db9dc980c1de712d8bb8d"
+        },
+        "supporting_snapshots": [
+          "head"
+        ],
+        "file_change": "added",
+        "base_path": null,
+        "head_path": "scripts/research_records.py",
+        "uncertain_candidates": [],
+        "note": "Present in head and absent from base. This is not a claim that it did not exist under another identity."
+      },
+      {
+        "status": "added",
+        "pairing": "same_selector",
+        "pairing_evidence": "selector",
+        "base": null,
+        "head": {
+          "selector": "symbol:scripts/research_records.py#provenance:function",
+          "snapshot": "head",
+          "commit_sha": "82c24be9a49dbf9d775db9dc980c1de712d8bb8d",
+          "rendering": "reference",
+          "reference": "scripts/research_records.py@82c24be9a49dbf9d775db9dc980c1de712d8bb8d"
+        },
+        "supporting_snapshots": [
+          "head"
+        ],
+        "file_change": "added",
+        "base_path": null,
+        "head_path": "scripts/research_records.py",
+        "uncertain_candidates": [],
+        "note": "Present in head and absent from base. This is not a claim that it did not exist under another identity."
+      },
+      {
+        "status": "added",
+        "pairing": "same_selector",
+        "pairing_evidence": "selector",
+        "base": null,
+        "head": {
+          "selector": "symbol:scripts/research_records.py#read_outputs:function",
+          "snapshot": "head",
+          "commit_sha": "82c24be9a49dbf9d775db9dc980c1de712d8bb8d",
+          "rendering": "reference",
+          "reference": "scripts/research_records.py@82c24be9a49dbf9d775db9dc980c1de712d8bb8d"
+        },
+        "supporting_snapshots": [
+          "head"
+        ],
+        "file_change": "added",
+        "base_path": null,
+        "head_path": "scripts/research_records.py",
+        "uncertain_candidates": [],
+        "note": "Present in head and absent from base. This is not a claim that it did not exist under another identity."
+      },
+      {
+        "status": "added",
+        "pairing": "same_selector",
+        "pairing_evidence": "selector",
+        "base": null,
+        "head": {
+          "selector": "symbol:scripts/research_records.py#record_path:function",
+          "snapshot": "head",
+          "commit_sha": "82c24be9a49dbf9d775db9dc980c1de712d8bb8d",
+          "rendering": "reference",
+          "reference": "scripts/research_records.py@82c24be9a49dbf9d775db9dc980c1de712d8bb8d"
+        },
+        "supporting_snapshots": [
+          "head"
+        ],
+        "file_change": "added",
+        "base_path": null,
+        "head_path": "scripts/research_records.py",
+        "uncertain_candidates": [],
+        "note": "Present in head and absent from base. This is not a claim that it did not exist under another identity."
+      },
+      {
+        "status": "added",
+        "pairing": "same_selector",
+        "pairing_evidence": "selector",
+        "base": null,
+        "head": {
+          "selector": "symbol:scripts/research_records.py#refresh:function",
+          "snapshot": "head",
+          "commit_sha": "82c24be9a49dbf9d775db9dc980c1de712d8bb8d",
+          "rendering": "reference",
+          "reference": "scripts/research_records.py@82c24be9a49dbf9d775db9dc980c1de712d8bb8d"
+        },
+        "supporting_snapshots": [
+          "head"
+        ],
+        "file_change": "added",
+        "base_path": null,
+        "head_path": "scripts/research_records.py",
+        "uncertain_candidates": [],
+        "note": "Present in head and absent from base. This is not a claim that it did not exist under another identity."
+      },
+      {
+        "status": "added",
+        "pairing": "same_selector",
+        "pairing_evidence": "selector",
+        "base": null,
+        "head": {
+          "selector": "symbol:scripts/research_records.py#require:function",
+          "snapshot": "head",
+          "commit_sha": "82c24be9a49dbf9d775db9dc980c1de712d8bb8d",
+          "rendering": "reference",
+          "reference": "scripts/research_records.py@82c24be9a49dbf9d775db9dc980c1de712d8bb8d"
+        },
+        "supporting_snapshots": [
+          "head"
+        ],
+        "file_change": "added",
+        "base_path": null,
+        "head_path": "scripts/research_records.py",
+        "uncertain_candidates": [],
+        "note": "Present in head and absent from base. This is not a claim that it did not exist under another identity."
+      },
+      {
+        "status": "added",
+        "pairing": "same_selector",
+        "pairing_evidence": "selector",
+        "base": null,
+        "head": {
+          "selector": "symbol:scripts/research_records.py#require_live_source_matches_baseline:function",
+          "snapshot": "head",
+          "commit_sha": "82c24be9a49dbf9d775db9dc980c1de712d8bb8d",
+          "rendering": "reference",
+          "reference": "scripts/research_records.py@82c24be9a49dbf9d775db9dc980c1de712d8bb8d"
+        },
+        "supporting_snapshots": [
+          "head"
+        ],
+        "file_change": "added",
+        "base_path": null,
+        "head_path": "scripts/research_records.py",
+        "uncertain_candidates": [],
+        "note": "Present in head and absent from base. This is not a claim that it did not exist under another identity."
+      },
+      {
+        "status": "added",
+        "pairing": "same_selector",
+        "pairing_evidence": "selector",
+        "base": null,
+        "head": {
+          "selector": "symbol:scripts/research_records.py#rollback:function",
+          "snapshot": "head",
+          "commit_sha": "82c24be9a49dbf9d775db9dc980c1de712d8bb8d",
+          "rendering": "reference",
+          "reference": "scripts/research_records.py@82c24be9a49dbf9d775db9dc980c1de712d8bb8d"
+        },
+        "supporting_snapshots": [
+          "head"
+        ],
+        "file_change": "added",
+        "base_path": null,
+        "head_path": "scripts/research_records.py",
+        "uncertain_candidates": [],
+        "note": "Present in head and absent from base. This is not a claim that it did not exist under another identity."
+      },
+      {
+        "status": "added",
+        "pairing": "same_selector",
+        "pairing_evidence": "selector",
+        "base": null,
+        "head": {
+          "selector": "symbol:scripts/research_records.py#sibling_checkout:function",
+          "snapshot": "head",
+          "commit_sha": "82c24be9a49dbf9d775db9dc980c1de712d8bb8d",
+          "rendering": "reference",
+          "reference": "scripts/research_records.py@82c24be9a49dbf9d775db9dc980c1de712d8bb8d"
+        },
+        "supporting_snapshots": [
+          "head"
+        ],
+        "file_change": "added",
+        "base_path": null,
+        "head_path": "scripts/research_records.py",
+        "uncertain_candidates": [],
+        "note": "Present in head and absent from base. This is not a claim that it did not exist under another identity."
+      },
+      {
+        "status": "added",
+        "pairing": "same_selector",
+        "pairing_evidence": "selector",
+        "base": null,
+        "head": {
+          "selector": "symbol:scripts/research_records.py#source_unit_summary:function",
+          "snapshot": "head",
+          "commit_sha": "82c24be9a49dbf9d775db9dc980c1de712d8bb8d",
+          "rendering": "reference",
+          "reference": "scripts/research_records.py@82c24be9a49dbf9d775db9dc980c1de712d8bb8d"
+        },
+        "supporting_snapshots": [
+          "head"
+        ],
+        "file_change": "added",
+        "base_path": null,
+        "head_path": "scripts/research_records.py",
+        "uncertain_candidates": [],
+        "note": "Present in head and absent from base. This is not a claim that it did not exist under another identity."
+      },
+      {
+        "status": "added",
+        "pairing": "same_selector",
+        "pairing_evidence": "selector",
+        "base": null,
+        "head": {
+          "selector": "symbol:scripts/research_records.py#supporting_paths:function",
+          "snapshot": "head",
+          "commit_sha": "82c24be9a49dbf9d775db9dc980c1de712d8bb8d",
+          "rendering": "reference",
+          "reference": "scripts/research_records.py@82c24be9a49dbf9d775db9dc980c1de712d8bb8d"
+        },
+        "supporting_snapshots": [
+          "head"
+        ],
+        "file_change": "added",
+        "base_path": null,
+        "head_path": "scripts/research_records.py",
+        "uncertain_candidates": [],
+        "note": "Present in head and absent from base. This is not a claim that it did not exist under another identity."
+      },
+      {
+        "status": "added",
+        "pairing": "same_selector",
+        "pairing_evidence": "selector",
+        "base": null,
+        "head": {
+          "selector": "symbol:scripts/research_records.py#verify_history:function",
+          "snapshot": "head",
+          "commit_sha": "82c24be9a49dbf9d775db9dc980c1de712d8bb8d",
+          "rendering": "reference",
+          "reference": "scripts/research_records.py@82c24be9a49dbf9d775db9dc980c1de712d8bb8d"
+        },
+        "supporting_snapshots": [
+          "head"
+        ],
+        "file_change": "added",
+        "base_path": null,
+        "head_path": "scripts/research_records.py",
+        "uncertain_candidates": [],
+        "note": "Present in head and absent from base. This is not a claim that it did not exist under another identity."
+      },
+      {
+        "status": "added",
+        "pairing": "same_selector",
+        "pairing_evidence": "selector",
+        "base": null,
+        "head": {
+          "selector": "symbol:scripts/research_records.py#write_new:function",
+          "snapshot": "head",
+          "commit_sha": "82c24be9a49dbf9d775db9dc980c1de712d8bb8d",
+          "rendering": "reference",
+          "reference": "scripts/research_records.py@82c24be9a49dbf9d775db9dc980c1de712d8bb8d"
+        },
+        "supporting_snapshots": [
+          "head"
+        ],
+        "file_change": "added",
+        "base_path": null,
+        "head_path": "scripts/research_records.py",
+        "uncertain_candidates": [],
+        "note": "Present in head and absent from base. This is not a claim that it did not exist under another identity."
+      },
+      {
+        "status": "added",
+        "pairing": "same_selector",
+        "pairing_evidence": "selector",
+        "base": null,
+        "head": {
+          "selector": "symbol:tests/test_research_records.py#NativeRegistrationTests:class",
+          "snapshot": "head",
+          "commit_sha": "82c24be9a49dbf9d775db9dc980c1de712d8bb8d",
+          "rendering": "reference",
+          "reference": "tests/test_research_records.py@82c24be9a49dbf9d775db9dc980c1de712d8bb8d"
+        },
+        "supporting_snapshots": [
+          "head"
+        ],
+        "file_change": "added",
+        "base_path": null,
+        "head_path": "tests/test_research_records.py",
+        "uncertain_candidates": [],
+        "note": "Present in head and absent from base. This is not a claim that it did not exist under another identity."
+      },
+      {
+        "status": "added",
+        "pairing": "same_selector",
+        "pairing_evidence": "selector",
+        "base": null,
+        "head": {
+          "selector": "symbol:tests/test_research_records.py#ResearchRecordMigrationTests:class",
+          "snapshot": "head",
+          "commit_sha": "82c24be9a49dbf9d775db9dc980c1de712d8bb8d",
+          "rendering": "reference",
+          "reference": "tests/test_research_records.py@82c24be9a49dbf9d775db9dc980c1de712d8bb8d"
+        },
+        "supporting_snapshots": [
+          "head"
+        ],
+        "file_change": "added",
+        "base_path": null,
+        "head_path": "tests/test_research_records.py",
+        "uncertain_candidates": [],
+        "note": "Present in head and absent from base. This is not a claim that it did not exist under another identity."
+      },
+      {
+        "status": "added",
+        "pairing": "same_selector",
+        "pairing_evidence": "selector",
+        "base": null,
+        "head": {
+          "selector": "symbol:tests/test_research_records.py#git:function",
+          "snapshot": "head",
+          "commit_sha": "82c24be9a49dbf9d775db9dc980c1de712d8bb8d",
+          "rendering": "reference",
+          "reference": "tests/test_research_records.py@82c24be9a49dbf9d775db9dc980c1de712d8bb8d"
+        },
+        "supporting_snapshots": [
+          "head"
+        ],
+        "file_change": "added",
+        "base_path": null,
+        "head_path": "tests/test_research_records.py",
+        "uncertain_candidates": [],
+        "note": "Present in head and absent from base. This is not a claim that it did not exist under another identity."
+      },
+      {
+        "status": "added",
+        "pairing": "same_selector",
+        "pairing_evidence": "selector",
+        "base": null,
+        "head": {
+          "selector": "symbol:tests/test_research_records.py#load_checker:function",
+          "snapshot": "head",
+          "commit_sha": "82c24be9a49dbf9d775db9dc980c1de712d8bb8d",
+          "rendering": "reference",
+          "reference": "tests/test_research_records.py@82c24be9a49dbf9d775db9dc980c1de712d8bb8d"
+        },
+        "supporting_snapshots": [
+          "head"
+        ],
+        "file_change": "added",
+        "base_path": null,
+        "head_path": "tests/test_research_records.py",
+        "uncertain_candidates": [],
+        "note": "Present in head and absent from base. This is not a claim that it did not exist under another identity."
+      },
+      {
+        "status": "added",
+        "pairing": "same_selector",
+        "pairing_evidence": "selector",
+        "base": null,
+        "head": {
+          "selector": "symbol:tests/test_research_records.py#manifest:method",
+          "snapshot": "head",
+          "commit_sha": "82c24be9a49dbf9d775db9dc980c1de712d8bb8d",
+          "rendering": "reference",
+          "reference": "tests/test_research_records.py@82c24be9a49dbf9d775db9dc980c1de712d8bb8d"
+        },
+        "supporting_snapshots": [
+          "head"
+        ],
+        "file_change": "added",
+        "base_path": null,
+        "head_path": "tests/test_research_records.py",
+        "uncertain_candidates": [],
+        "note": "Present in head and absent from base. This is not a claim that it did not exist under another identity."
+      },
+      {
+        "status": "added",
+        "pairing": "same_selector",
+        "pairing_evidence": "selector",
+        "base": null,
+        "head": {
+          "selector": "symbol:tests/test_research_records.py#record:method",
+          "snapshot": "head",
+          "commit_sha": "82c24be9a49dbf9d775db9dc980c1de712d8bb8d",
+          "rendering": "reference",
+          "reference": "tests/test_research_records.py@82c24be9a49dbf9d775db9dc980c1de712d8bb8d"
+        },
+        "supporting_snapshots": [
+          "head"
+        ],
+        "file_change": "added",
+        "base_path": null,
+        "head_path": "tests/test_research_records.py",
+        "uncertain_candidates": [],
+        "note": "Present in head and absent from base. This is not a claim that it did not exist under another identity."
+      },
+      {
+        "status": "added",
+        "pairing": "same_selector",
+        "pairing_evidence": "selector",
+        "base": null,
+        "head": {
+          "selector": "symbol:tests/test_research_records.py#run:function",
+          "snapshot": "head",
+          "commit_sha": "82c24be9a49dbf9d775db9dc980c1de712d8bb8d",
+          "rendering": "reference",
+          "reference": "tests/test_research_records.py@82c24be9a49dbf9d775db9dc980c1de712d8bb8d"
+        },
+        "supporting_snapshots": [
+          "head"
+        ],
+        "file_change": "added",
+        "base_path": null,
+        "head_path": "tests/test_research_records.py",
+        "uncertain_candidates": [],
+        "note": "Present in head and absent from base. This is not a claim that it did not exist under another identity."
+      },
+      {
+        "status": "added",
+        "pairing": "same_selector",
+        "pairing_evidence": "selector",
+        "base": null,
+        "head": {
+          "selector": "symbol:tests/test_research_records.py#run_at:function",
+          "snapshot": "head",
+          "commit_sha": "82c24be9a49dbf9d775db9dc980c1de712d8bb8d",
+          "rendering": "reference",
+          "reference": "tests/test_research_records.py@82c24be9a49dbf9d775db9dc980c1de712d8bb8d"
+        },
+        "supporting_snapshots": [
+          "head"
+        ],
+        "file_change": "added",
+        "base_path": null,
+        "head_path": "tests/test_research_records.py",
+        "uncertain_candidates": [],
+        "note": "Present in head and absent from base. This is not a claim that it did not exist under another identity."
+      },
+      {
+        "status": "added",
+        "pairing": "same_selector",
+        "pairing_evidence": "selector",
+        "base": null,
+        "head": {
+          "selector": "symbol:tests/test_research_records.py#test_authority_is_exact_and_complete:method",
+          "snapshot": "head",
+          "commit_sha": "82c24be9a49dbf9d775db9dc980c1de712d8bb8d",
+          "rendering": "reference",
+          "reference": "tests/test_research_records.py@82c24be9a49dbf9d775db9dc980c1de712d8bb8d"
+        },
+        "supporting_snapshots": [
+          "head"
+        ],
+        "file_change": "added",
+        "base_path": null,
+        "head_path": "tests/test_research_records.py",
+        "uncertain_candidates": [],
+        "note": "Present in head and absent from base. This is not a claim that it did not exist under another identity."
+      },
+      {
+        "status": "added",
+        "pairing": "same_selector",
+        "pairing_evidence": "selector",
+        "base": null,
+        "head": {
+          "selector": "symbol:tests/test_research_records.py#test_cancelled_fixture_registers_without_science:method",
+          "snapshot": "head",
+          "commit_sha": "82c24be9a49dbf9d775db9dc980c1de712d8bb8d",
+          "rendering": "reference",
+          "reference": "tests/test_research_records.py@82c24be9a49dbf9d775db9dc980c1de712d8bb8d"
+        },
+        "supporting_snapshots": [
+          "head"
+        ],
+        "file_change": "added",
+        "base_path": null,
+        "head_path": "tests/test_research_records.py",
+        "uncertain_candidates": [],
+        "note": "Present in head and absent from base. This is not a claim that it did not exist under another identity."
+      },
+      {
+        "status": "added",
+        "pairing": "same_selector",
+        "pairing_evidence": "selector",
+        "base": null,
+        "head": {
+          "selector": "symbol:tests/test_research_records.py#test_every_catalog_entry_and_figure_is_available:method",
+          "snapshot": "head",
+          "commit_sha": "82c24be9a49dbf9d775db9dc980c1de712d8bb8d",
+          "rendering": "reference",
+          "reference": "tests/test_research_records.py@82c24be9a49dbf9d775db9dc980c1de712d8bb8d"
+        },
+        "supporting_snapshots": [
+          "head"
+        ],
+        "file_change": "added",
+        "base_path": null,
+        "head_path": "tests/test_research_records.py",
+        "uncertain_candidates": [],
+        "note": "Present in head and absent from base. This is not a claim that it did not exist under another identity."
+      },
+      {
+        "status": "added",
+        "pairing": "same_selector",
+        "pairing_evidence": "selector",
+        "base": null,
+        "head": {
+          "selector": "symbol:tests/test_research_records.py#test_isolated_migration_is_byte_identical:method",
+          "snapshot": "head",
+          "commit_sha": "82c24be9a49dbf9d775db9dc980c1de712d8bb8d",
+          "rendering": "reference",
+          "reference": "tests/test_research_records.py@82c24be9a49dbf9d775db9dc980c1de712d8bb8d"
+        },
+        "supporting_snapshots": [
+          "head"
+        ],
+        "file_change": "added",
+        "base_path": null,
+        "head_path": "tests/test_research_records.py",
+        "uncertain_candidates": [],
+        "note": "Present in head and absent from base. This is not a claim that it did not exist under another identity."
+      },
+      {
+        "status": "added",
+        "pairing": "same_selector",
+        "pairing_evidence": "selector",
+        "base": null,
+        "head": {
+          "selector": "symbol:tests/test_research_records.py#test_landed_migration_survives_head_advance_and_refuses_source_drift:method",
+          "snapshot": "head",
+          "commit_sha": "82c24be9a49dbf9d775db9dc980c1de712d8bb8d",
+          "rendering": "reference",
+          "reference": "tests/test_research_records.py@82c24be9a49dbf9d775db9dc980c1de712d8bb8d"
+        },
+        "supporting_snapshots": [
+          "head"
+        ],
+        "file_change": "added",
+        "base_path": null,
+        "head_path": "tests/test_research_records.py",
+        "uncertain_candidates": [],
+        "note": "Present in head and absent from base. This is not a claim that it did not exist under another identity."
+      },
+      {
+        "status": "added",
+        "pairing": "same_selector",
+        "pairing_evidence": "selector",
+        "base": null,
+        "head": {
+          "selector": "symbol:tests/test_research_records.py#test_rollback_restores_every_legacy_json_byte:method",
+          "snapshot": "head",
+          "commit_sha": "82c24be9a49dbf9d775db9dc980c1de712d8bb8d",
+          "rendering": "reference",
+          "reference": "tests/test_research_records.py@82c24be9a49dbf9d775db9dc980c1de712d8bb8d"
+        },
+        "supporting_snapshots": [
+          "head"
+        ],
+        "file_change": "added",
+        "base_path": null,
+        "head_path": "tests/test_research_records.py",
+        "uncertain_candidates": [],
+        "note": "Present in head and absent from base. This is not a claim that it did not exist under another identity."
+      },
+      {
+        "status": "added",
+        "pairing": "same_selector",
+        "pairing_evidence": "selector",
+        "base": null,
+        "head": {
+          "selector": "symbol:tests/test_research_records.py#test_source_addition_and_deletion_fail_closed:method",
+          "snapshot": "head",
+          "commit_sha": "82c24be9a49dbf9d775db9dc980c1de712d8bb8d",
+          "rendering": "reference",
+          "reference": "tests/test_research_records.py@82c24be9a49dbf9d775db9dc980c1de712d8bb8d"
+        },
+        "supporting_snapshots": [
+          "head"
+        ],
+        "file_change": "added",
+        "base_path": null,
+        "head_path": "tests/test_research_records.py",
+        "uncertain_candidates": [],
+        "note": "Present in head and absent from base. This is not a claim that it did not exist under another identity."
+      },
+      {
+        "status": "added",
+        "pairing": "same_selector",
+        "pairing_evidence": "selector",
+        "base": null,
+        "head": {
+          "selector": "symbol:tests/test_research_records.py#test_tampered_authority_fails_closed:method",
+          "snapshot": "head",
+          "commit_sha": "82c24be9a49dbf9d775db9dc980c1de712d8bb8d",
+          "rendering": "reference",
+          "reference": "tests/test_research_records.py@82c24be9a49dbf9d775db9dc980c1de712d8bb8d"
+        },
+        "supporting_snapshots": [
+          "head"
+        ],
+        "file_change": "added",
+        "base_path": null,
+        "head_path": "tests/test_research_records.py",
+        "uncertain_candidates": [],
+        "note": "Present in head and absent from base. This is not a claim that it did not exist under another identity."
+      },
+      {
+        "status": "added",
+        "pairing": "same_selector",
+        "pairing_evidence": "selector",
+        "base": null,
+        "head": {
+          "selector": "symbol:tests/test_research_records.py#test_wide_binary_failures_missingness_and_diagnosis_survive:method",
+          "snapshot": "head",
+          "commit_sha": "82c24be9a49dbf9d775db9dc980c1de712d8bb8d",
+          "rendering": "reference",
+          "reference": "tests/test_research_records.py@82c24be9a49dbf9d775db9dc980c1de712d8bb8d"
+        },
+        "supporting_snapshots": [
+          "head"
+        ],
+        "file_change": "added",
+        "base_path": null,
+        "head_path": "tests/test_research_records.py",
+        "uncertain_candidates": [],
+        "note": "Present in head and absent from base. This is not a claim that it did not exist under another identity."
+      }
+    ],
+    "out_of_scope": [
+      {
+        "path": "lab/gallery/index.html",
+        "reason": "unsupported_language",
+        "snapshot": "base"
+      },
+      {
+        "path": "lab/gallery/index.html",
+        "reason": "unsupported_language",
+        "snapshot": "head"
+      },
+      {
+        "path": "lab/sims/oscillating-electron-retarded-fields/assets/comparison.html",
+        "reason": "unsupported_language",
+        "snapshot": "head"
+      },
+      {
+        "path": "lab/sims/oscillating-electron-retarded-fields/assets/dense-desktop-after.png",
+        "reason": "unsupported_language",
+        "snapshot": "head"
+      },
+      {
+        "path": "lab/sims/oscillating-electron-retarded-fields/assets/dense-desktop-before.png",
+        "reason": "unsupported_language",
+        "snapshot": "head"
+      },
+      {
+        "path": "lab/sims/oscillating-electron-retarded-fields/assets/dense-desktop-delay.png",
+        "reason": "unsupported_language",
+        "snapshot": "head"
+      },
+      {
+        "path": "lab/sims/oscillating-electron-retarded-fields/assets/dense-desktop-during.png",
+        "reason": "unsupported_language",
+        "snapshot": "head"
+      },
+      {
+        "path": "lab/sims/oscillating-electron-retarded-fields/assets/dense-desktop-guide.png",
+        "reason": "unsupported_language",
+        "snapshot": "head"
+      },
+      {
+        "path": "lab/sims/oscillating-electron-retarded-fields/assets/dense-narrow-after.png",
+        "reason": "unsupported_language",
+        "snapshot": "head"
+      },
+      {
+        "path": "lab/sims/oscillating-electron-retarded-fields/assets/dense-narrow-before.png",
+        "reason": "unsupported_language",
+        "snapshot": "head"
+      },
+      {
+        "path": "lab/sims/oscillating-electron-retarded-fields/assets/dense-narrow-controls.png",
+        "reason": "unsupported_language",
+        "snapshot": "head"
+      },
+      {
+        "path": "lab/sims/oscillating-electron-retarded-fields/assets/dense-narrow-delay.png",
+        "reason": "unsupported_language",
+        "snapshot": "head"
+      },
+      {
+        "path": "lab/sims/oscillating-electron-retarded-fields/assets/dense-narrow-during.png",
+        "reason": "unsupported_language",
+        "snapshot": "head"
+      },
+      {
+        "path": "lab/sims/oscillating-electron-retarded-fields/assets/original-desktop-after.png",
+        "reason": "unsupported_language",
+        "snapshot": "head"
+      },
+      {
+        "path": "lab/sims/oscillating-electron-retarded-fields/assets/original-desktop-before.png",
+        "reason": "unsupported_language",
+        "snapshot": "head"
+      },
+      {
+        "path": "lab/sims/oscillating-electron-retarded-fields/assets/original-desktop-delay.png",
+        "reason": "unsupported_language",
+        "snapshot": "head"
+      },
+      {
+        "path": "lab/sims/oscillating-electron-retarded-fields/assets/original-desktop-during.png",
+        "reason": "unsupported_language",
+        "snapshot": "head"
+      },
+      {
+        "path": "lab/sims/oscillating-electron-retarded-fields/assets/original-narrow-after.png",
+        "reason": "unsupported_language",
+        "snapshot": "head"
+      },
+      {
+        "path": "lab/sims/oscillating-electron-retarded-fields/assets/original-narrow-before.png",
+        "reason": "unsupported_language",
+        "snapshot": "head"
+      },
+      {
+        "path": "lab/sims/oscillating-electron-retarded-fields/assets/original-narrow-delay.png",
+        "reason": "unsupported_language",
+        "snapshot": "head"
+      },
+      {
+        "path": "lab/sims/oscillating-electron-retarded-fields/assets/original-narrow-during.png",
+        "reason": "unsupported_language",
+        "snapshot": "head"
+      },
+      {
+        "path": "lab/sims/oscillating-electron-retarded-fields/dense-checks.mjs",
+        "reason": "unsupported_language",
+        "snapshot": "head"
+      },
+      {
+        "path": "lab/sims/oscillating-electron-retarded-fields/index.html",
+        "reason": "unsupported_language",
+        "snapshot": "base"
+      },
+      {
+        "path": "lab/sims/oscillating-electron-retarded-fields/index.html",
+        "reason": "unsupported_language",
+        "snapshot": "head"
+      },
+      {
+        "path": "lab/sims/oscillating-electron-retarded-fields/physics.mjs",
+        "reason": "unsupported_language",
+        "snapshot": "base"
+      },
+      {
+        "path": "lab/sims/oscillating-electron-retarded-fields/physics.mjs",
+        "reason": "unsupported_language",
+        "snapshot": "head"
+      },
+      {
+        "path": "lab/sims/oscillating-electron-retarded-fields/sampling.mjs",
+        "reason": "unsupported_language",
+        "snapshot": "head"
+      },
+      {
+        "path": "lab/sims/oscillating-electron-retarded-fields/style.css",
+        "reason": "unsupported_language",
+        "snapshot": "base"
+      },
+      {
+        "path": "lab/sims/oscillating-electron-retarded-fields/style.css",
+        "reason": "unsupported_language",
+        "snapshot": "head"
+      },
+      {
+        "path": "lab/sims/swirl-ball-far-field/index.html",
+        "reason": "unsupported_language",
+        "snapshot": "base"
+      },
+      {
+        "path": "lab/sims/swirl-ball-far-field/index.html",
+        "reason": "unsupported_language",
+        "snapshot": "head"
+      },
+      {
+        "path": "requirements-research.txt",
+        "reason": "unsupported_language",
+        "snapshot": "head"
+      }
+    ],
+    "filtered_out": []
+  },
+  "evidence_paths": [
+    {
+      "schema_version": 1,
+      "path_id": "p-1",
+      "from": {
+        "selector": "file:lab/sims/oscillating-electron-retarded-fields/browser-check.py",
+        "snapshot": "base",
+        "label": "lab/sims/oscillating-electron-retarded-fields/browser-check.py",
+        "origin": "file"
+      },
+      "to": {
+        "selector": "symbol:lab/sims/oscillating-electron-retarded-fields/browser-check.py#summary:function",
+        "snapshot": "base",
+        "label": "lab/sims/oscillating-electron-retarded-fields/browser-check.py#summary",
+        "origin": "symbol"
+      },
+      "distance": 1,
+      "category": "resolved_call",
+      "truncated": false,
+      "truncated_by": null,
+      "edges": [
+        {
+          "from": "lab/sims/oscillating-electron-retarded-fields/browser-check.py",
+          "from_selector": "file:lab/sims/oscillating-electron-retarded-fields/browser-check.py",
+          "from_origin": "file",
+          "to": "lab/sims/oscillating-electron-retarded-fields/browser-check.py#summary",
+          "to_selector": "symbol:lab/sims/oscillating-electron-retarded-fields/browser-check.py#summary:function",
+          "relationship": "call",
+          "category": "resolved_call",
+          "confidence": "exact",
+          "snapshot": "base",
+          "commit_sha": "148b668391f575466282eaa81aab0dc943846a87",
+          "source": {
+            "file": "lab/sims/oscillating-electron-retarded-fields/browser-check.py",
+            "line": 126
+          },
+          "note": null,
+          "rendering": "reference",
+          "reference": "lab/sims/oscillating-electron-retarded-fields/browser-check.py:126@148b668391f575466282eaa81aab0dc943846a87"
+        }
+      ]
+    },
+    {
+      "schema_version": 1,
+      "path_id": "p-2",
+      "from": {
+        "selector": "file:lab/sims/oscillating-electron-retarded-fields/browser-check.py",
+        "snapshot": "base",
+        "label": "lab/sims/oscillating-electron-retarded-fields/browser-check.py",
+        "origin": "file"
+      },
+      "to": {
+        "selector": "symbol:lab/sims/oscillating-electron-retarded-fields/browser-check.py#summary:function",
+        "snapshot": "base",
+        "label": "lab/sims/oscillating-electron-retarded-fields/browser-check.py#summary",
+        "origin": "symbol"
+      },
+      "distance": 1,
+      "category": "resolved_call",
+      "truncated": false,
+      "truncated_by": null,
+      "edges": [
+        {
+          "from": "lab/sims/oscillating-electron-retarded-fields/browser-check.py",
+          "from_selector": "file:lab/sims/oscillating-electron-retarded-fields/browser-check.py",
+          "from_origin": "file",
+          "to": "lab/sims/oscillating-electron-retarded-fields/browser-check.py#summary",
+          "to_selector": "symbol:lab/sims/oscillating-electron-retarded-fields/browser-check.py#summary:function",
+          "relationship": "call",
+          "category": "resolved_call",
+          "confidence": "exact",
+          "snapshot": "base",
+          "commit_sha": "148b668391f575466282eaa81aab0dc943846a87",
+          "source": {
+            "file": "lab/sims/oscillating-electron-retarded-fields/browser-check.py",
+            "line": 127
+          },
+          "note": null,
+          "rendering": "reference",
+          "reference": "lab/sims/oscillating-electron-retarded-fields/browser-check.py:127@148b668391f575466282eaa81aab0dc943846a87"
+        }
+      ]
+    },
+    {
+      "schema_version": 1,
+      "path_id": "p-1",
+      "from": {
+        "selector": "file:lab/sims/oscillating-electron-retarded-fields/browser-check.py",
+        "snapshot": "head",
+        "label": "lab/sims/oscillating-electron-retarded-fields/browser-check.py",
+        "origin": "file"
+      },
+      "to": {
+        "selector": "symbol:lab/sims/oscillating-electron-retarded-fields/browser-check.py#summary:function",
+        "snapshot": "head",
+        "label": "lab/sims/oscillating-electron-retarded-fields/browser-check.py#summary",
+        "origin": "symbol"
+      },
+      "distance": 1,
+      "category": "resolved_call",
+      "truncated": false,
+      "truncated_by": null,
+      "edges": [
+        {
+          "from": "lab/sims/oscillating-electron-retarded-fields/browser-check.py",
+          "from_selector": "file:lab/sims/oscillating-electron-retarded-fields/browser-check.py",
+          "from_origin": "file",
+          "to": "lab/sims/oscillating-electron-retarded-fields/browser-check.py#summary",
+          "to_selector": "symbol:lab/sims/oscillating-electron-retarded-fields/browser-check.py#summary:function",
+          "relationship": "call",
+          "category": "resolved_call",
+          "confidence": "exact",
+          "snapshot": "head",
+          "commit_sha": "82c24be9a49dbf9d775db9dc980c1de712d8bb8d",
+          "source": {
+            "file": "lab/sims/oscillating-electron-retarded-fields/browser-check.py",
+            "line": 62
+          },
+          "note": null,
+          "rendering": "reference",
+          "reference": "lab/sims/oscillating-electron-retarded-fields/browser-check.py:62@82c24be9a49dbf9d775db9dc980c1de712d8bb8d"
+        }
+      ]
+    },
+    {
+      "schema_version": 1,
+      "path_id": "p-2",
+      "from": {
+        "selector": "file:lab/sims/oscillating-electron-retarded-fields/browser-check.py",
+        "snapshot": "head",
+        "label": "lab/sims/oscillating-electron-retarded-fields/browser-check.py",
+        "origin": "file"
+      },
+      "to": {
+        "selector": "symbol:lab/sims/oscillating-electron-retarded-fields/browser-check.py#summary:function",
+        "snapshot": "head",
+        "label": "lab/sims/oscillating-electron-retarded-fields/browser-check.py#summary",
+        "origin": "symbol"
+      },
+      "distance": 1,
+      "category": "resolved_call",
+      "truncated": false,
+      "truncated_by": null,
+      "edges": [
+        {
+          "from": "lab/sims/oscillating-electron-retarded-fields/browser-check.py",
+          "from_selector": "file:lab/sims/oscillating-electron-retarded-fields/browser-check.py",
+          "from_origin": "file",
+          "to": "lab/sims/oscillating-electron-retarded-fields/browser-check.py#summary",
+          "to_selector": "symbol:lab/sims/oscillating-electron-retarded-fields/browser-check.py#summary:function",
+          "relationship": "call",
+          "category": "resolved_call",
+          "confidence": "exact",
+          "snapshot": "head",
+          "commit_sha": "82c24be9a49dbf9d775db9dc980c1de712d8bb8d",
+          "source": {
+            "file": "lab/sims/oscillating-electron-retarded-fields/browser-check.py",
+            "line": 62
+          },
+          "note": null,
+          "rendering": "reference",
+          "reference": "lab/sims/oscillating-electron-retarded-fields/browser-check.py:62@82c24be9a49dbf9d775db9dc980c1de712d8bb8d"
+        }
+      ]
+    },
+    {
+      "schema_version": 1,
+      "path_id": "p-1",
+      "from": {
+        "selector": "symbol:scripts/research_records.py#baseline_source_report:function",
+        "snapshot": "head",
+        "label": "scripts/research_records.py#baseline_source_report",
+        "origin": "symbol"
+      },
+      "to": {
+        "selector": "symbol:scripts/research_records.py#supporting_paths:function",
+        "snapshot": "head",
+        "label": "scripts/research_records.py#supporting_paths",
+        "origin": "symbol"
+      },
+      "distance": 1,
+      "category": "resolved_call",
+      "truncated": false,
+      "truncated_by": null,
+      "edges": [
+        {
+          "from": "scripts/research_records.py#baseline_source_report",
+          "from_selector": "symbol:scripts/research_records.py#baseline_source_report:function",
+          "from_origin": "symbol",
+          "to": "scripts/research_records.py#supporting_paths",
+          "to_selector": "symbol:scripts/research_records.py#supporting_paths:function",
+          "relationship": "call",
+          "category": "resolved_call",
+          "confidence": "exact",
+          "snapshot": "head",
+          "commit_sha": "82c24be9a49dbf9d775db9dc980c1de712d8bb8d",
+          "source": {
+            "file": "scripts/research_records.py",
+            "line": 250
+          },
+          "note": null,
+          "rendering": "reference",
+          "reference": "scripts/research_records.py:250@82c24be9a49dbf9d775db9dc980c1de712d8bb8d"
+        }
+      ]
+    },
+    {
+      "schema_version": 1,
+      "path_id": "p-2",
+      "from": {
+        "selector": "symbol:scripts/research_records.py#require_live_source_matches_baseline:function",
+        "snapshot": "head",
+        "label": "scripts/research_records.py#require_live_source_matches_baseline",
+        "origin": "symbol"
+      },
+      "to": {
+        "selector": "symbol:scripts/research_records.py#supporting_paths:function",
+        "snapshot": "head",
+        "label": "scripts/research_records.py#supporting_paths",
+        "origin": "symbol"
+      },
+      "distance": 1,
+      "category": "resolved_call",
+      "truncated": false,
+      "truncated_by": null,
+      "edges": [
+        {
+          "from": "scripts/research_records.py#require_live_source_matches_baseline",
+          "from_selector": "symbol:scripts/research_records.py#require_live_source_matches_baseline:function",
+          "from_origin": "symbol",
+          "to": "scripts/research_records.py#supporting_paths",
+          "to_selector": "symbol:scripts/research_records.py#supporting_paths:function",
+          "relationship": "call",
+          "category": "resolved_call",
+          "confidence": "exact",
+          "snapshot": "head",
+          "commit_sha": "82c24be9a49dbf9d775db9dc980c1de712d8bb8d",
+          "source": {
+            "file": "scripts/research_records.py",
+            "line": 267
+          },
+          "note": null,
+          "rendering": "reference",
+          "reference": "scripts/research_records.py:267@82c24be9a49dbf9d775db9dc980c1de712d8bb8d"
+        }
+      ]
+    },
+    {
+      "schema_version": 1,
+      "path_id": "p-3",
+      "from": {
+        "selector": "symbol:scripts/research_records.py#build:function",
+        "snapshot": "head",
+        "label": "scripts/research_records.py#build",
+        "origin": "symbol"
+      },
+      "to": {
+        "selector": "symbol:scripts/research_records.py#supporting_paths:function",
+        "snapshot": "head",
+        "label": "scripts/research_records.py#supporting_paths",
+        "origin": "symbol"
+      },
+      "distance": 1,
+      "category": "resolved_call",
+      "truncated": false,
+      "truncated_by": null,
+      "edges": [
+        {
+          "from": "scripts/research_records.py#build",
+          "from_selector": "symbol:scripts/research_records.py#build:function",
+          "from_origin": "symbol",
+          "to": "scripts/research_records.py#supporting_paths",
+          "to_selector": "symbol:scripts/research_records.py#supporting_paths:function",
+          "relationship": "call",
+          "category": "resolved_call",
+          "confidence": "exact",
+          "snapshot": "head",
+          "commit_sha": "82c24be9a49dbf9d775db9dc980c1de712d8bb8d",
+          "source": {
+            "file": "scripts/research_records.py",
+            "line": 334
+          },
+          "note": null,
+          "rendering": "reference",
+          "reference": "scripts/research_records.py:334@82c24be9a49dbf9d775db9dc980c1de712d8bb8d"
+        }
+      ]
+    },
+    {
+      "schema_version": 1,
+      "path_id": "p-4",
+      "from": {
+        "selector": "symbol:tests/test_research_records.py#test_landed_migration_survives_head_advance_and_refuses_source_drift:method",
+        "snapshot": "head",
+        "label": "tests/test_research_records.py#test_landed_migration_survives_head_advance_and_refuses_source_drift",
+        "origin": "symbol"
+      },
+      "to": {
+        "selector": "symbol:scripts/research_records.py#supporting_paths:function",
+        "snapshot": "head",
+        "label": "scripts/research_records.py#supporting_paths",
+        "origin": "symbol"
+      },
+      "distance": 1,
+      "category": "observed_reference",
+      "truncated": false,
+      "truncated_by": null,
+      "edges": [
+        {
+          "from": "tests/test_research_records.py#test_landed_migration_survives_head_advance_and_refuses_source_drift",
+          "from_selector": "symbol:tests/test_research_records.py#test_landed_migration_survives_head_advance_and_refuses_source_drift:method",
+          "from_origin": "symbol",
+          "to": "scripts/research_records.py#supporting_paths",
+          "to_selector": "symbol:scripts/research_records.py#supporting_paths:function",
+          "relationship": "call",
+          "category": "observed_reference",
+          "confidence": "same_module",
+          "snapshot": "head",
+          "commit_sha": "82c24be9a49dbf9d775db9dc980c1de712d8bb8d",
+          "source": {
+            "file": "tests/test_research_records.py",
+            "line": 113
+          },
+          "note": null,
+          "rendering": "reference",
+          "reference": "tests/test_research_records.py:113@82c24be9a49dbf9d775db9dc980c1de712d8bb8d"
+        }
+      ]
+    },
+    {
+      "schema_version": 1,
+      "path_id": "p-5",
+      "from": {
+        "selector": "symbol:tests/test_research_records.py#test_source_addition_and_deletion_fail_closed:method",
+        "snapshot": "head",
+        "label": "tests/test_research_records.py#test_source_addition_and_deletion_fail_closed",
+        "origin": "symbol"
+      },
+      "to": {
+        "selector": "symbol:scripts/research_records.py#supporting_paths:function",
+        "snapshot": "head",
+        "label": "scripts/research_records.py#supporting_paths",
+        "origin": "symbol"
+      },
+      "distance": 1,
+      "category": "observed_reference",
+      "truncated": false,
+      "truncated_by": null,
+      "edges": [
+        {
+          "from": "tests/test_research_records.py#test_source_addition_and_deletion_fail_closed",
+          "from_selector": "symbol:tests/test_research_records.py#test_source_addition_and_deletion_fail_closed:method",
+          "from_origin": "symbol",
+          "to": "scripts/research_records.py#supporting_paths",
+          "to_selector": "symbol:scripts/research_records.py#supporting_paths:function",
+          "relationship": "call",
+          "category": "observed_reference",
+          "confidence": "same_module",
+          "snapshot": "head",
+          "commit_sha": "82c24be9a49dbf9d775db9dc980c1de712d8bb8d",
+          "source": {
+            "file": "tests/test_research_records.py",
+            "line": 131
+          },
+          "note": null,
+          "rendering": "reference",
+          "reference": "tests/test_research_records.py:131@82c24be9a49dbf9d775db9dc980c1de712d8bb8d"
+        }
+      ]
+    }
+  ],
+  "entry_points": [
+    {
+      "queried": {
+        "selector": "symbol:scripts/research_records.py#supporting_paths:function",
+        "snapshot": "head",
+        "label": "scripts/research_records.py#supporting_paths",
+        "origin": "symbol"
+      },
+      "node": {
+        "selector": "symbol:tests/test_research_records.py#test_landed_migration_survives_head_advance_and_refuses_source_drift:method",
+        "snapshot": "head",
+        "label": "tests/test_research_records.py#test_landed_migration_survives_head_advance_and_refuses_source_drift",
+        "origin": "symbol"
+      },
+      "rendering": "reference",
+      "reference": "tests/test_research_records.py@82c24be9a49dbf9d775db9dc980c1de712d8bb8d",
+      "rule": "test_function",
+      "rule_description": "A test function: a symbol in a test-classified path, or one carrying a `test`/`spec` affix. These also feed the candidate-test list.",
+      "rules": [
+        "test_function"
+      ],
+      "distance": 1,
+      "path": {
+        "schema_version": 1,
+        "path_id": "p-4",
+        "from": {
+          "selector": "symbol:tests/test_research_records.py#test_landed_migration_survives_head_advance_and_refuses_source_drift:method",
+          "snapshot": "head",
+          "label": "tests/test_research_records.py#test_landed_migration_survives_head_advance_and_refuses_source_drift",
+          "origin": "symbol"
+        },
+        "to": {
+          "selector": "symbol:scripts/research_records.py#supporting_paths:function",
+          "snapshot": "head",
+          "label": "scripts/research_records.py#supporting_paths",
+          "origin": "symbol"
+        },
+        "distance": 1,
+        "category": "observed_reference",
+        "truncated": false,
+        "truncated_by": null,
+        "edges": [
+          {
+            "from": "tests/test_research_records.py#test_landed_migration_survives_head_advance_and_refuses_source_drift",
+            "from_selector": "symbol:tests/test_research_records.py#test_landed_migration_survives_head_advance_and_refuses_source_drift:method",
+            "from_origin": "symbol",
+            "to": "scripts/research_records.py#supporting_paths",
+            "to_selector": "symbol:scripts/research_records.py#supporting_paths:function",
+            "relationship": "call",
+            "category": "observed_reference",
+            "confidence": "same_module",
+            "snapshot": "head",
+            "commit_sha": "82c24be9a49dbf9d775db9dc980c1de712d8bb8d",
+            "source": {
+              "file": "tests/test_research_records.py",
+              "line": 113
+            },
+            "note": null,
+            "rendering": "reference",
+            "reference": "tests/test_research_records.py:113@82c24be9a49dbf9d775db9dc980c1de712d8bb8d"
+          }
+        ]
+      },
+      "note": "`test_landed_migration_survives_head_advance_and_refuses_source_drift` is a test symbol by path or naming convention"
+    },
+    {
+      "queried": {
+        "selector": "symbol:scripts/research_records.py#supporting_paths:function",
+        "snapshot": "head",
+        "label": "scripts/research_records.py#supporting_paths",
+        "origin": "symbol"
+      },
+      "node": {
+        "selector": "symbol:tests/test_research_records.py#test_source_addition_and_deletion_fail_closed:method",
+        "snapshot": "head",
+        "label": "tests/test_research_records.py#test_source_addition_and_deletion_fail_closed",
+        "origin": "symbol"
+      },
+      "rendering": "reference",
+      "reference": "tests/test_research_records.py@82c24be9a49dbf9d775db9dc980c1de712d8bb8d",
+      "rule": "test_function",
+      "rule_description": "A test function: a symbol in a test-classified path, or one carrying a `test`/`spec` affix. These also feed the candidate-test list.",
+      "rules": [
+        "test_function"
+      ],
+      "distance": 1,
+      "path": {
+        "schema_version": 1,
+        "path_id": "p-5",
+        "from": {
+          "selector": "symbol:tests/test_research_records.py#test_source_addition_and_deletion_fail_closed:method",
+          "snapshot": "head",
+          "label": "tests/test_research_records.py#test_source_addition_and_deletion_fail_closed",
+          "origin": "symbol"
+        },
+        "to": {
+          "selector": "symbol:scripts/research_records.py#supporting_paths:function",
+          "snapshot": "head",
+          "label": "scripts/research_records.py#supporting_paths",
+          "origin": "symbol"
+        },
+        "distance": 1,
+        "category": "observed_reference",
+        "truncated": false,
+        "truncated_by": null,
+        "edges": [
+          {
+            "from": "tests/test_research_records.py#test_source_addition_and_deletion_fail_closed",
+            "from_selector": "symbol:tests/test_research_records.py#test_source_addition_and_deletion_fail_closed:method",
+            "from_origin": "symbol",
+            "to": "scripts/research_records.py#supporting_paths",
+            "to_selector": "symbol:scripts/research_records.py#supporting_paths:function",
+            "relationship": "call",
+            "category": "observed_reference",
+            "confidence": "same_module",
+            "snapshot": "head",
+            "commit_sha": "82c24be9a49dbf9d775db9dc980c1de712d8bb8d",
+            "source": {
+              "file": "tests/test_research_records.py",
+              "line": 131
+            },
+            "note": null,
+            "rendering": "reference",
+            "reference": "tests/test_research_records.py:131@82c24be9a49dbf9d775db9dc980c1de712d8bb8d"
+          }
+        ]
+      },
+      "note": "`test_source_addition_and_deletion_fail_closed` is a test symbol by path or naming convention"
+    }
+  ],
+  "candidate_tests": {
+    "schema_version": 1,
+    "candidates": [
+      {
+        "queried": {
+          "selector": "symbol:scripts/research_records.py#supporting_paths:function",
+          "snapshot": "head",
+          "label": "scripts/research_records.py#supporting_paths",
+          "origin": "symbol"
+        },
+        "test": {
+          "selector": "symbol:tests/test_research_records.py#test_landed_migration_survives_head_advance_and_refuses_source_drift:method",
+          "snapshot": "head",
+          "label": "tests/test_research_records.py#test_landed_migration_survives_head_advance_and_refuses_source_drift",
+          "origin": "symbol"
+        },
+        "rendering": "reference",
+        "reference": "tests/test_research_records.py@82c24be9a49dbf9d775db9dc980c1de712d8bb8d",
+        "source": "call_path",
+        "label": "call-path",
+        "category": "observed_reference",
+        "path_id": "p-4",
+        "changed_symbols": [
+          "symbol:scripts/research_records.py#supporting_paths:function"
+        ],
+        "truncated": true,
+        "note": "call reference at tests/test_research_records.py:113; 1 hop(s) to the changed symbol"
+      },
+      {
+        "queried": {
+          "selector": "symbol:scripts/research_records.py#supporting_paths:function",
+          "snapshot": "head",
+          "label": "scripts/research_records.py#supporting_paths",
+          "origin": "symbol"
+        },
+        "test": {
+          "selector": "symbol:tests/test_research_records.py#test_source_addition_and_deletion_fail_closed:method",
+          "snapshot": "head",
+          "label": "tests/test_research_records.py#test_source_addition_and_deletion_fail_closed",
+          "origin": "symbol"
+        },
+        "rendering": "reference",
+        "reference": "tests/test_research_records.py@82c24be9a49dbf9d775db9dc980c1de712d8bb8d",
+        "source": "call_path",
+        "label": "call-path",
+        "category": "observed_reference",
+        "path_id": "p-5",
+        "changed_symbols": [
+          "symbol:scripts/research_records.py#supporting_paths:function"
+        ],
+        "truncated": true,
+        "note": "call reference at tests/test_research_records.py:131; 1 hop(s) to the changed symbol"
+      },
+      {
+        "queried": {
+          "selector": "symbol:scripts/research_records.py#supporting_paths:function",
+          "snapshot": "head",
+          "label": "scripts/research_records.py#supporting_paths",
+          "origin": "symbol"
+        },
+        "test": {
+          "selector": "file:tests/test_research_records.py",
+          "snapshot": "head",
+          "label": "tests/test_research_records.py",
+          "origin": "file"
+        },
+        "rendering": "reference",
+        "reference": "tests/test_research_records.py@82c24be9a49dbf9d775db9dc980c1de712d8bb8d",
+        "source": "naming_heuristic",
+        "label": "naming-heuristic",
+        "category": "heuristic_match",
+        "path_id": null,
+        "changed_symbols": [
+          "symbol:scripts/research_records.py#supporting_paths:function"
+        ],
+        "truncated": false,
+        "note": "file name matches scripts/research_records.py"
+      }
+    ],
+    "unsupported_scope": [
+      {
+        "path": "lab/gallery/index.html",
+        "reason": "unsupported_language",
+        "snapshot": "base"
+      },
+      {
+        "path": "lab/gallery/index.html",
+        "reason": "unsupported_language",
+        "snapshot": "head"
+      },
+      {
+        "path": "lab/sims/oscillating-electron-retarded-fields/assets/comparison.html",
+        "reason": "unsupported_language",
+        "snapshot": "head"
+      },
+      {
+        "path": "lab/sims/oscillating-electron-retarded-fields/assets/dense-desktop-after.png",
+        "reason": "unsupported_language",
+        "snapshot": "head"
+      },
+      {
+        "path": "lab/sims/oscillating-electron-retarded-fields/assets/dense-desktop-before.png",
+        "reason": "unsupported_language",
+        "snapshot": "head"
+      },
+      {
+        "path": "lab/sims/oscillating-electron-retarded-fields/assets/dense-desktop-delay.png",
+        "reason": "unsupported_language",
+        "snapshot": "head"
+      },
+      {
+        "path": "lab/sims/oscillating-electron-retarded-fields/assets/dense-desktop-during.png",
+        "reason": "unsupported_language",
+        "snapshot": "head"
+      },
+      {
+        "path": "lab/sims/oscillating-electron-retarded-fields/assets/dense-desktop-guide.png",
+        "reason": "unsupported_language",
+        "snapshot": "head"
+      },
+      {
+        "path": "lab/sims/oscillating-electron-retarded-fields/assets/dense-narrow-after.png",
+        "reason": "unsupported_language",
+        "snapshot": "head"
+      },
+      {
+        "path": "lab/sims/oscillating-electron-retarded-fields/assets/dense-narrow-before.png",
+        "reason": "unsupported_language",
+        "snapshot": "head"
+      },
+      {
+        "path": "lab/sims/oscillating-electron-retarded-fields/assets/dense-narrow-controls.png",
+        "reason": "unsupported_language",
+        "snapshot": "head"
+      },
+      {
+        "path": "lab/sims/oscillating-electron-retarded-fields/assets/dense-narrow-delay.png",
+        "reason": "unsupported_language",
+        "snapshot": "head"
+      },
+      {
+        "path": "lab/sims/oscillating-electron-retarded-fields/assets/dense-narrow-during.png",
+        "reason": "unsupported_language",
+        "snapshot": "head"
+      },
+      {
+        "path": "lab/sims/oscillating-electron-retarded-fields/assets/original-desktop-after.png",
+        "reason": "unsupported_language",
+        "snapshot": "head"
+      },
+      {
+        "path": "lab/sims/oscillating-electron-retarded-fields/assets/original-desktop-before.png",
+        "reason": "unsupported_language",
+        "snapshot": "head"
+      },
+      {
+        "path": "lab/sims/oscillating-electron-retarded-fields/assets/original-desktop-delay.png",
+        "reason": "unsupported_language",
+        "snapshot": "head"
+      },
+      {
+        "path": "lab/sims/oscillating-electron-retarded-fields/assets/original-desktop-during.png",
+        "reason": "unsupported_language",
+        "snapshot": "head"
+      },
+      {
+        "path": "lab/sims/oscillating-electron-retarded-fields/assets/original-narrow-after.png",
+        "reason": "unsupported_language",
+        "snapshot": "head"
+      },
+      {
+        "path": "lab/sims/oscillating-electron-retarded-fields/assets/original-narrow-before.png",
+        "reason": "unsupported_language",
+        "snapshot": "head"
+      },
+      {
+        "path": "lab/sims/oscillating-electron-retarded-fields/assets/original-narrow-delay.png",
+        "reason": "unsupported_language",
+        "snapshot": "head"
+      },
+      {
+        "path": "lab/sims/oscillating-electron-retarded-fields/assets/original-narrow-during.png",
+        "reason": "unsupported_language",
+        "snapshot": "head"
+      },
+      {
+        "path": "lab/sims/oscillating-electron-retarded-fields/dense-checks.mjs",
+        "reason": "unsupported_language",
+        "snapshot": "head"
+      },
+      {
+        "path": "lab/sims/oscillating-electron-retarded-fields/index.html",
+        "reason": "unsupported_language",
+        "snapshot": "base"
+      },
+      {
+        "path": "lab/sims/oscillating-electron-retarded-fields/index.html",
+        "reason": "unsupported_language",
+        "snapshot": "head"
+      },
+      {
+        "path": "lab/sims/oscillating-electron-retarded-fields/physics.mjs",
+        "reason": "unsupported_language",
+        "snapshot": "base"
+      },
+      {
+        "path": "lab/sims/oscillating-electron-retarded-fields/physics.mjs",
+        "reason": "unsupported_language",
+        "snapshot": "head"
+      },
+      {
+        "path": "lab/sims/oscillating-electron-retarded-fields/sampling.mjs",
+        "reason": "unsupported_language",
+        "snapshot": "head"
+      },
+      {
+        "path": "lab/sims/oscillating-electron-retarded-fields/style.css",
+        "reason": "unsupported_language",
+        "snapshot": "base"
+      },
+      {
+        "path": "lab/sims/oscillating-electron-retarded-fields/style.css",
+        "reason": "unsupported_language",
+        "snapshot": "head"
+      },
+      {
+        "path": "lab/sims/swirl-ball-far-field/index.html",
+        "reason": "unsupported_language",
+        "snapshot": "base"
+      },
+      {
+        "path": "lab/sims/swirl-ball-far-field/index.html",
+        "reason": "unsupported_language",
+        "snapshot": "head"
+      },
+      {
+        "path": "requirements-research.txt",
+        "reason": "unsupported_language",
+        "snapshot": "head"
+      }
+    ],
+    "truncated": true
+  },
+  "unresolved": [
+    {
+      "selector": "symbol:lab/sims/oscillating-electron-retarded-fields/browser-check.py#summary:function",
+      "snapshot": "base",
+      "kind": "entry_points",
+      "reasons": [
+        "No affected symbol matched a disclosed entry-point rule. The rules are listed in this response; a symbol reached only through evidence a rule does not cover is not classified, and no score is assigned in place of a rule."
+      ]
+    },
+    {
+      "selector": "symbol:lab/sims/oscillating-electron-retarded-fields/browser-check.py#summary:function",
+      "snapshot": "head",
+      "kind": "entry_points",
+      "reasons": [
+        "No affected symbol matched a disclosed entry-point rule. The rules are listed in this response; a symbol reached only through evidence a rule does not cover is not classified, and no score is assigned in place of a rule."
+      ]
+    }
+  ],
+  "scope": {
+    "truncated": [
+      {
+        "what": "entry_points:symbol:scripts/research_records.py#supporting_paths:function@head",
+        "bound": "depth",
+        "value": 1
+      },
+      {
+        "what": "evidence:symbol:scripts/research_records.py#supporting_paths:function@head",
+        "bound": "depth",
+        "value": 1
+      }
+    ],
+    "unsupported": [
+      {
+        "path": "lab/gallery/index.html",
+        "reason": "unsupported_language",
+        "snapshot": "base"
+      },
+      {
+        "path": "lab/gallery/index.html",
+        "reason": "unsupported_language",
+        "snapshot": "head"
+      },
+      {
+        "path": "lab/sims/oscillating-electron-retarded-fields/assets/comparison.html",
+        "reason": "unsupported_language",
+        "snapshot": "head"
+      },
+      {
+        "path": "lab/sims/oscillating-electron-retarded-fields/assets/dense-desktop-after.png",
+        "reason": "unsupported_language",
+        "snapshot": "head"
+      },
+      {
+        "path": "lab/sims/oscillating-electron-retarded-fields/assets/dense-desktop-before.png",
+        "reason": "unsupported_language",
+        "snapshot": "head"
+      },
+      {
+        "path": "lab/sims/oscillating-electron-retarded-fields/assets/dense-desktop-delay.png",
+        "reason": "unsupported_language",
+        "snapshot": "head"
+      },
+      {
+        "path": "lab/sims/oscillating-electron-retarded-fields/assets/dense-desktop-during.png",
+        "reason": "unsupported_language",
+        "snapshot": "head"
+      },
+      {
+        "path": "lab/sims/oscillating-electron-retarded-fields/assets/dense-desktop-guide.png",
+        "reason": "unsupported_language",
+        "snapshot": "head"
+      },
+      {
+        "path": "lab/sims/oscillating-electron-retarded-fields/assets/dense-narrow-after.png",
+        "reason": "unsupported_language",
+        "snapshot": "head"
+      },
+      {
+        "path": "lab/sims/oscillating-electron-retarded-fields/assets/dense-narrow-before.png",
+        "reason": "unsupported_language",
+        "snapshot": "head"
+      },
+      {
+        "path": "lab/sims/oscillating-electron-retarded-fields/assets/dense-narrow-controls.png",
+        "reason": "unsupported_language",
+        "snapshot": "head"
+      },
+      {
+        "path": "lab/sims/oscillating-electron-retarded-fields/assets/dense-narrow-delay.png",
+        "reason": "unsupported_language",
+        "snapshot": "head"
+      },
+      {
+        "path": "lab/sims/oscillating-electron-retarded-fields/assets/dense-narrow-during.png",
+        "reason": "unsupported_language",
+        "snapshot": "head"
+      },
+      {
+        "path": "lab/sims/oscillating-electron-retarded-fields/assets/original-desktop-after.png",
+        "reason": "unsupported_language",
+        "snapshot": "head"
+      },
+      {
+        "path": "lab/sims/oscillating-electron-retarded-fields/assets/original-desktop-before.png",
+        "reason": "unsupported_language",
+        "snapshot": "head"
+      },
+      {
+        "path": "lab/sims/oscillating-electron-retarded-fields/assets/original-desktop-delay.png",
+        "reason": "unsupported_language",
+        "snapshot": "head"
+      },
+      {
+        "path": "lab/sims/oscillating-electron-retarded-fields/assets/original-desktop-during.png",
+        "reason": "unsupported_language",
+        "snapshot": "head"
+      },
+      {
+        "path": "lab/sims/oscillating-electron-retarded-fields/assets/original-narrow-after.png",
+        "reason": "unsupported_language",
+        "snapshot": "head"
+      },
+      {
+        "path": "lab/sims/oscillating-electron-retarded-fields/assets/original-narrow-before.png",
+        "reason": "unsupported_language",
+        "snapshot": "head"
+      },
+      {
+        "path": "lab/sims/oscillating-electron-retarded-fields/assets/original-narrow-delay.png",
+        "reason": "unsupported_language",
+        "snapshot": "head"
+      },
+      {
+        "path": "lab/sims/oscillating-electron-retarded-fields/assets/original-narrow-during.png",
+        "reason": "unsupported_language",
+        "snapshot": "head"
+      },
+      {
+        "path": "lab/sims/oscillating-electron-retarded-fields/dense-checks.mjs",
+        "reason": "unsupported_language",
+        "snapshot": "head"
+      },
+      {
+        "path": "lab/sims/oscillating-electron-retarded-fields/index.html",
+        "reason": "unsupported_language",
+        "snapshot": "base"
+      },
+      {
+        "path": "lab/sims/oscillating-electron-retarded-fields/index.html",
+        "reason": "unsupported_language",
+        "snapshot": "head"
+      },
+      {
+        "path": "lab/sims/oscillating-electron-retarded-fields/physics.mjs",
+        "reason": "unsupported_language",
+        "snapshot": "base"
+      },
+      {
+        "path": "lab/sims/oscillating-electron-retarded-fields/physics.mjs",
+        "reason": "unsupported_language",
+        "snapshot": "head"
+      },
+      {
+        "path": "lab/sims/oscillating-electron-retarded-fields/sampling.mjs",
+        "reason": "unsupported_language",
+        "snapshot": "head"
+      },
+      {
+        "path": "lab/sims/oscillating-electron-retarded-fields/style.css",
+        "reason": "unsupported_language",
+        "snapshot": "base"
+      },
+      {
+        "path": "lab/sims/oscillating-electron-retarded-fields/style.css",
+        "reason": "unsupported_language",
+        "snapshot": "head"
+      },
+      {
+        "path": "lab/sims/swirl-ball-far-field/index.html",
+        "reason": "unsupported_language",
+        "snapshot": "base"
+      },
+      {
+        "path": "lab/sims/swirl-ball-far-field/index.html",
+        "reason": "unsupported_language",
+        "snapshot": "head"
+      },
+      {
+        "path": "requirements-research.txt",
+        "reason": "unsupported_language",
+        "snapshot": "head"
+      }
+    ],
+    "excluded": [
+      {
+        "path": "AGENTS.md",
+        "reason": "symlink",
+        "snapshot": "base"
+      },
+      {
+        "path": "AGENTS.md",
+        "reason": "symlink",
+        "snapshot": "head"
+      }
+    ]
+  },
+  "source_rendering": "reference"
+}

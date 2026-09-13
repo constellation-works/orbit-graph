@@ -1,4 +1,14 @@
-# Recommendation evaluation
+# Evaluation
+
+This directory holds two unrelated evaluations.
+
+* **Recommendation evaluation** — below: `orbit-graph evaluate`'s chronological,
+  fail-closed backtest of change-destination recommendations.
+* **[Change explorer](change-explorer/README.md)** — the Milestone 5 evidence for
+  `orbit-graph-explorer`: five real change studies across Rust and Python, a
+  measured performance envelope, and the limitations that follow from them.
+
+## Recommendation evaluation
 
 `orbit-graph evaluate --input <corpus.json>` runs a chronological, fail-closed
 backtest. Every case supplies a task-text snapshot attested before its cutoff,
@@ -25,7 +35,7 @@ mean/maximum latency, case and training coverage, exclusions, input digest,
 source provenance, and exact revisions. Precision reserves K slots per case;
 an engine returning fewer results does not receive artificial credit.
 
-## Recorded real prospective cohort
+### Recorded real prospective cohort
 
 [`orbit-prospective-20260907-input.json`](orbit-prospective-20260907-input.json)
 is derived from two public `orbit.task.show` observations captured before
