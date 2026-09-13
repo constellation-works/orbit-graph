@@ -626,6 +626,16 @@ rewriting the original examples.
 - **2026-09-12 — ORB-12373:** Snapshot caching is deferred. The service creates
   fresh per-comparison trees and indexes under each snapshot tree; the
   previously described repository cache is not shipped.
+- **2026-09-13 — ORB-12413:** Each `entry_points[]` row carries a top-level
+  `category`, the weakest evidence category on its `path` (mirroring
+  `EvidencePath::category`), so the UI can tell a `resolved_call` entry point
+  from one reached only through a `heuristic_match` hop without reaching into
+  the path. The entry-points pane groups `heuristic_match` rows under their
+  own "Heuristic / fallback matches" heading, matching the evidence and
+  callees panes. `crate_root_public_item` no longer fires for a root-named
+  file (`lib.rs`, `main.rs`, `__init__.py`, `index.js`/`.ts`) under a
+  test-classified path: a fixture tree checked into the repository under
+  analysis is not that repository's own crate root.
 
 ## UI sketch
 

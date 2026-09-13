@@ -53,9 +53,10 @@
 //   entry-points: target, commit_sha, query_options, rules[].id,
 //                rules[].description, entry_points[].node,
 //                entry_points[].rule, entry_points[].rule_description,
-//                entry_points[].distance, entry_points[].path,
-//                entry_points[].note, truncated, truncated_by, bounds_hit,
-//                filtered_out, no_entry_point_reasons
+//                entry_points[].distance, entry_points[].category,
+//                entry_points[].path, entry_points[].note, truncated,
+//                truncated_by, bounds_hit, filtered_out,
+//                no_entry_point_reasons
 //   candidate-tests: candidates[].test.selector, candidates[].source,
 //                candidates[].category, candidates[].note,
 //                candidates[].truncated
@@ -1523,8 +1524,10 @@ function renderEntryPoints(report) {
       truncationSummary(report, entries.length, "entry point", "entry points"),
   );
 
-  const container = document.getElementById("entry-points-list");
-  clear(container);
+  const primary = document.getElementById("entry-points-primary");
+  const heuristic = document.getElementById("entry-points-heuristic");
+  clear(primary);
+  clear(heuristic);
   const none = document.getElementById("entry-points-none");
   if (entries.length === 0) {
     setText(none, (report.no_entry_point_reasons || []).join(" "));
@@ -1533,11 +1536,29 @@ function renderEntryPoints(report) {
   }
   none.hidden = true;
 
-  const list = el("ul", { className: "entry-point-list" });
+  const primaryList = el("ul", { className: "entry-point-list" });
+  const heuristicList = el("ul", { className: "entry-point-list" });
+  let primaryCount = 0;
+  let heuristicCount = 0;
   for (const entry of entries) {
-    list.appendChild(renderEntryPointRow(entry));
+    const row = renderEntryPointRow(entry);
+    if (entry.category === "heuristic_match") {
+      heuristicList.appendChild(row);
+      heuristicCount += 1;
+    } else {
+      primaryList.appendChild(row);
+      primaryCount += 1;
+    }
   }
-  container.appendChild(list);
+  if (primaryCount > 0) primary.appendChild(primaryList);
+  if (heuristicCount > 0) {
+    heuristic.appendChild(
+      el("div", { className: "evidence-heuristic-group" }, [
+        el("h5", { text: "Heuristic / fallback matches" }),
+        heuristicList,
+      ]),
+    );
+  }
 }
 
 function renderEntryPointRow(entry) {
@@ -1545,6 +1566,7 @@ function renderEntryPointRow(entry) {
     el("span", { className: "row-name", text: entry.node.label }),
     entry.node.origin === "file" ? badge("file") : null,
     badge(entry.rule),
+    badge(categoryLabel(entry.category)),
   ];
   const button = el(
     "button",

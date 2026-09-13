@@ -544,6 +544,7 @@ fn assert_data_contract(case_id: &str) {
             "rule_description",
             "rules",
             "distance",
+            "category",
             "path",
             "note",
         ] {
@@ -552,6 +553,10 @@ fn assert_data_contract(case_id: &str) {
                 "entry point missing `{field}`: {entry}"
             );
         }
+        assert_eq!(
+            entry["category"], entry["path"]["category"],
+            "an entry point's weakest category must match its path's: {entry}"
+        );
         for field in ["selector", "snapshot", "label", "origin"] {
             assert!(
                 entry["node"].get(field).is_some(),

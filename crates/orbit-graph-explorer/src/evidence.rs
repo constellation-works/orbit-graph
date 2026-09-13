@@ -581,8 +581,10 @@ pub const ENTRY_POINT_RULES: &[EntryPointRule] = &[
     EntryPointRule {
         id: "crate_root_public_item",
         description: "A public function or type declared at a crate root or package initializer \
-                      (`lib.rs`, `main.rs`, `__init__.py`, `index.js`, `index.ts`): the surface \
-                      another package can call.",
+                      (`lib.rs`, `main.rs`, `__init__.py`, `index.js`, `index.ts`) outside any \
+                      test-classified path: the surface another package can call. A same-named \
+                      root file under a test-classified path (for example a fixture tree) is not \
+                      the repository's own crate root and never fires this rule.",
     },
     EntryPointRule {
         id: "test_function",
@@ -605,6 +607,11 @@ pub struct EntryPoint {
     /// Hops from the entry point to the queried symbol; `0` when the queried
     /// symbol is itself an entry point.
     pub distance: usize,
+    /// Weakest evidence category on `path`, mirroring [`EvidencePath::category`]
+    /// at the top level so a reader — and the UI's grouping — never has to
+    /// reach into the path to tell a `resolved_call` entry point from one
+    /// reached only through a `heuristic_match` hop.
+    pub category: EvidenceCategory,
     /// Shortest evidence path from this entry point to the queried symbol.
     pub path: EvidencePath,
     /// What the rule observed, such as the command name that resolved.
@@ -1530,6 +1537,7 @@ impl<'a> EvidenceCollector<'a> {
                 rule_description: rule.description.to_string(),
                 rules: fired.iter().map(|(rule, _)| rule.id.to_string()).collect(),
                 distance: path.distance,
+                category: path.category,
                 path,
                 note,
             });
@@ -1741,6 +1749,7 @@ impl<'a> EvidenceCollector<'a> {
                     .map(|command| format!("`command:{command}` resolves to this symbol")),
                 "crate_root_public_item" => {
                     if root_module_kind(address.path.as_str()).is_some()
+                        && !is_test_path(address.path.as_str())
                         && is_public_item_kind(address.kind.as_str())
                         && self.declaration_is_public(address)?
                     {
