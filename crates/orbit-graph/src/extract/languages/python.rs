@@ -1,5 +1,6 @@
 //! Python tree-sitter extraction.
 
+use std::ops::Range;
 use std::path::Path;
 
 use tree_sitter::{Node, Parser};
@@ -110,6 +111,21 @@ impl ExtractionState {
         kind: &'static str,
         confidence: &'static str,
     ) {
+        self.push_ref_with_receiver(node, source, target_qualified, kind, confidence, None);
+    }
+
+    /// [`Self::push_ref`] plus the receiver expression of a method call whose
+    /// receiver type this extractor cannot determine. See
+    /// [`RawRef::unresolved_receiver`].
+    fn push_ref_with_receiver(
+        &mut self,
+        node: Node,
+        source: &str,
+        target_qualified: Option<String>,
+        kind: &'static str,
+        confidence: &'static str,
+        unresolved_receiver: Option<String>,
+    ) {
         let Some(target_name) = target_name(node, source) else {
             return;
         };
@@ -117,13 +133,13 @@ impl ExtractionState {
             return;
         }
 
-        self.push_ref_span(
-            node.start_byte(),
-            node.end_byte(),
+        self.push_ref_row(
+            node.start_byte()..node.end_byte(),
             target_name,
             target_qualified,
             kind,
             confidence,
+            unresolved_receiver,
         );
     }
 
@@ -136,18 +152,38 @@ impl ExtractionState {
         kind: &'static str,
         confidence: &'static str,
     ) {
+        self.push_ref_row(
+            from_span_start..from_span_end,
+            target_name,
+            target_qualified,
+            kind,
+            confidence,
+            None,
+        );
+    }
+
+    fn push_ref_row(
+        &mut self,
+        span: Range<usize>,
+        target_name: String,
+        target_qualified: Option<String>,
+        kind: &'static str,
+        confidence: &'static str,
+        unresolved_receiver: Option<String>,
+    ) {
         if target_name.is_empty() || is_ignored_name(&target_name) {
             return;
         }
 
         self.refs.push(RawRef {
             from_file: self.file_path.clone(),
-            from_span_start,
-            from_span_end,
+            from_span_start: span.start,
+            from_span_end: span.end,
             target_name,
             target_qualified,
             kind: kind.to_string(),
             confidence: confidence.to_string(),
+            unresolved_receiver,
         });
     }
 
@@ -630,13 +666,17 @@ fn collect_call_ref(
             );
         }
         "attribute" => {
+            let receiver = function
+                .child_by_field_name("object")
+                .and_then(|object| unresolved_receiver_text(object, source));
             if let Some(attribute) = function.child_by_field_name("attribute") {
-                state.push_ref(
+                state.push_ref_with_receiver(
                     attribute,
                     source,
                     Some(normalize_qualified_name(&node_text(function, source))),
                     "call",
                     "fuzzy_name",
+                    receiver,
                 );
             }
             // Recurse into the receiver so nested calls in a method chain
@@ -648,6 +688,25 @@ fn collect_call_ref(
         }
         _ => collect_expression_refs(function, source, parent_symbol, state),
     }
+}
+
+/// Receiver text to record on an attribute-call ref, or `None` when the
+/// receiver is the enclosing definition's own instance or class (`self`,
+/// `cls`) and a same-file attribute of that name is therefore a reasonable
+/// match.
+///
+/// Everything else — a local binding, an attribute, a chained call — names a
+/// value whose type this extractor does not track, so the bare attribute name
+/// alone must not be resolved by name. A dotted receiver that names an
+/// imported module still resolves through the import rung, which matches the
+/// qualified name rather than the bare one. See
+/// [`RawRef::unresolved_receiver`].
+fn unresolved_receiver_text(object: Node, source: &str) -> Option<String> {
+    let text = node_text(object, source);
+    if matches!(text.as_str(), "self" | "cls") {
+        return None;
+    }
+    Some(text)
 }
 
 fn extract_import(node: Node, source: &str, state: &mut ExtractionState) {

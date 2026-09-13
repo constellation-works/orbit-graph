@@ -132,6 +132,13 @@ Qualified cross-file calls such as `a::run()` and `pkg.mod.run()` report
 Explicit imports report `import` (`import_resolved` in JSON and storage) when
 they identify one symbol; ambiguous qualifiers or imports remain `fuzzy`.
 
+A method call whose receiver type the extractor cannot determine
+(`args.execute()`, `rows.append(1)`) is never matched on its bare method name:
+it resolves only through an import or a qualified path, and otherwise reports
+`fuzzy`. A dispatcher's own same-named method is therefore not a match for the
+calls it dispatches. Receivers that name the enclosing definition (`self`,
+`Self`, `cls`) keep resolving within the defining file.
+
 Selectors use one of these forms:
 
 ```text

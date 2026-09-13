@@ -116,6 +116,21 @@ impl ExtractionState {
         kind: &'static str,
         confidence: &'static str,
     ) {
+        self.push_ref_with_receiver(node, source, target_qualified, kind, confidence, None);
+    }
+
+    /// [`Self::push_ref`] plus the receiver expression of a method call whose
+    /// receiver type this extractor cannot determine. See
+    /// [`RawRef::unresolved_receiver`].
+    fn push_ref_with_receiver(
+        &mut self,
+        node: Node,
+        source: &str,
+        target_qualified: Option<String>,
+        kind: &'static str,
+        confidence: &'static str,
+        unresolved_receiver: Option<String>,
+    ) {
         let Some(target_name) = target_name(node, source) else {
             return;
         };
@@ -131,6 +146,7 @@ impl ExtractionState {
             target_qualified,
             kind: kind.to_string(),
             confidence: confidence.to_string(),
+            unresolved_receiver,
         });
     }
 
@@ -654,8 +670,11 @@ fn push_call_target_ref(
             "import_resolved",
         ),
         "field_expression" => {
+            let receiver = function
+                .child_by_field_name("value")
+                .and_then(|value| unresolved_receiver_text(value, source));
             if let Some(field) = function.child_by_field_name("field") {
-                state.push_ref(field, source, None, "call", "fuzzy_name");
+                state.push_ref_with_receiver(field, source, None, "call", "fuzzy_name", receiver);
             }
             if let Some(value) = function.child_by_field_name("value") {
                 collect_expression_refs(value, source, module, state);
@@ -684,6 +703,21 @@ fn push_call_target_ref(
         }
         _ => collect_expression_refs(function, source, module, state),
     }
+}
+
+/// Receiver text to record on a method-call ref, or `None` when the receiver
+/// identifies the enclosing definition's own type (`self`, `Self`) and a
+/// same-file method of that name is therefore a reasonable match.
+///
+/// Everything else — a local binding, a field, a chained call — names a value
+/// whose type this extractor does not track, so the bare method name alone
+/// must not be resolved by name. See [`RawRef::unresolved_receiver`].
+fn unresolved_receiver_text(value: Node, source: &str) -> Option<String> {
+    let text = node_text(value, source);
+    if matches!(text.as_str(), "self" | "Self") {
+        return None;
+    }
+    Some(text)
 }
 
 fn extract_use(node: Node, source: &str, state: &mut ExtractionState) {

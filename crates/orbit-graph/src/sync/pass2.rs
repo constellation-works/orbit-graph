@@ -5,6 +5,17 @@
 //! matches, same-module matches, then fuzzy name-only refs. All refs for the
 //! files refreshed by the current sync are rewritten in one SQLite transaction;
 //! unchanged files' refs are not touched during incremental syncs.
+//!
+//! Two rungs match on the bare short name alone: the same-file rung and the
+//! same-module rung. A method call whose receiver type the extractor could not
+//! determine (`args.execute()`, recorded with
+//! [`RawRef::unresolved_receiver`]) carries no evidence about which type's
+//! method is meant, so those two rungs skip it: a dispatcher that calls
+//! `args.execute()` must not resolve to its own `execute` method, and a list
+//! `.append(...)` must not resolve to a same-module `append` function. Such
+//! refs still resolve through the import and qualified rungs, which match a
+//! qualified path, and otherwise land at `fuzzy_name`, where name-only
+//! matching is labelled as such.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
@@ -146,7 +157,17 @@ fn resolve_exact(
         }
     }
 
+    if !resolves_by_name_only(raw_ref) {
+        return Ok(None);
+    }
     Ok(unique_candidate(&candidates))
+}
+
+/// Whether the ref may be matched on its short name alone. False for a method
+/// call whose receiver type the extractor could not determine: the receiver,
+/// not the calling file or module, decides which same-named method runs.
+fn resolves_by_name_only(raw_ref: &RawRef) -> bool {
+    raw_ref.unresolved_receiver.is_none()
 }
 
 fn resolve_qualified(
@@ -206,6 +227,9 @@ fn resolve_same_module(
     from_file: &str,
     raw_ref: &RawRef,
 ) -> Result<Option<SymbolCandidate>, GraphError> {
+    if !resolves_by_name_only(raw_ref) {
+        return Ok(None);
+    }
     let prefixes = module_prefixes_for_file(tx, from_file)?;
     if prefixes.is_empty() {
         return Ok(None);
