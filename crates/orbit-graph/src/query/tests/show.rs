@@ -143,6 +143,68 @@ fn show_resolves_symbol_file_module_and_command_selectors() {
 }
 
 #[test]
+fn show_command_selector_uses_handler_symbol_file_when_handler_lives_elsewhere() {
+    let worktree = TestWorktree::new("show-command-cross-file");
+    let main_source =
+        "#[derive(Subcommand)]\npub enum WorkspaceCommand {\n    Teardown(TeardownArgs),\n}\n";
+    let handler_source = "impl Execute for TeardownArgs {\n    fn execute(self) {\n        println!(\"{}\", self.workspace);\n    }\n}\n";
+    worktree.write("src/main.rs", main_source);
+    worktree.write("src/teardown.rs", handler_source);
+    let graph = open_graph(&worktree, SyncPolicy::Manual);
+    let conn = open_connection(&worktree);
+    insert_file(&conn, "src/main.rs", "rust", main_source);
+    insert_file(&conn, "src/teardown.rs", "rust", handler_source);
+    let command_span_start = main_source.find("Teardown").expect("command variant start");
+    let handler_start = handler_source.find("fn execute").expect("handler start");
+    let handler_end = handler_source.len();
+    let handler_id = insert_symbol(
+        &conn,
+        "src/teardown.rs",
+        "execute",
+        "<TeardownArgs as Execute>::execute",
+        "method",
+        handler_start,
+        handler_end,
+    );
+    insert_command(
+        &conn,
+        "workspace teardown",
+        "src/main.rs",
+        command_span_start,
+        Some(handler_id),
+    );
+
+    let command = graph
+        .show(
+            &Selector::Command {
+                name: "workspace teardown".to_string(),
+            },
+            DEFAULT_SHOW_MAX_BYTES,
+        )
+        .expect("show command")
+        .expect("command resolves");
+
+    assert_eq!(command.metadata.file, "src/teardown.rs");
+    assert_eq!(command.metadata.kind, "command");
+    assert_eq!(command.metadata.name.as_deref(), Some("workspace teardown"));
+    assert_eq!(
+        command.metadata.qualified.as_deref(),
+        Some("<TeardownArgs as Execute>::execute")
+    );
+    assert_eq!(
+        command.metadata.span,
+        SourceSpan {
+            start: handler_start,
+            end: handler_end
+        }
+    );
+    assert_eq!(
+        &command.bytes,
+        &handler_source.as_bytes()[handler_start..handler_end]
+    );
+}
+
+#[test]
 fn show_truncates_source_when_max_bytes_is_shorter_than_span() {
     let worktree = TestWorktree::new("show-truncate");
     let source = "pub fn long_body() {\n    let message = \"abcdef\";\n}\n";

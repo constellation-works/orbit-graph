@@ -155,7 +155,7 @@ fn resolve_module(conn: &Connection, qualified: &str) -> Result<Option<ResolvedV
 
 fn resolve_command(conn: &Connection, name: &str) -> Result<Option<ResolvedView>, GraphError> {
     conn.query_row(
-        "SELECT c.file_path,
+        "SELECT COALESCE(s.file_path, c.file_path) AS file_path,
                 COALESCE(s.span_start, c.span_start) AS span_start,
                 COALESCE(s.span_end, f.byte_len) AS span_end,
                 'command' AS kind,
