@@ -1,0 +1,699 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Change report: 148b668391f5 → 82c24be9a49d</title>
+<style>
+body { font-family: system-ui, sans-serif; margin: 2rem; color: #1a1a1a; }
+code, pre { font-family: ui-monospace, monospace; }
+pre { background: #f4f4f4; padding: 0.5rem; overflow-x: auto; white-space: pre-wrap; }
+.banner { background: #eef6ff; border: 1px solid #90c2ff; padding: 0.75rem; margin: 1rem 0; }
+.tag { display: inline-block; border: 1px solid #999; border-radius: 3px; padding: 0 0.3rem; font-size: 0.85em; }
+.tag-embedded { background: #e6ffed; border-color: #2ea44f; }
+.tag-reference { background: #fff5e6; border-color: #d9822b; }
+.tag-truncated { background: #ffe6e6; border-color: #d92b2b; }
+.warning { color: #a33; }
+.note { font-style: italic; }
+article.symbol { border-top: 2px solid #ccc; padding-top: 1rem; margin-top: 1rem; }
+.location { margin: 0.25rem 0; }
+ul.edges { list-style: none; padding-left: 0; }
+li.edge { margin: 0.25rem 0; }
+</style>
+</head>
+<body>
+<header>
+<h1>Change report</h1>
+<dl>
+<dt>Base</dt><dd><code>148b668391f575466282eaa81aab0dc943846a87</code> (148b668391f575466282eaa81aab0dc943846a87)</dd>
+<dt>Head</dt><dd><code>82c24be9a49dbf9d775db9dc980c1de712d8bb8d</code> (82c24be9a49dbf9d775db9dc980c1de712d8bb8d)</dd>
+<dt>Mode</dt><dd>direct_base_head (effective base <code>148b668391f575466282eaa81aab0dc943846a87</code>)</dd>
+<dt>Generated</dt><dd>2026-09-13T00:00:00Z</dd>
+</dl>
+</header>
+<div class="banner">This report embeds 0 source location(s) directly. 121 location(s) are references only and need repository access to view: look for the <span class="tag tag-reference">reference</span> marker.</div>
+<section id="scope">
+<h2>Scope</h2>
+<p>Excerpt mode: <strong>none</strong> (radius 5 line(s)). Confidence floor: same_module. Depth: 1.</p>
+<ul>
+<li class="warning">entry_points:symbol:scripts/research_records.py#supporting_paths:function@head truncated at <code>depth</code> = 1</li>
+<li class="warning">evidence:symbol:scripts/research_records.py#supporting_paths:function@head truncated at <code>depth</code> = 1</li>
+</ul>
+<h3>Out of scope</h3>
+<ul>
+<li>lab/gallery/index.html (unsupported_language, base)</li>
+<li>lab/gallery/index.html (unsupported_language, head)</li>
+<li>lab/sims/oscillating-electron-retarded-fields/assets/comparison.html (unsupported_language, head)</li>
+<li>lab/sims/oscillating-electron-retarded-fields/assets/dense-desktop-after.png (unsupported_language, head)</li>
+<li>lab/sims/oscillating-electron-retarded-fields/assets/dense-desktop-before.png (unsupported_language, head)</li>
+<li>lab/sims/oscillating-electron-retarded-fields/assets/dense-desktop-delay.png (unsupported_language, head)</li>
+<li>lab/sims/oscillating-electron-retarded-fields/assets/dense-desktop-during.png (unsupported_language, head)</li>
+<li>lab/sims/oscillating-electron-retarded-fields/assets/dense-desktop-guide.png (unsupported_language, head)</li>
+<li>lab/sims/oscillating-electron-retarded-fields/assets/dense-narrow-after.png (unsupported_language, head)</li>
+<li>lab/sims/oscillating-electron-retarded-fields/assets/dense-narrow-before.png (unsupported_language, head)</li>
+<li>lab/sims/oscillating-electron-retarded-fields/assets/dense-narrow-controls.png (unsupported_language, head)</li>
+<li>lab/sims/oscillating-electron-retarded-fields/assets/dense-narrow-delay.png (unsupported_language, head)</li>
+<li>lab/sims/oscillating-electron-retarded-fields/assets/dense-narrow-during.png (unsupported_language, head)</li>
+<li>lab/sims/oscillating-electron-retarded-fields/assets/original-desktop-after.png (unsupported_language, head)</li>
+<li>lab/sims/oscillating-electron-retarded-fields/assets/original-desktop-before.png (unsupported_language, head)</li>
+<li>lab/sims/oscillating-electron-retarded-fields/assets/original-desktop-delay.png (unsupported_language, head)</li>
+<li>lab/sims/oscillating-electron-retarded-fields/assets/original-desktop-during.png (unsupported_language, head)</li>
+<li>lab/sims/oscillating-electron-retarded-fields/assets/original-narrow-after.png (unsupported_language, head)</li>
+<li>lab/sims/oscillating-electron-retarded-fields/assets/original-narrow-before.png (unsupported_language, head)</li>
+<li>lab/sims/oscillating-electron-retarded-fields/assets/original-narrow-delay.png (unsupported_language, head)</li>
+<li>lab/sims/oscillating-electron-retarded-fields/assets/original-narrow-during.png (unsupported_language, head)</li>
+<li>lab/sims/oscillating-electron-retarded-fields/dense-checks.mjs (unsupported_language, head)</li>
+<li>lab/sims/oscillating-electron-retarded-fields/index.html (unsupported_language, base)</li>
+<li>lab/sims/oscillating-electron-retarded-fields/index.html (unsupported_language, head)</li>
+<li>lab/sims/oscillating-electron-retarded-fields/physics.mjs (unsupported_language, base)</li>
+<li>lab/sims/oscillating-electron-retarded-fields/physics.mjs (unsupported_language, head)</li>
+<li>lab/sims/oscillating-electron-retarded-fields/sampling.mjs (unsupported_language, head)</li>
+<li>lab/sims/oscillating-electron-retarded-fields/style.css (unsupported_language, base)</li>
+<li>lab/sims/oscillating-electron-retarded-fields/style.css (unsupported_language, head)</li>
+<li>lab/sims/swirl-ball-far-field/index.html (unsupported_language, base)</li>
+<li>lab/sims/swirl-ball-far-field/index.html (unsupported_language, head)</li>
+<li>requirements-research.txt (unsupported_language, head)</li>
+</ul>
+<h3>Unresolved areas</h3>
+<ul>
+<li><code>symbol:lab/sims/oscillating-electron-retarded-fields/browser-check.py#summary:function</code> (base, entry_points)<ul><li>No affected symbol matched a disclosed entry-point rule. The rules are listed in this response; a symbol reached only through evidence a rule does not cover is not classified, and no score is assigned in place of a rule.</li></ul></li>
+<li><code>symbol:lab/sims/oscillating-electron-retarded-fields/browser-check.py#summary:function</code> (head, entry_points)<ul><li>No affected symbol matched a disclosed entry-point rule. The rules are listed in this response; a symbol reached only through evidence a rule does not cover is not classified, and no score is assigned in place of a rule.</li></ul></li>
+</ul>
+</section>
+<section id="symbols">
+<h2>Changed symbols</h2>
+<article class="symbol">
+<h3><span class="tag">modified</span> <code>symbol:README.md#Add a sim:heading</code></h3>
+<p>Pairing: same_selector (selector)</p>
+<p class="note">body changed; signature line is unchanged</p>
+<div class="occurrence"><p><strong>Base</strong> <code>symbol:README.md#Add a sim:heading</code></p><div class="location reference"><span class="tag tag-reference">reference</span> <code>README.md@148b668391f575466282eaa81aab0dc943846a87</code></div></div>
+<div class="occurrence"><p><strong>Head</strong> <code>symbol:README.md#Add a sim:heading</code></p><div class="location reference"><span class="tag tag-reference">reference</span> <code>README.md@82c24be9a49dbf9d775db9dc980c1de712d8bb8d</code></div></div>
+</article>
+<article class="symbol">
+<h3><span class="tag">added</span> <code>symbol:README.md#Research records:heading</code></h3>
+<p>Pairing: same_selector (selector)</p>
+<p class="note">Present in head and absent from base. This is not a claim that it did not exist under another identity.</p>
+<div class="occurrence"><p><strong>Head</strong> <code>symbol:README.md#Research records:heading</code></p><div class="location reference"><span class="tag tag-reference">reference</span> <code>README.md@82c24be9a49dbf9d775db9dc980c1de712d8bb8d</code></div></div>
+</article>
+<article class="symbol">
+<h3><span class="tag">modified</span> <code>symbol:README.md#orrery:heading</code></h3>
+<p>Pairing: same_selector (selector)</p>
+<p class="note">body changed; signature line is unchanged</p>
+<div class="occurrence"><p><strong>Base</strong> <code>symbol:README.md#orrery:heading</code></p><div class="location reference"><span class="tag tag-reference">reference</span> <code>README.md@148b668391f575466282eaa81aab0dc943846a87</code></div></div>
+<div class="occurrence"><p><strong>Head</strong> <code>symbol:README.md#orrery:heading</code></p><div class="location reference"><span class="tag tag-reference">reference</span> <code>README.md@82c24be9a49dbf9d775db9dc980c1de712d8bb8d</code></div></div>
+</article>
+<article class="symbol">
+<h3><span class="tag">added</span> <code>symbol:docs/research-records.md#Inventory and compatibility:heading</code></h3>
+<p>Pairing: same_selector (selector)</p>
+<p class="note">Present in head and absent from base. This is not a claim that it did not exist under another identity.</p>
+<div class="occurrence"><p><strong>Head</strong> <code>symbol:docs/research-records.md#Inventory and compatibility:heading</code></p><div class="location reference"><span class="tag tag-reference">reference</span> <code>docs/research-records.md@82c24be9a49dbf9d775db9dc980c1de712d8bb8d</code></div></div>
+</article>
+<article class="symbol">
+<h3><span class="tag">added</span> <code>symbol:docs/research-records.md#Native registration boundary:heading</code></h3>
+<p>Pairing: same_selector (selector)</p>
+<p class="note">Present in head and absent from base. This is not a claim that it did not exist under another identity.</p>
+<div class="occurrence"><p><strong>Head</strong> <code>symbol:docs/research-records.md#Native registration boundary:heading</code></p><div class="location reference"><span class="tag tag-reference">reference</span> <code>docs/research-records.md@82c24be9a49dbf9d775db9dc980c1de712d8bb8d</code></div></div>
+</article>
+<article class="symbol">
+<h3><span class="tag">added</span> <code>symbol:docs/research-records.md#Orrery research records:heading</code></h3>
+<p>Pairing: same_selector (selector)</p>
+<p class="note">Present in head and absent from base. This is not a claim that it did not exist under another identity.</p>
+<div class="occurrence"><p><strong>Head</strong> <code>symbol:docs/research-records.md#Orrery research records:heading</code></p><div class="location reference"><span class="tag tag-reference">reference</span> <code>docs/research-records.md@82c24be9a49dbf9d775db9dc980c1de712d8bb8d</code></div></div>
+</article>
+<article class="symbol">
+<h3><span class="tag">added</span> <code>symbol:docs/research-records.md#Wide-binary historical chain:heading</code></h3>
+<p>Pairing: same_selector (selector)</p>
+<p class="note">Present in head and absent from base. This is not a claim that it did not exist under another identity.</p>
+<div class="occurrence"><p><strong>Head</strong> <code>symbol:docs/research-records.md#Wide-binary historical chain:heading</code></p><div class="location reference"><span class="tag tag-reference">reference</span> <code>docs/research-records.md@82c24be9a49dbf9d775db9dc980c1de712d8bb8d</code></div></div>
+</article>
+<article class="symbol">
+<h3><span class="tag">added</span> <code>symbol:lab/sims/oscillating-electron-retarded-fields/README.md#Before / turn / outward / after evidence:heading</code></h3>
+<p>Pairing: same_selector (selector)</p>
+<p class="note">Present in head and absent from base. This is not a claim that it did not exist under another identity.</p>
+<div class="occurrence"><p><strong>Head</strong> <code>symbol:lab/sims/oscillating-electron-retarded-fields/README.md#Before / turn / outward / after evidence:heading</code></p><div class="location reference"><span class="tag tag-reference">reference</span> <code>lab/sims/oscillating-electron-retarded-fields/README.md@82c24be9a49dbf9d775db9dc980c1de712d8bb8d</code></div></div>
+</article>
+<article class="symbol">
+<h3><span class="tag">removed</span> <code>symbol:lab/sims/oscillating-electron-retarded-fields/README.md#Computed geometry versus guides:heading</code></h3>
+<p>Pairing: same_selector (selector)</p>
+<p class="note">Present in base and absent from head. This is not a claim that nothing replaced it.</p>
+<div class="occurrence"><p><strong>Base</strong> <code>symbol:lab/sims/oscillating-electron-retarded-fields/README.md#Computed geometry versus guides:heading</code></p><div class="location reference"><span class="tag tag-reference">reference</span> <code>lab/sims/oscillating-electron-retarded-fields/README.md@148b668391f575466282eaa81aab0dc943846a87</code></div></div>
+</article>
+<article class="symbol">
+<h3><span class="tag">removed</span> <code>symbol:lab/sims/oscillating-electron-retarded-fields/README.md#Lineage:heading</code></h3>
+<p>Pairing: same_selector (selector)</p>
+<p class="note">Present in base and absent from head. This is not a claim that nothing replaced it.</p>
+<div class="occurrence"><p><strong>Base</strong> <code>symbol:lab/sims/oscillating-electron-retarded-fields/README.md#Lineage:heading</code></p><div class="location reference"><span class="tag tag-reference">reference</span> <code>lab/sims/oscillating-electron-retarded-fields/README.md@148b668391f575466282eaa81aab0dc943846a87</code></div></div>
+</article>
+<article class="symbol">
+<h3><span class="tag">removed</span> <code>symbol:lab/sims/oscillating-electron-retarded-fields/README.md#Measured performance and limits:heading</code></h3>
+<p>Pairing: same_selector (selector)</p>
+<p class="note">Present in base and absent from head. This is not a claim that nothing replaced it.</p>
+<div class="occurrence"><p><strong>Base</strong> <code>symbol:lab/sims/oscillating-electron-retarded-fields/README.md#Measured performance and limits:heading</code></p><div class="location reference"><span class="tag tag-reference">reference</span> <code>lab/sims/oscillating-electron-retarded-fields/README.md@148b668391f575466282eaa81aab0dc943846a87</code></div></div>
+</article>
+<article class="symbol">
+<h3><span class="tag">added</span> <code>symbol:lab/sims/oscillating-electron-retarded-fields/README.md#Numerical and browser validation:heading</code></h3>
+<p>Pairing: same_selector (selector)</p>
+<p class="note">Present in head and absent from base. This is not a claim that it did not exist under another identity.</p>
+<div class="occurrence"><p><strong>Head</strong> <code>symbol:lab/sims/oscillating-electron-retarded-fields/README.md#Numerical and browser validation:heading</code></p><div class="location reference"><span class="tag tag-reference">reference</span> <code>lab/sims/oscillating-electron-retarded-fields/README.md@82c24be9a49dbf9d775db9dc980c1de712d8bb8d</code></div></div>
+</article>
+<article class="symbol">
+<h3><span class="tag">added</span> <code>symbol:lab/sims/oscillating-electron-retarded-fields/README.md#Playback and what the marks mean:heading</code></h3>
+<p>Pairing: same_selector (selector)</p>
+<p class="note">Present in head and absent from base. This is not a claim that it did not exist under another identity.</p>
+<div class="occurrence"><p><strong>Head</strong> <code>symbol:lab/sims/oscillating-electron-retarded-fields/README.md#Playback and what the marks mean:heading</code></p><div class="location reference"><span class="tag tag-reference">reference</span> <code>lab/sims/oscillating-electron-retarded-fields/README.md@82c24be9a49dbf9d775db9dc980c1de712d8bb8d</code></div></div>
+</article>
+<article class="symbol">
+<h3><span class="tag">removed</span> <code>symbol:lab/sims/oscillating-electron-retarded-fields/README.md#Reproducible validation:heading</code></h3>
+<p>Pairing: same_selector (selector)</p>
+<p class="note">Present in base and absent from head. This is not a claim that nothing replaced it.</p>
+<div class="occurrence"><p><strong>Base</strong> <code>symbol:lab/sims/oscillating-electron-retarded-fields/README.md#Reproducible validation:heading</code></p><div class="location reference"><span class="tag tag-reference">reference</span> <code>lab/sims/oscillating-electron-retarded-fields/README.md@148b668391f575466282eaa81aab0dc943846a87</code></div></div>
+</article>
+<article class="symbol">
+<h3><span class="tag">added</span> <code>symbol:lab/sims/oscillating-electron-retarded-fields/README.md#Smooth bounded trajectory and field:heading</code></h3>
+<p>Pairing: same_selector (selector)</p>
+<p class="note">Present in head and absent from base. This is not a claim that it did not exist under another identity.</p>
+<div class="occurrence"><p><strong>Head</strong> <code>symbol:lab/sims/oscillating-electron-retarded-fields/README.md#Smooth bounded trajectory and field:heading</code></p><div class="location reference"><span class="tag tag-reference">reference</span> <code>lab/sims/oscillating-electron-retarded-fields/README.md@82c24be9a49dbf9d775db9dc980c1de712d8bb8d</code></div></div>
+</article>
+<article class="symbol">
+<h3><span class="tag">removed</span> <code>symbol:lab/sims/oscillating-electron-retarded-fields/README.md#Trajectory, units and physics:heading</code></h3>
+<p>Pairing: same_selector (selector)</p>
+<p class="note">Present in base and absent from head. This is not a claim that nothing replaced it.</p>
+<div class="occurrence"><p><strong>Base</strong> <code>symbol:lab/sims/oscillating-electron-retarded-fields/README.md#Trajectory, units and physics:heading</code></p><div class="location reference"><span class="tag tag-reference">reference</span> <code>lab/sims/oscillating-electron-retarded-fields/README.md@148b668391f575466282eaa81aab0dc943846a87</code></div></div>
+</article>
+<article class="symbol">
+<h3><span class="tag">added</span> <code>symbol:lab/sims/oscillating-electron-retarded-fields/README.md#Turning electron — dense retarded field:heading</code></h3>
+<p>Pairing: same_selector (selector)</p>
+<p class="note">Present in head and absent from base. This is not a claim that it did not exist under another identity.</p>
+<div class="occurrence"><p><strong>Head</strong> <code>symbol:lab/sims/oscillating-electron-retarded-fields/README.md#Turning electron — dense retarded field:heading</code></p><div class="location reference"><span class="tag tag-reference">reference</span> <code>lab/sims/oscillating-electron-retarded-fields/README.md@82c24be9a49dbf9d775db9dc980c1de712d8bb8d</code></div></div>
+</article>
+<article class="symbol">
+<h3><span class="tag">removed</span> <code>symbol:lab/sims/oscillating-electron-retarded-fields/README.md#Turning electron — retarded fields:heading</code></h3>
+<p>Pairing: same_selector (selector)</p>
+<p class="note">Present in base and absent from head. This is not a claim that nothing replaced it.</p>
+<div class="occurrence"><p><strong>Base</strong> <code>symbol:lab/sims/oscillating-electron-retarded-fields/README.md#Turning electron — retarded fields:heading</code></p><div class="location reference"><span class="tag tag-reference">reference</span> <code>lab/sims/oscillating-electron-retarded-fields/README.md@148b668391f575466282eaa81aab0dc943846a87</code></div></div>
+</article>
+<article class="symbol">
+<h3><span class="tag">removed</span> <code>symbol:lab/sims/oscillating-electron-retarded-fields/README.md#Watch the turn:heading</code></h3>
+<p>Pairing: same_selector (selector)</p>
+<p class="note">Present in base and absent from head. This is not a claim that nothing replaced it.</p>
+<div class="occurrence"><p><strong>Base</strong> <code>symbol:lab/sims/oscillating-electron-retarded-fields/README.md#Watch the turn:heading</code></p><div class="location reference"><span class="tag tag-reference">reference</span> <code>lab/sims/oscillating-electron-retarded-fields/README.md@148b668391f575466282eaa81aab0dc943846a87</code></div></div>
+</article>
+<article class="symbol">
+<h3><span class="tag">removed</span> <code>symbol:lab/sims/oscillating-electron-retarded-fields/app.js#arrow:function</code></h3>
+<p>Pairing: same_selector (selector)</p>
+<p class="note">Present in base and absent from head. This is not a claim that nothing replaced it.</p>
+<div class="occurrence"><p><strong>Base</strong> <code>symbol:lab/sims/oscillating-electron-retarded-fields/app.js#arrow:function</code></p><div class="location reference"><span class="tag tag-reference">reference</span> <code>lab/sims/oscillating-electron-retarded-fields/app.js@148b668391f575466282eaa81aab0dc943846a87</code></div></div>
+</article>
+<article class="symbol">
+<h3><span class="tag">removed</span> <code>symbol:lab/sims/oscillating-electron-retarded-fields/app.js#buildSamples:function</code></h3>
+<p>Pairing: same_selector (selector)</p>
+<p class="note">Present in base and absent from head. This is not a claim that nothing replaced it.</p>
+<div class="occurrence"><p><strong>Base</strong> <code>symbol:lab/sims/oscillating-electron-retarded-fields/app.js#buildSamples:function</code></p><div class="location reference"><span class="tag tag-reference">reference</span> <code>lab/sims/oscillating-electron-retarded-fields/app.js@148b668391f575466282eaa81aab0dc943846a87</code></div></div>
+</article>
+<article class="symbol">
+<h3><span class="tag">removed</span> <code>symbol:lab/sims/oscillating-electron-retarded-fields/app.js#compress:function</code></h3>
+<p>Pairing: same_selector (selector)</p>
+<p class="note">Present in base and absent from head. This is not a claim that nothing replaced it.</p>
+<div class="occurrence"><p><strong>Base</strong> <code>symbol:lab/sims/oscillating-electron-retarded-fields/app.js#compress:function</code></p><div class="location reference"><span class="tag tag-reference">reference</span> <code>lab/sims/oscillating-electron-retarded-fields/app.js@148b668391f575466282eaa81aab0dc943846a87</code></div></div>
+</article>
+<article class="symbol">
+<h3><span class="tag">removed</span> <code>symbol:lab/sims/oscillating-electron-retarded-fields/app.js#dispose:function</code></h3>
+<p>Pairing: same_selector (selector)</p>
+<p class="note">Present in base and absent from head. This is not a claim that nothing replaced it.</p>
+<div class="occurrence"><p><strong>Base</strong> <code>symbol:lab/sims/oscillating-electron-retarded-fields/app.js#dispose:function</code></p><div class="location reference"><span class="tag tag-reference">reference</span> <code>lab/sims/oscillating-electron-retarded-fields/app.js@148b668391f575466282eaa81aab0dc943846a87</code></div></div>
+</article>
+<article class="symbol">
+<h3><span class="tag">removed</span> <code>symbol:lab/sims/oscillating-electron-retarded-fields/app.js#drawArrow:function</code></h3>
+<p>Pairing: same_selector (selector)</p>
+<p class="note">Present in base and absent from head. This is not a claim that nothing replaced it.</p>
+<div class="occurrence"><p><strong>Base</strong> <code>symbol:lab/sims/oscillating-electron-retarded-fields/app.js#drawArrow:function</code></p><div class="location reference"><span class="tag tag-reference">reference</span> <code>lab/sims/oscillating-electron-retarded-fields/app.js@148b668391f575466282eaa81aab0dc943846a87</code></div></div>
+</article>
+<article class="symbol">
+<h3><span class="tag">added</span> <code>symbol:lab/sims/oscillating-electron-retarded-fields/app.js#drawElectron:function</code></h3>
+<p>Pairing: same_selector (selector)</p>
+<p class="note">Present in head and absent from base. This is not a claim that it did not exist under another identity.</p>
+<div class="occurrence"><p><strong>Head</strong> <code>symbol:lab/sims/oscillating-electron-retarded-fields/app.js#drawElectron:function</code></p><div class="location reference"><span class="tag tag-reference">reference</span> <code>lab/sims/oscillating-electron-retarded-fields/app.js@82c24be9a49dbf9d775db9dc980c1de712d8bb8d</code></div></div>
+</article>
+<article class="symbol">
+<h3><span class="tag">added</span> <code>symbol:lab/sims/oscillating-electron-retarded-fields/app.js#drawGuide:function</code></h3>
+<p>Pairing: same_selector (selector)</p>
+<p class="note">Present in head and absent from base. This is not a claim that it did not exist under another identity.</p>
+<div class="occurrence"><p><strong>Head</strong> <code>symbol:lab/sims/oscillating-electron-retarded-fields/app.js#drawGuide:function</code></p><div class="location reference"><span class="tag tag-reference">reference</span> <code>lab/sims/oscillating-electron-retarded-fields/app.js@82c24be9a49dbf9d775db9dc980c1de712d8bb8d</code></div></div>
+</article>
+<article class="symbol">
+<h3><span class="tag">added</span> <code>symbol:lab/sims/oscillating-electron-retarded-fields/app.js#drawPath:function</code></h3>
+<p>Pairing: same_selector (selector)</p>
+<p class="note">Present in head and absent from base. This is not a claim that it did not exist under another identity.</p>
+<div class="occurrence"><p><strong>Head</strong> <code>symbol:lab/sims/oscillating-electron-retarded-fields/app.js#drawPath:function</code></p><div class="location reference"><span class="tag tag-reference">reference</span> <code>lab/sims/oscillating-electron-retarded-fields/app.js@82c24be9a49dbf9d775db9dc980c1de712d8bb8d</code></div></div>
+</article>
+<article class="symbol">
+<h3><span class="tag">removed</span> <code>symbol:lab/sims/oscillating-electron-retarded-fields/app.js#drawPower:function</code></h3>
+<p>Pairing: same_selector (selector)</p>
+<p class="note">Present in base and absent from head. This is not a claim that nothing replaced it.</p>
+<div class="occurrence"><p><strong>Base</strong> <code>symbol:lab/sims/oscillating-electron-retarded-fields/app.js#drawPower:function</code></p><div class="location reference"><span class="tag tag-reference">reference</span> <code>lab/sims/oscillating-electron-retarded-fields/app.js@148b668391f575466282eaa81aab0dc943846a87</code></div></div>
+</article>
+<article class="symbol">
+<h3><span class="tag">added</span> <code>symbol:lab/sims/oscillating-electron-retarded-fields/app.js#drawSamples:function</code></h3>
+<p>Pairing: same_selector (selector)</p>
+<p class="note">Present in head and absent from base. This is not a claim that it did not exist under another identity.</p>
+<div class="occurrence"><p><strong>Head</strong> <code>symbol:lab/sims/oscillating-electron-retarded-fields/app.js#drawSamples:function</code></p><div class="location reference"><span class="tag tag-reference">reference</span> <code>lab/sims/oscillating-electron-retarded-fields/app.js@82c24be9a49dbf9d775db9dc980c1de712d8bb8d</code></div></div>
+</article>
+<article class="symbol">
+<h3><span class="tag">removed</span> <code>symbol:lab/sims/oscillating-electron-retarded-fields/app.js#drawStreams:function</code></h3>
+<p>Pairing: same_selector (selector)</p>
+<p class="note">Present in base and absent from head. This is not a claim that nothing replaced it.</p>
+<div class="occurrence"><p><strong>Base</strong> <code>symbol:lab/sims/oscillating-electron-retarded-fields/app.js#drawStreams:function</code></p><div class="location reference"><span class="tag tag-reference">reference</span> <code>lab/sims/oscillating-electron-retarded-fields/app.js@148b668391f575466282eaa81aab0dc943846a87</code></div></div>
+</article>
+<article class="symbol">
+<h3><span class="tag">removed</span> <code>symbol:lab/sims/oscillating-electron-retarded-fields/app.js#dynamicGeometry:function</code></h3>
+<p>Pairing: same_selector (selector)</p>
+<p class="note">Present in base and absent from head. This is not a claim that nothing replaced it.</p>
+<div class="occurrence"><p><strong>Base</strong> <code>symbol:lab/sims/oscillating-electron-retarded-fields/app.js#dynamicGeometry:function</code></p><div class="location reference"><span class="tag tag-reference">reference</span> <code>lab/sims/oscillating-electron-retarded-fields/app.js@148b668391f575466282eaa81aab0dc943846a87</code></div></div>
+</article>
+<article class="symbol">
+<h3><span class="tag">removed</span> <code>symbol:lab/sims/oscillating-electron-retarded-fields/app.js#homeCamera:function</code></h3>
+<p>Pairing: same_selector (selector)</p>
+<p class="note">Present in base and absent from head. This is not a claim that nothing replaced it.</p>
+<div class="occurrence"><p><strong>Base</strong> <code>symbol:lab/sims/oscillating-electron-retarded-fields/app.js#homeCamera:function</code></p><div class="location reference"><span class="tag tag-reference">reference</span> <code>lab/sims/oscillating-electron-retarded-fields/app.js@148b668391f575466282eaa81aab0dc943846a87</code></div></div>
+</article>
+<article class="symbol">
+<h3><span class="tag">removed</span> <code>symbol:lab/sims/oscillating-electron-retarded-fields/app.js#line:function</code></h3>
+<p>Pairing: same_selector (selector)</p>
+<p class="note">Present in base and absent from head. This is not a claim that nothing replaced it.</p>
+<div class="occurrence"><p><strong>Base</strong> <code>symbol:lab/sims/oscillating-electron-retarded-fields/app.js#line:function</code></p><div class="location reference"><span class="tag tag-reference">reference</span> <code>lab/sims/oscillating-electron-retarded-fields/app.js@148b668391f575466282eaa81aab0dc943846a87</code></div></div>
+</article>
+<article class="symbol">
+<h3><span class="tag">signature_changed</span> <code>symbol:lab/sims/oscillating-electron-retarded-fields/app.js#motionNow:function</code></h3>
+<p>Pairing: signature_changed (signature)</p>
+<p class="note">signature changed: `motionNow = () =&gt; state.motion === &#39;turn&#39; ? hairpin(state.beta) : sinusoid(state.beta)` -&gt; `motionNow = () =&gt; ({`</p>
+<div class="occurrence"><p><strong>Base</strong> <code>symbol:lab/sims/oscillating-electron-retarded-fields/app.js#motionNow:function</code></p><div class="location reference"><span class="tag tag-reference">reference</span> <code>lab/sims/oscillating-electron-retarded-fields/app.js@148b668391f575466282eaa81aab0dc943846a87</code></div></div>
+<div class="occurrence"><p><strong>Head</strong> <code>symbol:lab/sims/oscillating-electron-retarded-fields/app.js#motionNow:function</code></p><div class="location reference"><span class="tag tag-reference">reference</span> <code>lab/sims/oscillating-electron-retarded-fields/app.js@82c24be9a49dbf9d775db9dc980c1de712d8bb8d</code></div></div>
+</article>
+<article class="symbol">
+<h3><span class="tag">modified</span> <code>symbol:lab/sims/oscillating-electron-retarded-fields/app.js#play:function</code></h3>
+<p>Pairing: same_selector (selector)</p>
+<p class="note">body changed; signature line is unchanged</p>
+<div class="occurrence"><p><strong>Base</strong> <code>symbol:lab/sims/oscillating-electron-retarded-fields/app.js#play:function</code></p><div class="location reference"><span class="tag tag-reference">reference</span> <code>lab/sims/oscillating-electron-retarded-fields/app.js@148b668391f575466282eaa81aab0dc943846a87</code></div></div>
+<div class="occurrence"><p><strong>Head</strong> <code>symbol:lab/sims/oscillating-electron-retarded-fields/app.js#play:function</code></p><div class="location reference"><span class="tag tag-reference">reference</span> <code>lab/sims/oscillating-electron-retarded-fields/app.js@82c24be9a49dbf9d775db9dc980c1de712d8bb8d</code></div></div>
+</article>
+<article class="symbol">
+<h3><span class="tag">added</span> <code>symbol:lab/sims/oscillating-electron-retarded-fields/app.js#project:function</code></h3>
+<p>Pairing: same_selector (selector)</p>
+<p class="note">Present in head and absent from base. This is not a claim that it did not exist under another identity.</p>
+<div class="occurrence"><p><strong>Head</strong> <code>symbol:lab/sims/oscillating-electron-retarded-fields/app.js#project:function</code></p><div class="location reference"><span class="tag tag-reference">reference</span> <code>lab/sims/oscillating-electron-retarded-fields/app.js@82c24be9a49dbf9d775db9dc980c1de712d8bb8d</code></div></div>
+</article>
+<article class="symbol">
+<h3><span class="tag">modified</span> <code>symbol:lab/sims/oscillating-electron-retarded-fields/app.js#render:function</code></h3>
+<p>Pairing: same_selector (selector)</p>
+<p class="note">body changed; signature line is unchanged</p>
+<div class="occurrence"><p><strong>Base</strong> <code>symbol:lab/sims/oscillating-electron-retarded-fields/app.js#render:function</code></p><div class="location reference"><span class="tag tag-reference">reference</span> <code>lab/sims/oscillating-electron-retarded-fields/app.js@148b668391f575466282eaa81aab0dc943846a87</code></div></div>
+<div class="occurrence"><p><strong>Head</strong> <code>symbol:lab/sims/oscillating-electron-retarded-fields/app.js#render:function</code></p><div class="location reference"><span class="tag tag-reference">reference</span> <code>lab/sims/oscillating-electron-retarded-fields/app.js@82c24be9a49dbf9d775db9dc980c1de712d8bb8d</code></div></div>
+</article>
+<article class="symbol">
+<h3><span class="tag">added</span> <code>symbol:lab/sims/oscillating-electron-retarded-fields/app.js#renderFrame:function</code></h3>
+<p>Pairing: same_selector (selector)</p>
+<p class="note">Present in head and absent from base. This is not a claim that it did not exist under another identity.</p>
+<div class="occurrence"><p><strong>Head</strong> <code>symbol:lab/sims/oscillating-electron-retarded-fields/app.js#renderFrame:function</code></p><div class="location reference"><span class="tag tag-reference">reference</span> <code>lab/sims/oscillating-electron-retarded-fields/app.js@82c24be9a49dbf9d775db9dc980c1de712d8bb8d</code></div></div>
+</article>
+<article class="symbol">
+<h3><span class="tag">removed</span> <code>symbol:lab/sims/oscillating-electron-retarded-fields/app.js#resize:function</code></h3>
+<p>Pairing: same_selector (selector)</p>
+<p class="note">Present in base and absent from head. This is not a claim that nothing replaced it.</p>
+<div class="occurrence"><p><strong>Base</strong> <code>symbol:lab/sims/oscillating-electron-retarded-fields/app.js#resize:function</code></p><div class="location reference"><span class="tag tag-reference">reference</span> <code>lab/sims/oscillating-electron-retarded-fields/app.js@148b668391f575466282eaa81aab0dc943846a87</code></div></div>
+</article>
+<article class="symbol">
+<h3><span class="tag">added</span> <code>symbol:lab/sims/oscillating-electron-retarded-fields/app.js#seek:function</code></h3>
+<p>Pairing: same_selector (selector)</p>
+<p class="note">Present in head and absent from base. This is not a claim that it did not exist under another identity.</p>
+<div class="occurrence"><p><strong>Head</strong> <code>symbol:lab/sims/oscillating-electron-retarded-fields/app.js#seek:function</code></p><div class="location reference"><span class="tag tag-reference">reference</span> <code>lab/sims/oscillating-electron-retarded-fields/app.js@82c24be9a49dbf9d775db9dc980c1de712d8bb8d</code></div></div>
+</article>
+<article class="symbol">
+<h3><span class="tag">added</span> <code>symbol:lab/sims/oscillating-electron-retarded-fields/app.js#segment:function</code></h3>
+<p>Pairing: same_selector (selector)</p>
+<p class="note">Present in head and absent from base. This is not a claim that it did not exist under another identity.</p>
+<div class="occurrence"><p><strong>Head</strong> <code>symbol:lab/sims/oscillating-electron-retarded-fields/app.js#segment:function</code></p><div class="location reference"><span class="tag tag-reference">reference</span> <code>lab/sims/oscillating-electron-retarded-fields/app.js@82c24be9a49dbf9d775db9dc980c1de712d8bb8d</code></div></div>
+</article>
+<article class="symbol">
+<h3><span class="tag">removed</span> <code>symbol:lab/sims/oscillating-electron-retarded-fields/app.js#selected:function</code></h3>
+<p>Pairing: same_selector (selector)</p>
+<p class="note">Present in base and absent from head. This is not a claim that nothing replaced it.</p>
+<div class="occurrence"><p><strong>Base</strong> <code>symbol:lab/sims/oscillating-electron-retarded-fields/app.js#selected:function</code></p><div class="location reference"><span class="tag tag-reference">reference</span> <code>lab/sims/oscillating-electron-retarded-fields/app.js@148b668391f575466282eaa81aab0dc943846a87</code></div></div>
+</article>
+<article class="symbol">
+<h3><span class="tag">removed</span> <code>symbol:lab/sims/oscillating-electron-retarded-fields/app.js#sphere:function</code></h3>
+<p>Pairing: same_selector (selector)</p>
+<p class="note">Present in base and absent from head. This is not a claim that nothing replaced it.</p>
+<div class="occurrence"><p><strong>Base</strong> <code>symbol:lab/sims/oscillating-electron-retarded-fields/app.js#sphere:function</code></p><div class="location reference"><span class="tag tag-reference">reference</span> <code>lab/sims/oscillating-electron-retarded-fields/app.js@148b668391f575466282eaa81aab0dc943846a87</code></div></div>
+</article>
+<article class="symbol">
+<h3><span class="tag">added</span> <code>symbol:lab/sims/oscillating-electron-retarded-fields/app.js#textAt:function</code></h3>
+<p>Pairing: same_selector (selector)</p>
+<p class="note">Present in head and absent from base. This is not a claim that it did not exist under another identity.</p>
+<div class="occurrence"><p><strong>Head</strong> <code>symbol:lab/sims/oscillating-electron-retarded-fields/app.js#textAt:function</code></p><div class="location reference"><span class="tag tag-reference">reference</span> <code>lab/sims/oscillating-electron-retarded-fields/app.js@82c24be9a49dbf9d775db9dc980c1de712d8bb8d</code></div></div>
+</article>
+<article class="symbol">
+<h3><span class="tag">removed</span> <code>symbol:lab/sims/oscillating-electron-retarded-fields/app.js#updateCamera:function</code></h3>
+<p>Pairing: same_selector (selector)</p>
+<p class="note">Present in base and absent from head. This is not a claim that nothing replaced it.</p>
+<div class="occurrence"><p><strong>Base</strong> <code>symbol:lab/sims/oscillating-electron-retarded-fields/app.js#updateCamera:function</code></p><div class="location reference"><span class="tag tag-reference">reference</span> <code>lab/sims/oscillating-electron-retarded-fields/app.js@148b668391f575466282eaa81aab0dc943846a87</code></div></div>
+</article>
+<article class="symbol">
+<h3><span class="tag">removed</span> <code>symbol:lab/sims/oscillating-electron-retarded-fields/app.js#updateFields:function</code></h3>
+<p>Pairing: same_selector (selector)</p>
+<p class="note">Present in base and absent from head. This is not a claim that nothing replaced it.</p>
+<div class="occurrence"><p><strong>Base</strong> <code>symbol:lab/sims/oscillating-electron-retarded-fields/app.js#updateFields:function</code></p><div class="location reference"><span class="tag tag-reference">reference</span> <code>lab/sims/oscillating-electron-retarded-fields/app.js@148b668391f575466282eaa81aab0dc943846a87</code></div></div>
+</article>
+<article class="symbol">
+<h3><span class="tag">removed</span> <code>symbol:lab/sims/oscillating-electron-retarded-fields/app.js#updateGeometry:function</code></h3>
+<p>Pairing: same_selector (selector)</p>
+<p class="note">Present in base and absent from head. This is not a claim that nothing replaced it.</p>
+<div class="occurrence"><p><strong>Base</strong> <code>symbol:lab/sims/oscillating-electron-retarded-fields/app.js#updateGeometry:function</code></p><div class="location reference"><span class="tag tag-reference">reference</span> <code>lab/sims/oscillating-electron-retarded-fields/app.js@148b668391f575466282eaa81aab0dc943846a87</code></div></div>
+</article>
+<article class="symbol">
+<h3><span class="tag">added</span> <code>symbol:lab/sims/oscillating-electron-retarded-fields/app.js#worldScale:function</code></h3>
+<p>Pairing: same_selector (selector)</p>
+<p class="note">Present in head and absent from base. This is not a claim that it did not exist under another identity.</p>
+<div class="occurrence"><p><strong>Head</strong> <code>symbol:lab/sims/oscillating-electron-retarded-fields/app.js#worldScale:function</code></p><div class="location reference"><span class="tag tag-reference">reference</span> <code>lab/sims/oscillating-electron-retarded-fields/app.js@82c24be9a49dbf9d775db9dc980c1de712d8bb8d</code></div></div>
+</article>
+<article class="symbol">
+<h3><span class="tag">signature_changed</span> <code>symbol:lab/sims/oscillating-electron-retarded-fields/browser-check.py#summary:function</code></h3>
+<p>Pairing: signature_changed (signature)</p>
+<p class="note">signature changed: `def summary(values):` -&gt; `def summary(v):`</p>
+<div class="occurrence"><p><strong>Base</strong> <code>symbol:lab/sims/oscillating-electron-retarded-fields/browser-check.py#summary:function</code></p><div class="location reference"><span class="tag tag-reference">reference</span> <code>lab/sims/oscillating-electron-retarded-fields/browser-check.py@148b668391f575466282eaa81aab0dc943846a87</code></div></div>
+<div class="occurrence"><p><strong>Head</strong> <code>symbol:lab/sims/oscillating-electron-retarded-fields/browser-check.py#summary:function</code></p><div class="location reference"><span class="tag tag-reference">reference</span> <code>lab/sims/oscillating-electron-retarded-fields/browser-check.py@82c24be9a49dbf9d775db9dc980c1de712d8bb8d</code></div></div>
+<h4>Evidence paths</h4>
+<div class="path"><p><strong>lab/sims/oscillating-electron-retarded-fields/browser-check.py</strong> → <strong>lab/sims/oscillating-electron-retarded-fields/browser-check.py#summary</strong> (distance 1, category resolved_call)</p><ul class="edges"><li class="edge"><code>lab/sims/oscillating-electron-retarded-fields/browser-check.py</code> → <code>lab/sims/oscillating-electron-retarded-fields/browser-check.py#summary</code> <span class="tag">call</span> <span class="tag">resolved_call</span> <span class="tag">exact</span> (base)<div class="location reference"><span class="tag tag-reference">reference</span> <code>lab/sims/oscillating-electron-retarded-fields/browser-check.py:126@148b668391f575466282eaa81aab0dc943846a87</code></div></li></ul></div><div class="path"><p><strong>lab/sims/oscillating-electron-retarded-fields/browser-check.py</strong> → <strong>lab/sims/oscillating-electron-retarded-fields/browser-check.py#summary</strong> (distance 1, category resolved_call)</p><ul class="edges"><li class="edge"><code>lab/sims/oscillating-electron-retarded-fields/browser-check.py</code> → <code>lab/sims/oscillating-electron-retarded-fields/browser-check.py#summary</code> <span class="tag">call</span> <span class="tag">resolved_call</span> <span class="tag">exact</span> (base)<div class="location reference"><span class="tag tag-reference">reference</span> <code>lab/sims/oscillating-electron-retarded-fields/browser-check.py:127@148b668391f575466282eaa81aab0dc943846a87</code></div></li></ul></div><div class="path"><p><strong>lab/sims/oscillating-electron-retarded-fields/browser-check.py</strong> → <strong>lab/sims/oscillating-electron-retarded-fields/browser-check.py#summary</strong> (distance 1, category resolved_call)</p><ul class="edges"><li class="edge"><code>lab/sims/oscillating-electron-retarded-fields/browser-check.py</code> → <code>lab/sims/oscillating-electron-retarded-fields/browser-check.py#summary</code> <span class="tag">call</span> <span class="tag">resolved_call</span> <span class="tag">exact</span> (head)<div class="location reference"><span class="tag tag-reference">reference</span> <code>lab/sims/oscillating-electron-retarded-fields/browser-check.py:62@82c24be9a49dbf9d775db9dc980c1de712d8bb8d</code></div></li></ul></div><div class="path"><p><strong>lab/sims/oscillating-electron-retarded-fields/browser-check.py</strong> → <strong>lab/sims/oscillating-electron-retarded-fields/browser-check.py#summary</strong> (distance 1, category resolved_call)</p><ul class="edges"><li class="edge"><code>lab/sims/oscillating-electron-retarded-fields/browser-check.py</code> → <code>lab/sims/oscillating-electron-retarded-fields/browser-check.py#summary</code> <span class="tag">call</span> <span class="tag">resolved_call</span> <span class="tag">exact</span> (head)<div class="location reference"><span class="tag tag-reference">reference</span> <code>lab/sims/oscillating-electron-retarded-fields/browser-check.py:62@82c24be9a49dbf9d775db9dc980c1de712d8bb8d</code></div></li></ul></div></article>
+<article class="symbol">
+<h3><span class="tag">added</span> <code>symbol:scripts/native_registration_fixture.py#append:function</code></h3>
+<p>Pairing: same_selector (selector)</p>
+<p class="note">Present in head and absent from base. This is not a claim that it did not exist under another identity.</p>
+<div class="occurrence"><p><strong>Head</strong> <code>symbol:scripts/native_registration_fixture.py#append:function</code></p><div class="location reference"><span class="tag tag-reference">reference</span> <code>scripts/native_registration_fixture.py@82c24be9a49dbf9d775db9dc980c1de712d8bb8d</code></div></div>
+</article>
+<article class="symbol">
+<h3><span class="tag">added</span> <code>symbol:scripts/native_registration_fixture.py#cli:function</code></h3>
+<p>Pairing: same_selector (selector)</p>
+<p class="note">Present in head and absent from base. This is not a claim that it did not exist under another identity.</p>
+<div class="occurrence"><p><strong>Head</strong> <code>symbol:scripts/native_registration_fixture.py#cli:function</code></p><div class="location reference"><span class="tag tag-reference">reference</span> <code>scripts/native_registration_fixture.py@82c24be9a49dbf9d775db9dc980c1de712d8bb8d</code></div></div>
+</article>
+<article class="symbol">
+<h3><span class="tag">added</span> <code>symbol:scripts/native_registration_fixture.py#commit:function</code></h3>
+<p>Pairing: same_selector (selector)</p>
+<p class="note">Present in head and absent from base. This is not a claim that it did not exist under another identity.</p>
+<div class="occurrence"><p><strong>Head</strong> <code>symbol:scripts/native_registration_fixture.py#commit:function</code></p><div class="location reference"><span class="tag tag-reference">reference</span> <code>scripts/native_registration_fixture.py@82c24be9a49dbf9d775db9dc980c1de712d8bb8d</code></div></div>
+</article>
+<article class="symbol">
+<h3><span class="tag">added</span> <code>symbol:scripts/native_registration_fixture.py#git:function</code></h3>
+<p>Pairing: same_selector (selector)</p>
+<p class="note">Present in head and absent from base. This is not a claim that it did not exist under another identity.</p>
+<div class="occurrence"><p><strong>Head</strong> <code>symbol:scripts/native_registration_fixture.py#git:function</code></p><div class="location reference"><span class="tag tag-reference">reference</span> <code>scripts/native_registration_fixture.py@82c24be9a49dbf9d775db9dc980c1de712d8bb8d</code></div></div>
+</article>
+<article class="symbol">
+<h3><span class="tag">added</span> <code>symbol:scripts/native_registration_fixture.py#main:function</code></h3>
+<p>Pairing: same_selector (selector)</p>
+<p class="note">Present in head and absent from base. This is not a claim that it did not exist under another identity.</p>
+<div class="occurrence"><p><strong>Head</strong> <code>symbol:scripts/native_registration_fixture.py#main:function</code></p><div class="location reference"><span class="tag tag-reference">reference</span> <code>scripts/native_registration_fixture.py@82c24be9a49dbf9d775db9dc980c1de712d8bb8d</code></div></div>
+</article>
+<article class="symbol">
+<h3><span class="tag">added</span> <code>symbol:scripts/native_registration_fixture.py#publish:function</code></h3>
+<p>Pairing: same_selector (selector)</p>
+<p class="note">Present in head and absent from base. This is not a claim that it did not exist under another identity.</p>
+<div class="occurrence"><p><strong>Head</strong> <code>symbol:scripts/native_registration_fixture.py#publish:function</code></p><div class="location reference"><span class="tag tag-reference">reference</span> <code>scripts/native_registration_fixture.py@82c24be9a49dbf9d775db9dc980c1de712d8bb8d</code></div></div>
+</article>
+<article class="symbol">
+<h3><span class="tag">added</span> <code>symbol:scripts/native_registration_fixture.py#run:function</code></h3>
+<p>Pairing: same_selector (selector)</p>
+<p class="note">Present in head and absent from base. This is not a claim that it did not exist under another identity.</p>
+<div class="occurrence"><p><strong>Head</strong> <code>symbol:scripts/native_registration_fixture.py#run:function</code></p><div class="location reference"><span class="tag tag-reference">reference</span> <code>scripts/native_registration_fixture.py@82c24be9a49dbf9d775db9dc980c1de712d8bb8d</code></div></div>
+</article>
+<article class="symbol">
+<h3><span class="tag">added</span> <code>symbol:scripts/research_records.py#baseline_source_report:function</code></h3>
+<p>Pairing: same_selector (selector)</p>
+<p class="note">Present in head and absent from base. This is not a claim that it did not exist under another identity.</p>
+<div class="occurrence"><p><strong>Head</strong> <code>symbol:scripts/research_records.py#baseline_source_report:function</code></p><div class="location reference"><span class="tag tag-reference">reference</span> <code>scripts/research_records.py@82c24be9a49dbf9d775db9dc980c1de712d8bb8d</code></div></div>
+</article>
+<article class="symbol">
+<h3><span class="tag">added</span> <code>symbol:scripts/research_records.py#blob_pin:function</code></h3>
+<p>Pairing: same_selector (selector)</p>
+<p class="note">Present in head and absent from base. This is not a claim that it did not exist under another identity.</p>
+<div class="occurrence"><p><strong>Head</strong> <code>symbol:scripts/research_records.py#blob_pin:function</code></p><div class="location reference"><span class="tag tag-reference">reference</span> <code>scripts/research_records.py@82c24be9a49dbf9d775db9dc980c1de712d8bb8d</code></div></div>
+</article>
+<article class="symbol">
+<h3><span class="tag">added</span> <code>symbol:scripts/research_records.py#build:function</code></h3>
+<p>Pairing: same_selector (selector)</p>
+<p class="note">Present in head and absent from base. This is not a claim that it did not exist under another identity.</p>
+<div class="occurrence"><p><strong>Head</strong> <code>symbol:scripts/research_records.py#build:function</code></p><div class="location reference"><span class="tag tag-reference">reference</span> <code>scripts/research_records.py@82c24be9a49dbf9d775db9dc980c1de712d8bb8d</code></div></div>
+</article>
+<article class="symbol">
+<h3><span class="tag">added</span> <code>symbol:scripts/research_records.py#check:function</code></h3>
+<p>Pairing: same_selector (selector)</p>
+<p class="note">Present in head and absent from base. This is not a claim that it did not exist under another identity.</p>
+<div class="occurrence"><p><strong>Head</strong> <code>symbol:scripts/research_records.py#check:function</code></p><div class="location reference"><span class="tag tag-reference">reference</span> <code>scripts/research_records.py@82c24be9a49dbf9d775db9dc980c1de712d8bb8d</code></div></div>
+</article>
+<article class="symbol">
+<h3><span class="tag">added</span> <code>symbol:scripts/research_records.py#digest:function</code></h3>
+<p>Pairing: same_selector (selector)</p>
+<p class="note">Present in head and absent from base. This is not a claim that it did not exist under another identity.</p>
+<div class="occurrence"><p><strong>Head</strong> <code>symbol:scripts/research_records.py#digest:function</code></p><div class="location reference"><span class="tag tag-reference">reference</span> <code>scripts/research_records.py@82c24be9a49dbf9d775db9dc980c1de712d8bb8d</code></div></div>
+</article>
+<article class="symbol">
+<h3><span class="tag">added</span> <code>symbol:scripts/research_records.py#encoded:function</code></h3>
+<p>Pairing: same_selector (selector)</p>
+<p class="note">Present in head and absent from base. This is not a claim that it did not exist under another identity.</p>
+<div class="occurrence"><p><strong>Head</strong> <code>symbol:scripts/research_records.py#encoded:function</code></p><div class="location reference"><span class="tag tag-reference">reference</span> <code>scripts/research_records.py@82c24be9a49dbf9d775db9dc980c1de712d8bb8d</code></div></div>
+</article>
+<article class="symbol">
+<h3><span class="tag">added</span> <code>symbol:scripts/research_records.py#external_index:function</code></h3>
+<p>Pairing: same_selector (selector)</p>
+<p class="note">Present in head and absent from base. This is not a claim that it did not exist under another identity.</p>
+<div class="occurrence"><p><strong>Head</strong> <code>symbol:scripts/research_records.py#external_index:function</code></p><div class="location reference"><span class="tag tag-reference">reference</span> <code>scripts/research_records.py@82c24be9a49dbf9d775db9dc980c1de712d8bb8d</code></div></div>
+</article>
+<article class="symbol">
+<h3><span class="tag">added</span> <code>symbol:scripts/research_records.py#external_record:function</code></h3>
+<p>Pairing: same_selector (selector)</p>
+<p class="note">Present in head and absent from base. This is not a claim that it did not exist under another identity.</p>
+<div class="occurrence"><p><strong>Head</strong> <code>symbol:scripts/research_records.py#external_record:function</code></p><div class="location reference"><span class="tag tag-reference">reference</span> <code>scripts/research_records.py@82c24be9a49dbf9d775db9dc980c1de712d8bb8d</code></div></div>
+</article>
+<article class="symbol">
+<h3><span class="tag">added</span> <code>symbol:scripts/research_records.py#finish_record:function</code></h3>
+<p>Pairing: same_selector (selector)</p>
+<p class="note">Present in head and absent from base. This is not a claim that it did not exist under another identity.</p>
+<div class="occurrence"><p><strong>Head</strong> <code>symbol:scripts/research_records.py#finish_record:function</code></p><div class="location reference"><span class="tag tag-reference">reference</span> <code>scripts/research_records.py@82c24be9a49dbf9d775db9dc980c1de712d8bb8d</code></div></div>
+</article>
+<article class="symbol">
+<h3><span class="tag">added</span> <code>symbol:scripts/research_records.py#git:function</code></h3>
+<p>Pairing: same_selector (selector)</p>
+<p class="note">Present in head and absent from base. This is not a claim that it did not exist under another identity.</p>
+<div class="occurrence"><p><strong>Head</strong> <code>symbol:scripts/research_records.py#git:function</code></p><div class="location reference"><span class="tag tag-reference">reference</span> <code>scripts/research_records.py@82c24be9a49dbf9d775db9dc980c1de712d8bb8d</code></div></div>
+</article>
+<article class="symbol">
+<h3><span class="tag">added</span> <code>symbol:scripts/research_records.py#load_cached_external:function</code></h3>
+<p>Pairing: same_selector (selector)</p>
+<p class="note">Present in head and absent from base. This is not a claim that it did not exist under another identity.</p>
+<div class="occurrence"><p><strong>Head</strong> <code>symbol:scripts/research_records.py#load_cached_external:function</code></p><div class="location reference"><span class="tag tag-reference">reference</span> <code>scripts/research_records.py@82c24be9a49dbf9d775db9dc980c1de712d8bb8d</code></div></div>
+</article>
+<article class="symbol">
+<h3><span class="tag">added</span> <code>symbol:scripts/research_records.py#load_external:function</code></h3>
+<p>Pairing: same_selector (selector)</p>
+<p class="note">Present in head and absent from base. This is not a claim that it did not exist under another identity.</p>
+<div class="occurrence"><p><strong>Head</strong> <code>symbol:scripts/research_records.py#load_external:function</code></p><div class="location reference"><span class="tag tag-reference">reference</span> <code>scripts/research_records.py@82c24be9a49dbf9d775db9dc980c1de712d8bb8d</code></div></div>
+</article>
+<article class="symbol">
+<h3><span class="tag">added</span> <code>symbol:scripts/research_records.py#main:function</code></h3>
+<p>Pairing: same_selector (selector)</p>
+<p class="note">Present in head and absent from base. This is not a claim that it did not exist under another identity.</p>
+<div class="occurrence"><p><strong>Head</strong> <code>symbol:scripts/research_records.py#main:function</code></p><div class="location reference"><span class="tag tag-reference">reference</span> <code>scripts/research_records.py@82c24be9a49dbf9d775db9dc980c1de712d8bb8d</code></div></div>
+</article>
+<article class="symbol">
+<h3><span class="tag">added</span> <code>symbol:scripts/research_records.py#package_check:function</code></h3>
+<p>Pairing: same_selector (selector)</p>
+<p class="note">Present in head and absent from base. This is not a claim that it did not exist under another identity.</p>
+<div class="occurrence"><p><strong>Head</strong> <code>symbol:scripts/research_records.py#package_check:function</code></p><div class="location reference"><span class="tag tag-reference">reference</span> <code>scripts/research_records.py@82c24be9a49dbf9d775db9dc980c1de712d8bb8d</code></div></div>
+</article>
+<article class="symbol">
+<h3><span class="tag">added</span> <code>symbol:scripts/research_records.py#provenance:function</code></h3>
+<p>Pairing: same_selector (selector)</p>
+<p class="note">Present in head and absent from base. This is not a claim that it did not exist under another identity.</p>
+<div class="occurrence"><p><strong>Head</strong> <code>symbol:scripts/research_records.py#provenance:function</code></p><div class="location reference"><span class="tag tag-reference">reference</span> <code>scripts/research_records.py@82c24be9a49dbf9d775db9dc980c1de712d8bb8d</code></div></div>
+</article>
+<article class="symbol">
+<h3><span class="tag">added</span> <code>symbol:scripts/research_records.py#read_outputs:function</code></h3>
+<p>Pairing: same_selector (selector)</p>
+<p class="note">Present in head and absent from base. This is not a claim that it did not exist under another identity.</p>
+<div class="occurrence"><p><strong>Head</strong> <code>symbol:scripts/research_records.py#read_outputs:function</code></p><div class="location reference"><span class="tag tag-reference">reference</span> <code>scripts/research_records.py@82c24be9a49dbf9d775db9dc980c1de712d8bb8d</code></div></div>
+</article>
+<article class="symbol">
+<h3><span class="tag">added</span> <code>symbol:scripts/research_records.py#record_path:function</code></h3>
+<p>Pairing: same_selector (selector)</p>
+<p class="note">Present in head and absent from base. This is not a claim that it did not exist under another identity.</p>
+<div class="occurrence"><p><strong>Head</strong> <code>symbol:scripts/research_records.py#record_path:function</code></p><div class="location reference"><span class="tag tag-reference">reference</span> <code>scripts/research_records.py@82c24be9a49dbf9d775db9dc980c1de712d8bb8d</code></div></div>
+</article>
+<article class="symbol">
+<h3><span class="tag">added</span> <code>symbol:scripts/research_records.py#refresh:function</code></h3>
+<p>Pairing: same_selector (selector)</p>
+<p class="note">Present in head and absent from base. This is not a claim that it did not exist under another identity.</p>
+<div class="occurrence"><p><strong>Head</strong> <code>symbol:scripts/research_records.py#refresh:function</code></p><div class="location reference"><span class="tag tag-reference">reference</span> <code>scripts/research_records.py@82c24be9a49dbf9d775db9dc980c1de712d8bb8d</code></div></div>
+</article>
+<article class="symbol">
+<h3><span class="tag">added</span> <code>symbol:scripts/research_records.py#require:function</code></h3>
+<p>Pairing: same_selector (selector)</p>
+<p class="note">Present in head and absent from base. This is not a claim that it did not exist under another identity.</p>
+<div class="occurrence"><p><strong>Head</strong> <code>symbol:scripts/research_records.py#require:function</code></p><div class="location reference"><span class="tag tag-reference">reference</span> <code>scripts/research_records.py@82c24be9a49dbf9d775db9dc980c1de712d8bb8d</code></div></div>
+</article>
+<article class="symbol">
+<h3><span class="tag">added</span> <code>symbol:scripts/research_records.py#require_live_source_matches_baseline:function</code></h3>
+<p>Pairing: same_selector (selector)</p>
+<p class="note">Present in head and absent from base. This is not a claim that it did not exist under another identity.</p>
+<div class="occurrence"><p><strong>Head</strong> <code>symbol:scripts/research_records.py#require_live_source_matches_baseline:function</code></p><div class="location reference"><span class="tag tag-reference">reference</span> <code>scripts/research_records.py@82c24be9a49dbf9d775db9dc980c1de712d8bb8d</code></div></div>
+</article>
+<article class="symbol">
+<h3><span class="tag">added</span> <code>symbol:scripts/research_records.py#rollback:function</code></h3>
+<p>Pairing: same_selector (selector)</p>
+<p class="note">Present in head and absent from base. This is not a claim that it did not exist under another identity.</p>
+<div class="occurrence"><p><strong>Head</strong> <code>symbol:scripts/research_records.py#rollback:function</code></p><div class="location reference"><span class="tag tag-reference">reference</span> <code>scripts/research_records.py@82c24be9a49dbf9d775db9dc980c1de712d8bb8d</code></div></div>
+</article>
+<article class="symbol">
+<h3><span class="tag">added</span> <code>symbol:scripts/research_records.py#sibling_checkout:function</code></h3>
+<p>Pairing: same_selector (selector)</p>
+<p class="note">Present in head and absent from base. This is not a claim that it did not exist under another identity.</p>
+<div class="occurrence"><p><strong>Head</strong> <code>symbol:scripts/research_records.py#sibling_checkout:function</code></p><div class="location reference"><span class="tag tag-reference">reference</span> <code>scripts/research_records.py@82c24be9a49dbf9d775db9dc980c1de712d8bb8d</code></div></div>
+</article>
+<article class="symbol">
+<h3><span class="tag">added</span> <code>symbol:scripts/research_records.py#source_unit_summary:function</code></h3>
+<p>Pairing: same_selector (selector)</p>
+<p class="note">Present in head and absent from base. This is not a claim that it did not exist under another identity.</p>
+<div class="occurrence"><p><strong>Head</strong> <code>symbol:scripts/research_records.py#source_unit_summary:function</code></p><div class="location reference"><span class="tag tag-reference">reference</span> <code>scripts/research_records.py@82c24be9a49dbf9d775db9dc980c1de712d8bb8d</code></div></div>
+</article>
+<article class="symbol">
+<h3><span class="tag">added</span> <code>symbol:scripts/research_records.py#supporting_paths:function</code></h3>
+<p>Pairing: same_selector (selector)</p>
+<p class="note">Present in head and absent from base. This is not a claim that it did not exist under another identity.</p>
+<div class="occurrence"><p><strong>Head</strong> <code>symbol:scripts/research_records.py#supporting_paths:function</code></p><div class="location reference"><span class="tag tag-reference">reference</span> <code>scripts/research_records.py@82c24be9a49dbf9d775db9dc980c1de712d8bb8d</code></div></div>
+<h4>Evidence paths</h4>
+<div class="path"><p><strong>scripts/research_records.py#baseline_source_report</strong> → <strong>scripts/research_records.py#supporting_paths</strong> (distance 1, category resolved_call)</p><ul class="edges"><li class="edge"><code>scripts/research_records.py#baseline_source_report</code> → <code>scripts/research_records.py#supporting_paths</code> <span class="tag">call</span> <span class="tag">resolved_call</span> <span class="tag">exact</span> (head)<div class="location reference"><span class="tag tag-reference">reference</span> <code>scripts/research_records.py:250@82c24be9a49dbf9d775db9dc980c1de712d8bb8d</code></div></li></ul></div><div class="path"><p><strong>scripts/research_records.py#require_live_source_matches_baseline</strong> → <strong>scripts/research_records.py#supporting_paths</strong> (distance 1, category resolved_call)</p><ul class="edges"><li class="edge"><code>scripts/research_records.py#require_live_source_matches_baseline</code> → <code>scripts/research_records.py#supporting_paths</code> <span class="tag">call</span> <span class="tag">resolved_call</span> <span class="tag">exact</span> (head)<div class="location reference"><span class="tag tag-reference">reference</span> <code>scripts/research_records.py:267@82c24be9a49dbf9d775db9dc980c1de712d8bb8d</code></div></li></ul></div><div class="path"><p><strong>scripts/research_records.py#build</strong> → <strong>scripts/research_records.py#supporting_paths</strong> (distance 1, category resolved_call)</p><ul class="edges"><li class="edge"><code>scripts/research_records.py#build</code> → <code>scripts/research_records.py#supporting_paths</code> <span class="tag">call</span> <span class="tag">resolved_call</span> <span class="tag">exact</span> (head)<div class="location reference"><span class="tag tag-reference">reference</span> <code>scripts/research_records.py:334@82c24be9a49dbf9d775db9dc980c1de712d8bb8d</code></div></li></ul></div><div class="path"><p><strong>tests/test_research_records.py#test_landed_migration_survives_head_advance_and_refuses_source_drift</strong> → <strong>scripts/research_records.py#supporting_paths</strong> (distance 1, category observed_reference)</p><ul class="edges"><li class="edge"><code>tests/test_research_records.py#test_landed_migration_survives_head_advance_and_refuses_source_drift</code> → <code>scripts/research_records.py#supporting_paths</code> <span class="tag">call</span> <span class="tag">observed_reference</span> <span class="tag">same_module</span> (head)<div class="location reference"><span class="tag tag-reference">reference</span> <code>tests/test_research_records.py:113@82c24be9a49dbf9d775db9dc980c1de712d8bb8d</code></div></li></ul></div><div class="path"><p><strong>tests/test_research_records.py#test_source_addition_and_deletion_fail_closed</strong> → <strong>scripts/research_records.py#supporting_paths</strong> (distance 1, category observed_reference)</p><ul class="edges"><li class="edge"><code>tests/test_research_records.py#test_source_addition_and_deletion_fail_closed</code> → <code>scripts/research_records.py#supporting_paths</code> <span class="tag">call</span> <span class="tag">observed_reference</span> <span class="tag">same_module</span> (head)<div class="location reference"><span class="tag tag-reference">reference</span> <code>tests/test_research_records.py:131@82c24be9a49dbf9d775db9dc980c1de712d8bb8d</code></div></li></ul></div><h4>Entry points</h4>
+<ul>
+<li><code>tests/test_research_records.py#test_landed_migration_survives_head_advance_and_refuses_source_drift</code> via <strong>test_function</strong> (distance 1)<div class="location reference"><span class="tag tag-reference">reference</span> <code>tests/test_research_records.py@82c24be9a49dbf9d775db9dc980c1de712d8bb8d</code></div></li>
+<li><code>tests/test_research_records.py#test_source_addition_and_deletion_fail_closed</code> via <strong>test_function</strong> (distance 1)<div class="location reference"><span class="tag tag-reference">reference</span> <code>tests/test_research_records.py@82c24be9a49dbf9d775db9dc980c1de712d8bb8d</code></div></li>
+</ul>
+<h4>Candidate tests</h4>
+<ul>
+<li><code>tests/test_research_records.py#test_landed_migration_survives_head_advance_and_refuses_source_drift</code> <span class="tag">call-path</span> — call reference at tests/test_research_records.py:113; 1 hop(s) to the changed symbol<div class="location reference"><span class="tag tag-reference">reference</span> <code>tests/test_research_records.py@82c24be9a49dbf9d775db9dc980c1de712d8bb8d</code></div></li>
+<li><code>tests/test_research_records.py#test_source_addition_and_deletion_fail_closed</code> <span class="tag">call-path</span> — call reference at tests/test_research_records.py:131; 1 hop(s) to the changed symbol<div class="location reference"><span class="tag tag-reference">reference</span> <code>tests/test_research_records.py@82c24be9a49dbf9d775db9dc980c1de712d8bb8d</code></div></li>
+<li><code>tests/test_research_records.py</code> <span class="tag">naming-heuristic</span> — file name matches scripts/research_records.py<div class="location reference"><span class="tag tag-reference">reference</span> <code>tests/test_research_records.py@82c24be9a49dbf9d775db9dc980c1de712d8bb8d</code></div></li>
+</ul>
+</article>
+<article class="symbol">
+<h3><span class="tag">added</span> <code>symbol:scripts/research_records.py#verify_history:function</code></h3>
+<p>Pairing: same_selector (selector)</p>
+<p class="note">Present in head and absent from base. This is not a claim that it did not exist under another identity.</p>
+<div class="occurrence"><p><strong>Head</strong> <code>symbol:scripts/research_records.py#verify_history:function</code></p><div class="location reference"><span class="tag tag-reference">reference</span> <code>scripts/research_records.py@82c24be9a49dbf9d775db9dc980c1de712d8bb8d</code></div></div>
+</article>
+<article class="symbol">
+<h3><span class="tag">added</span> <code>symbol:scripts/research_records.py#write_new:function</code></h3>
+<p>Pairing: same_selector (selector)</p>
+<p class="note">Present in head and absent from base. This is not a claim that it did not exist under another identity.</p>
+<div class="occurrence"><p><strong>Head</strong> <code>symbol:scripts/research_records.py#write_new:function</code></p><div class="location reference"><span class="tag tag-reference">reference</span> <code>scripts/research_records.py@82c24be9a49dbf9d775db9dc980c1de712d8bb8d</code></div></div>
+</article>
+<article class="symbol">
+<h3><span class="tag">added</span> <code>symbol:tests/test_research_records.py#NativeRegistrationTests:class</code></h3>
+<p>Pairing: same_selector (selector)</p>
+<p class="note">Present in head and absent from base. This is not a claim that it did not exist under another identity.</p>
+<div class="occurrence"><p><strong>Head</strong> <code>symbol:tests/test_research_records.py#NativeRegistrationTests:class</code></p><div class="location reference"><span class="tag tag-reference">reference</span> <code>tests/test_research_records.py@82c24be9a49dbf9d775db9dc980c1de712d8bb8d</code></div></div>
+</article>
+<article class="symbol">
+<h3><span class="tag">added</span> <code>symbol:tests/test_research_records.py#ResearchRecordMigrationTests:class</code></h3>
+<p>Pairing: same_selector (selector)</p>
+<p class="note">Present in head and absent from base. This is not a claim that it did not exist under another identity.</p>
+<div class="occurrence"><p><strong>Head</strong> <code>symbol:tests/test_research_records.py#ResearchRecordMigrationTests:class</code></p><div class="location reference"><span class="tag tag-reference">reference</span> <code>tests/test_research_records.py@82c24be9a49dbf9d775db9dc980c1de712d8bb8d</code></div></div>
+</article>
+<article class="symbol">
+<h3><span class="tag">added</span> <code>symbol:tests/test_research_records.py#git:function</code></h3>
+<p>Pairing: same_selector (selector)</p>
+<p class="note">Present in head and absent from base. This is not a claim that it did not exist under another identity.</p>
+<div class="occurrence"><p><strong>Head</strong> <code>symbol:tests/test_research_records.py#git:function</code></p><div class="location reference"><span class="tag tag-reference">reference</span> <code>tests/test_research_records.py@82c24be9a49dbf9d775db9dc980c1de712d8bb8d</code></div></div>
+</article>
+<article class="symbol">
+<h3><span class="tag">added</span> <code>symbol:tests/test_research_records.py#load_checker:function</code></h3>
+<p>Pairing: same_selector (selector)</p>
+<p class="note">Present in head and absent from base. This is not a claim that it did not exist under another identity.</p>
+<div class="occurrence"><p><strong>Head</strong> <code>symbol:tests/test_research_records.py#load_checker:function</code></p><div class="location reference"><span class="tag tag-reference">reference</span> <code>tests/test_research_records.py@82c24be9a49dbf9d775db9dc980c1de712d8bb8d</code></div></div>
+</article>
+<article class="symbol">
+<h3><span class="tag">added</span> <code>symbol:tests/test_research_records.py#manifest:method</code></h3>
+<p>Pairing: same_selector (selector)</p>
+<p class="note">Present in head and absent from base. This is not a claim that it did not exist under another identity.</p>
+<div class="occurrence"><p><strong>Head</strong> <code>symbol:tests/test_research_records.py#manifest:method</code></p><div class="location reference"><span class="tag tag-reference">reference</span> <code>tests/test_research_records.py@82c24be9a49dbf9d775db9dc980c1de712d8bb8d</code></div></div>
+</article>
+<article class="symbol">
+<h3><span class="tag">added</span> <code>symbol:tests/test_research_records.py#record:method</code></h3>
+<p>Pairing: same_selector (selector)</p>
+<p class="note">Present in head and absent from base. This is not a claim that it did not exist under another identity.</p>
+<div class="occurrence"><p><strong>Head</strong> <code>symbol:tests/test_research_records.py#record:method</code></p><div class="location reference"><span class="tag tag-reference">reference</span> <code>tests/test_research_records.py@82c24be9a49dbf9d775db9dc980c1de712d8bb8d</code></div></div>
+</article>
+<article class="symbol">
+<h3><span class="tag">added</span> <code>symbol:tests/test_research_records.py#run:function</code></h3>
+<p>Pairing: same_selector (selector)</p>
+<p class="note">Present in head and absent from base. This is not a claim that it did not exist under another identity.</p>
+<div class="occurrence"><p><strong>Head</strong> <code>symbol:tests/test_research_records.py#run:function</code></p><div class="location reference"><span class="tag tag-reference">reference</span> <code>tests/test_research_records.py@82c24be9a49dbf9d775db9dc980c1de712d8bb8d</code></div></div>
+</article>
+<article class="symbol">
+<h3><span class="tag">added</span> <code>symbol:tests/test_research_records.py#run_at:function</code></h3>
+<p>Pairing: same_selector (selector)</p>
+<p class="note">Present in head and absent from base. This is not a claim that it did not exist under another identity.</p>
+<div class="occurrence"><p><strong>Head</strong> <code>symbol:tests/test_research_records.py#run_at:function</code></p><div class="location reference"><span class="tag tag-reference">reference</span> <code>tests/test_research_records.py@82c24be9a49dbf9d775db9dc980c1de712d8bb8d</code></div></div>
+</article>
+<article class="symbol">
+<h3><span class="tag">added</span> <code>symbol:tests/test_research_records.py#test_authority_is_exact_and_complete:method</code></h3>
+<p>Pairing: same_selector (selector)</p>
+<p class="note">Present in head and absent from base. This is not a claim that it did not exist under another identity.</p>
+<div class="occurrence"><p><strong>Head</strong> <code>symbol:tests/test_research_records.py#test_authority_is_exact_and_complete:method</code></p><div class="location reference"><span class="tag tag-reference">reference</span> <code>tests/test_research_records.py@82c24be9a49dbf9d775db9dc980c1de712d8bb8d</code></div></div>
+</article>
+<article class="symbol">
+<h3><span class="tag">added</span> <code>symbol:tests/test_research_records.py#test_cancelled_fixture_registers_without_science:method</code></h3>
+<p>Pairing: same_selector (selector)</p>
+<p class="note">Present in head and absent from base. This is not a claim that it did not exist under another identity.</p>
+<div class="occurrence"><p><strong>Head</strong> <code>symbol:tests/test_research_records.py#test_cancelled_fixture_registers_without_science:method</code></p><div class="location reference"><span class="tag tag-reference">reference</span> <code>tests/test_research_records.py@82c24be9a49dbf9d775db9dc980c1de712d8bb8d</code></div></div>
+</article>
+<article class="symbol">
+<h3><span class="tag">added</span> <code>symbol:tests/test_research_records.py#test_every_catalog_entry_and_figure_is_available:method</code></h3>
+<p>Pairing: same_selector (selector)</p>
+<p class="note">Present in head and absent from base. This is not a claim that it did not exist under another identity.</p>
+<div class="occurrence"><p><strong>Head</strong> <code>symbol:tests/test_research_records.py#test_every_catalog_entry_and_figure_is_available:method</code></p><div class="location reference"><span class="tag tag-reference">reference</span> <code>tests/test_research_records.py@82c24be9a49dbf9d775db9dc980c1de712d8bb8d</code></div></div>
+</article>
+<article class="symbol">
+<h3><span class="tag">added</span> <code>symbol:tests/test_research_records.py#test_isolated_migration_is_byte_identical:method</code></h3>
+<p>Pairing: same_selector (selector)</p>
+<p class="note">Present in head and absent from base. This is not a claim that it did not exist under another identity.</p>
+<div class="occurrence"><p><strong>Head</strong> <code>symbol:tests/test_research_records.py#test_isolated_migration_is_byte_identical:method</code></p><div class="location reference"><span class="tag tag-reference">reference</span> <code>tests/test_research_records.py@82c24be9a49dbf9d775db9dc980c1de712d8bb8d</code></div></div>
+</article>
+<article class="symbol">
+<h3><span class="tag">added</span> <code>symbol:tests/test_research_records.py#test_landed_migration_survives_head_advance_and_refuses_source_drift:method</code></h3>
+<p>Pairing: same_selector (selector)</p>
+<p class="note">Present in head and absent from base. This is not a claim that it did not exist under another identity.</p>
+<div class="occurrence"><p><strong>Head</strong> <code>symbol:tests/test_research_records.py#test_landed_migration_survives_head_advance_and_refuses_source_drift:method</code></p><div class="location reference"><span class="tag tag-reference">reference</span> <code>tests/test_research_records.py@82c24be9a49dbf9d775db9dc980c1de712d8bb8d</code></div></div>
+</article>
+<article class="symbol">
+<h3><span class="tag">added</span> <code>symbol:tests/test_research_records.py#test_rollback_restores_every_legacy_json_byte:method</code></h3>
+<p>Pairing: same_selector (selector)</p>
+<p class="note">Present in head and absent from base. This is not a claim that it did not exist under another identity.</p>
+<div class="occurrence"><p><strong>Head</strong> <code>symbol:tests/test_research_records.py#test_rollback_restores_every_legacy_json_byte:method</code></p><div class="location reference"><span class="tag tag-reference">reference</span> <code>tests/test_research_records.py@82c24be9a49dbf9d775db9dc980c1de712d8bb8d</code></div></div>
+</article>
+<article class="symbol">
+<h3><span class="tag">added</span> <code>symbol:tests/test_research_records.py#test_source_addition_and_deletion_fail_closed:method</code></h3>
+<p>Pairing: same_selector (selector)</p>
+<p class="note">Present in head and absent from base. This is not a claim that it did not exist under another identity.</p>
+<div class="occurrence"><p><strong>Head</strong> <code>symbol:tests/test_research_records.py#test_source_addition_and_deletion_fail_closed:method</code></p><div class="location reference"><span class="tag tag-reference">reference</span> <code>tests/test_research_records.py@82c24be9a49dbf9d775db9dc980c1de712d8bb8d</code></div></div>
+</article>
+<article class="symbol">
+<h3><span class="tag">added</span> <code>symbol:tests/test_research_records.py#test_tampered_authority_fails_closed:method</code></h3>
+<p>Pairing: same_selector (selector)</p>
+<p class="note">Present in head and absent from base. This is not a claim that it did not exist under another identity.</p>
+<div class="occurrence"><p><strong>Head</strong> <code>symbol:tests/test_research_records.py#test_tampered_authority_fails_closed:method</code></p><div class="location reference"><span class="tag tag-reference">reference</span> <code>tests/test_research_records.py@82c24be9a49dbf9d775db9dc980c1de712d8bb8d</code></div></div>
+</article>
+<article class="symbol">
+<h3><span class="tag">added</span> <code>symbol:tests/test_research_records.py#test_wide_binary_failures_missingness_and_diagnosis_survive:method</code></h3>
+<p>Pairing: same_selector (selector)</p>
+<p class="note">Present in head and absent from base. This is not a claim that it did not exist under another identity.</p>
+<div class="occurrence"><p><strong>Head</strong> <code>symbol:tests/test_research_records.py#test_wide_binary_failures_missingness_and_diagnosis_survive:method</code></p><div class="location reference"><span class="tag tag-reference">reference</span> <code>tests/test_research_records.py@82c24be9a49dbf9d775db9dc980c1de712d8bb8d</code></div></div>
+</article>
+</section>
+</body>
+</html>

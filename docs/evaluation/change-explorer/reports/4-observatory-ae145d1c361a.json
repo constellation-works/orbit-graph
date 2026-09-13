@@ -1,0 +1,3363 @@
+{
+  "schema_version": 1,
+  "generated_at": "2026-09-13T00:00:00Z",
+  "comparison": {
+    "schema_version": 1,
+    "repository": null,
+    "mode": "direct_base_head",
+    "base": {
+      "requested_ref": "0d05e34ef4467aa597c092ffba2b6e6b34506f09",
+      "commit_sha": "0d05e34ef4467aa597c092ffba2b6e6b34506f09"
+    },
+    "head": {
+      "requested_ref": "ae145d1c361a82ba94b501a467678d8a6b62fad9",
+      "commit_sha": "ae145d1c361a82ba94b501a467678d8a6b62fad9"
+    },
+    "effective_base_sha": "0d05e34ef4467aa597c092ffba2b6e6b34506f09",
+    "working_tree": {
+      "dirty": false,
+      "notice": null,
+      "truncated": false,
+      "entries": []
+    },
+    "snapshots": [
+      {
+        "side": "base",
+        "requested_ref": "0d05e34ef4467aa597c092ffba2b6e6b34506f09",
+        "commit_sha": "0d05e34ef4467aa597c092ffba2b6e6b34506f09",
+        "files_indexed": 1263,
+        "files_written": 1388,
+        "extractor_version": 6,
+        "excluded": [
+          {
+            "path": "experiments/economics/_parallax/AGENTS.md",
+            "reason": "symlink",
+            "snapshot": "base"
+          },
+          {
+            "path": "experiments/economics/_parallax/data/R01-crypto/processed",
+            "reason": "symlink",
+            "snapshot": "base"
+          },
+          {
+            "path": "experiments/economics/_parallax/data/R01-crypto/raw",
+            "reason": "symlink",
+            "snapshot": "base"
+          },
+          {
+            "path": "experiments/economics/_parallax/data/R02-language-models/processed",
+            "reason": "symlink",
+            "snapshot": "base"
+          },
+          {
+            "path": "experiments/economics/_parallax/data/R02-language-models/raw",
+            "reason": "symlink",
+            "snapshot": "base"
+          },
+          {
+            "path": "experiments/economics/_parallax/data/R04-ai-assistants/processed",
+            "reason": "symlink",
+            "snapshot": "base"
+          },
+          {
+            "path": "experiments/economics/_parallax/data/R04-ai-assistants/raw",
+            "reason": "symlink",
+            "snapshot": "base"
+          },
+          {
+            "path": "experiments/physics/_orrery/AGENTS.md",
+            "reason": "symlink",
+            "snapshot": "base"
+          },
+          {
+            "path": "experiments/physics/_orrery/lab/sims/delayed-center-analytic-checks",
+            "reason": "symlink",
+            "snapshot": "base"
+          },
+          {
+            "path": "experiments/physics/_orrery/lab/sims/dynamical-consumption-lattice",
+            "reason": "symlink",
+            "snapshot": "base"
+          },
+          {
+            "path": "experiments/physics/_orrery/lab/sims/flowing-lattice-photon-propagation",
+            "reason": "symlink",
+            "snapshot": "base"
+          },
+          {
+            "path": "experiments/physics/_orrery/lab/sims/frame-drag-swirl",
+            "reason": "symlink",
+            "snapshot": "base"
+          },
+          {
+            "path": "experiments/physics/_orrery/lab/sims/frame-drag-swirl-lense-thirring-check",
+            "reason": "symlink",
+            "snapshot": "base"
+          },
+          {
+            "path": "experiments/physics/_orrery/lab/sims/lattice-photon-propagation",
+            "reason": "symlink",
+            "snapshot": "base"
+          },
+          {
+            "path": "experiments/physics/_orrery/lab/sims/lattice-two-source-superposition",
+            "reason": "symlink",
+            "snapshot": "base"
+          },
+          {
+            "path": "experiments/physics/_orrery/lab/sims/level-core-cavitation-threshold-map",
+            "reason": "symlink",
+            "snapshot": "base"
+          },
+          {
+            "path": "experiments/physics/_orrery/lab/sims/level-core-dynamical-relaxation",
+            "reason": "symlink",
+            "snapshot": "base"
+          },
+          {
+            "path": "experiments/physics/_orrery/lab/sims/level-core-far-field-slot-coefficients",
+            "reason": "symlink",
+            "snapshot": "base"
+          },
+          {
+            "path": "experiments/physics/_orrery/lab/sims/level-core-two-core-superposition",
+            "reason": "symlink",
+            "snapshot": "base"
+          },
+          {
+            "path": "experiments/physics/_orrery/lab/sims/level-core-wind-tunnel",
+            "reason": "symlink",
+            "snapshot": "base"
+          },
+          {
+            "path": "experiments/physics/_orrery/lab/sims/level-coupled-shear-lattice",
+            "reason": "symlink",
+            "snapshot": "base"
+          },
+          {
+            "path": "experiments/physics/_orrery/lab/sims/moving-core-acoustic-rays",
+            "reason": "symlink",
+            "snapshot": "base"
+          },
+          {
+            "path": "experiments/physics/_orrery/lab/sims/oscillating-electron-retarded-fields",
+            "reason": "symlink",
+            "snapshot": "base"
+          },
+          {
+            "path": "experiments/physics/_orrery/lab/sims/pendulum-driven",
+            "reason": "symlink",
+            "snapshot": "base"
+          },
+          {
+            "path": "experiments/physics/_orrery/lab/sims/pingpong-bell",
+            "reason": "symlink",
+            "snapshot": "base"
+          },
+          {
+            "path": "experiments/physics/_orrery/lab/sims/ppn-reduction-symbolic-checks",
+            "reason": "symlink",
+            "snapshot": "base"
+          },
+          {
+            "path": "experiments/physics/_orrery/lab/sims/rar-network-fluctuation-limit",
+            "reason": "symlink",
+            "snapshot": "base"
+          },
+          {
+            "path": "experiments/physics/_orrery/lab/sims/retarded-scarcity-wake",
+            "reason": "symlink",
+            "snapshot": "base"
+          },
+          {
+            "path": "experiments/physics/_orrery/lab/sims/rotation-curve-distributed-mass",
+            "reason": "symlink",
+            "snapshot": "base"
+          },
+          {
+            "path": "experiments/physics/_orrery/lab/sims/scarcity-capped-cumulative-field",
+            "reason": "symlink",
+            "snapshot": "base"
+          },
+          {
+            "path": "experiments/physics/_orrery/lab/sims/scarcity-field-slice-toggle",
+            "reason": "symlink",
+            "snapshot": "base"
+          },
+          {
+            "path": "experiments/physics/_orrery/lab/sims/scarcity-grid-weight-black-hole",
+            "reason": "symlink",
+            "snapshot": "base"
+          },
+          {
+            "path": "experiments/physics/_orrery/lab/sims/scarcity-rotation-curve-fit",
+            "reason": "symlink",
+            "snapshot": "base"
+          },
+          {
+            "path": "experiments/physics/_orrery/lab/sims/scarcity-shell-depletion-field",
+            "reason": "symlink",
+            "snapshot": "base"
+          },
+          {
+            "path": "experiments/physics/_orrery/lab/sims/scarcity-star-well-headroom",
+            "reason": "symlink",
+            "snapshot": "base"
+          },
+          {
+            "path": "experiments/physics/_orrery/lab/sims/shear-consumption-lattice",
+            "reason": "symlink",
+            "snapshot": "base"
+          },
+          {
+            "path": "experiments/physics/_orrery/lab/sims/solar-system-nbody",
+            "reason": "symlink",
+            "snapshot": "base"
+          },
+          {
+            "path": "experiments/physics/_orrery/lab/sims/sparc-scarcity-universality",
+            "reason": "symlink",
+            "snapshot": "base"
+          },
+          {
+            "path": "experiments/physics/_orrery/lab/sims/swirl-ball",
+            "reason": "symlink",
+            "snapshot": "base"
+          },
+          {
+            "path": "experiments/physics/_orrery/lab/sims/swirl-ball-far-field",
+            "reason": "symlink",
+            "snapshot": "base"
+          },
+          {
+            "path": "experiments/physics/_orrery/lab/sims/two-substance-defect-gravity",
+            "reason": "symlink",
+            "snapshot": "base"
+          },
+          {
+            "path": "experiments/physics/_orrery/lab/sims/two-substance-dynamical-packet",
+            "reason": "symlink",
+            "snapshot": "base"
+          },
+          {
+            "path": "experiments/physics/_orrery/lab/sims/two-substance-packet-linear-symbol",
+            "reason": "symlink",
+            "snapshot": "base"
+          },
+          {
+            "path": "experiments/physics/_orrery/lab/sims/two-substance-vortex-lattice",
+            "reason": "symlink",
+            "snapshot": "base"
+          },
+          {
+            "path": "experiments/physics/_orrery/lab/sims/vortex-bell",
+            "reason": "symlink",
+            "snapshot": "base"
+          },
+          {
+            "path": "experiments/physics/_orrery/lab/sims/wide-binary-control-diagnosis",
+            "reason": "symlink",
+            "snapshot": "base"
+          },
+          {
+            "path": "experiments/physics/_orrery/lab/sims/wide-binary-selection-bias",
+            "reason": "symlink",
+            "snapshot": "base"
+          },
+          {
+            "path": "knowledgebase/theory/AGENTS.md",
+            "reason": "symlink",
+            "snapshot": "base"
+          },
+          {
+            "path": "knowledgebase/theory/research/corpus/migration.json",
+            "reason": "oversize_blob",
+            "snapshot": "base"
+          },
+          {
+            "path": "lib/astrolabe/AGENTS.md",
+            "reason": "symlink",
+            "snapshot": "base"
+          }
+        ]
+      },
+      {
+        "side": "head",
+        "requested_ref": "ae145d1c361a82ba94b501a467678d8a6b62fad9",
+        "commit_sha": "ae145d1c361a82ba94b501a467678d8a6b62fad9",
+        "files_indexed": 1265,
+        "files_written": 1393,
+        "extractor_version": 6,
+        "excluded": [
+          {
+            "path": "experiments/economics/_parallax/AGENTS.md",
+            "reason": "symlink",
+            "snapshot": "head"
+          },
+          {
+            "path": "experiments/economics/_parallax/data/R01-crypto/processed",
+            "reason": "symlink",
+            "snapshot": "head"
+          },
+          {
+            "path": "experiments/economics/_parallax/data/R01-crypto/raw",
+            "reason": "symlink",
+            "snapshot": "head"
+          },
+          {
+            "path": "experiments/economics/_parallax/data/R02-language-models/processed",
+            "reason": "symlink",
+            "snapshot": "head"
+          },
+          {
+            "path": "experiments/economics/_parallax/data/R02-language-models/raw",
+            "reason": "symlink",
+            "snapshot": "head"
+          },
+          {
+            "path": "experiments/economics/_parallax/data/R04-ai-assistants/processed",
+            "reason": "symlink",
+            "snapshot": "head"
+          },
+          {
+            "path": "experiments/economics/_parallax/data/R04-ai-assistants/raw",
+            "reason": "symlink",
+            "snapshot": "head"
+          },
+          {
+            "path": "experiments/physics/_orrery/AGENTS.md",
+            "reason": "symlink",
+            "snapshot": "head"
+          },
+          {
+            "path": "experiments/physics/_orrery/lab/sims/delayed-center-analytic-checks",
+            "reason": "symlink",
+            "snapshot": "head"
+          },
+          {
+            "path": "experiments/physics/_orrery/lab/sims/dynamical-consumption-lattice",
+            "reason": "symlink",
+            "snapshot": "head"
+          },
+          {
+            "path": "experiments/physics/_orrery/lab/sims/flowing-lattice-photon-propagation",
+            "reason": "symlink",
+            "snapshot": "head"
+          },
+          {
+            "path": "experiments/physics/_orrery/lab/sims/frame-drag-swirl",
+            "reason": "symlink",
+            "snapshot": "head"
+          },
+          {
+            "path": "experiments/physics/_orrery/lab/sims/frame-drag-swirl-lense-thirring-check",
+            "reason": "symlink",
+            "snapshot": "head"
+          },
+          {
+            "path": "experiments/physics/_orrery/lab/sims/lattice-photon-propagation",
+            "reason": "symlink",
+            "snapshot": "head"
+          },
+          {
+            "path": "experiments/physics/_orrery/lab/sims/lattice-two-source-superposition",
+            "reason": "symlink",
+            "snapshot": "head"
+          },
+          {
+            "path": "experiments/physics/_orrery/lab/sims/level-core-cavitation-threshold-map",
+            "reason": "symlink",
+            "snapshot": "head"
+          },
+          {
+            "path": "experiments/physics/_orrery/lab/sims/level-core-dynamical-relaxation",
+            "reason": "symlink",
+            "snapshot": "head"
+          },
+          {
+            "path": "experiments/physics/_orrery/lab/sims/level-core-far-field-slot-coefficients",
+            "reason": "symlink",
+            "snapshot": "head"
+          },
+          {
+            "path": "experiments/physics/_orrery/lab/sims/level-core-two-core-superposition",
+            "reason": "symlink",
+            "snapshot": "head"
+          },
+          {
+            "path": "experiments/physics/_orrery/lab/sims/level-core-wind-tunnel",
+            "reason": "symlink",
+            "snapshot": "head"
+          },
+          {
+            "path": "experiments/physics/_orrery/lab/sims/level-coupled-shear-lattice",
+            "reason": "symlink",
+            "snapshot": "head"
+          },
+          {
+            "path": "experiments/physics/_orrery/lab/sims/moving-core-acoustic-rays",
+            "reason": "symlink",
+            "snapshot": "head"
+          },
+          {
+            "path": "experiments/physics/_orrery/lab/sims/oscillating-electron-retarded-fields",
+            "reason": "symlink",
+            "snapshot": "head"
+          },
+          {
+            "path": "experiments/physics/_orrery/lab/sims/pendulum-driven",
+            "reason": "symlink",
+            "snapshot": "head"
+          },
+          {
+            "path": "experiments/physics/_orrery/lab/sims/pingpong-bell",
+            "reason": "symlink",
+            "snapshot": "head"
+          },
+          {
+            "path": "experiments/physics/_orrery/lab/sims/ppn-reduction-symbolic-checks",
+            "reason": "symlink",
+            "snapshot": "head"
+          },
+          {
+            "path": "experiments/physics/_orrery/lab/sims/rar-network-fluctuation-limit",
+            "reason": "symlink",
+            "snapshot": "head"
+          },
+          {
+            "path": "experiments/physics/_orrery/lab/sims/retarded-scarcity-wake",
+            "reason": "symlink",
+            "snapshot": "head"
+          },
+          {
+            "path": "experiments/physics/_orrery/lab/sims/rotation-curve-distributed-mass",
+            "reason": "symlink",
+            "snapshot": "head"
+          },
+          {
+            "path": "experiments/physics/_orrery/lab/sims/scarcity-capped-cumulative-field",
+            "reason": "symlink",
+            "snapshot": "head"
+          },
+          {
+            "path": "experiments/physics/_orrery/lab/sims/scarcity-field-slice-toggle",
+            "reason": "symlink",
+            "snapshot": "head"
+          },
+          {
+            "path": "experiments/physics/_orrery/lab/sims/scarcity-grid-weight-black-hole",
+            "reason": "symlink",
+            "snapshot": "head"
+          },
+          {
+            "path": "experiments/physics/_orrery/lab/sims/scarcity-rotation-curve-fit",
+            "reason": "symlink",
+            "snapshot": "head"
+          },
+          {
+            "path": "experiments/physics/_orrery/lab/sims/scarcity-shell-depletion-field",
+            "reason": "symlink",
+            "snapshot": "head"
+          },
+          {
+            "path": "experiments/physics/_orrery/lab/sims/scarcity-star-well-headroom",
+            "reason": "symlink",
+            "snapshot": "head"
+          },
+          {
+            "path": "experiments/physics/_orrery/lab/sims/shear-consumption-lattice",
+            "reason": "symlink",
+            "snapshot": "head"
+          },
+          {
+            "path": "experiments/physics/_orrery/lab/sims/solar-system-nbody",
+            "reason": "symlink",
+            "snapshot": "head"
+          },
+          {
+            "path": "experiments/physics/_orrery/lab/sims/sparc-scarcity-universality",
+            "reason": "symlink",
+            "snapshot": "head"
+          },
+          {
+            "path": "experiments/physics/_orrery/lab/sims/swirl-ball",
+            "reason": "symlink",
+            "snapshot": "head"
+          },
+          {
+            "path": "experiments/physics/_orrery/lab/sims/swirl-ball-far-field",
+            "reason": "symlink",
+            "snapshot": "head"
+          },
+          {
+            "path": "experiments/physics/_orrery/lab/sims/two-substance-defect-gravity",
+            "reason": "symlink",
+            "snapshot": "head"
+          },
+          {
+            "path": "experiments/physics/_orrery/lab/sims/two-substance-dynamical-packet",
+            "reason": "symlink",
+            "snapshot": "head"
+          },
+          {
+            "path": "experiments/physics/_orrery/lab/sims/two-substance-packet-linear-symbol",
+            "reason": "symlink",
+            "snapshot": "head"
+          },
+          {
+            "path": "experiments/physics/_orrery/lab/sims/two-substance-vortex-lattice",
+            "reason": "symlink",
+            "snapshot": "head"
+          },
+          {
+            "path": "experiments/physics/_orrery/lab/sims/vortex-bell",
+            "reason": "symlink",
+            "snapshot": "head"
+          },
+          {
+            "path": "experiments/physics/_orrery/lab/sims/wide-binary-control-diagnosis",
+            "reason": "symlink",
+            "snapshot": "head"
+          },
+          {
+            "path": "experiments/physics/_orrery/lab/sims/wide-binary-selection-bias",
+            "reason": "symlink",
+            "snapshot": "head"
+          },
+          {
+            "path": "knowledgebase/theory/AGENTS.md",
+            "reason": "symlink",
+            "snapshot": "head"
+          },
+          {
+            "path": "knowledgebase/theory/research/corpus/migration.json",
+            "reason": "oversize_blob",
+            "snapshot": "head"
+          },
+          {
+            "path": "lib/astrolabe/AGENTS.md",
+            "reason": "symlink",
+            "snapshot": "head"
+          }
+        ]
+      }
+    ]
+  },
+  "index_identity": {
+    "extractor_version": 6,
+    "store_schema_version": 1,
+    "orbit_graph_version": "0.9.2",
+    "explorer_version": "0.9.2",
+    "base_index_identity": "blake3:898b1c0d9283164a87fae3a14994e7afc324c5496208a319057e56ac183172ba",
+    "head_index_identity": "blake3:21a59d3159b1b74d2efc8add0a82a3d19c670ff7c7d2d5434d2c1d99b7ada7af"
+  },
+  "query_options": {
+    "depth": 1,
+    "direction": "inbound",
+    "min_confidence": "same_module",
+    "kind": null,
+    "node_cap": 200,
+    "time_budget_ms": 5000,
+    "source_max_bytes": 65536,
+    "language": null,
+    "change_kind": [],
+    "scope": null,
+    "excerpts": "none",
+    "excerpt_radius_lines": 5,
+    "selection": [
+      "symbol:experiments/physics/fput-recurrence-reproduction/run.py#assessment:function",
+      "symbol:experiments/physics/fput-recurrence-reproduction/fput/metrics.py#evaluate_metrics:function"
+    ]
+  },
+  "changed_symbols": {
+    "schema_version": 1,
+    "symbols": [
+      {
+        "status": "modified",
+        "pairing": "same_selector",
+        "pairing_evidence": "selector",
+        "base": {
+          "selector": "symbol:docs/design/paper-reproduction-workbench.md#Evidence export allowlist:heading",
+          "snapshot": "base",
+          "commit_sha": "0d05e34ef4467aa597c092ffba2b6e6b34506f09",
+          "rendering": "reference",
+          "reference": "docs/design/paper-reproduction-workbench.md@0d05e34ef4467aa597c092ffba2b6e6b34506f09"
+        },
+        "head": {
+          "selector": "symbol:docs/design/paper-reproduction-workbench.md#Evidence export allowlist:heading",
+          "snapshot": "head",
+          "commit_sha": "ae145d1c361a82ba94b501a467678d8a6b62fad9",
+          "rendering": "reference",
+          "reference": "docs/design/paper-reproduction-workbench.md@ae145d1c361a82ba94b501a467678d8a6b62fad9"
+        },
+        "supporting_snapshots": [
+          "base",
+          "head"
+        ],
+        "file_change": "modified",
+        "base_path": "docs/design/paper-reproduction-workbench.md",
+        "head_path": "docs/design/paper-reproduction-workbench.md",
+        "uncertain_candidates": [],
+        "note": "body changed; signature line is unchanged"
+      },
+      {
+        "status": "modified",
+        "pairing": "same_selector",
+        "pairing_evidence": "selector",
+        "base": {
+          "selector": "symbol:docs/design/paper-reproduction-workbench.md#Paper reproduction and interactive physics field guide:heading",
+          "snapshot": "base",
+          "commit_sha": "0d05e34ef4467aa597c092ffba2b6e6b34506f09",
+          "rendering": "reference",
+          "reference": "docs/design/paper-reproduction-workbench.md@0d05e34ef4467aa597c092ffba2b6e6b34506f09"
+        },
+        "head": {
+          "selector": "symbol:docs/design/paper-reproduction-workbench.md#Paper reproduction and interactive physics field guide:heading",
+          "snapshot": "head",
+          "commit_sha": "ae145d1c361a82ba94b501a467678d8a6b62fad9",
+          "rendering": "reference",
+          "reference": "docs/design/paper-reproduction-workbench.md@ae145d1c361a82ba94b501a467678d8a6b62fad9"
+        },
+        "supporting_snapshots": [
+          "base",
+          "head"
+        ],
+        "file_change": "modified",
+        "base_path": "docs/design/paper-reproduction-workbench.md",
+        "head_path": "docs/design/paper-reproduction-workbench.md",
+        "uncertain_candidates": [],
+        "note": "body changed; signature line is unchanged"
+      },
+      {
+        "status": "modified",
+        "pairing": "same_selector",
+        "pairing_evidence": "selector",
+        "base": {
+          "selector": "symbol:docs/design/paper-reproduction-workbench.md#Repository layout:heading",
+          "snapshot": "base",
+          "commit_sha": "0d05e34ef4467aa597c092ffba2b6e6b34506f09",
+          "rendering": "reference",
+          "reference": "docs/design/paper-reproduction-workbench.md@0d05e34ef4467aa597c092ffba2b6e6b34506f09"
+        },
+        "head": {
+          "selector": "symbol:docs/design/paper-reproduction-workbench.md#Repository layout:heading",
+          "snapshot": "head",
+          "commit_sha": "ae145d1c361a82ba94b501a467678d8a6b62fad9",
+          "rendering": "reference",
+          "reference": "docs/design/paper-reproduction-workbench.md@ae145d1c361a82ba94b501a467678d8a6b62fad9"
+        },
+        "supporting_snapshots": [
+          "base",
+          "head"
+        ],
+        "file_change": "modified",
+        "base_path": "docs/design/paper-reproduction-workbench.md",
+        "head_path": "docs/design/paper-reproduction-workbench.md",
+        "uncertain_candidates": [],
+        "note": "body changed; signature line is unchanged"
+      },
+      {
+        "status": "modified",
+        "pairing": "same_selector",
+        "pairing_evidence": "selector",
+        "base": {
+          "selector": "symbol:docs/design/paper-reproduction-workbench.md#Reproduction runner contract:heading",
+          "snapshot": "base",
+          "commit_sha": "0d05e34ef4467aa597c092ffba2b6e6b34506f09",
+          "rendering": "reference",
+          "reference": "docs/design/paper-reproduction-workbench.md@0d05e34ef4467aa597c092ffba2b6e6b34506f09"
+        },
+        "head": {
+          "selector": "symbol:docs/design/paper-reproduction-workbench.md#Reproduction runner contract:heading",
+          "snapshot": "head",
+          "commit_sha": "ae145d1c361a82ba94b501a467678d8a6b62fad9",
+          "rendering": "reference",
+          "reference": "docs/design/paper-reproduction-workbench.md@ae145d1c361a82ba94b501a467678d8a6b62fad9"
+        },
+        "supporting_snapshots": [
+          "base",
+          "head"
+        ],
+        "file_change": "modified",
+        "base_path": "docs/design/paper-reproduction-workbench.md",
+        "head_path": "docs/design/paper-reproduction-workbench.md",
+        "uncertain_candidates": [],
+        "note": "body changed; signature line is unchanged"
+      },
+      {
+        "status": "modified",
+        "pairing": "same_selector",
+        "pairing_evidence": "selector",
+        "base": {
+          "selector": "symbol:experiments/physics/fput-recurrence-reproduction/attempts/v1-velocity-verlet/reason.md#Protocol-v1 failed baseline:heading",
+          "snapshot": "base",
+          "commit_sha": "0d05e34ef4467aa597c092ffba2b6e6b34506f09",
+          "rendering": "reference",
+          "reference": "experiments/physics/fput-recurrence-reproduction/attempts/v1-velocity-verlet/reason.md@0d05e34ef4467aa597c092ffba2b6e6b34506f09"
+        },
+        "head": {
+          "selector": "symbol:experiments/physics/fput-recurrence-reproduction/attempts/v1-velocity-verlet/reason.md#Protocol-v1 failed baseline:heading",
+          "snapshot": "head",
+          "commit_sha": "ae145d1c361a82ba94b501a467678d8a6b62fad9",
+          "rendering": "reference",
+          "reference": "experiments/physics/fput-recurrence-reproduction/attempts/v1-velocity-verlet/reason.md@ae145d1c361a82ba94b501a467678d8a6b62fad9"
+        },
+        "supporting_snapshots": [
+          "base",
+          "head"
+        ],
+        "file_change": "modified",
+        "base_path": "experiments/physics/fput-recurrence-reproduction/attempts/v1-velocity-verlet/reason.md",
+        "head_path": "experiments/physics/fput-recurrence-reproduction/attempts/v1-velocity-verlet/reason.md",
+        "uncertain_candidates": [],
+        "note": "body changed; signature line is unchanged"
+      },
+      {
+        "status": "modified",
+        "pairing": "same_selector",
+        "pairing_evidence": "selector",
+        "base": {
+          "selector": "symbol:experiments/physics/fput-recurrence-reproduction/fput/compare.py#load_reference:function",
+          "snapshot": "base",
+          "commit_sha": "0d05e34ef4467aa597c092ffba2b6e6b34506f09",
+          "rendering": "reference",
+          "reference": "experiments/physics/fput-recurrence-reproduction/fput/compare.py@0d05e34ef4467aa597c092ffba2b6e6b34506f09"
+        },
+        "head": {
+          "selector": "symbol:experiments/physics/fput-recurrence-reproduction/fput/compare.py#load_reference:function",
+          "snapshot": "head",
+          "commit_sha": "ae145d1c361a82ba94b501a467678d8a6b62fad9",
+          "rendering": "reference",
+          "reference": "experiments/physics/fput-recurrence-reproduction/fput/compare.py@ae145d1c361a82ba94b501a467678d8a6b62fad9"
+        },
+        "supporting_snapshots": [
+          "base",
+          "head"
+        ],
+        "file_change": "modified",
+        "base_path": "experiments/physics/fput-recurrence-reproduction/fput/compare.py",
+        "head_path": "experiments/physics/fput-recurrence-reproduction/fput/compare.py",
+        "uncertain_candidates": [],
+        "note": "body changed; signature line is unchanged"
+      },
+      {
+        "status": "modified",
+        "pairing": "same_selector",
+        "pairing_evidence": "selector",
+        "base": {
+          "selector": "symbol:experiments/physics/fput-recurrence-reproduction/fput/compare.py#plot_overlay:function",
+          "snapshot": "base",
+          "commit_sha": "0d05e34ef4467aa597c092ffba2b6e6b34506f09",
+          "rendering": "reference",
+          "reference": "experiments/physics/fput-recurrence-reproduction/fput/compare.py@0d05e34ef4467aa597c092ffba2b6e6b34506f09"
+        },
+        "head": {
+          "selector": "symbol:experiments/physics/fput-recurrence-reproduction/fput/compare.py#plot_overlay:function",
+          "snapshot": "head",
+          "commit_sha": "ae145d1c361a82ba94b501a467678d8a6b62fad9",
+          "rendering": "reference",
+          "reference": "experiments/physics/fput-recurrence-reproduction/fput/compare.py@ae145d1c361a82ba94b501a467678d8a6b62fad9"
+        },
+        "supporting_snapshots": [
+          "base",
+          "head"
+        ],
+        "file_change": "modified",
+        "base_path": "experiments/physics/fput-recurrence-reproduction/fput/compare.py",
+        "head_path": "experiments/physics/fput-recurrence-reproduction/fput/compare.py",
+        "uncertain_candidates": [],
+        "note": "body changed; signature line is unchanged"
+      },
+      {
+        "status": "added",
+        "pairing": "same_selector",
+        "pairing_evidence": "selector",
+        "base": null,
+        "head": {
+          "selector": "symbol:experiments/physics/fput-recurrence-reproduction/fput/metrics.py#_m3_additional_reporting:function",
+          "snapshot": "head",
+          "commit_sha": "ae145d1c361a82ba94b501a467678d8a6b62fad9",
+          "rendering": "reference",
+          "reference": "experiments/physics/fput-recurrence-reproduction/fput/metrics.py@ae145d1c361a82ba94b501a467678d8a6b62fad9"
+        },
+        "supporting_snapshots": [
+          "head"
+        ],
+        "file_change": "modified",
+        "base_path": "experiments/physics/fput-recurrence-reproduction/fput/metrics.py",
+        "head_path": "experiments/physics/fput-recurrence-reproduction/fput/metrics.py",
+        "uncertain_candidates": [],
+        "note": "Present in head and absent from base. This is not a claim that it did not exist under another identity."
+      },
+      {
+        "status": "added",
+        "pairing": "same_selector",
+        "pairing_evidence": "selector",
+        "base": null,
+        "head": {
+          "selector": "symbol:experiments/physics/fput-recurrence-reproduction/fput/metrics.py#_reported_feature:function",
+          "snapshot": "head",
+          "commit_sha": "ae145d1c361a82ba94b501a467678d8a6b62fad9",
+          "rendering": "reference",
+          "reference": "experiments/physics/fput-recurrence-reproduction/fput/metrics.py@ae145d1c361a82ba94b501a467678d8a6b62fad9"
+        },
+        "supporting_snapshots": [
+          "head"
+        ],
+        "file_change": "modified",
+        "base_path": "experiments/physics/fput-recurrence-reproduction/fput/metrics.py",
+        "head_path": "experiments/physics/fput-recurrence-reproduction/fput/metrics.py",
+        "uncertain_candidates": [],
+        "note": "Present in head and absent from base. This is not a claim that it did not exist under another identity."
+      },
+      {
+        "status": "modified",
+        "pairing": "same_selector",
+        "pairing_evidence": "selector",
+        "base": {
+          "selector": "symbol:experiments/physics/fput-recurrence-reproduction/fput/metrics.py#evaluate_metrics:function",
+          "snapshot": "base",
+          "commit_sha": "0d05e34ef4467aa597c092ffba2b6e6b34506f09",
+          "rendering": "reference",
+          "reference": "experiments/physics/fput-recurrence-reproduction/fput/metrics.py@0d05e34ef4467aa597c092ffba2b6e6b34506f09"
+        },
+        "head": {
+          "selector": "symbol:experiments/physics/fput-recurrence-reproduction/fput/metrics.py#evaluate_metrics:function",
+          "snapshot": "head",
+          "commit_sha": "ae145d1c361a82ba94b501a467678d8a6b62fad9",
+          "rendering": "reference",
+          "reference": "experiments/physics/fput-recurrence-reproduction/fput/metrics.py@ae145d1c361a82ba94b501a467678d8a6b62fad9"
+        },
+        "supporting_snapshots": [
+          "base",
+          "head"
+        ],
+        "file_change": "modified",
+        "base_path": "experiments/physics/fput-recurrence-reproduction/fput/metrics.py",
+        "head_path": "experiments/physics/fput-recurrence-reproduction/fput/metrics.py",
+        "uncertain_candidates": [],
+        "note": "body changed; signature line is unchanged"
+      },
+      {
+        "status": "added",
+        "pairing": "same_selector",
+        "pairing_evidence": "selector",
+        "base": null,
+        "head": {
+          "selector": "symbol:experiments/physics/fput-recurrence-reproduction/protocol/v2.md#Amendment rule:heading",
+          "snapshot": "head",
+          "commit_sha": "ae145d1c361a82ba94b501a467678d8a6b62fad9",
+          "rendering": "reference",
+          "reference": "experiments/physics/fput-recurrence-reproduction/protocol/v2.md@ae145d1c361a82ba94b501a467678d8a6b62fad9"
+        },
+        "supporting_snapshots": [
+          "head"
+        ],
+        "file_change": "added",
+        "base_path": null,
+        "head_path": "experiments/physics/fput-recurrence-reproduction/protocol/v2.md",
+        "uncertain_candidates": [],
+        "note": "Present in head and absent from base. This is not a claim that it did not exist under another identity."
+      },
+      {
+        "status": "added",
+        "pairing": "same_selector",
+        "pairing_evidence": "selector",
+        "base": null,
+        "head": {
+          "selector": "symbol:experiments/physics/fput-recurrence-reproduction/protocol/v2.md#Controls:heading",
+          "snapshot": "head",
+          "commit_sha": "ae145d1c361a82ba94b501a467678d8a6b62fad9",
+          "rendering": "reference",
+          "reference": "experiments/physics/fput-recurrence-reproduction/protocol/v2.md@ae145d1c361a82ba94b501a467678d8a6b62fad9"
+        },
+        "supporting_snapshots": [
+          "head"
+        ],
+        "file_change": "added",
+        "base_path": null,
+        "head_path": "experiments/physics/fput-recurrence-reproduction/protocol/v2.md",
+        "uncertain_candidates": [],
+        "note": "Present in head and absent from base. This is not a claim that it did not exist under another identity."
+      },
+      {
+        "status": "added",
+        "pairing": "same_selector",
+        "pairing_evidence": "selector",
+        "base": null,
+        "head": {
+          "selector": "symbol:experiments/physics/fput-recurrence-reproduction/protocol/v2.md#FPUT recurrence reproduction protocol v2:heading",
+          "snapshot": "head",
+          "commit_sha": "ae145d1c361a82ba94b501a467678d8a6b62fad9",
+          "rendering": "reference",
+          "reference": "experiments/physics/fput-recurrence-reproduction/protocol/v2.md@ae145d1c361a82ba94b501a467678d8a6b62fad9"
+        },
+        "supporting_snapshots": [
+          "head"
+        ],
+        "file_change": "added",
+        "base_path": null,
+        "head_path": "experiments/physics/fput-recurrence-reproduction/protocol/v2.md",
+        "uncertain_candidates": [],
+        "note": "Present in head and absent from base. This is not a claim that it did not exist under another identity."
+      },
+      {
+        "status": "added",
+        "pairing": "same_selector",
+        "pairing_evidence": "selector",
+        "base": null,
+        "head": {
+          "selector": "symbol:experiments/physics/fput-recurrence-reproduction/protocol/v2.md#Inputs and compute envelope:heading",
+          "snapshot": "head",
+          "commit_sha": "ae145d1c361a82ba94b501a467678d8a6b62fad9",
+          "rendering": "reference",
+          "reference": "experiments/physics/fput-recurrence-reproduction/protocol/v2.md@ae145d1c361a82ba94b501a467678d8a6b62fad9"
+        },
+        "supporting_snapshots": [
+          "head"
+        ],
+        "file_change": "added",
+        "base_path": null,
+        "head_path": "experiments/physics/fput-recurrence-reproduction/protocol/v2.md",
+        "uncertain_candidates": [],
+        "note": "Present in head and absent from base. This is not a claim that it did not exist under another identity."
+      },
+      {
+        "status": "added",
+        "pairing": "same_selector",
+        "pairing_evidence": "selector",
+        "base": null,
+        "head": {
+          "selector": "symbol:experiments/physics/fput-recurrence-reproduction/protocol/v2.md#Integrator and solver settings:heading",
+          "snapshot": "head",
+          "commit_sha": "ae145d1c361a82ba94b501a467678d8a6b62fad9",
+          "rendering": "reference",
+          "reference": "experiments/physics/fput-recurrence-reproduction/protocol/v2.md@ae145d1c361a82ba94b501a467678d8a6b62fad9"
+        },
+        "supporting_snapshots": [
+          "head"
+        ],
+        "file_change": "added",
+        "base_path": null,
+        "head_path": "experiments/physics/fput-recurrence-reproduction/protocol/v2.md",
+        "uncertain_candidates": [],
+        "note": "Present in head and absent from base. This is not a claim that it did not exist under another identity."
+      },
+      {
+        "status": "added",
+        "pairing": "same_selector",
+        "pairing_evidence": "selector",
+        "base": null,
+        "head": {
+          "selector": "symbol:experiments/physics/fput-recurrence-reproduction/protocol/v2.md#Metrics:heading",
+          "snapshot": "head",
+          "commit_sha": "ae145d1c361a82ba94b501a467678d8a6b62fad9",
+          "rendering": "reference",
+          "reference": "experiments/physics/fput-recurrence-reproduction/protocol/v2.md@ae145d1c361a82ba94b501a467678d8a6b62fad9"
+        },
+        "supporting_snapshots": [
+          "head"
+        ],
+        "file_change": "added",
+        "base_path": null,
+        "head_path": "experiments/physics/fput-recurrence-reproduction/protocol/v2.md",
+        "uncertain_candidates": [],
+        "note": "Present in head and absent from base. This is not a claim that it did not exist under another identity."
+      },
+      {
+        "status": "added",
+        "pairing": "same_selector",
+        "pairing_evidence": "selector",
+        "base": null,
+        "head": {
+          "selector": "symbol:experiments/physics/fput-recurrence-reproduction/protocol/v2.md#Model, units and initial state:heading",
+          "snapshot": "head",
+          "commit_sha": "ae145d1c361a82ba94b501a467678d8a6b62fad9",
+          "rendering": "reference",
+          "reference": "experiments/physics/fput-recurrence-reproduction/protocol/v2.md@ae145d1c361a82ba94b501a467678d8a6b62fad9"
+        },
+        "supporting_snapshots": [
+          "head"
+        ],
+        "file_change": "added",
+        "base_path": null,
+        "head_path": "experiments/physics/fput-recurrence-reproduction/protocol/v2.md",
+        "uncertain_candidates": [],
+        "note": "Present in head and absent from base. This is not a claim that it did not exist under another identity."
+      },
+      {
+        "status": "added",
+        "pairing": "same_selector",
+        "pairing_evidence": "selector",
+        "base": null,
+        "head": {
+          "selector": "symbol:experiments/physics/fput-recurrence-reproduction/protocol/v2.md#Target and expected output:heading",
+          "snapshot": "head",
+          "commit_sha": "ae145d1c361a82ba94b501a467678d8a6b62fad9",
+          "rendering": "reference",
+          "reference": "experiments/physics/fput-recurrence-reproduction/protocol/v2.md@ae145d1c361a82ba94b501a467678d8a6b62fad9"
+        },
+        "supporting_snapshots": [
+          "head"
+        ],
+        "file_change": "added",
+        "base_path": null,
+        "head_path": "experiments/physics/fput-recurrence-reproduction/protocol/v2.md",
+        "uncertain_candidates": [],
+        "note": "Present in head and absent from base. This is not a claim that it did not exist under another identity."
+      },
+      {
+        "status": "added",
+        "pairing": "same_selector",
+        "pairing_evidence": "selector",
+        "base": null,
+        "head": {
+          "selector": "symbol:experiments/physics/fput-recurrence-reproduction/reference/README.md#Changelog:heading",
+          "snapshot": "head",
+          "commit_sha": "ae145d1c361a82ba94b501a467678d8a6b62fad9",
+          "rendering": "reference",
+          "reference": "experiments/physics/fput-recurrence-reproduction/reference/README.md@ae145d1c361a82ba94b501a467678d8a6b62fad9"
+        },
+        "supporting_snapshots": [
+          "head"
+        ],
+        "file_change": "modified",
+        "base_path": "experiments/physics/fput-recurrence-reproduction/reference/README.md",
+        "head_path": "experiments/physics/fput-recurrence-reproduction/reference/README.md",
+        "uncertain_candidates": [],
+        "note": "Present in head and absent from base. This is not a claim that it did not exist under another identity."
+      },
+      {
+        "status": "modified",
+        "pairing": "same_selector",
+        "pairing_evidence": "selector",
+        "base": {
+          "selector": "symbol:experiments/physics/fput-recurrence-reproduction/reference/README.md#Extraction method and uncertainty:heading",
+          "snapshot": "base",
+          "commit_sha": "0d05e34ef4467aa597c092ffba2b6e6b34506f09",
+          "rendering": "reference",
+          "reference": "experiments/physics/fput-recurrence-reproduction/reference/README.md@0d05e34ef4467aa597c092ffba2b6e6b34506f09"
+        },
+        "head": {
+          "selector": "symbol:experiments/physics/fput-recurrence-reproduction/reference/README.md#Extraction method and uncertainty:heading",
+          "snapshot": "head",
+          "commit_sha": "ae145d1c361a82ba94b501a467678d8a6b62fad9",
+          "rendering": "reference",
+          "reference": "experiments/physics/fput-recurrence-reproduction/reference/README.md@ae145d1c361a82ba94b501a467678d8a6b62fad9"
+        },
+        "supporting_snapshots": [
+          "base",
+          "head"
+        ],
+        "file_change": "modified",
+        "base_path": "experiments/physics/fput-recurrence-reproduction/reference/README.md",
+        "head_path": "experiments/physics/fput-recurrence-reproduction/reference/README.md",
+        "uncertain_candidates": [],
+        "note": "body changed; signature line is unchanged"
+      },
+      {
+        "status": "added",
+        "pairing": "same_selector",
+        "pairing_evidence": "selector",
+        "base": null,
+        "head": {
+          "selector": "symbol:experiments/physics/fput-recurrence-reproduction/reference/README.md#High-dpi label check (2026-09-12, repair):heading",
+          "snapshot": "head",
+          "commit_sha": "ae145d1c361a82ba94b501a467678d8a6b62fad9",
+          "rendering": "reference",
+          "reference": "experiments/physics/fput-recurrence-reproduction/reference/README.md@ae145d1c361a82ba94b501a467678d8a6b62fad9"
+        },
+        "supporting_snapshots": [
+          "head"
+        ],
+        "file_change": "modified",
+        "base_path": "experiments/physics/fput-recurrence-reproduction/reference/README.md",
+        "head_path": "experiments/physics/fput-recurrence-reproduction/reference/README.md",
+        "uncertain_candidates": [],
+        "note": "Present in head and absent from base. This is not a claim that it did not exist under another identity."
+      },
+      {
+        "status": "modified",
+        "pairing": "same_selector",
+        "pairing_evidence": "selector",
+        "base": {
+          "selector": "symbol:experiments/physics/fput-recurrence-reproduction/reference/README.md#LA-1940 Fig. 1 reference extraction:heading",
+          "snapshot": "base",
+          "commit_sha": "0d05e34ef4467aa597c092ffba2b6e6b34506f09",
+          "rendering": "reference",
+          "reference": "experiments/physics/fput-recurrence-reproduction/reference/README.md@0d05e34ef4467aa597c092ffba2b6e6b34506f09"
+        },
+        "head": {
+          "selector": "symbol:experiments/physics/fput-recurrence-reproduction/reference/README.md#LA-1940 Fig. 1 reference extraction:heading",
+          "snapshot": "head",
+          "commit_sha": "ae145d1c361a82ba94b501a467678d8a6b62fad9",
+          "rendering": "reference",
+          "reference": "experiments/physics/fput-recurrence-reproduction/reference/README.md@ae145d1c361a82ba94b501a467678d8a6b62fad9"
+        },
+        "supporting_snapshots": [
+          "base",
+          "head"
+        ],
+        "file_change": "modified",
+        "base_path": "experiments/physics/fput-recurrence-reproduction/reference/README.md",
+        "head_path": "experiments/physics/fput-recurrence-reproduction/reference/README.md",
+        "uncertain_candidates": [],
+        "note": "body changed; signature line is unchanged"
+      },
+      {
+        "status": "added",
+        "pairing": "same_selector",
+        "pairing_evidence": "selector",
+        "base": null,
+        "head": {
+          "selector": "symbol:experiments/physics/fput-recurrence-reproduction/reference/README.md#Uncertainty (repair):heading",
+          "snapshot": "head",
+          "commit_sha": "ae145d1c361a82ba94b501a467678d8a6b62fad9",
+          "rendering": "reference",
+          "reference": "experiments/physics/fput-recurrence-reproduction/reference/README.md@ae145d1c361a82ba94b501a467678d8a6b62fad9"
+        },
+        "supporting_snapshots": [
+          "head"
+        ],
+        "file_change": "modified",
+        "base_path": "experiments/physics/fput-recurrence-reproduction/reference/README.md",
+        "head_path": "experiments/physics/fput-recurrence-reproduction/reference/README.md",
+        "uncertain_candidates": [],
+        "note": "Present in head and absent from base. This is not a claim that it did not exist under another identity."
+      },
+      {
+        "status": "signature_changed",
+        "pairing": "signature_changed",
+        "pairing_evidence": "signature",
+        "base": {
+          "selector": "symbol:experiments/physics/fput-recurrence-reproduction/run.py#assessment:function",
+          "snapshot": "base",
+          "commit_sha": "0d05e34ef4467aa597c092ffba2b6e6b34506f09",
+          "rendering": "reference",
+          "reference": "experiments/physics/fput-recurrence-reproduction/run.py@0d05e34ef4467aa597c092ffba2b6e6b34506f09"
+        },
+        "head": {
+          "selector": "symbol:experiments/physics/fput-recurrence-reproduction/run.py#assessment:function",
+          "snapshot": "head",
+          "commit_sha": "ae145d1c361a82ba94b501a467678d8a6b62fad9",
+          "rendering": "reference",
+          "reference": "experiments/physics/fput-recurrence-reproduction/run.py@ae145d1c361a82ba94b501a467678d8a6b62fad9"
+        },
+        "supporting_snapshots": [
+          "base",
+          "head"
+        ],
+        "file_change": "modified",
+        "base_path": "experiments/physics/fput-recurrence-reproduction/run.py",
+        "head_path": "experiments/physics/fput-recurrence-reproduction/run.py",
+        "uncertain_candidates": [],
+        "note": "signature changed: `def assessment(metrics: dict[str, dict[str, Any]]) -> tuple[str, str]:` -> `def assessment(`"
+      },
+      {
+        "status": "modified",
+        "pairing": "same_selector",
+        "pairing_evidence": "selector",
+        "base": {
+          "selector": "symbol:experiments/physics/fput-recurrence-reproduction/run.py#main:function",
+          "snapshot": "base",
+          "commit_sha": "0d05e34ef4467aa597c092ffba2b6e6b34506f09",
+          "rendering": "reference",
+          "reference": "experiments/physics/fput-recurrence-reproduction/run.py@0d05e34ef4467aa597c092ffba2b6e6b34506f09"
+        },
+        "head": {
+          "selector": "symbol:experiments/physics/fput-recurrence-reproduction/run.py#main:function",
+          "snapshot": "head",
+          "commit_sha": "ae145d1c361a82ba94b501a467678d8a6b62fad9",
+          "rendering": "reference",
+          "reference": "experiments/physics/fput-recurrence-reproduction/run.py@ae145d1c361a82ba94b501a467678d8a6b62fad9"
+        },
+        "supporting_snapshots": [
+          "base",
+          "head"
+        ],
+        "file_change": "modified",
+        "base_path": "experiments/physics/fput-recurrence-reproduction/run.py",
+        "head_path": "experiments/physics/fput-recurrence-reproduction/run.py",
+        "uncertain_candidates": [],
+        "note": "body changed; signature line is unchanged"
+      },
+      {
+        "status": "modified",
+        "pairing": "same_selector",
+        "pairing_evidence": "selector",
+        "base": {
+          "selector": "symbol:experiments/physics/fput-recurrence-reproduction/run.py#parse_args:function",
+          "snapshot": "base",
+          "commit_sha": "0d05e34ef4467aa597c092ffba2b6e6b34506f09",
+          "rendering": "reference",
+          "reference": "experiments/physics/fput-recurrence-reproduction/run.py@0d05e34ef4467aa597c092ffba2b6e6b34506f09"
+        },
+        "head": {
+          "selector": "symbol:experiments/physics/fput-recurrence-reproduction/run.py#parse_args:function",
+          "snapshot": "head",
+          "commit_sha": "ae145d1c361a82ba94b501a467678d8a6b62fad9",
+          "rendering": "reference",
+          "reference": "experiments/physics/fput-recurrence-reproduction/run.py@ae145d1c361a82ba94b501a467678d8a6b62fad9"
+        },
+        "supporting_snapshots": [
+          "base",
+          "head"
+        ],
+        "file_change": "modified",
+        "base_path": "experiments/physics/fput-recurrence-reproduction/run.py",
+        "head_path": "experiments/physics/fput-recurrence-reproduction/run.py",
+        "uncertain_candidates": [],
+        "note": "body changed; signature line is unchanged"
+      },
+      {
+        "status": "modified",
+        "pairing": "same_selector",
+        "pairing_evidence": "selector",
+        "base": {
+          "selector": "symbol:experiments/physics/fput-recurrence-reproduction/run.py#verify_inputs:function",
+          "snapshot": "base",
+          "commit_sha": "0d05e34ef4467aa597c092ffba2b6e6b34506f09",
+          "rendering": "reference",
+          "reference": "experiments/physics/fput-recurrence-reproduction/run.py@0d05e34ef4467aa597c092ffba2b6e6b34506f09"
+        },
+        "head": {
+          "selector": "symbol:experiments/physics/fput-recurrence-reproduction/run.py#verify_inputs:function",
+          "snapshot": "head",
+          "commit_sha": "ae145d1c361a82ba94b501a467678d8a6b62fad9",
+          "rendering": "reference",
+          "reference": "experiments/physics/fput-recurrence-reproduction/run.py@ae145d1c361a82ba94b501a467678d8a6b62fad9"
+        },
+        "supporting_snapshots": [
+          "base",
+          "head"
+        ],
+        "file_change": "modified",
+        "base_path": "experiments/physics/fput-recurrence-reproduction/run.py",
+        "head_path": "experiments/physics/fput-recurrence-reproduction/run.py",
+        "uncertain_candidates": [],
+        "note": "body changed; signature line is unchanged"
+      },
+      {
+        "status": "modified",
+        "pairing": "same_selector",
+        "pairing_evidence": "selector",
+        "base": {
+          "selector": "symbol:experiments/physics/fput-recurrence-reproduction/tests/test_numerics.py#test_metric_functions_find_known_synthetic_features:function",
+          "snapshot": "base",
+          "commit_sha": "0d05e34ef4467aa597c092ffba2b6e6b34506f09",
+          "rendering": "reference",
+          "reference": "experiments/physics/fput-recurrence-reproduction/tests/test_numerics.py@0d05e34ef4467aa597c092ffba2b6e6b34506f09"
+        },
+        "head": {
+          "selector": "symbol:experiments/physics/fput-recurrence-reproduction/tests/test_numerics.py#test_metric_functions_find_known_synthetic_features:function",
+          "snapshot": "head",
+          "commit_sha": "ae145d1c361a82ba94b501a467678d8a6b62fad9",
+          "rendering": "reference",
+          "reference": "experiments/physics/fput-recurrence-reproduction/tests/test_numerics.py@ae145d1c361a82ba94b501a467678d8a6b62fad9"
+        },
+        "supporting_snapshots": [
+          "base",
+          "head"
+        ],
+        "file_change": "modified",
+        "base_path": "experiments/physics/fput-recurrence-reproduction/tests/test_numerics.py",
+        "head_path": "experiments/physics/fput-recurrence-reproduction/tests/test_numerics.py",
+        "uncertain_candidates": [],
+        "note": "body changed; signature line is unchanged"
+      },
+      {
+        "status": "added",
+        "pairing": "same_selector",
+        "pairing_evidence": "selector",
+        "base": null,
+        "head": {
+          "selector": "symbol:experiments/physics/fput-recurrence-reproduction/tests/test_numerics.py#test_v1_protocol_keeps_first_local_maximum_and_summed_m4:function",
+          "snapshot": "head",
+          "commit_sha": "ae145d1c361a82ba94b501a467678d8a6b62fad9",
+          "rendering": "reference",
+          "reference": "experiments/physics/fput-recurrence-reproduction/tests/test_numerics.py@ae145d1c361a82ba94b501a467678d8a6b62fad9"
+        },
+        "supporting_snapshots": [
+          "head"
+        ],
+        "file_change": "modified",
+        "base_path": "experiments/physics/fput-recurrence-reproduction/tests/test_numerics.py",
+        "head_path": "experiments/physics/fput-recurrence-reproduction/tests/test_numerics.py",
+        "uncertain_candidates": [],
+        "note": "Present in head and absent from base. This is not a claim that it did not exist under another identity."
+      },
+      {
+        "status": "modified",
+        "pairing": "same_selector",
+        "pairing_evidence": "selector",
+        "base": {
+          "selector": "symbol:experiments/physics/fput-recurrence-reproduction/tests/test_runner.py#run_short:function",
+          "snapshot": "base",
+          "commit_sha": "0d05e34ef4467aa597c092ffba2b6e6b34506f09",
+          "rendering": "reference",
+          "reference": "experiments/physics/fput-recurrence-reproduction/tests/test_runner.py@0d05e34ef4467aa597c092ffba2b6e6b34506f09"
+        },
+        "head": {
+          "selector": "symbol:experiments/physics/fput-recurrence-reproduction/tests/test_runner.py#run_short:function",
+          "snapshot": "head",
+          "commit_sha": "ae145d1c361a82ba94b501a467678d8a6b62fad9",
+          "rendering": "reference",
+          "reference": "experiments/physics/fput-recurrence-reproduction/tests/test_runner.py@ae145d1c361a82ba94b501a467678d8a6b62fad9"
+        },
+        "supporting_snapshots": [
+          "base",
+          "head"
+        ],
+        "file_change": "modified",
+        "base_path": "experiments/physics/fput-recurrence-reproduction/tests/test_runner.py",
+        "head_path": "experiments/physics/fput-recurrence-reproduction/tests/test_runner.py",
+        "uncertain_candidates": [],
+        "note": "body changed; signature line is unchanged"
+      },
+      {
+        "status": "added",
+        "pairing": "same_selector",
+        "pairing_evidence": "selector",
+        "base": null,
+        "head": {
+          "selector": "symbol:experiments/physics/fput-recurrence-reproduction/tests/test_runner.py#test_forced_c3_failure_is_reported_but_does_not_gate_status:function",
+          "snapshot": "head",
+          "commit_sha": "ae145d1c361a82ba94b501a467678d8a6b62fad9",
+          "rendering": "reference",
+          "reference": "experiments/physics/fput-recurrence-reproduction/tests/test_runner.py@ae145d1c361a82ba94b501a467678d8a6b62fad9"
+        },
+        "supporting_snapshots": [
+          "head"
+        ],
+        "file_change": "modified",
+        "base_path": "experiments/physics/fput-recurrence-reproduction/tests/test_runner.py",
+        "head_path": "experiments/physics/fput-recurrence-reproduction/tests/test_runner.py",
+        "uncertain_candidates": [],
+        "note": "Present in head and absent from base. This is not a claim that it did not exist under another identity."
+      },
+      {
+        "status": "removed",
+        "pairing": "same_selector",
+        "pairing_evidence": "selector",
+        "base": {
+          "selector": "symbol:experiments/physics/fput-recurrence-reproduction/tests/test_runner.py#test_forced_control_failure_has_distinct_failed_state:function",
+          "snapshot": "base",
+          "commit_sha": "0d05e34ef4467aa597c092ffba2b6e6b34506f09",
+          "rendering": "reference",
+          "reference": "experiments/physics/fput-recurrence-reproduction/tests/test_runner.py@0d05e34ef4467aa597c092ffba2b6e6b34506f09"
+        },
+        "head": null,
+        "supporting_snapshots": [
+          "base"
+        ],
+        "file_change": "modified",
+        "base_path": "experiments/physics/fput-recurrence-reproduction/tests/test_runner.py",
+        "head_path": "experiments/physics/fput-recurrence-reproduction/tests/test_runner.py",
+        "uncertain_candidates": [],
+        "note": "Present in base and absent from head. This is not a claim that nothing replaced it."
+      },
+      {
+        "status": "added",
+        "pairing": "same_selector",
+        "pairing_evidence": "selector",
+        "base": null,
+        "head": {
+          "selector": "symbol:experiments/physics/fput-recurrence-reproduction/tests/test_runner.py#test_forced_gating_control_failure_has_distinct_failed_state:function",
+          "snapshot": "head",
+          "commit_sha": "ae145d1c361a82ba94b501a467678d8a6b62fad9",
+          "rendering": "reference",
+          "reference": "experiments/physics/fput-recurrence-reproduction/tests/test_runner.py@ae145d1c361a82ba94b501a467678d8a6b62fad9"
+        },
+        "supporting_snapshots": [
+          "head"
+        ],
+        "file_change": "modified",
+        "base_path": "experiments/physics/fput-recurrence-reproduction/tests/test_runner.py",
+        "head_path": "experiments/physics/fput-recurrence-reproduction/tests/test_runner.py",
+        "uncertain_candidates": [],
+        "note": "Present in head and absent from base. This is not a claim that it did not exist under another identity."
+      },
+      {
+        "status": "added",
+        "pairing": "same_selector",
+        "pairing_evidence": "selector",
+        "base": null,
+        "head": {
+          "selector": "symbol:experiments/physics/fput-recurrence-reproduction/tests/test_runner.py#test_protocol_v1_flag_still_runs_the_original:function",
+          "snapshot": "head",
+          "commit_sha": "ae145d1c361a82ba94b501a467678d8a6b62fad9",
+          "rendering": "reference",
+          "reference": "experiments/physics/fput-recurrence-reproduction/tests/test_runner.py@ae145d1c361a82ba94b501a467678d8a6b62fad9"
+        },
+        "supporting_snapshots": [
+          "head"
+        ],
+        "file_change": "modified",
+        "base_path": "experiments/physics/fput-recurrence-reproduction/tests/test_runner.py",
+        "head_path": "experiments/physics/fput-recurrence-reproduction/tests/test_runner.py",
+        "uncertain_candidates": [],
+        "note": "Present in head and absent from base. This is not a claim that it did not exist under another identity."
+      },
+      {
+        "status": "added",
+        "pairing": "same_selector",
+        "pairing_evidence": "selector",
+        "base": null,
+        "head": {
+          "selector": "symbol:experiments/physics/fput-recurrence-reproduction/tests/test_runner.py#test_protocol_v1_forced_c3_failure_still_gates_status:function",
+          "snapshot": "head",
+          "commit_sha": "ae145d1c361a82ba94b501a467678d8a6b62fad9",
+          "rendering": "reference",
+          "reference": "experiments/physics/fput-recurrence-reproduction/tests/test_runner.py@ae145d1c361a82ba94b501a467678d8a6b62fad9"
+        },
+        "supporting_snapshots": [
+          "head"
+        ],
+        "file_change": "modified",
+        "base_path": "experiments/physics/fput-recurrence-reproduction/tests/test_runner.py",
+        "head_path": "experiments/physics/fput-recurrence-reproduction/tests/test_runner.py",
+        "uncertain_candidates": [],
+        "note": "Present in head and absent from base. This is not a claim that it did not exist under another identity."
+      },
+      {
+        "status": "modified",
+        "pairing": "same_selector",
+        "pairing_evidence": "selector",
+        "base": {
+          "selector": "symbol:experiments/physics/fput-recurrence-reproduction/tests/test_runner.py#test_short_cycle_override_is_auditable_and_fast:function",
+          "snapshot": "base",
+          "commit_sha": "0d05e34ef4467aa597c092ffba2b6e6b34506f09",
+          "rendering": "reference",
+          "reference": "experiments/physics/fput-recurrence-reproduction/tests/test_runner.py@0d05e34ef4467aa597c092ffba2b6e6b34506f09"
+        },
+        "head": {
+          "selector": "symbol:experiments/physics/fput-recurrence-reproduction/tests/test_runner.py#test_short_cycle_override_is_auditable_and_fast:function",
+          "snapshot": "head",
+          "commit_sha": "ae145d1c361a82ba94b501a467678d8a6b62fad9",
+          "rendering": "reference",
+          "reference": "experiments/physics/fput-recurrence-reproduction/tests/test_runner.py@ae145d1c361a82ba94b501a467678d8a6b62fad9"
+        },
+        "supporting_snapshots": [
+          "base",
+          "head"
+        ],
+        "file_change": "modified",
+        "base_path": "experiments/physics/fput-recurrence-reproduction/tests/test_runner.py",
+        "head_path": "experiments/physics/fput-recurrence-reproduction/tests/test_runner.py",
+        "uncertain_candidates": [],
+        "note": "body changed; signature line is unchanged"
+      },
+      {
+        "status": "modified",
+        "pairing": "same_selector",
+        "pairing_evidence": "selector",
+        "base": {
+          "selector": "symbol:knowledgebase/studies/physics/fput-recurrence-reproduction.md#Assumptions and limits:heading",
+          "snapshot": "base",
+          "commit_sha": "0d05e34ef4467aa597c092ffba2b6e6b34506f09",
+          "rendering": "reference",
+          "reference": "knowledgebase/studies/physics/fput-recurrence-reproduction.md@0d05e34ef4467aa597c092ffba2b6e6b34506f09"
+        },
+        "head": {
+          "selector": "symbol:knowledgebase/studies/physics/fput-recurrence-reproduction.md#Assumptions and limits:heading",
+          "snapshot": "head",
+          "commit_sha": "ae145d1c361a82ba94b501a467678d8a6b62fad9",
+          "rendering": "reference",
+          "reference": "knowledgebase/studies/physics/fput-recurrence-reproduction.md@ae145d1c361a82ba94b501a467678d8a6b62fad9"
+        },
+        "supporting_snapshots": [
+          "base",
+          "head"
+        ],
+        "file_change": "modified",
+        "base_path": "knowledgebase/studies/physics/fput-recurrence-reproduction.md",
+        "head_path": "knowledgebase/studies/physics/fput-recurrence-reproduction.md",
+        "uncertain_candidates": [],
+        "note": "body changed; signature line is unchanged"
+      },
+      {
+        "status": "modified",
+        "pairing": "same_selector",
+        "pairing_evidence": "selector",
+        "base": {
+          "selector": "symbol:knowledgebase/studies/physics/fput-recurrence-reproduction.md#FPUT recurrence reproduction:heading",
+          "snapshot": "base",
+          "commit_sha": "0d05e34ef4467aa597c092ffba2b6e6b34506f09",
+          "rendering": "reference",
+          "reference": "knowledgebase/studies/physics/fput-recurrence-reproduction.md@0d05e34ef4467aa597c092ffba2b6e6b34506f09"
+        },
+        "head": {
+          "selector": "symbol:knowledgebase/studies/physics/fput-recurrence-reproduction.md#FPUT recurrence reproduction:heading",
+          "snapshot": "head",
+          "commit_sha": "ae145d1c361a82ba94b501a467678d8a6b62fad9",
+          "rendering": "reference",
+          "reference": "knowledgebase/studies/physics/fput-recurrence-reproduction.md@ae145d1c361a82ba94b501a467678d8a6b62fad9"
+        },
+        "supporting_snapshots": [
+          "base",
+          "head"
+        ],
+        "file_change": "modified",
+        "base_path": "knowledgebase/studies/physics/fput-recurrence-reproduction.md",
+        "head_path": "knowledgebase/studies/physics/fput-recurrence-reproduction.md",
+        "uncertain_candidates": [],
+        "note": "body changed; signature line is unchanged"
+      },
+      {
+        "status": "modified",
+        "pairing": "same_selector",
+        "pairing_evidence": "selector",
+        "base": {
+          "selector": "symbol:knowledgebase/studies/physics/fput-recurrence-reproduction.md#Next:heading",
+          "snapshot": "base",
+          "commit_sha": "0d05e34ef4467aa597c092ffba2b6e6b34506f09",
+          "rendering": "reference",
+          "reference": "knowledgebase/studies/physics/fput-recurrence-reproduction.md@0d05e34ef4467aa597c092ffba2b6e6b34506f09"
+        },
+        "head": {
+          "selector": "symbol:knowledgebase/studies/physics/fput-recurrence-reproduction.md#Next:heading",
+          "snapshot": "head",
+          "commit_sha": "ae145d1c361a82ba94b501a467678d8a6b62fad9",
+          "rendering": "reference",
+          "reference": "knowledgebase/studies/physics/fput-recurrence-reproduction.md@ae145d1c361a82ba94b501a467678d8a6b62fad9"
+        },
+        "supporting_snapshots": [
+          "base",
+          "head"
+        ],
+        "file_change": "modified",
+        "base_path": "knowledgebase/studies/physics/fput-recurrence-reproduction.md",
+        "head_path": "knowledgebase/studies/physics/fput-recurrence-reproduction.md",
+        "uncertain_candidates": [],
+        "note": "body changed; signature line is unchanged"
+      },
+      {
+        "status": "modified",
+        "pairing": "same_selector",
+        "pairing_evidence": "selector",
+        "base": {
+          "selector": "symbol:knowledgebase/studies/physics/fput-recurrence-reproduction.md#Provenance and reference:heading",
+          "snapshot": "base",
+          "commit_sha": "0d05e34ef4467aa597c092ffba2b6e6b34506f09",
+          "rendering": "reference",
+          "reference": "knowledgebase/studies/physics/fput-recurrence-reproduction.md@0d05e34ef4467aa597c092ffba2b6e6b34506f09"
+        },
+        "head": {
+          "selector": "symbol:knowledgebase/studies/physics/fput-recurrence-reproduction.md#Provenance and reference:heading",
+          "snapshot": "head",
+          "commit_sha": "ae145d1c361a82ba94b501a467678d8a6b62fad9",
+          "rendering": "reference",
+          "reference": "knowledgebase/studies/physics/fput-recurrence-reproduction.md@ae145d1c361a82ba94b501a467678d8a6b62fad9"
+        },
+        "supporting_snapshots": [
+          "base",
+          "head"
+        ],
+        "file_change": "modified",
+        "base_path": "knowledgebase/studies/physics/fput-recurrence-reproduction.md",
+        "head_path": "knowledgebase/studies/physics/fput-recurrence-reproduction.md",
+        "uncertain_candidates": [],
+        "note": "body changed; signature line is unchanged"
+      },
+      {
+        "status": "added",
+        "pairing": "same_selector",
+        "pairing_evidence": "selector",
+        "base": null,
+        "head": {
+          "selector": "symbol:knowledgebase/studies/physics/fput-recurrence-reproduction.md#Repair: mode labels and protocol v2:heading",
+          "snapshot": "head",
+          "commit_sha": "ae145d1c361a82ba94b501a467678d8a6b62fad9",
+          "rendering": "reference",
+          "reference": "knowledgebase/studies/physics/fput-recurrence-reproduction.md@ae145d1c361a82ba94b501a467678d8a6b62fad9"
+        },
+        "supporting_snapshots": [
+          "head"
+        ],
+        "file_change": "modified",
+        "base_path": "knowledgebase/studies/physics/fput-recurrence-reproduction.md",
+        "head_path": "knowledgebase/studies/physics/fput-recurrence-reproduction.md",
+        "uncertain_candidates": [],
+        "note": "Present in head and absent from base. This is not a claim that it did not exist under another identity."
+      },
+      {
+        "status": "modified",
+        "pairing": "same_selector",
+        "pairing_evidence": "selector",
+        "base": {
+          "selector": "symbol:knowledgebase/studies/physics/fput-recurrence-reproduction.md#What came out:heading",
+          "snapshot": "base",
+          "commit_sha": "0d05e34ef4467aa597c092ffba2b6e6b34506f09",
+          "rendering": "reference",
+          "reference": "knowledgebase/studies/physics/fput-recurrence-reproduction.md@0d05e34ef4467aa597c092ffba2b6e6b34506f09"
+        },
+        "head": {
+          "selector": "symbol:knowledgebase/studies/physics/fput-recurrence-reproduction.md#What came out:heading",
+          "snapshot": "head",
+          "commit_sha": "ae145d1c361a82ba94b501a467678d8a6b62fad9",
+          "rendering": "reference",
+          "reference": "knowledgebase/studies/physics/fput-recurrence-reproduction.md@ae145d1c361a82ba94b501a467678d8a6b62fad9"
+        },
+        "supporting_snapshots": [
+          "base",
+          "head"
+        ],
+        "file_change": "modified",
+        "base_path": "knowledgebase/studies/physics/fput-recurrence-reproduction.md",
+        "head_path": "knowledgebase/studies/physics/fput-recurrence-reproduction.md",
+        "uncertain_candidates": [],
+        "note": "body changed; signature line is unchanged"
+      },
+      {
+        "status": "modified",
+        "pairing": "same_selector",
+        "pairing_evidence": "selector",
+        "base": {
+          "selector": "symbol:knowledgebase/studies/physics/fput-recurrence-reproduction.md#What is shaky:heading",
+          "snapshot": "base",
+          "commit_sha": "0d05e34ef4467aa597c092ffba2b6e6b34506f09",
+          "rendering": "reference",
+          "reference": "knowledgebase/studies/physics/fput-recurrence-reproduction.md@0d05e34ef4467aa597c092ffba2b6e6b34506f09"
+        },
+        "head": {
+          "selector": "symbol:knowledgebase/studies/physics/fput-recurrence-reproduction.md#What is shaky:heading",
+          "snapshot": "head",
+          "commit_sha": "ae145d1c361a82ba94b501a467678d8a6b62fad9",
+          "rendering": "reference",
+          "reference": "knowledgebase/studies/physics/fput-recurrence-reproduction.md@ae145d1c361a82ba94b501a467678d8a6b62fad9"
+        },
+        "supporting_snapshots": [
+          "base",
+          "head"
+        ],
+        "file_change": "modified",
+        "base_path": "knowledgebase/studies/physics/fput-recurrence-reproduction.md",
+        "head_path": "knowledgebase/studies/physics/fput-recurrence-reproduction.md",
+        "uncertain_candidates": [],
+        "note": "body changed; signature line is unchanged"
+      },
+      {
+        "status": "modified",
+        "pairing": "same_selector",
+        "pairing_evidence": "selector",
+        "base": {
+          "selector": "symbol:knowledgebase/studies/physics/fput-recurrence-reproduction.md#What was run:heading",
+          "snapshot": "base",
+          "commit_sha": "0d05e34ef4467aa597c092ffba2b6e6b34506f09",
+          "rendering": "reference",
+          "reference": "knowledgebase/studies/physics/fput-recurrence-reproduction.md@0d05e34ef4467aa597c092ffba2b6e6b34506f09"
+        },
+        "head": {
+          "selector": "symbol:knowledgebase/studies/physics/fput-recurrence-reproduction.md#What was run:heading",
+          "snapshot": "head",
+          "commit_sha": "ae145d1c361a82ba94b501a467678d8a6b62fad9",
+          "rendering": "reference",
+          "reference": "knowledgebase/studies/physics/fput-recurrence-reproduction.md@ae145d1c361a82ba94b501a467678d8a6b62fad9"
+        },
+        "supporting_snapshots": [
+          "base",
+          "head"
+        ],
+        "file_change": "modified",
+        "base_path": "knowledgebase/studies/physics/fput-recurrence-reproduction.md",
+        "head_path": "knowledgebase/studies/physics/fput-recurrence-reproduction.md",
+        "uncertain_candidates": [],
+        "note": "body changed; signature line is unchanged"
+      }
+    ],
+    "out_of_scope": [
+      {
+        "path": "experiments/physics/fput-recurrence-reproduction/reference/fig1-digitized.csv",
+        "reason": "unsupported_language",
+        "snapshot": "base"
+      },
+      {
+        "path": "experiments/physics/fput-recurrence-reproduction/reference/fig1-digitized.csv",
+        "reason": "unsupported_language",
+        "snapshot": "head"
+      },
+      {
+        "path": "experiments/physics/fput-recurrence-reproduction/reference/fig1-hidpi-detail-mode234.png",
+        "reason": "unsupported_language",
+        "snapshot": "head"
+      },
+      {
+        "path": "experiments/physics/fput-recurrence-reproduction/reference/fig1-hidpi-detail-mode2345.png",
+        "reason": "unsupported_language",
+        "snapshot": "head"
+      },
+      {
+        "path": "experiments/physics/fput-recurrence-reproduction/reference/fig1-hidpi-full.png",
+        "reason": "unsupported_language",
+        "snapshot": "head"
+      },
+      {
+        "path": "knowledgebase/studies/physics/fput-recurrence-reproduction.png",
+        "reason": "unsupported_language",
+        "snapshot": "base"
+      },
+      {
+        "path": "knowledgebase/studies/physics/fput-recurrence-reproduction.png",
+        "reason": "unsupported_language",
+        "snapshot": "head"
+      }
+    ],
+    "filtered_out": []
+  },
+  "evidence_paths": [
+    {
+      "schema_version": 1,
+      "path_id": "p-1",
+      "from": {
+        "selector": "symbol:experiments/physics/fput-recurrence-reproduction/run.py#main:function",
+        "snapshot": "base",
+        "label": "experiments/physics/fput-recurrence-reproduction/run.py#main",
+        "origin": "symbol"
+      },
+      "to": {
+        "selector": "symbol:experiments/physics/fput-recurrence-reproduction/fput/metrics.py#evaluate_metrics:function",
+        "snapshot": "base",
+        "label": "experiments/physics/fput-recurrence-reproduction/fput/metrics.py#evaluate_metrics",
+        "origin": "symbol"
+      },
+      "distance": 1,
+      "category": "resolved_call",
+      "truncated": false,
+      "truncated_by": null,
+      "edges": [
+        {
+          "from": "experiments/physics/fput-recurrence-reproduction/run.py#main",
+          "from_selector": "symbol:experiments/physics/fput-recurrence-reproduction/run.py#main:function",
+          "from_origin": "symbol",
+          "to": "experiments/physics/fput-recurrence-reproduction/fput/metrics.py#evaluate_metrics",
+          "to_selector": "symbol:experiments/physics/fput-recurrence-reproduction/fput/metrics.py#evaluate_metrics:function",
+          "relationship": "call",
+          "category": "resolved_call",
+          "confidence": "import_resolved",
+          "snapshot": "base",
+          "commit_sha": "0d05e34ef4467aa597c092ffba2b6e6b34506f09",
+          "source": {
+            "file": "experiments/physics/fput-recurrence-reproduction/run.py",
+            "line": 238
+          },
+          "note": null,
+          "rendering": "reference",
+          "reference": "experiments/physics/fput-recurrence-reproduction/run.py:238@0d05e34ef4467aa597c092ffba2b6e6b34506f09"
+        }
+      ]
+    },
+    {
+      "schema_version": 1,
+      "path_id": "p-2",
+      "from": {
+        "selector": "symbol:experiments/physics/fput-recurrence-reproduction/tests/test_numerics.py#test_metric_functions_find_known_synthetic_features:function",
+        "snapshot": "base",
+        "label": "experiments/physics/fput-recurrence-reproduction/tests/test_numerics.py#test_metric_functions_find_known_synthetic_features",
+        "origin": "symbol"
+      },
+      "to": {
+        "selector": "symbol:experiments/physics/fput-recurrence-reproduction/fput/metrics.py#evaluate_metrics:function",
+        "snapshot": "base",
+        "label": "experiments/physics/fput-recurrence-reproduction/fput/metrics.py#evaluate_metrics",
+        "origin": "symbol"
+      },
+      "distance": 1,
+      "category": "resolved_call",
+      "truncated": false,
+      "truncated_by": null,
+      "edges": [
+        {
+          "from": "experiments/physics/fput-recurrence-reproduction/tests/test_numerics.py#test_metric_functions_find_known_synthetic_features",
+          "from_selector": "symbol:experiments/physics/fput-recurrence-reproduction/tests/test_numerics.py#test_metric_functions_find_known_synthetic_features:function",
+          "from_origin": "symbol",
+          "to": "experiments/physics/fput-recurrence-reproduction/fput/metrics.py#evaluate_metrics",
+          "to_selector": "symbol:experiments/physics/fput-recurrence-reproduction/fput/metrics.py#evaluate_metrics:function",
+          "relationship": "call",
+          "category": "resolved_call",
+          "confidence": "import_resolved",
+          "snapshot": "base",
+          "commit_sha": "0d05e34ef4467aa597c092ffba2b6e6b34506f09",
+          "source": {
+            "file": "experiments/physics/fput-recurrence-reproduction/tests/test_numerics.py",
+            "line": 97
+          },
+          "note": null,
+          "rendering": "reference",
+          "reference": "experiments/physics/fput-recurrence-reproduction/tests/test_numerics.py:97@0d05e34ef4467aa597c092ffba2b6e6b34506f09"
+        }
+      ]
+    },
+    {
+      "schema_version": 1,
+      "path_id": "p-3",
+      "from": {
+        "selector": "file:experiments/physics/fput-recurrence-reproduction/run.py",
+        "snapshot": "base",
+        "label": "experiments/physics/fput-recurrence-reproduction/run.py",
+        "origin": "file"
+      },
+      "to": {
+        "selector": "symbol:experiments/physics/fput-recurrence-reproduction/fput/metrics.py#evaluate_metrics:function",
+        "snapshot": "base",
+        "label": "experiments/physics/fput-recurrence-reproduction/fput/metrics.py#evaluate_metrics",
+        "origin": "symbol"
+      },
+      "distance": 1,
+      "category": "import_relationship",
+      "truncated": false,
+      "truncated_by": null,
+      "edges": [
+        {
+          "from": "experiments/physics/fput-recurrence-reproduction/run.py",
+          "from_selector": "file:experiments/physics/fput-recurrence-reproduction/run.py",
+          "from_origin": "file",
+          "to": "experiments/physics/fput-recurrence-reproduction/fput/metrics.py#evaluate_metrics",
+          "to_selector": "symbol:experiments/physics/fput-recurrence-reproduction/fput/metrics.py#evaluate_metrics:function",
+          "relationship": "use",
+          "category": "import_relationship",
+          "confidence": "import_resolved",
+          "snapshot": "base",
+          "commit_sha": "0d05e34ef4467aa597c092ffba2b6e6b34506f09",
+          "source": {
+            "file": "experiments/physics/fput-recurrence-reproduction/run.py",
+            "line": 24
+          },
+          "note": null,
+          "rendering": "reference",
+          "reference": "experiments/physics/fput-recurrence-reproduction/run.py:24@0d05e34ef4467aa597c092ffba2b6e6b34506f09"
+        }
+      ]
+    },
+    {
+      "schema_version": 1,
+      "path_id": "p-4",
+      "from": {
+        "selector": "file:experiments/physics/fput-recurrence-reproduction/tests/test_numerics.py",
+        "snapshot": "base",
+        "label": "experiments/physics/fput-recurrence-reproduction/tests/test_numerics.py",
+        "origin": "file"
+      },
+      "to": {
+        "selector": "symbol:experiments/physics/fput-recurrence-reproduction/fput/metrics.py#evaluate_metrics:function",
+        "snapshot": "base",
+        "label": "experiments/physics/fput-recurrence-reproduction/fput/metrics.py#evaluate_metrics",
+        "origin": "symbol"
+      },
+      "distance": 1,
+      "category": "import_relationship",
+      "truncated": false,
+      "truncated_by": null,
+      "edges": [
+        {
+          "from": "experiments/physics/fput-recurrence-reproduction/tests/test_numerics.py",
+          "from_selector": "file:experiments/physics/fput-recurrence-reproduction/tests/test_numerics.py",
+          "from_origin": "file",
+          "to": "experiments/physics/fput-recurrence-reproduction/fput/metrics.py#evaluate_metrics",
+          "to_selector": "symbol:experiments/physics/fput-recurrence-reproduction/fput/metrics.py#evaluate_metrics:function",
+          "relationship": "use",
+          "category": "import_relationship",
+          "confidence": "import_resolved",
+          "snapshot": "base",
+          "commit_sha": "0d05e34ef4467aa597c092ffba2b6e6b34506f09",
+          "source": {
+            "file": "experiments/physics/fput-recurrence-reproduction/tests/test_numerics.py",
+            "line": 10
+          },
+          "note": null,
+          "rendering": "reference",
+          "reference": "experiments/physics/fput-recurrence-reproduction/tests/test_numerics.py:10@0d05e34ef4467aa597c092ffba2b6e6b34506f09"
+        }
+      ]
+    },
+    {
+      "schema_version": 1,
+      "path_id": "p-1",
+      "from": {
+        "selector": "symbol:experiments/physics/fput-recurrence-reproduction/run.py#main:function",
+        "snapshot": "head",
+        "label": "experiments/physics/fput-recurrence-reproduction/run.py#main",
+        "origin": "symbol"
+      },
+      "to": {
+        "selector": "symbol:experiments/physics/fput-recurrence-reproduction/fput/metrics.py#evaluate_metrics:function",
+        "snapshot": "head",
+        "label": "experiments/physics/fput-recurrence-reproduction/fput/metrics.py#evaluate_metrics",
+        "origin": "symbol"
+      },
+      "distance": 1,
+      "category": "resolved_call",
+      "truncated": false,
+      "truncated_by": null,
+      "edges": [
+        {
+          "from": "experiments/physics/fput-recurrence-reproduction/run.py#main",
+          "from_selector": "symbol:experiments/physics/fput-recurrence-reproduction/run.py#main:function",
+          "from_origin": "symbol",
+          "to": "experiments/physics/fput-recurrence-reproduction/fput/metrics.py#evaluate_metrics",
+          "to_selector": "symbol:experiments/physics/fput-recurrence-reproduction/fput/metrics.py#evaluate_metrics:function",
+          "relationship": "call",
+          "category": "resolved_call",
+          "confidence": "import_resolved",
+          "snapshot": "head",
+          "commit_sha": "ae145d1c361a82ba94b501a467678d8a6b62fad9",
+          "source": {
+            "file": "experiments/physics/fput-recurrence-reproduction/run.py",
+            "line": 253
+          },
+          "note": null,
+          "rendering": "reference",
+          "reference": "experiments/physics/fput-recurrence-reproduction/run.py:253@ae145d1c361a82ba94b501a467678d8a6b62fad9"
+        }
+      ]
+    },
+    {
+      "schema_version": 1,
+      "path_id": "p-2",
+      "from": {
+        "selector": "symbol:experiments/physics/fput-recurrence-reproduction/tests/test_numerics.py#test_metric_functions_find_known_synthetic_features:function",
+        "snapshot": "head",
+        "label": "experiments/physics/fput-recurrence-reproduction/tests/test_numerics.py#test_metric_functions_find_known_synthetic_features",
+        "origin": "symbol"
+      },
+      "to": {
+        "selector": "symbol:experiments/physics/fput-recurrence-reproduction/fput/metrics.py#evaluate_metrics:function",
+        "snapshot": "head",
+        "label": "experiments/physics/fput-recurrence-reproduction/fput/metrics.py#evaluate_metrics",
+        "origin": "symbol"
+      },
+      "distance": 1,
+      "category": "resolved_call",
+      "truncated": false,
+      "truncated_by": null,
+      "edges": [
+        {
+          "from": "experiments/physics/fput-recurrence-reproduction/tests/test_numerics.py#test_metric_functions_find_known_synthetic_features",
+          "from_selector": "symbol:experiments/physics/fput-recurrence-reproduction/tests/test_numerics.py#test_metric_functions_find_known_synthetic_features:function",
+          "from_origin": "symbol",
+          "to": "experiments/physics/fput-recurrence-reproduction/fput/metrics.py#evaluate_metrics",
+          "to_selector": "symbol:experiments/physics/fput-recurrence-reproduction/fput/metrics.py#evaluate_metrics:function",
+          "relationship": "call",
+          "category": "resolved_call",
+          "confidence": "import_resolved",
+          "snapshot": "head",
+          "commit_sha": "ae145d1c361a82ba94b501a467678d8a6b62fad9",
+          "source": {
+            "file": "experiments/physics/fput-recurrence-reproduction/tests/test_numerics.py",
+            "line": 104
+          },
+          "note": null,
+          "rendering": "reference",
+          "reference": "experiments/physics/fput-recurrence-reproduction/tests/test_numerics.py:104@ae145d1c361a82ba94b501a467678d8a6b62fad9"
+        }
+      ]
+    },
+    {
+      "schema_version": 1,
+      "path_id": "p-3",
+      "from": {
+        "selector": "symbol:experiments/physics/fput-recurrence-reproduction/tests/test_numerics.py#test_v1_protocol_keeps_first_local_maximum_and_summed_m4:function",
+        "snapshot": "head",
+        "label": "experiments/physics/fput-recurrence-reproduction/tests/test_numerics.py#test_v1_protocol_keeps_first_local_maximum_and_summed_m4",
+        "origin": "symbol"
+      },
+      "to": {
+        "selector": "symbol:experiments/physics/fput-recurrence-reproduction/fput/metrics.py#evaluate_metrics:function",
+        "snapshot": "head",
+        "label": "experiments/physics/fput-recurrence-reproduction/fput/metrics.py#evaluate_metrics",
+        "origin": "symbol"
+      },
+      "distance": 1,
+      "category": "resolved_call",
+      "truncated": false,
+      "truncated_by": null,
+      "edges": [
+        {
+          "from": "experiments/physics/fput-recurrence-reproduction/tests/test_numerics.py#test_v1_protocol_keeps_first_local_maximum_and_summed_m4",
+          "from_selector": "symbol:experiments/physics/fput-recurrence-reproduction/tests/test_numerics.py#test_v1_protocol_keeps_first_local_maximum_and_summed_m4:function",
+          "from_origin": "symbol",
+          "to": "experiments/physics/fput-recurrence-reproduction/fput/metrics.py#evaluate_metrics",
+          "to_selector": "symbol:experiments/physics/fput-recurrence-reproduction/fput/metrics.py#evaluate_metrics:function",
+          "relationship": "call",
+          "category": "resolved_call",
+          "confidence": "import_resolved",
+          "snapshot": "head",
+          "commit_sha": "ae145d1c361a82ba94b501a467678d8a6b62fad9",
+          "source": {
+            "file": "experiments/physics/fput-recurrence-reproduction/tests/test_numerics.py",
+            "line": 158
+          },
+          "note": null,
+          "rendering": "reference",
+          "reference": "experiments/physics/fput-recurrence-reproduction/tests/test_numerics.py:158@ae145d1c361a82ba94b501a467678d8a6b62fad9"
+        }
+      ]
+    },
+    {
+      "schema_version": 1,
+      "path_id": "p-4",
+      "from": {
+        "selector": "file:experiments/physics/fput-recurrence-reproduction/run.py",
+        "snapshot": "head",
+        "label": "experiments/physics/fput-recurrence-reproduction/run.py",
+        "origin": "file"
+      },
+      "to": {
+        "selector": "symbol:experiments/physics/fput-recurrence-reproduction/fput/metrics.py#evaluate_metrics:function",
+        "snapshot": "head",
+        "label": "experiments/physics/fput-recurrence-reproduction/fput/metrics.py#evaluate_metrics",
+        "origin": "symbol"
+      },
+      "distance": 1,
+      "category": "import_relationship",
+      "truncated": false,
+      "truncated_by": null,
+      "edges": [
+        {
+          "from": "experiments/physics/fput-recurrence-reproduction/run.py",
+          "from_selector": "file:experiments/physics/fput-recurrence-reproduction/run.py",
+          "from_origin": "file",
+          "to": "experiments/physics/fput-recurrence-reproduction/fput/metrics.py#evaluate_metrics",
+          "to_selector": "symbol:experiments/physics/fput-recurrence-reproduction/fput/metrics.py#evaluate_metrics:function",
+          "relationship": "use",
+          "category": "import_relationship",
+          "confidence": "import_resolved",
+          "snapshot": "head",
+          "commit_sha": "ae145d1c361a82ba94b501a467678d8a6b62fad9",
+          "source": {
+            "file": "experiments/physics/fput-recurrence-reproduction/run.py",
+            "line": 27
+          },
+          "note": null,
+          "rendering": "reference",
+          "reference": "experiments/physics/fput-recurrence-reproduction/run.py:27@ae145d1c361a82ba94b501a467678d8a6b62fad9"
+        }
+      ]
+    },
+    {
+      "schema_version": 1,
+      "path_id": "p-5",
+      "from": {
+        "selector": "file:experiments/physics/fput-recurrence-reproduction/tests/test_numerics.py",
+        "snapshot": "head",
+        "label": "experiments/physics/fput-recurrence-reproduction/tests/test_numerics.py",
+        "origin": "file"
+      },
+      "to": {
+        "selector": "symbol:experiments/physics/fput-recurrence-reproduction/fput/metrics.py#evaluate_metrics:function",
+        "snapshot": "head",
+        "label": "experiments/physics/fput-recurrence-reproduction/fput/metrics.py#evaluate_metrics",
+        "origin": "symbol"
+      },
+      "distance": 1,
+      "category": "import_relationship",
+      "truncated": false,
+      "truncated_by": null,
+      "edges": [
+        {
+          "from": "experiments/physics/fput-recurrence-reproduction/tests/test_numerics.py",
+          "from_selector": "file:experiments/physics/fput-recurrence-reproduction/tests/test_numerics.py",
+          "from_origin": "file",
+          "to": "experiments/physics/fput-recurrence-reproduction/fput/metrics.py#evaluate_metrics",
+          "to_selector": "symbol:experiments/physics/fput-recurrence-reproduction/fput/metrics.py#evaluate_metrics:function",
+          "relationship": "use",
+          "category": "import_relationship",
+          "confidence": "import_resolved",
+          "snapshot": "head",
+          "commit_sha": "ae145d1c361a82ba94b501a467678d8a6b62fad9",
+          "source": {
+            "file": "experiments/physics/fput-recurrence-reproduction/tests/test_numerics.py",
+            "line": 10
+          },
+          "note": null,
+          "rendering": "reference",
+          "reference": "experiments/physics/fput-recurrence-reproduction/tests/test_numerics.py:10@ae145d1c361a82ba94b501a467678d8a6b62fad9"
+        }
+      ]
+    },
+    {
+      "schema_version": 1,
+      "path_id": "p-1",
+      "from": {
+        "selector": "symbol:experiments/physics/fput-recurrence-reproduction/run.py#main:function",
+        "snapshot": "base",
+        "label": "experiments/physics/fput-recurrence-reproduction/run.py#main",
+        "origin": "symbol"
+      },
+      "to": {
+        "selector": "symbol:experiments/physics/fput-recurrence-reproduction/run.py#assessment:function",
+        "snapshot": "base",
+        "label": "experiments/physics/fput-recurrence-reproduction/run.py#assessment",
+        "origin": "symbol"
+      },
+      "distance": 1,
+      "category": "resolved_call",
+      "truncated": false,
+      "truncated_by": null,
+      "edges": [
+        {
+          "from": "experiments/physics/fput-recurrence-reproduction/run.py#main",
+          "from_selector": "symbol:experiments/physics/fput-recurrence-reproduction/run.py#main:function",
+          "from_origin": "symbol",
+          "to": "experiments/physics/fput-recurrence-reproduction/run.py#assessment",
+          "to_selector": "symbol:experiments/physics/fput-recurrence-reproduction/run.py#assessment:function",
+          "relationship": "call",
+          "category": "resolved_call",
+          "confidence": "exact",
+          "snapshot": "base",
+          "commit_sha": "0d05e34ef4467aa597c092ffba2b6e6b34506f09",
+          "source": {
+            "file": "experiments/physics/fput-recurrence-reproduction/run.py",
+            "line": 255
+          },
+          "note": null,
+          "rendering": "reference",
+          "reference": "experiments/physics/fput-recurrence-reproduction/run.py:255@0d05e34ef4467aa597c092ffba2b6e6b34506f09"
+        }
+      ]
+    },
+    {
+      "schema_version": 1,
+      "path_id": "p-1",
+      "from": {
+        "selector": "symbol:experiments/physics/fput-recurrence-reproduction/run.py#main:function",
+        "snapshot": "head",
+        "label": "experiments/physics/fput-recurrence-reproduction/run.py#main",
+        "origin": "symbol"
+      },
+      "to": {
+        "selector": "symbol:experiments/physics/fput-recurrence-reproduction/run.py#assessment:function",
+        "snapshot": "head",
+        "label": "experiments/physics/fput-recurrence-reproduction/run.py#assessment",
+        "origin": "symbol"
+      },
+      "distance": 1,
+      "category": "resolved_call",
+      "truncated": false,
+      "truncated_by": null,
+      "edges": [
+        {
+          "from": "experiments/physics/fput-recurrence-reproduction/run.py#main",
+          "from_selector": "symbol:experiments/physics/fput-recurrence-reproduction/run.py#main:function",
+          "from_origin": "symbol",
+          "to": "experiments/physics/fput-recurrence-reproduction/run.py#assessment",
+          "to_selector": "symbol:experiments/physics/fput-recurrence-reproduction/run.py#assessment:function",
+          "relationship": "call",
+          "category": "resolved_call",
+          "confidence": "exact",
+          "snapshot": "head",
+          "commit_sha": "ae145d1c361a82ba94b501a467678d8a6b62fad9",
+          "source": {
+            "file": "experiments/physics/fput-recurrence-reproduction/run.py",
+            "line": 270
+          },
+          "note": null,
+          "rendering": "reference",
+          "reference": "experiments/physics/fput-recurrence-reproduction/run.py:270@ae145d1c361a82ba94b501a467678d8a6b62fad9"
+        }
+      ]
+    }
+  ],
+  "entry_points": [
+    {
+      "queried": {
+        "selector": "symbol:experiments/physics/fput-recurrence-reproduction/fput/metrics.py#evaluate_metrics:function",
+        "snapshot": "base",
+        "label": "experiments/physics/fput-recurrence-reproduction/fput/metrics.py#evaluate_metrics",
+        "origin": "symbol"
+      },
+      "node": {
+        "selector": "symbol:experiments/physics/fput-recurrence-reproduction/run.py#main:function",
+        "snapshot": "base",
+        "label": "experiments/physics/fput-recurrence-reproduction/run.py#main",
+        "origin": "symbol"
+      },
+      "rendering": "reference",
+      "reference": "experiments/physics/fput-recurrence-reproduction/run.py@0d05e34ef4467aa597c092ffba2b6e6b34506f09",
+      "rule": "main_function",
+      "rule_description": "A function or method named `main`: the process entry point of a Rust, Go, Java, C, or C# program, and a conventional one elsewhere.",
+      "rules": [
+        "main_function"
+      ],
+      "distance": 1,
+      "path": {
+        "schema_version": 1,
+        "path_id": "p-1",
+        "from": {
+          "selector": "symbol:experiments/physics/fput-recurrence-reproduction/run.py#main:function",
+          "snapshot": "base",
+          "label": "experiments/physics/fput-recurrence-reproduction/run.py#main",
+          "origin": "symbol"
+        },
+        "to": {
+          "selector": "symbol:experiments/physics/fput-recurrence-reproduction/fput/metrics.py#evaluate_metrics:function",
+          "snapshot": "base",
+          "label": "experiments/physics/fput-recurrence-reproduction/fput/metrics.py#evaluate_metrics",
+          "origin": "symbol"
+        },
+        "distance": 1,
+        "category": "resolved_call",
+        "truncated": false,
+        "truncated_by": null,
+        "edges": [
+          {
+            "from": "experiments/physics/fput-recurrence-reproduction/run.py#main",
+            "from_selector": "symbol:experiments/physics/fput-recurrence-reproduction/run.py#main:function",
+            "from_origin": "symbol",
+            "to": "experiments/physics/fput-recurrence-reproduction/fput/metrics.py#evaluate_metrics",
+            "to_selector": "symbol:experiments/physics/fput-recurrence-reproduction/fput/metrics.py#evaluate_metrics:function",
+            "relationship": "call",
+            "category": "resolved_call",
+            "confidence": "import_resolved",
+            "snapshot": "base",
+            "commit_sha": "0d05e34ef4467aa597c092ffba2b6e6b34506f09",
+            "source": {
+              "file": "experiments/physics/fput-recurrence-reproduction/run.py",
+              "line": 238
+            },
+            "note": null,
+            "rendering": "reference",
+            "reference": "experiments/physics/fput-recurrence-reproduction/run.py:238@0d05e34ef4467aa597c092ffba2b6e6b34506f09"
+          }
+        ]
+      },
+      "note": "`main` is named `main`"
+    },
+    {
+      "queried": {
+        "selector": "symbol:experiments/physics/fput-recurrence-reproduction/fput/metrics.py#evaluate_metrics:function",
+        "snapshot": "base",
+        "label": "experiments/physics/fput-recurrence-reproduction/fput/metrics.py#evaluate_metrics",
+        "origin": "symbol"
+      },
+      "node": {
+        "selector": "symbol:experiments/physics/fput-recurrence-reproduction/tests/test_numerics.py#test_metric_functions_find_known_synthetic_features:function",
+        "snapshot": "base",
+        "label": "experiments/physics/fput-recurrence-reproduction/tests/test_numerics.py#test_metric_functions_find_known_synthetic_features",
+        "origin": "symbol"
+      },
+      "rendering": "reference",
+      "reference": "experiments/physics/fput-recurrence-reproduction/tests/test_numerics.py@0d05e34ef4467aa597c092ffba2b6e6b34506f09",
+      "rule": "test_function",
+      "rule_description": "A test function: a symbol in a test-classified path, or one carrying a `test`/`spec` affix. These also feed the candidate-test list.",
+      "rules": [
+        "test_function"
+      ],
+      "distance": 1,
+      "path": {
+        "schema_version": 1,
+        "path_id": "p-2",
+        "from": {
+          "selector": "symbol:experiments/physics/fput-recurrence-reproduction/tests/test_numerics.py#test_metric_functions_find_known_synthetic_features:function",
+          "snapshot": "base",
+          "label": "experiments/physics/fput-recurrence-reproduction/tests/test_numerics.py#test_metric_functions_find_known_synthetic_features",
+          "origin": "symbol"
+        },
+        "to": {
+          "selector": "symbol:experiments/physics/fput-recurrence-reproduction/fput/metrics.py#evaluate_metrics:function",
+          "snapshot": "base",
+          "label": "experiments/physics/fput-recurrence-reproduction/fput/metrics.py#evaluate_metrics",
+          "origin": "symbol"
+        },
+        "distance": 1,
+        "category": "resolved_call",
+        "truncated": false,
+        "truncated_by": null,
+        "edges": [
+          {
+            "from": "experiments/physics/fput-recurrence-reproduction/tests/test_numerics.py#test_metric_functions_find_known_synthetic_features",
+            "from_selector": "symbol:experiments/physics/fput-recurrence-reproduction/tests/test_numerics.py#test_metric_functions_find_known_synthetic_features:function",
+            "from_origin": "symbol",
+            "to": "experiments/physics/fput-recurrence-reproduction/fput/metrics.py#evaluate_metrics",
+            "to_selector": "symbol:experiments/physics/fput-recurrence-reproduction/fput/metrics.py#evaluate_metrics:function",
+            "relationship": "call",
+            "category": "resolved_call",
+            "confidence": "import_resolved",
+            "snapshot": "base",
+            "commit_sha": "0d05e34ef4467aa597c092ffba2b6e6b34506f09",
+            "source": {
+              "file": "experiments/physics/fput-recurrence-reproduction/tests/test_numerics.py",
+              "line": 97
+            },
+            "note": null,
+            "rendering": "reference",
+            "reference": "experiments/physics/fput-recurrence-reproduction/tests/test_numerics.py:97@0d05e34ef4467aa597c092ffba2b6e6b34506f09"
+          }
+        ]
+      },
+      "note": "`test_metric_functions_find_known_synthetic_features` is a test symbol by path or naming convention"
+    },
+    {
+      "queried": {
+        "selector": "symbol:experiments/physics/fput-recurrence-reproduction/fput/metrics.py#evaluate_metrics:function",
+        "snapshot": "head",
+        "label": "experiments/physics/fput-recurrence-reproduction/fput/metrics.py#evaluate_metrics",
+        "origin": "symbol"
+      },
+      "node": {
+        "selector": "symbol:experiments/physics/fput-recurrence-reproduction/run.py#main:function",
+        "snapshot": "head",
+        "label": "experiments/physics/fput-recurrence-reproduction/run.py#main",
+        "origin": "symbol"
+      },
+      "rendering": "reference",
+      "reference": "experiments/physics/fput-recurrence-reproduction/run.py@ae145d1c361a82ba94b501a467678d8a6b62fad9",
+      "rule": "main_function",
+      "rule_description": "A function or method named `main`: the process entry point of a Rust, Go, Java, C, or C# program, and a conventional one elsewhere.",
+      "rules": [
+        "main_function"
+      ],
+      "distance": 1,
+      "path": {
+        "schema_version": 1,
+        "path_id": "p-1",
+        "from": {
+          "selector": "symbol:experiments/physics/fput-recurrence-reproduction/run.py#main:function",
+          "snapshot": "head",
+          "label": "experiments/physics/fput-recurrence-reproduction/run.py#main",
+          "origin": "symbol"
+        },
+        "to": {
+          "selector": "symbol:experiments/physics/fput-recurrence-reproduction/fput/metrics.py#evaluate_metrics:function",
+          "snapshot": "head",
+          "label": "experiments/physics/fput-recurrence-reproduction/fput/metrics.py#evaluate_metrics",
+          "origin": "symbol"
+        },
+        "distance": 1,
+        "category": "resolved_call",
+        "truncated": false,
+        "truncated_by": null,
+        "edges": [
+          {
+            "from": "experiments/physics/fput-recurrence-reproduction/run.py#main",
+            "from_selector": "symbol:experiments/physics/fput-recurrence-reproduction/run.py#main:function",
+            "from_origin": "symbol",
+            "to": "experiments/physics/fput-recurrence-reproduction/fput/metrics.py#evaluate_metrics",
+            "to_selector": "symbol:experiments/physics/fput-recurrence-reproduction/fput/metrics.py#evaluate_metrics:function",
+            "relationship": "call",
+            "category": "resolved_call",
+            "confidence": "import_resolved",
+            "snapshot": "head",
+            "commit_sha": "ae145d1c361a82ba94b501a467678d8a6b62fad9",
+            "source": {
+              "file": "experiments/physics/fput-recurrence-reproduction/run.py",
+              "line": 253
+            },
+            "note": null,
+            "rendering": "reference",
+            "reference": "experiments/physics/fput-recurrence-reproduction/run.py:253@ae145d1c361a82ba94b501a467678d8a6b62fad9"
+          }
+        ]
+      },
+      "note": "`main` is named `main`"
+    },
+    {
+      "queried": {
+        "selector": "symbol:experiments/physics/fput-recurrence-reproduction/fput/metrics.py#evaluate_metrics:function",
+        "snapshot": "head",
+        "label": "experiments/physics/fput-recurrence-reproduction/fput/metrics.py#evaluate_metrics",
+        "origin": "symbol"
+      },
+      "node": {
+        "selector": "symbol:experiments/physics/fput-recurrence-reproduction/tests/test_numerics.py#test_metric_functions_find_known_synthetic_features:function",
+        "snapshot": "head",
+        "label": "experiments/physics/fput-recurrence-reproduction/tests/test_numerics.py#test_metric_functions_find_known_synthetic_features",
+        "origin": "symbol"
+      },
+      "rendering": "reference",
+      "reference": "experiments/physics/fput-recurrence-reproduction/tests/test_numerics.py@ae145d1c361a82ba94b501a467678d8a6b62fad9",
+      "rule": "test_function",
+      "rule_description": "A test function: a symbol in a test-classified path, or one carrying a `test`/`spec` affix. These also feed the candidate-test list.",
+      "rules": [
+        "test_function"
+      ],
+      "distance": 1,
+      "path": {
+        "schema_version": 1,
+        "path_id": "p-2",
+        "from": {
+          "selector": "symbol:experiments/physics/fput-recurrence-reproduction/tests/test_numerics.py#test_metric_functions_find_known_synthetic_features:function",
+          "snapshot": "head",
+          "label": "experiments/physics/fput-recurrence-reproduction/tests/test_numerics.py#test_metric_functions_find_known_synthetic_features",
+          "origin": "symbol"
+        },
+        "to": {
+          "selector": "symbol:experiments/physics/fput-recurrence-reproduction/fput/metrics.py#evaluate_metrics:function",
+          "snapshot": "head",
+          "label": "experiments/physics/fput-recurrence-reproduction/fput/metrics.py#evaluate_metrics",
+          "origin": "symbol"
+        },
+        "distance": 1,
+        "category": "resolved_call",
+        "truncated": false,
+        "truncated_by": null,
+        "edges": [
+          {
+            "from": "experiments/physics/fput-recurrence-reproduction/tests/test_numerics.py#test_metric_functions_find_known_synthetic_features",
+            "from_selector": "symbol:experiments/physics/fput-recurrence-reproduction/tests/test_numerics.py#test_metric_functions_find_known_synthetic_features:function",
+            "from_origin": "symbol",
+            "to": "experiments/physics/fput-recurrence-reproduction/fput/metrics.py#evaluate_metrics",
+            "to_selector": "symbol:experiments/physics/fput-recurrence-reproduction/fput/metrics.py#evaluate_metrics:function",
+            "relationship": "call",
+            "category": "resolved_call",
+            "confidence": "import_resolved",
+            "snapshot": "head",
+            "commit_sha": "ae145d1c361a82ba94b501a467678d8a6b62fad9",
+            "source": {
+              "file": "experiments/physics/fput-recurrence-reproduction/tests/test_numerics.py",
+              "line": 104
+            },
+            "note": null,
+            "rendering": "reference",
+            "reference": "experiments/physics/fput-recurrence-reproduction/tests/test_numerics.py:104@ae145d1c361a82ba94b501a467678d8a6b62fad9"
+          }
+        ]
+      },
+      "note": "`test_metric_functions_find_known_synthetic_features` is a test symbol by path or naming convention"
+    },
+    {
+      "queried": {
+        "selector": "symbol:experiments/physics/fput-recurrence-reproduction/fput/metrics.py#evaluate_metrics:function",
+        "snapshot": "head",
+        "label": "experiments/physics/fput-recurrence-reproduction/fput/metrics.py#evaluate_metrics",
+        "origin": "symbol"
+      },
+      "node": {
+        "selector": "symbol:experiments/physics/fput-recurrence-reproduction/tests/test_numerics.py#test_v1_protocol_keeps_first_local_maximum_and_summed_m4:function",
+        "snapshot": "head",
+        "label": "experiments/physics/fput-recurrence-reproduction/tests/test_numerics.py#test_v1_protocol_keeps_first_local_maximum_and_summed_m4",
+        "origin": "symbol"
+      },
+      "rendering": "reference",
+      "reference": "experiments/physics/fput-recurrence-reproduction/tests/test_numerics.py@ae145d1c361a82ba94b501a467678d8a6b62fad9",
+      "rule": "test_function",
+      "rule_description": "A test function: a symbol in a test-classified path, or one carrying a `test`/`spec` affix. These also feed the candidate-test list.",
+      "rules": [
+        "test_function"
+      ],
+      "distance": 1,
+      "path": {
+        "schema_version": 1,
+        "path_id": "p-3",
+        "from": {
+          "selector": "symbol:experiments/physics/fput-recurrence-reproduction/tests/test_numerics.py#test_v1_protocol_keeps_first_local_maximum_and_summed_m4:function",
+          "snapshot": "head",
+          "label": "experiments/physics/fput-recurrence-reproduction/tests/test_numerics.py#test_v1_protocol_keeps_first_local_maximum_and_summed_m4",
+          "origin": "symbol"
+        },
+        "to": {
+          "selector": "symbol:experiments/physics/fput-recurrence-reproduction/fput/metrics.py#evaluate_metrics:function",
+          "snapshot": "head",
+          "label": "experiments/physics/fput-recurrence-reproduction/fput/metrics.py#evaluate_metrics",
+          "origin": "symbol"
+        },
+        "distance": 1,
+        "category": "resolved_call",
+        "truncated": false,
+        "truncated_by": null,
+        "edges": [
+          {
+            "from": "experiments/physics/fput-recurrence-reproduction/tests/test_numerics.py#test_v1_protocol_keeps_first_local_maximum_and_summed_m4",
+            "from_selector": "symbol:experiments/physics/fput-recurrence-reproduction/tests/test_numerics.py#test_v1_protocol_keeps_first_local_maximum_and_summed_m4:function",
+            "from_origin": "symbol",
+            "to": "experiments/physics/fput-recurrence-reproduction/fput/metrics.py#evaluate_metrics",
+            "to_selector": "symbol:experiments/physics/fput-recurrence-reproduction/fput/metrics.py#evaluate_metrics:function",
+            "relationship": "call",
+            "category": "resolved_call",
+            "confidence": "import_resolved",
+            "snapshot": "head",
+            "commit_sha": "ae145d1c361a82ba94b501a467678d8a6b62fad9",
+            "source": {
+              "file": "experiments/physics/fput-recurrence-reproduction/tests/test_numerics.py",
+              "line": 158
+            },
+            "note": null,
+            "rendering": "reference",
+            "reference": "experiments/physics/fput-recurrence-reproduction/tests/test_numerics.py:158@ae145d1c361a82ba94b501a467678d8a6b62fad9"
+          }
+        ]
+      },
+      "note": "`test_v1_protocol_keeps_first_local_maximum_and_summed_m4` is a test symbol by path or naming convention"
+    },
+    {
+      "queried": {
+        "selector": "symbol:experiments/physics/fput-recurrence-reproduction/run.py#assessment:function",
+        "snapshot": "base",
+        "label": "experiments/physics/fput-recurrence-reproduction/run.py#assessment",
+        "origin": "symbol"
+      },
+      "node": {
+        "selector": "symbol:experiments/physics/fput-recurrence-reproduction/run.py#main:function",
+        "snapshot": "base",
+        "label": "experiments/physics/fput-recurrence-reproduction/run.py#main",
+        "origin": "symbol"
+      },
+      "rendering": "reference",
+      "reference": "experiments/physics/fput-recurrence-reproduction/run.py@0d05e34ef4467aa597c092ffba2b6e6b34506f09",
+      "rule": "main_function",
+      "rule_description": "A function or method named `main`: the process entry point of a Rust, Go, Java, C, or C# program, and a conventional one elsewhere.",
+      "rules": [
+        "main_function"
+      ],
+      "distance": 1,
+      "path": {
+        "schema_version": 1,
+        "path_id": "p-1",
+        "from": {
+          "selector": "symbol:experiments/physics/fput-recurrence-reproduction/run.py#main:function",
+          "snapshot": "base",
+          "label": "experiments/physics/fput-recurrence-reproduction/run.py#main",
+          "origin": "symbol"
+        },
+        "to": {
+          "selector": "symbol:experiments/physics/fput-recurrence-reproduction/run.py#assessment:function",
+          "snapshot": "base",
+          "label": "experiments/physics/fput-recurrence-reproduction/run.py#assessment",
+          "origin": "symbol"
+        },
+        "distance": 1,
+        "category": "resolved_call",
+        "truncated": false,
+        "truncated_by": null,
+        "edges": [
+          {
+            "from": "experiments/physics/fput-recurrence-reproduction/run.py#main",
+            "from_selector": "symbol:experiments/physics/fput-recurrence-reproduction/run.py#main:function",
+            "from_origin": "symbol",
+            "to": "experiments/physics/fput-recurrence-reproduction/run.py#assessment",
+            "to_selector": "symbol:experiments/physics/fput-recurrence-reproduction/run.py#assessment:function",
+            "relationship": "call",
+            "category": "resolved_call",
+            "confidence": "exact",
+            "snapshot": "base",
+            "commit_sha": "0d05e34ef4467aa597c092ffba2b6e6b34506f09",
+            "source": {
+              "file": "experiments/physics/fput-recurrence-reproduction/run.py",
+              "line": 255
+            },
+            "note": null,
+            "rendering": "reference",
+            "reference": "experiments/physics/fput-recurrence-reproduction/run.py:255@0d05e34ef4467aa597c092ffba2b6e6b34506f09"
+          }
+        ]
+      },
+      "note": "`main` is named `main`"
+    },
+    {
+      "queried": {
+        "selector": "symbol:experiments/physics/fput-recurrence-reproduction/run.py#assessment:function",
+        "snapshot": "head",
+        "label": "experiments/physics/fput-recurrence-reproduction/run.py#assessment",
+        "origin": "symbol"
+      },
+      "node": {
+        "selector": "symbol:experiments/physics/fput-recurrence-reproduction/run.py#main:function",
+        "snapshot": "head",
+        "label": "experiments/physics/fput-recurrence-reproduction/run.py#main",
+        "origin": "symbol"
+      },
+      "rendering": "reference",
+      "reference": "experiments/physics/fput-recurrence-reproduction/run.py@ae145d1c361a82ba94b501a467678d8a6b62fad9",
+      "rule": "main_function",
+      "rule_description": "A function or method named `main`: the process entry point of a Rust, Go, Java, C, or C# program, and a conventional one elsewhere.",
+      "rules": [
+        "main_function"
+      ],
+      "distance": 1,
+      "path": {
+        "schema_version": 1,
+        "path_id": "p-1",
+        "from": {
+          "selector": "symbol:experiments/physics/fput-recurrence-reproduction/run.py#main:function",
+          "snapshot": "head",
+          "label": "experiments/physics/fput-recurrence-reproduction/run.py#main",
+          "origin": "symbol"
+        },
+        "to": {
+          "selector": "symbol:experiments/physics/fput-recurrence-reproduction/run.py#assessment:function",
+          "snapshot": "head",
+          "label": "experiments/physics/fput-recurrence-reproduction/run.py#assessment",
+          "origin": "symbol"
+        },
+        "distance": 1,
+        "category": "resolved_call",
+        "truncated": false,
+        "truncated_by": null,
+        "edges": [
+          {
+            "from": "experiments/physics/fput-recurrence-reproduction/run.py#main",
+            "from_selector": "symbol:experiments/physics/fput-recurrence-reproduction/run.py#main:function",
+            "from_origin": "symbol",
+            "to": "experiments/physics/fput-recurrence-reproduction/run.py#assessment",
+            "to_selector": "symbol:experiments/physics/fput-recurrence-reproduction/run.py#assessment:function",
+            "relationship": "call",
+            "category": "resolved_call",
+            "confidence": "exact",
+            "snapshot": "head",
+            "commit_sha": "ae145d1c361a82ba94b501a467678d8a6b62fad9",
+            "source": {
+              "file": "experiments/physics/fput-recurrence-reproduction/run.py",
+              "line": 270
+            },
+            "note": null,
+            "rendering": "reference",
+            "reference": "experiments/physics/fput-recurrence-reproduction/run.py:270@ae145d1c361a82ba94b501a467678d8a6b62fad9"
+          }
+        ]
+      },
+      "note": "`main` is named `main`"
+    }
+  ],
+  "candidate_tests": {
+    "schema_version": 1,
+    "candidates": [
+      {
+        "queried": {
+          "selector": "symbol:experiments/physics/fput-recurrence-reproduction/fput/metrics.py#evaluate_metrics:function",
+          "snapshot": "base",
+          "label": "experiments/physics/fput-recurrence-reproduction/fput/metrics.py#evaluate_metrics",
+          "origin": "symbol"
+        },
+        "test": {
+          "selector": "symbol:experiments/physics/fput-recurrence-reproduction/tests/test_numerics.py#test_metric_functions_find_known_synthetic_features:function",
+          "snapshot": "base",
+          "label": "experiments/physics/fput-recurrence-reproduction/tests/test_numerics.py#test_metric_functions_find_known_synthetic_features",
+          "origin": "symbol"
+        },
+        "rendering": "reference",
+        "reference": "experiments/physics/fput-recurrence-reproduction/tests/test_numerics.py@0d05e34ef4467aa597c092ffba2b6e6b34506f09",
+        "source": "call_path",
+        "label": "call-path",
+        "category": "resolved_call",
+        "path_id": "p-2",
+        "changed_symbols": [
+          "symbol:experiments/physics/fput-recurrence-reproduction/fput/metrics.py#evaluate_metrics:function"
+        ],
+        "truncated": true,
+        "note": "call reference at experiments/physics/fput-recurrence-reproduction/tests/test_numerics.py:97; 1 hop(s) to the changed symbol"
+      },
+      {
+        "queried": {
+          "selector": "symbol:experiments/physics/fput-recurrence-reproduction/fput/metrics.py#evaluate_metrics:function",
+          "snapshot": "head",
+          "label": "experiments/physics/fput-recurrence-reproduction/fput/metrics.py#evaluate_metrics",
+          "origin": "symbol"
+        },
+        "test": {
+          "selector": "symbol:experiments/physics/fput-recurrence-reproduction/tests/test_numerics.py#test_metric_functions_find_known_synthetic_features:function",
+          "snapshot": "head",
+          "label": "experiments/physics/fput-recurrence-reproduction/tests/test_numerics.py#test_metric_functions_find_known_synthetic_features",
+          "origin": "symbol"
+        },
+        "rendering": "reference",
+        "reference": "experiments/physics/fput-recurrence-reproduction/tests/test_numerics.py@ae145d1c361a82ba94b501a467678d8a6b62fad9",
+        "source": "call_path",
+        "label": "call-path",
+        "category": "resolved_call",
+        "path_id": "p-2",
+        "changed_symbols": [
+          "symbol:experiments/physics/fput-recurrence-reproduction/fput/metrics.py#evaluate_metrics:function"
+        ],
+        "truncated": true,
+        "note": "call reference at experiments/physics/fput-recurrence-reproduction/tests/test_numerics.py:104; 1 hop(s) to the changed symbol"
+      },
+      {
+        "queried": {
+          "selector": "symbol:experiments/physics/fput-recurrence-reproduction/fput/metrics.py#evaluate_metrics:function",
+          "snapshot": "head",
+          "label": "experiments/physics/fput-recurrence-reproduction/fput/metrics.py#evaluate_metrics",
+          "origin": "symbol"
+        },
+        "test": {
+          "selector": "symbol:experiments/physics/fput-recurrence-reproduction/tests/test_numerics.py#test_v1_protocol_keeps_first_local_maximum_and_summed_m4:function",
+          "snapshot": "head",
+          "label": "experiments/physics/fput-recurrence-reproduction/tests/test_numerics.py#test_v1_protocol_keeps_first_local_maximum_and_summed_m4",
+          "origin": "symbol"
+        },
+        "rendering": "reference",
+        "reference": "experiments/physics/fput-recurrence-reproduction/tests/test_numerics.py@ae145d1c361a82ba94b501a467678d8a6b62fad9",
+        "source": "call_path",
+        "label": "call-path",
+        "category": "resolved_call",
+        "path_id": "p-3",
+        "changed_symbols": [
+          "symbol:experiments/physics/fput-recurrence-reproduction/fput/metrics.py#evaluate_metrics:function"
+        ],
+        "truncated": true,
+        "note": "call reference at experiments/physics/fput-recurrence-reproduction/tests/test_numerics.py:158; 1 hop(s) to the changed symbol"
+      },
+      {
+        "queried": {
+          "selector": "symbol:experiments/physics/fput-recurrence-reproduction/fput/metrics.py#evaluate_metrics:function",
+          "snapshot": "base",
+          "label": "experiments/physics/fput-recurrence-reproduction/fput/metrics.py#evaluate_metrics",
+          "origin": "symbol"
+        },
+        "test": {
+          "selector": "file:experiments/physics/fput-recurrence-reproduction/tests/test_numerics.py",
+          "snapshot": "base",
+          "label": "experiments/physics/fput-recurrence-reproduction/tests/test_numerics.py",
+          "origin": "file"
+        },
+        "rendering": "reference",
+        "reference": "experiments/physics/fput-recurrence-reproduction/tests/test_numerics.py@0d05e34ef4467aa597c092ffba2b6e6b34506f09",
+        "source": "import_relationship",
+        "label": "import",
+        "category": "import_relationship",
+        "path_id": null,
+        "changed_symbols": [
+          "symbol:experiments/physics/fput-recurrence-reproduction/fput/metrics.py#evaluate_metrics:function"
+        ],
+        "truncated": false,
+        "note": "imports `fput.metrics`; an import is a file-level relationship, not a call"
+      },
+      {
+        "queried": {
+          "selector": "symbol:experiments/physics/fput-recurrence-reproduction/fput/metrics.py#evaluate_metrics:function",
+          "snapshot": "head",
+          "label": "experiments/physics/fput-recurrence-reproduction/fput/metrics.py#evaluate_metrics",
+          "origin": "symbol"
+        },
+        "test": {
+          "selector": "file:experiments/physics/fput-recurrence-reproduction/tests/test_numerics.py",
+          "snapshot": "head",
+          "label": "experiments/physics/fput-recurrence-reproduction/tests/test_numerics.py",
+          "origin": "file"
+        },
+        "rendering": "reference",
+        "reference": "experiments/physics/fput-recurrence-reproduction/tests/test_numerics.py@ae145d1c361a82ba94b501a467678d8a6b62fad9",
+        "source": "import_relationship",
+        "label": "import",
+        "category": "import_relationship",
+        "path_id": null,
+        "changed_symbols": [
+          "symbol:experiments/physics/fput-recurrence-reproduction/fput/metrics.py#evaluate_metrics:function"
+        ],
+        "truncated": false,
+        "note": "imports `fput.metrics`; an import is a file-level relationship, not a call"
+      }
+    ],
+    "unsupported_scope": [
+      {
+        "path": "experiments/physics/fput-recurrence-reproduction/reference/fig1-digitized.csv",
+        "reason": "unsupported_language",
+        "snapshot": "base"
+      },
+      {
+        "path": "experiments/physics/fput-recurrence-reproduction/reference/fig1-digitized.csv",
+        "reason": "unsupported_language",
+        "snapshot": "head"
+      },
+      {
+        "path": "experiments/physics/fput-recurrence-reproduction/reference/fig1-hidpi-detail-mode234.png",
+        "reason": "unsupported_language",
+        "snapshot": "head"
+      },
+      {
+        "path": "experiments/physics/fput-recurrence-reproduction/reference/fig1-hidpi-detail-mode2345.png",
+        "reason": "unsupported_language",
+        "snapshot": "head"
+      },
+      {
+        "path": "experiments/physics/fput-recurrence-reproduction/reference/fig1-hidpi-full.png",
+        "reason": "unsupported_language",
+        "snapshot": "head"
+      },
+      {
+        "path": "knowledgebase/studies/physics/fput-recurrence-reproduction.png",
+        "reason": "unsupported_language",
+        "snapshot": "base"
+      },
+      {
+        "path": "knowledgebase/studies/physics/fput-recurrence-reproduction.png",
+        "reason": "unsupported_language",
+        "snapshot": "head"
+      }
+    ],
+    "truncated": true
+  },
+  "unresolved": [],
+  "scope": {
+    "truncated": [
+      {
+        "what": "entry_points:symbol:experiments/physics/fput-recurrence-reproduction/fput/metrics.py#evaluate_metrics:function@base",
+        "bound": "depth",
+        "value": 1
+      },
+      {
+        "what": "entry_points:symbol:experiments/physics/fput-recurrence-reproduction/fput/metrics.py#evaluate_metrics:function@head",
+        "bound": "depth",
+        "value": 1
+      },
+      {
+        "what": "entry_points:symbol:experiments/physics/fput-recurrence-reproduction/run.py#assessment:function@base",
+        "bound": "depth",
+        "value": 1
+      },
+      {
+        "what": "entry_points:symbol:experiments/physics/fput-recurrence-reproduction/run.py#assessment:function@head",
+        "bound": "depth",
+        "value": 1
+      },
+      {
+        "what": "evidence:symbol:experiments/physics/fput-recurrence-reproduction/fput/metrics.py#evaluate_metrics:function@base",
+        "bound": "depth",
+        "value": 1
+      },
+      {
+        "what": "evidence:symbol:experiments/physics/fput-recurrence-reproduction/fput/metrics.py#evaluate_metrics:function@head",
+        "bound": "depth",
+        "value": 1
+      },
+      {
+        "what": "evidence:symbol:experiments/physics/fput-recurrence-reproduction/run.py#assessment:function@base",
+        "bound": "depth",
+        "value": 1
+      },
+      {
+        "what": "evidence:symbol:experiments/physics/fput-recurrence-reproduction/run.py#assessment:function@head",
+        "bound": "depth",
+        "value": 1
+      }
+    ],
+    "unsupported": [
+      {
+        "path": "experiments/physics/fput-recurrence-reproduction/reference/fig1-digitized.csv",
+        "reason": "unsupported_language",
+        "snapshot": "base"
+      },
+      {
+        "path": "experiments/physics/fput-recurrence-reproduction/reference/fig1-digitized.csv",
+        "reason": "unsupported_language",
+        "snapshot": "head"
+      },
+      {
+        "path": "experiments/physics/fput-recurrence-reproduction/reference/fig1-hidpi-detail-mode234.png",
+        "reason": "unsupported_language",
+        "snapshot": "head"
+      },
+      {
+        "path": "experiments/physics/fput-recurrence-reproduction/reference/fig1-hidpi-detail-mode2345.png",
+        "reason": "unsupported_language",
+        "snapshot": "head"
+      },
+      {
+        "path": "experiments/physics/fput-recurrence-reproduction/reference/fig1-hidpi-full.png",
+        "reason": "unsupported_language",
+        "snapshot": "head"
+      },
+      {
+        "path": "knowledgebase/studies/physics/fput-recurrence-reproduction.png",
+        "reason": "unsupported_language",
+        "snapshot": "base"
+      },
+      {
+        "path": "knowledgebase/studies/physics/fput-recurrence-reproduction.png",
+        "reason": "unsupported_language",
+        "snapshot": "head"
+      }
+    ],
+    "excluded": [
+      {
+        "path": "experiments/economics/_parallax/AGENTS.md",
+        "reason": "symlink",
+        "snapshot": "base"
+      },
+      {
+        "path": "experiments/economics/_parallax/data/R01-crypto/processed",
+        "reason": "symlink",
+        "snapshot": "base"
+      },
+      {
+        "path": "experiments/economics/_parallax/data/R01-crypto/raw",
+        "reason": "symlink",
+        "snapshot": "base"
+      },
+      {
+        "path": "experiments/economics/_parallax/data/R02-language-models/processed",
+        "reason": "symlink",
+        "snapshot": "base"
+      },
+      {
+        "path": "experiments/economics/_parallax/data/R02-language-models/raw",
+        "reason": "symlink",
+        "snapshot": "base"
+      },
+      {
+        "path": "experiments/economics/_parallax/data/R04-ai-assistants/processed",
+        "reason": "symlink",
+        "snapshot": "base"
+      },
+      {
+        "path": "experiments/economics/_parallax/data/R04-ai-assistants/raw",
+        "reason": "symlink",
+        "snapshot": "base"
+      },
+      {
+        "path": "experiments/physics/_orrery/AGENTS.md",
+        "reason": "symlink",
+        "snapshot": "base"
+      },
+      {
+        "path": "experiments/physics/_orrery/lab/sims/delayed-center-analytic-checks",
+        "reason": "symlink",
+        "snapshot": "base"
+      },
+      {
+        "path": "experiments/physics/_orrery/lab/sims/dynamical-consumption-lattice",
+        "reason": "symlink",
+        "snapshot": "base"
+      },
+      {
+        "path": "experiments/physics/_orrery/lab/sims/flowing-lattice-photon-propagation",
+        "reason": "symlink",
+        "snapshot": "base"
+      },
+      {
+        "path": "experiments/physics/_orrery/lab/sims/frame-drag-swirl",
+        "reason": "symlink",
+        "snapshot": "base"
+      },
+      {
+        "path": "experiments/physics/_orrery/lab/sims/frame-drag-swirl-lense-thirring-check",
+        "reason": "symlink",
+        "snapshot": "base"
+      },
+      {
+        "path": "experiments/physics/_orrery/lab/sims/lattice-photon-propagation",
+        "reason": "symlink",
+        "snapshot": "base"
+      },
+      {
+        "path": "experiments/physics/_orrery/lab/sims/lattice-two-source-superposition",
+        "reason": "symlink",
+        "snapshot": "base"
+      },
+      {
+        "path": "experiments/physics/_orrery/lab/sims/level-core-cavitation-threshold-map",
+        "reason": "symlink",
+        "snapshot": "base"
+      },
+      {
+        "path": "experiments/physics/_orrery/lab/sims/level-core-dynamical-relaxation",
+        "reason": "symlink",
+        "snapshot": "base"
+      },
+      {
+        "path": "experiments/physics/_orrery/lab/sims/level-core-far-field-slot-coefficients",
+        "reason": "symlink",
+        "snapshot": "base"
+      },
+      {
+        "path": "experiments/physics/_orrery/lab/sims/level-core-two-core-superposition",
+        "reason": "symlink",
+        "snapshot": "base"
+      },
+      {
+        "path": "experiments/physics/_orrery/lab/sims/level-core-wind-tunnel",
+        "reason": "symlink",
+        "snapshot": "base"
+      },
+      {
+        "path": "experiments/physics/_orrery/lab/sims/level-coupled-shear-lattice",
+        "reason": "symlink",
+        "snapshot": "base"
+      },
+      {
+        "path": "experiments/physics/_orrery/lab/sims/moving-core-acoustic-rays",
+        "reason": "symlink",
+        "snapshot": "base"
+      },
+      {
+        "path": "experiments/physics/_orrery/lab/sims/oscillating-electron-retarded-fields",
+        "reason": "symlink",
+        "snapshot": "base"
+      },
+      {
+        "path": "experiments/physics/_orrery/lab/sims/pendulum-driven",
+        "reason": "symlink",
+        "snapshot": "base"
+      },
+      {
+        "path": "experiments/physics/_orrery/lab/sims/pingpong-bell",
+        "reason": "symlink",
+        "snapshot": "base"
+      },
+      {
+        "path": "experiments/physics/_orrery/lab/sims/ppn-reduction-symbolic-checks",
+        "reason": "symlink",
+        "snapshot": "base"
+      },
+      {
+        "path": "experiments/physics/_orrery/lab/sims/rar-network-fluctuation-limit",
+        "reason": "symlink",
+        "snapshot": "base"
+      },
+      {
+        "path": "experiments/physics/_orrery/lab/sims/retarded-scarcity-wake",
+        "reason": "symlink",
+        "snapshot": "base"
+      },
+      {
+        "path": "experiments/physics/_orrery/lab/sims/rotation-curve-distributed-mass",
+        "reason": "symlink",
+        "snapshot": "base"
+      },
+      {
+        "path": "experiments/physics/_orrery/lab/sims/scarcity-capped-cumulative-field",
+        "reason": "symlink",
+        "snapshot": "base"
+      },
+      {
+        "path": "experiments/physics/_orrery/lab/sims/scarcity-field-slice-toggle",
+        "reason": "symlink",
+        "snapshot": "base"
+      },
+      {
+        "path": "experiments/physics/_orrery/lab/sims/scarcity-grid-weight-black-hole",
+        "reason": "symlink",
+        "snapshot": "base"
+      },
+      {
+        "path": "experiments/physics/_orrery/lab/sims/scarcity-rotation-curve-fit",
+        "reason": "symlink",
+        "snapshot": "base"
+      },
+      {
+        "path": "experiments/physics/_orrery/lab/sims/scarcity-shell-depletion-field",
+        "reason": "symlink",
+        "snapshot": "base"
+      },
+      {
+        "path": "experiments/physics/_orrery/lab/sims/scarcity-star-well-headroom",
+        "reason": "symlink",
+        "snapshot": "base"
+      },
+      {
+        "path": "experiments/physics/_orrery/lab/sims/shear-consumption-lattice",
+        "reason": "symlink",
+        "snapshot": "base"
+      },
+      {
+        "path": "experiments/physics/_orrery/lab/sims/solar-system-nbody",
+        "reason": "symlink",
+        "snapshot": "base"
+      },
+      {
+        "path": "experiments/physics/_orrery/lab/sims/sparc-scarcity-universality",
+        "reason": "symlink",
+        "snapshot": "base"
+      },
+      {
+        "path": "experiments/physics/_orrery/lab/sims/swirl-ball",
+        "reason": "symlink",
+        "snapshot": "base"
+      },
+      {
+        "path": "experiments/physics/_orrery/lab/sims/swirl-ball-far-field",
+        "reason": "symlink",
+        "snapshot": "base"
+      },
+      {
+        "path": "experiments/physics/_orrery/lab/sims/two-substance-defect-gravity",
+        "reason": "symlink",
+        "snapshot": "base"
+      },
+      {
+        "path": "experiments/physics/_orrery/lab/sims/two-substance-dynamical-packet",
+        "reason": "symlink",
+        "snapshot": "base"
+      },
+      {
+        "path": "experiments/physics/_orrery/lab/sims/two-substance-packet-linear-symbol",
+        "reason": "symlink",
+        "snapshot": "base"
+      },
+      {
+        "path": "experiments/physics/_orrery/lab/sims/two-substance-vortex-lattice",
+        "reason": "symlink",
+        "snapshot": "base"
+      },
+      {
+        "path": "experiments/physics/_orrery/lab/sims/vortex-bell",
+        "reason": "symlink",
+        "snapshot": "base"
+      },
+      {
+        "path": "experiments/physics/_orrery/lab/sims/wide-binary-control-diagnosis",
+        "reason": "symlink",
+        "snapshot": "base"
+      },
+      {
+        "path": "experiments/physics/_orrery/lab/sims/wide-binary-selection-bias",
+        "reason": "symlink",
+        "snapshot": "base"
+      },
+      {
+        "path": "knowledgebase/theory/AGENTS.md",
+        "reason": "symlink",
+        "snapshot": "base"
+      },
+      {
+        "path": "knowledgebase/theory/research/corpus/migration.json",
+        "reason": "oversize_blob",
+        "snapshot": "base"
+      },
+      {
+        "path": "lib/astrolabe/AGENTS.md",
+        "reason": "symlink",
+        "snapshot": "base"
+      },
+      {
+        "path": "experiments/economics/_parallax/AGENTS.md",
+        "reason": "symlink",
+        "snapshot": "head"
+      },
+      {
+        "path": "experiments/economics/_parallax/data/R01-crypto/processed",
+        "reason": "symlink",
+        "snapshot": "head"
+      },
+      {
+        "path": "experiments/economics/_parallax/data/R01-crypto/raw",
+        "reason": "symlink",
+        "snapshot": "head"
+      },
+      {
+        "path": "experiments/economics/_parallax/data/R02-language-models/processed",
+        "reason": "symlink",
+        "snapshot": "head"
+      },
+      {
+        "path": "experiments/economics/_parallax/data/R02-language-models/raw",
+        "reason": "symlink",
+        "snapshot": "head"
+      },
+      {
+        "path": "experiments/economics/_parallax/data/R04-ai-assistants/processed",
+        "reason": "symlink",
+        "snapshot": "head"
+      },
+      {
+        "path": "experiments/economics/_parallax/data/R04-ai-assistants/raw",
+        "reason": "symlink",
+        "snapshot": "head"
+      },
+      {
+        "path": "experiments/physics/_orrery/AGENTS.md",
+        "reason": "symlink",
+        "snapshot": "head"
+      },
+      {
+        "path": "experiments/physics/_orrery/lab/sims/delayed-center-analytic-checks",
+        "reason": "symlink",
+        "snapshot": "head"
+      },
+      {
+        "path": "experiments/physics/_orrery/lab/sims/dynamical-consumption-lattice",
+        "reason": "symlink",
+        "snapshot": "head"
+      },
+      {
+        "path": "experiments/physics/_orrery/lab/sims/flowing-lattice-photon-propagation",
+        "reason": "symlink",
+        "snapshot": "head"
+      },
+      {
+        "path": "experiments/physics/_orrery/lab/sims/frame-drag-swirl",
+        "reason": "symlink",
+        "snapshot": "head"
+      },
+      {
+        "path": "experiments/physics/_orrery/lab/sims/frame-drag-swirl-lense-thirring-check",
+        "reason": "symlink",
+        "snapshot": "head"
+      },
+      {
+        "path": "experiments/physics/_orrery/lab/sims/lattice-photon-propagation",
+        "reason": "symlink",
+        "snapshot": "head"
+      },
+      {
+        "path": "experiments/physics/_orrery/lab/sims/lattice-two-source-superposition",
+        "reason": "symlink",
+        "snapshot": "head"
+      },
+      {
+        "path": "experiments/physics/_orrery/lab/sims/level-core-cavitation-threshold-map",
+        "reason": "symlink",
+        "snapshot": "head"
+      },
+      {
+        "path": "experiments/physics/_orrery/lab/sims/level-core-dynamical-relaxation",
+        "reason": "symlink",
+        "snapshot": "head"
+      },
+      {
+        "path": "experiments/physics/_orrery/lab/sims/level-core-far-field-slot-coefficients",
+        "reason": "symlink",
+        "snapshot": "head"
+      },
+      {
+        "path": "experiments/physics/_orrery/lab/sims/level-core-two-core-superposition",
+        "reason": "symlink",
+        "snapshot": "head"
+      },
+      {
+        "path": "experiments/physics/_orrery/lab/sims/level-core-wind-tunnel",
+        "reason": "symlink",
+        "snapshot": "head"
+      },
+      {
+        "path": "experiments/physics/_orrery/lab/sims/level-coupled-shear-lattice",
+        "reason": "symlink",
+        "snapshot": "head"
+      },
+      {
+        "path": "experiments/physics/_orrery/lab/sims/moving-core-acoustic-rays",
+        "reason": "symlink",
+        "snapshot": "head"
+      },
+      {
+        "path": "experiments/physics/_orrery/lab/sims/oscillating-electron-retarded-fields",
+        "reason": "symlink",
+        "snapshot": "head"
+      },
+      {
+        "path": "experiments/physics/_orrery/lab/sims/pendulum-driven",
+        "reason": "symlink",
+        "snapshot": "head"
+      },
+      {
+        "path": "experiments/physics/_orrery/lab/sims/pingpong-bell",
+        "reason": "symlink",
+        "snapshot": "head"
+      },
+      {
+        "path": "experiments/physics/_orrery/lab/sims/ppn-reduction-symbolic-checks",
+        "reason": "symlink",
+        "snapshot": "head"
+      },
+      {
+        "path": "experiments/physics/_orrery/lab/sims/rar-network-fluctuation-limit",
+        "reason": "symlink",
+        "snapshot": "head"
+      },
+      {
+        "path": "experiments/physics/_orrery/lab/sims/retarded-scarcity-wake",
+        "reason": "symlink",
+        "snapshot": "head"
+      },
+      {
+        "path": "experiments/physics/_orrery/lab/sims/rotation-curve-distributed-mass",
+        "reason": "symlink",
+        "snapshot": "head"
+      },
+      {
+        "path": "experiments/physics/_orrery/lab/sims/scarcity-capped-cumulative-field",
+        "reason": "symlink",
+        "snapshot": "head"
+      },
+      {
+        "path": "experiments/physics/_orrery/lab/sims/scarcity-field-slice-toggle",
+        "reason": "symlink",
+        "snapshot": "head"
+      },
+      {
+        "path": "experiments/physics/_orrery/lab/sims/scarcity-grid-weight-black-hole",
+        "reason": "symlink",
+        "snapshot": "head"
+      },
+      {
+        "path": "experiments/physics/_orrery/lab/sims/scarcity-rotation-curve-fit",
+        "reason": "symlink",
+        "snapshot": "head"
+      },
+      {
+        "path": "experiments/physics/_orrery/lab/sims/scarcity-shell-depletion-field",
+        "reason": "symlink",
+        "snapshot": "head"
+      },
+      {
+        "path": "experiments/physics/_orrery/lab/sims/scarcity-star-well-headroom",
+        "reason": "symlink",
+        "snapshot": "head"
+      },
+      {
+        "path": "experiments/physics/_orrery/lab/sims/shear-consumption-lattice",
+        "reason": "symlink",
+        "snapshot": "head"
+      },
+      {
+        "path": "experiments/physics/_orrery/lab/sims/solar-system-nbody",
+        "reason": "symlink",
+        "snapshot": "head"
+      },
+      {
+        "path": "experiments/physics/_orrery/lab/sims/sparc-scarcity-universality",
+        "reason": "symlink",
+        "snapshot": "head"
+      },
+      {
+        "path": "experiments/physics/_orrery/lab/sims/swirl-ball",
+        "reason": "symlink",
+        "snapshot": "head"
+      },
+      {
+        "path": "experiments/physics/_orrery/lab/sims/swirl-ball-far-field",
+        "reason": "symlink",
+        "snapshot": "head"
+      },
+      {
+        "path": "experiments/physics/_orrery/lab/sims/two-substance-defect-gravity",
+        "reason": "symlink",
+        "snapshot": "head"
+      },
+      {
+        "path": "experiments/physics/_orrery/lab/sims/two-substance-dynamical-packet",
+        "reason": "symlink",
+        "snapshot": "head"
+      },
+      {
+        "path": "experiments/physics/_orrery/lab/sims/two-substance-packet-linear-symbol",
+        "reason": "symlink",
+        "snapshot": "head"
+      },
+      {
+        "path": "experiments/physics/_orrery/lab/sims/two-substance-vortex-lattice",
+        "reason": "symlink",
+        "snapshot": "head"
+      },
+      {
+        "path": "experiments/physics/_orrery/lab/sims/vortex-bell",
+        "reason": "symlink",
+        "snapshot": "head"
+      },
+      {
+        "path": "experiments/physics/_orrery/lab/sims/wide-binary-control-diagnosis",
+        "reason": "symlink",
+        "snapshot": "head"
+      },
+      {
+        "path": "experiments/physics/_orrery/lab/sims/wide-binary-selection-bias",
+        "reason": "symlink",
+        "snapshot": "head"
+      },
+      {
+        "path": "knowledgebase/theory/AGENTS.md",
+        "reason": "symlink",
+        "snapshot": "head"
+      },
+      {
+        "path": "knowledgebase/theory/research/corpus/migration.json",
+        "reason": "oversize_blob",
+        "snapshot": "head"
+      },
+      {
+        "path": "lib/astrolabe/AGENTS.md",
+        "reason": "symlink",
+        "snapshot": "head"
+      }
+    ]
+  },
+  "source_rendering": "reference"
+}

@@ -1,0 +1,2466 @@
+{
+  "schema_version": 1,
+  "generated_at": "2026-09-13T00:00:00Z",
+  "comparison": {
+    "schema_version": 1,
+    "repository": null,
+    "mode": "direct_base_head",
+    "base": {
+      "requested_ref": "8ff25d082567cf8d22b25e393160565f3490f9f1",
+      "commit_sha": "8ff25d082567cf8d22b25e393160565f3490f9f1"
+    },
+    "head": {
+      "requested_ref": "9e5c15986b14c51665145b1df84de7623c70dcd2",
+      "commit_sha": "9e5c15986b14c51665145b1df84de7623c70dcd2"
+    },
+    "effective_base_sha": "8ff25d082567cf8d22b25e393160565f3490f9f1",
+    "working_tree": {
+      "dirty": false,
+      "notice": null,
+      "truncated": false,
+      "entries": []
+    },
+    "snapshots": [
+      {
+        "side": "base",
+        "requested_ref": "8ff25d082567cf8d22b25e393160565f3490f9f1",
+        "commit_sha": "8ff25d082567cf8d22b25e393160565f3490f9f1",
+        "files_indexed": 177,
+        "files_written": 203,
+        "extractor_version": 6,
+        "excluded": []
+      },
+      {
+        "side": "head",
+        "requested_ref": "9e5c15986b14c51665145b1df84de7623c70dcd2",
+        "commit_sha": "9e5c15986b14c51665145b1df84de7623c70dcd2",
+        "files_indexed": 177,
+        "files_written": 203,
+        "extractor_version": 6,
+        "excluded": []
+      }
+    ]
+  },
+  "index_identity": {
+    "extractor_version": 6,
+    "store_schema_version": 1,
+    "orbit_graph_version": "0.9.2",
+    "explorer_version": "0.9.2",
+    "base_index_identity": "blake3:513a08de0284d3f1c355595053c3de39e6869e0618627309aa06517d830a1d02",
+    "head_index_identity": "blake3:fecdfdaa466a6c174a26cc1843a0086e71c3a5e0f14dbb2733f0a7072de193a7"
+  },
+  "query_options": {
+    "depth": 1,
+    "direction": "inbound",
+    "min_confidence": "same_module",
+    "kind": null,
+    "node_cap": 200,
+    "time_budget_ms": 5000,
+    "source_max_bytes": 65536,
+    "language": null,
+    "change_kind": [],
+    "scope": null,
+    "excerpts": "none",
+    "excerpt_radius_lines": 5,
+    "selection": [
+      "symbol:src/sync/pass2.rs#resolve_ref:function",
+      "symbol:src/query/refs.rs#resolve_target:function"
+    ]
+  },
+  "changed_symbols": {
+    "schema_version": 1,
+    "symbols": [
+      {
+        "status": "modified",
+        "pairing": "same_selector",
+        "pairing_evidence": "selector",
+        "base": {
+          "selector": "symbol:README.md#Commands:heading",
+          "snapshot": "base",
+          "commit_sha": "8ff25d082567cf8d22b25e393160565f3490f9f1",
+          "rendering": "reference",
+          "reference": "README.md@8ff25d082567cf8d22b25e393160565f3490f9f1"
+        },
+        "head": {
+          "selector": "symbol:README.md#Commands:heading",
+          "snapshot": "head",
+          "commit_sha": "9e5c15986b14c51665145b1df84de7623c70dcd2",
+          "rendering": "reference",
+          "reference": "README.md@9e5c15986b14c51665145b1df84de7623c70dcd2"
+        },
+        "supporting_snapshots": [
+          "base",
+          "head"
+        ],
+        "file_change": "modified",
+        "base_path": "README.md",
+        "head_path": "README.md",
+        "uncertain_candidates": [],
+        "note": "body changed; signature line is unchanged"
+      },
+      {
+        "status": "modified",
+        "pairing": "same_selector",
+        "pairing_evidence": "selector",
+        "base": {
+          "selector": "symbol:README.md#Install:heading",
+          "snapshot": "base",
+          "commit_sha": "8ff25d082567cf8d22b25e393160565f3490f9f1",
+          "rendering": "reference",
+          "reference": "README.md@8ff25d082567cf8d22b25e393160565f3490f9f1"
+        },
+        "head": {
+          "selector": "symbol:README.md#Install:heading",
+          "snapshot": "head",
+          "commit_sha": "9e5c15986b14c51665145b1df84de7623c70dcd2",
+          "rendering": "reference",
+          "reference": "README.md@9e5c15986b14c51665145b1df84de7623c70dcd2"
+        },
+        "supporting_snapshots": [
+          "base",
+          "head"
+        ],
+        "file_change": "modified",
+        "base_path": "README.md",
+        "head_path": "README.md",
+        "uncertain_candidates": [],
+        "note": "body changed; signature line is unchanged"
+      },
+      {
+        "status": "modified",
+        "pairing": "same_selector",
+        "pairing_evidence": "selector",
+        "base": {
+          "selector": "symbol:README.md#orbit-graph:heading",
+          "snapshot": "base",
+          "commit_sha": "8ff25d082567cf8d22b25e393160565f3490f9f1",
+          "rendering": "reference",
+          "reference": "README.md@8ff25d082567cf8d22b25e393160565f3490f9f1"
+        },
+        "head": {
+          "selector": "symbol:README.md#orbit-graph:heading",
+          "snapshot": "head",
+          "commit_sha": "9e5c15986b14c51665145b1df84de7623c70dcd2",
+          "rendering": "reference",
+          "reference": "README.md@9e5c15986b14c51665145b1df84de7623c70dcd2"
+        },
+        "supporting_snapshots": [
+          "base",
+          "head"
+        ],
+        "file_change": "modified",
+        "base_path": "README.md",
+        "head_path": "README.md",
+        "uncertain_candidates": [],
+        "note": "body changed; signature line is unchanged"
+      },
+      {
+        "status": "modified",
+        "pairing": "same_selector",
+        "pairing_evidence": "selector",
+        "base": {
+          "selector": "symbol:src/extract/languages/python.rs#collect_call_ref:function",
+          "snapshot": "base",
+          "commit_sha": "8ff25d082567cf8d22b25e393160565f3490f9f1",
+          "rendering": "reference",
+          "reference": "src/extract/languages/python.rs@8ff25d082567cf8d22b25e393160565f3490f9f1"
+        },
+        "head": {
+          "selector": "symbol:src/extract/languages/python.rs#collect_call_ref:function",
+          "snapshot": "head",
+          "commit_sha": "9e5c15986b14c51665145b1df84de7623c70dcd2",
+          "rendering": "reference",
+          "reference": "src/extract/languages/python.rs@9e5c15986b14c51665145b1df84de7623c70dcd2"
+        },
+        "supporting_snapshots": [
+          "base",
+          "head"
+        ],
+        "file_change": "modified",
+        "base_path": "src/extract/languages/python.rs",
+        "head_path": "src/extract/languages/python.rs",
+        "uncertain_candidates": [],
+        "note": "body changed; signature line is unchanged"
+      },
+      {
+        "status": "modified",
+        "pairing": "same_selector",
+        "pairing_evidence": "selector",
+        "base": {
+          "selector": "symbol:src/extract/languages/tests/python.rs#extracts_symbols_imports_extends_and_fuzzy_calls:test",
+          "snapshot": "base",
+          "commit_sha": "8ff25d082567cf8d22b25e393160565f3490f9f1",
+          "rendering": "reference",
+          "reference": "src/extract/languages/tests/python.rs@8ff25d082567cf8d22b25e393160565f3490f9f1"
+        },
+        "head": {
+          "selector": "symbol:src/extract/languages/tests/python.rs#extracts_symbols_imports_extends_and_fuzzy_calls:test",
+          "snapshot": "head",
+          "commit_sha": "9e5c15986b14c51665145b1df84de7623c70dcd2",
+          "rendering": "reference",
+          "reference": "src/extract/languages/tests/python.rs@9e5c15986b14c51665145b1df84de7623c70dcd2"
+        },
+        "supporting_snapshots": [
+          "base",
+          "head"
+        ],
+        "file_change": "modified",
+        "base_path": "src/extract/languages/tests/python.rs",
+        "head_path": "src/extract/languages/tests/python.rs",
+        "uncertain_candidates": [],
+        "note": "body changed; signature line is unchanged"
+      },
+      {
+        "status": "added",
+        "pairing": "same_selector",
+        "pairing_evidence": "selector",
+        "base": null,
+        "head": {
+          "selector": "symbol:src/extract/languages/tests/python.rs#fixture_imports_and_calls_preserve_resolution_inputs:test",
+          "snapshot": "head",
+          "commit_sha": "9e5c15986b14c51665145b1df84de7623c70dcd2",
+          "rendering": "reference",
+          "reference": "src/extract/languages/tests/python.rs@9e5c15986b14c51665145b1df84de7623c70dcd2"
+        },
+        "supporting_snapshots": [
+          "head"
+        ],
+        "file_change": "modified",
+        "base_path": "src/extract/languages/tests/python.rs",
+        "head_path": "src/extract/languages/tests/python.rs",
+        "uncertain_candidates": [],
+        "note": "Present in head and absent from base. This is not a claim that it did not exist under another identity."
+      },
+      {
+        "status": "added",
+        "pairing": "same_selector",
+        "pairing_evidence": "selector",
+        "base": null,
+        "head": {
+          "selector": "symbol:src/extract/languages/tests/rust.rs#fixture_qualified_calls_and_import_forms_preserve_resolution_inputs:test",
+          "snapshot": "head",
+          "commit_sha": "9e5c15986b14c51665145b1df84de7623c70dcd2",
+          "rendering": "reference",
+          "reference": "src/extract/languages/tests/rust.rs@9e5c15986b14c51665145b1df84de7623c70dcd2"
+        },
+        "supporting_snapshots": [
+          "head"
+        ],
+        "file_change": "modified",
+        "base_path": "src/extract/languages/tests/rust.rs",
+        "head_path": "src/extract/languages/tests/rust.rs",
+        "uncertain_candidates": [],
+        "note": "Present in head and absent from base. This is not a claim that it did not exist under another identity."
+      },
+      {
+        "status": "signature_changed",
+        "pairing": "signature_changed",
+        "pairing_evidence": "signature",
+        "base": {
+          "selector": "symbol:src/lib.rs#EXTRACTOR_VERSION:const",
+          "snapshot": "base",
+          "commit_sha": "8ff25d082567cf8d22b25e393160565f3490f9f1",
+          "rendering": "reference",
+          "reference": "src/lib.rs@8ff25d082567cf8d22b25e393160565f3490f9f1"
+        },
+        "head": {
+          "selector": "symbol:src/lib.rs#EXTRACTOR_VERSION:const",
+          "snapshot": "head",
+          "commit_sha": "9e5c15986b14c51665145b1df84de7623c70dcd2",
+          "rendering": "reference",
+          "reference": "src/lib.rs@9e5c15986b14c51665145b1df84de7623c70dcd2"
+        },
+        "supporting_snapshots": [
+          "base",
+          "head"
+        ],
+        "file_change": "modified",
+        "base_path": "src/lib.rs",
+        "head_path": "src/lib.rs",
+        "uncertain_candidates": [],
+        "note": "signature changed: `pub const EXTRACTOR_VERSION: u32 = 4;` -> `pub const EXTRACTOR_VERSION: u32 = 5;`"
+      },
+      {
+        "status": "uncertain",
+        "pairing": "uncertain",
+        "pairing_evidence": "none",
+        "base": {
+          "selector": "symbol:src/lib.rs#GraphError:impl",
+          "snapshot": "base",
+          "commit_sha": "8ff25d082567cf8d22b25e393160565f3490f9f1",
+          "rendering": "reference",
+          "reference": "src/lib.rs@8ff25d082567cf8d22b25e393160565f3490f9f1"
+        },
+        "head": {
+          "selector": "symbol:src/lib.rs#GraphError:impl",
+          "snapshot": "head",
+          "commit_sha": "9e5c15986b14c51665145b1df84de7623c70dcd2",
+          "rendering": "reference",
+          "reference": "src/lib.rs@9e5c15986b14c51665145b1df84de7623c70dcd2"
+        },
+        "supporting_snapshots": [
+          "base",
+          "head"
+        ],
+        "file_change": "modified",
+        "base_path": "src/lib.rs",
+        "head_path": "src/lib.rs",
+        "uncertain_candidates": [
+          {
+            "selector": "symbol:src/lib.rs#GraphError:impl",
+            "snapshot": "base",
+            "commit_sha": "8ff25d082567cf8d22b25e393160565f3490f9f1",
+            "reason": "the selector addresses more than one indexed symbol on this side"
+          },
+          {
+            "selector": "symbol:src/lib.rs#GraphError:impl",
+            "snapshot": "head",
+            "commit_sha": "9e5c15986b14c51665145b1df84de7623c70dcd2",
+            "reason": "the selector addresses more than one indexed symbol on this side"
+          }
+        ],
+        "note": "Several indexed symbols share this canonical selector; the index collapses them, so no candidate is chosen."
+      },
+      {
+        "status": "modified",
+        "pairing": "same_selector",
+        "pairing_evidence": "selector",
+        "base": {
+          "selector": "symbol:src/query/impact.rs#ImpactSymbol:struct",
+          "snapshot": "base",
+          "commit_sha": "8ff25d082567cf8d22b25e393160565f3490f9f1",
+          "rendering": "reference",
+          "reference": "src/query/impact.rs@8ff25d082567cf8d22b25e393160565f3490f9f1"
+        },
+        "head": {
+          "selector": "symbol:src/query/impact.rs#ImpactSymbol:struct",
+          "snapshot": "head",
+          "commit_sha": "9e5c15986b14c51665145b1df84de7623c70dcd2",
+          "rendering": "reference",
+          "reference": "src/query/impact.rs@9e5c15986b14c51665145b1df84de7623c70dcd2"
+        },
+        "supporting_snapshots": [
+          "base",
+          "head"
+        ],
+        "file_change": "modified",
+        "base_path": "src/query/impact.rs",
+        "head_path": "src/query/impact.rs",
+        "uncertain_candidates": [],
+        "note": "body changed; signature line is unchanged"
+      },
+      {
+        "status": "modified",
+        "pairing": "same_selector",
+        "pairing_evidence": "selector",
+        "base": {
+          "selector": "symbol:src/query/impact.rs#impact_symbol_from_row:function",
+          "snapshot": "base",
+          "commit_sha": "8ff25d082567cf8d22b25e393160565f3490f9f1",
+          "rendering": "reference",
+          "reference": "src/query/impact.rs@8ff25d082567cf8d22b25e393160565f3490f9f1"
+        },
+        "head": {
+          "selector": "symbol:src/query/impact.rs#impact_symbol_from_row:function",
+          "snapshot": "head",
+          "commit_sha": "9e5c15986b14c51665145b1df84de7623c70dcd2",
+          "rendering": "reference",
+          "reference": "src/query/impact.rs@9e5c15986b14c51665145b1df84de7623c70dcd2"
+        },
+        "supporting_snapshots": [
+          "base",
+          "head"
+        ],
+        "file_change": "modified",
+        "base_path": "src/query/impact.rs",
+        "head_path": "src/query/impact.rs",
+        "uncertain_candidates": [],
+        "note": "body changed; signature line is unchanged"
+      },
+      {
+        "status": "modified",
+        "pairing": "same_selector",
+        "pairing_evidence": "selector",
+        "base": {
+          "selector": "symbol:src/query/impact.rs#inbound_ref_neighbors:function",
+          "snapshot": "base",
+          "commit_sha": "8ff25d082567cf8d22b25e393160565f3490f9f1",
+          "rendering": "reference",
+          "reference": "src/query/impact.rs@8ff25d082567cf8d22b25e393160565f3490f9f1"
+        },
+        "head": {
+          "selector": "symbol:src/query/impact.rs#inbound_ref_neighbors:function",
+          "snapshot": "head",
+          "commit_sha": "9e5c15986b14c51665145b1df84de7623c70dcd2",
+          "rendering": "reference",
+          "reference": "src/query/impact.rs@9e5c15986b14c51665145b1df84de7623c70dcd2"
+        },
+        "supporting_snapshots": [
+          "base",
+          "head"
+        ],
+        "file_change": "modified",
+        "base_path": "src/query/impact.rs",
+        "head_path": "src/query/impact.rs",
+        "uncertain_candidates": [],
+        "note": "body changed; signature line is unchanged"
+      },
+      {
+        "status": "modified",
+        "pairing": "same_selector",
+        "pairing_evidence": "selector",
+        "base": {
+          "selector": "symbol:src/query/impact.rs#neighbors:function",
+          "snapshot": "base",
+          "commit_sha": "8ff25d082567cf8d22b25e393160565f3490f9f1",
+          "rendering": "reference",
+          "reference": "src/query/impact.rs@8ff25d082567cf8d22b25e393160565f3490f9f1"
+        },
+        "head": {
+          "selector": "symbol:src/query/impact.rs#neighbors:function",
+          "snapshot": "head",
+          "commit_sha": "9e5c15986b14c51665145b1df84de7623c70dcd2",
+          "rendering": "reference",
+          "reference": "src/query/impact.rs@9e5c15986b14c51665145b1df84de7623c70dcd2"
+        },
+        "supporting_snapshots": [
+          "base",
+          "head"
+        ],
+        "file_change": "modified",
+        "base_path": "src/query/impact.rs",
+        "head_path": "src/query/impact.rs",
+        "uncertain_candidates": [],
+        "note": "body changed; signature line is unchanged"
+      },
+      {
+        "status": "modified",
+        "pairing": "same_selector",
+        "pairing_evidence": "selector",
+        "base": {
+          "selector": "symbol:src/query/impact.rs#resolve_command_selector:function",
+          "snapshot": "base",
+          "commit_sha": "8ff25d082567cf8d22b25e393160565f3490f9f1",
+          "rendering": "reference",
+          "reference": "src/query/impact.rs@8ff25d082567cf8d22b25e393160565f3490f9f1"
+        },
+        "head": {
+          "selector": "symbol:src/query/impact.rs#resolve_command_selector:function",
+          "snapshot": "head",
+          "commit_sha": "9e5c15986b14c51665145b1df84de7623c70dcd2",
+          "rendering": "reference",
+          "reference": "src/query/impact.rs@9e5c15986b14c51665145b1df84de7623c70dcd2"
+        },
+        "supporting_snapshots": [
+          "base",
+          "head"
+        ],
+        "file_change": "modified",
+        "base_path": "src/query/impact.rs",
+        "head_path": "src/query/impact.rs",
+        "uncertain_candidates": [],
+        "note": "body changed; signature line is unchanged"
+      },
+      {
+        "status": "modified",
+        "pairing": "same_selector",
+        "pairing_evidence": "selector",
+        "base": {
+          "selector": "symbol:src/query/impact.rs#resolve_module_selector:function",
+          "snapshot": "base",
+          "commit_sha": "8ff25d082567cf8d22b25e393160565f3490f9f1",
+          "rendering": "reference",
+          "reference": "src/query/impact.rs@8ff25d082567cf8d22b25e393160565f3490f9f1"
+        },
+        "head": {
+          "selector": "symbol:src/query/impact.rs#resolve_module_selector:function",
+          "snapshot": "head",
+          "commit_sha": "9e5c15986b14c51665145b1df84de7623c70dcd2",
+          "rendering": "reference",
+          "reference": "src/query/impact.rs@9e5c15986b14c51665145b1df84de7623c70dcd2"
+        },
+        "supporting_snapshots": [
+          "base",
+          "head"
+        ],
+        "file_change": "modified",
+        "base_path": "src/query/impact.rs",
+        "head_path": "src/query/impact.rs",
+        "uncertain_candidates": [],
+        "note": "body changed; signature line is unchanged"
+      },
+      {
+        "status": "modified",
+        "pairing": "same_selector",
+        "pairing_evidence": "selector",
+        "base": {
+          "selector": "symbol:src/query/impact.rs#resolve_symbol_by_qualified:function",
+          "snapshot": "base",
+          "commit_sha": "8ff25d082567cf8d22b25e393160565f3490f9f1",
+          "rendering": "reference",
+          "reference": "src/query/impact.rs@8ff25d082567cf8d22b25e393160565f3490f9f1"
+        },
+        "head": {
+          "selector": "symbol:src/query/impact.rs#resolve_symbol_by_qualified:function",
+          "snapshot": "head",
+          "commit_sha": "9e5c15986b14c51665145b1df84de7623c70dcd2",
+          "rendering": "reference",
+          "reference": "src/query/impact.rs@9e5c15986b14c51665145b1df84de7623c70dcd2"
+        },
+        "supporting_snapshots": [
+          "base",
+          "head"
+        ],
+        "file_change": "modified",
+        "base_path": "src/query/impact.rs",
+        "head_path": "src/query/impact.rs",
+        "uncertain_candidates": [],
+        "note": "body changed; signature line is unchanged"
+      },
+      {
+        "status": "modified",
+        "pairing": "same_selector",
+        "pairing_evidence": "selector",
+        "base": {
+          "selector": "symbol:src/query/impact.rs#resolve_symbol_selector:function",
+          "snapshot": "base",
+          "commit_sha": "8ff25d082567cf8d22b25e393160565f3490f9f1",
+          "rendering": "reference",
+          "reference": "src/query/impact.rs@8ff25d082567cf8d22b25e393160565f3490f9f1"
+        },
+        "head": {
+          "selector": "symbol:src/query/impact.rs#resolve_symbol_selector:function",
+          "snapshot": "head",
+          "commit_sha": "9e5c15986b14c51665145b1df84de7623c70dcd2",
+          "rendering": "reference",
+          "reference": "src/query/impact.rs@9e5c15986b14c51665145b1df84de7623c70dcd2"
+        },
+        "supporting_snapshots": [
+          "base",
+          "head"
+        ],
+        "file_change": "modified",
+        "base_path": "src/query/impact.rs",
+        "head_path": "src/query/impact.rs",
+        "uncertain_candidates": [],
+        "note": "body changed; signature line is unchanged"
+      },
+      {
+        "status": "added",
+        "pairing": "same_selector",
+        "pairing_evidence": "selector",
+        "base": null,
+        "head": {
+          "selector": "symbol:src/query/refs.rs#QueryTarget:struct",
+          "snapshot": "head",
+          "commit_sha": "9e5c15986b14c51665145b1df84de7623c70dcd2",
+          "rendering": "reference",
+          "reference": "src/query/refs.rs@9e5c15986b14c51665145b1df84de7623c70dcd2"
+        },
+        "supporting_snapshots": [
+          "head"
+        ],
+        "file_change": "modified",
+        "base_path": "src/query/refs.rs",
+        "head_path": "src/query/refs.rs",
+        "uncertain_candidates": [],
+        "note": "Present in head and absent from base. This is not a claim that it did not exist under another identity."
+      },
+      {
+        "status": "uncertain",
+        "pairing": "uncertain",
+        "pairing_evidence": "none",
+        "base": {
+          "selector": "symbol:src/query/refs.rs#from_db:method",
+          "snapshot": "base",
+          "commit_sha": "8ff25d082567cf8d22b25e393160565f3490f9f1",
+          "rendering": "reference",
+          "reference": "src/query/refs.rs@8ff25d082567cf8d22b25e393160565f3490f9f1"
+        },
+        "head": {
+          "selector": "symbol:src/query/refs.rs#from_db:method",
+          "snapshot": "head",
+          "commit_sha": "9e5c15986b14c51665145b1df84de7623c70dcd2",
+          "rendering": "reference",
+          "reference": "src/query/refs.rs@9e5c15986b14c51665145b1df84de7623c70dcd2"
+        },
+        "supporting_snapshots": [
+          "base",
+          "head"
+        ],
+        "file_change": "modified",
+        "base_path": "src/query/refs.rs",
+        "head_path": "src/query/refs.rs",
+        "uncertain_candidates": [
+          {
+            "selector": "symbol:src/query/refs.rs#from_db:method",
+            "snapshot": "base",
+            "commit_sha": "8ff25d082567cf8d22b25e393160565f3490f9f1",
+            "reason": "the selector addresses more than one indexed symbol on this side"
+          },
+          {
+            "selector": "symbol:src/query/refs.rs#from_db:method",
+            "snapshot": "head",
+            "commit_sha": "9e5c15986b14c51665145b1df84de7623c70dcd2",
+            "reason": "the selector addresses more than one indexed symbol on this side"
+          }
+        ],
+        "note": "Several indexed symbols share this canonical selector; the index collapses them, so no candidate is chosen."
+      },
+      {
+        "status": "uncertain",
+        "pairing": "uncertain",
+        "pairing_evidence": "none",
+        "base": {
+          "selector": "symbol:src/query/refs.rs#line_for:method",
+          "snapshot": "base",
+          "commit_sha": "8ff25d082567cf8d22b25e393160565f3490f9f1",
+          "rendering": "reference",
+          "reference": "src/query/refs.rs@8ff25d082567cf8d22b25e393160565f3490f9f1"
+        },
+        "head": {
+          "selector": "symbol:src/query/refs.rs#line_for:method",
+          "snapshot": "head",
+          "commit_sha": "9e5c15986b14c51665145b1df84de7623c70dcd2",
+          "rendering": "reference",
+          "reference": "src/query/refs.rs@9e5c15986b14c51665145b1df84de7623c70dcd2"
+        },
+        "supporting_snapshots": [
+          "base",
+          "head"
+        ],
+        "file_change": "modified",
+        "base_path": "src/query/refs.rs",
+        "head_path": "src/query/refs.rs",
+        "uncertain_candidates": [
+          {
+            "selector": "symbol:src/query/refs.rs#line_for:method",
+            "snapshot": "base",
+            "commit_sha": "8ff25d082567cf8d22b25e393160565f3490f9f1",
+            "reason": "the selector addresses more than one indexed symbol on this side"
+          },
+          {
+            "selector": "symbol:src/query/refs.rs#line_for:method",
+            "snapshot": "head",
+            "commit_sha": "9e5c15986b14c51665145b1df84de7623c70dcd2",
+            "reason": "the selector addresses more than one indexed symbol on this side"
+          }
+        ],
+        "note": "Several indexed symbols share this canonical selector; the index collapses them, so no candidate is chosen."
+      },
+      {
+        "status": "modified",
+        "pairing": "same_selector",
+        "pairing_evidence": "selector",
+        "base": {
+          "selector": "symbol:src/query/refs.rs#maybe_fuzzy_fallback:function",
+          "snapshot": "base",
+          "commit_sha": "8ff25d082567cf8d22b25e393160565f3490f9f1",
+          "rendering": "reference",
+          "reference": "src/query/refs.rs@8ff25d082567cf8d22b25e393160565f3490f9f1"
+        },
+        "head": {
+          "selector": "symbol:src/query/refs.rs#maybe_fuzzy_fallback:function",
+          "snapshot": "head",
+          "commit_sha": "9e5c15986b14c51665145b1df84de7623c70dcd2",
+          "rendering": "reference",
+          "reference": "src/query/refs.rs@9e5c15986b14c51665145b1df84de7623c70dcd2"
+        },
+        "supporting_snapshots": [
+          "base",
+          "head"
+        ],
+        "file_change": "modified",
+        "base_path": "src/query/refs.rs",
+        "head_path": "src/query/refs.rs",
+        "uncertain_candidates": [],
+        "note": "body changed; signature line is unchanged"
+      },
+      {
+        "status": "uncertain",
+        "pairing": "uncertain",
+        "pairing_evidence": "none",
+        "base": {
+          "selector": "symbol:src/query/refs.rs#new:method",
+          "snapshot": "base",
+          "commit_sha": "8ff25d082567cf8d22b25e393160565f3490f9f1",
+          "rendering": "reference",
+          "reference": "src/query/refs.rs@8ff25d082567cf8d22b25e393160565f3490f9f1"
+        },
+        "head": {
+          "selector": "symbol:src/query/refs.rs#new:method",
+          "snapshot": "head",
+          "commit_sha": "9e5c15986b14c51665145b1df84de7623c70dcd2",
+          "rendering": "reference",
+          "reference": "src/query/refs.rs@9e5c15986b14c51665145b1df84de7623c70dcd2"
+        },
+        "supporting_snapshots": [
+          "base",
+          "head"
+        ],
+        "file_change": "modified",
+        "base_path": "src/query/refs.rs",
+        "head_path": "src/query/refs.rs",
+        "uncertain_candidates": [
+          {
+            "selector": "symbol:src/query/refs.rs#new:method",
+            "snapshot": "base",
+            "commit_sha": "8ff25d082567cf8d22b25e393160565f3490f9f1",
+            "reason": "the selector addresses more than one indexed symbol on this side"
+          },
+          {
+            "selector": "symbol:src/query/refs.rs#new:method",
+            "snapshot": "head",
+            "commit_sha": "9e5c15986b14c51665145b1df84de7623c70dcd2",
+            "reason": "the selector addresses more than one indexed symbol on this side"
+          }
+        ],
+        "note": "Several indexed symbols share this canonical selector; the index collapses them, so no candidate is chosen."
+      },
+      {
+        "status": "modified",
+        "pairing": "same_selector",
+        "pairing_evidence": "selector",
+        "base": {
+          "selector": "symbol:src/query/refs.rs#query_refs:function",
+          "snapshot": "base",
+          "commit_sha": "8ff25d082567cf8d22b25e393160565f3490f9f1",
+          "rendering": "reference",
+          "reference": "src/query/refs.rs@8ff25d082567cf8d22b25e393160565f3490f9f1"
+        },
+        "head": {
+          "selector": "symbol:src/query/refs.rs#query_refs:function",
+          "snapshot": "head",
+          "commit_sha": "9e5c15986b14c51665145b1df84de7623c70dcd2",
+          "rendering": "reference",
+          "reference": "src/query/refs.rs@9e5c15986b14c51665145b1df84de7623c70dcd2"
+        },
+        "supporting_snapshots": [
+          "base",
+          "head"
+        ],
+        "file_change": "modified",
+        "base_path": "src/query/refs.rs",
+        "head_path": "src/query/refs.rs",
+        "uncertain_candidates": [],
+        "note": "body changed; signature line is unchanged"
+      },
+      {
+        "status": "signature_changed",
+        "pairing": "signature_changed",
+        "pairing_evidence": "signature",
+        "base": {
+          "selector": "symbol:src/query/refs.rs#resolve_target:function",
+          "snapshot": "base",
+          "commit_sha": "8ff25d082567cf8d22b25e393160565f3490f9f1",
+          "rendering": "reference",
+          "reference": "src/query/refs.rs@8ff25d082567cf8d22b25e393160565f3490f9f1"
+        },
+        "head": {
+          "selector": "symbol:src/query/refs.rs#resolve_target:function",
+          "snapshot": "head",
+          "commit_sha": "9e5c15986b14c51665145b1df84de7623c70dcd2",
+          "rendering": "reference",
+          "reference": "src/query/refs.rs@9e5c15986b14c51665145b1df84de7623c70dcd2"
+        },
+        "supporting_snapshots": [
+          "base",
+          "head"
+        ],
+        "file_change": "modified",
+        "base_path": "src/query/refs.rs",
+        "head_path": "src/query/refs.rs",
+        "uncertain_candidates": [],
+        "note": "signature changed: `fn resolve_target(conn: &Connection, sel: &Selector) -> Result<RefTarget, GraphError> {` -> `fn resolve_target(conn: &Connection, sel: &Selector) -> Result<QueryTarget, GraphError> {`"
+      },
+      {
+        "status": "modified",
+        "pairing": "same_selector",
+        "pairing_evidence": "selector",
+        "base": {
+          "selector": "symbol:src/query/refs.rs#run:function",
+          "snapshot": "base",
+          "commit_sha": "8ff25d082567cf8d22b25e393160565f3490f9f1",
+          "rendering": "reference",
+          "reference": "src/query/refs.rs@8ff25d082567cf8d22b25e393160565f3490f9f1"
+        },
+        "head": {
+          "selector": "symbol:src/query/refs.rs#run:function",
+          "snapshot": "head",
+          "commit_sha": "9e5c15986b14c51665145b1df84de7623c70dcd2",
+          "rendering": "reference",
+          "reference": "src/query/refs.rs@9e5c15986b14c51665145b1df84de7623c70dcd2"
+        },
+        "supporting_snapshots": [
+          "base",
+          "head"
+        ],
+        "file_change": "modified",
+        "base_path": "src/query/refs.rs",
+        "head_path": "src/query/refs.rs",
+        "uncertain_candidates": [],
+        "note": "body changed; signature line is unchanged"
+      },
+      {
+        "status": "added",
+        "pairing": "same_selector",
+        "pairing_evidence": "selector",
+        "base": null,
+        "head": {
+          "selector": "symbol:src/sync/pass2.rs#ImportResolution:enum",
+          "snapshot": "head",
+          "commit_sha": "9e5c15986b14c51665145b1df84de7623c70dcd2",
+          "rendering": "reference",
+          "reference": "src/sync/pass2.rs@9e5c15986b14c51665145b1df84de7623c70dcd2"
+        },
+        "supporting_snapshots": [
+          "head"
+        ],
+        "file_change": "modified",
+        "base_path": "src/sync/pass2.rs",
+        "head_path": "src/sync/pass2.rs",
+        "uncertain_candidates": [],
+        "note": "Present in head and absent from base. This is not a claim that it did not exist under another identity."
+      },
+      {
+        "status": "modified",
+        "pairing": "same_selector",
+        "pairing_evidence": "selector",
+        "base": {
+          "selector": "symbol:src/sync/pass2.rs#ResolvedRef:impl",
+          "snapshot": "base",
+          "commit_sha": "8ff25d082567cf8d22b25e393160565f3490f9f1",
+          "rendering": "reference",
+          "reference": "src/sync/pass2.rs@8ff25d082567cf8d22b25e393160565f3490f9f1"
+        },
+        "head": {
+          "selector": "symbol:src/sync/pass2.rs#ResolvedRef:impl",
+          "snapshot": "head",
+          "commit_sha": "9e5c15986b14c51665145b1df84de7623c70dcd2",
+          "rendering": "reference",
+          "reference": "src/sync/pass2.rs@9e5c15986b14c51665145b1df84de7623c70dcd2"
+        },
+        "supporting_snapshots": [
+          "base",
+          "head"
+        ],
+        "file_change": "modified",
+        "base_path": "src/sync/pass2.rs",
+        "head_path": "src/sync/pass2.rs",
+        "uncertain_candidates": [],
+        "note": "body changed; signature line is unchanged"
+      },
+      {
+        "status": "modified",
+        "pairing": "same_selector",
+        "pairing_evidence": "selector",
+        "base": {
+          "selector": "symbol:src/sync/pass2.rs#ResolvedRef:struct",
+          "snapshot": "base",
+          "commit_sha": "8ff25d082567cf8d22b25e393160565f3490f9f1",
+          "rendering": "reference",
+          "reference": "src/sync/pass2.rs@8ff25d082567cf8d22b25e393160565f3490f9f1"
+        },
+        "head": {
+          "selector": "symbol:src/sync/pass2.rs#ResolvedRef:struct",
+          "snapshot": "head",
+          "commit_sha": "9e5c15986b14c51665145b1df84de7623c70dcd2",
+          "rendering": "reference",
+          "reference": "src/sync/pass2.rs@9e5c15986b14c51665145b1df84de7623c70dcd2"
+        },
+        "supporting_snapshots": [
+          "base",
+          "head"
+        ],
+        "file_change": "modified",
+        "base_path": "src/sync/pass2.rs",
+        "head_path": "src/sync/pass2.rs",
+        "uncertain_candidates": [],
+        "note": "body changed; signature line is unchanged"
+      },
+      {
+        "status": "modified",
+        "pairing": "same_selector",
+        "pairing_evidence": "selector",
+        "base": {
+          "selector": "symbol:src/sync/pass2.rs#SymbolCandidate:struct",
+          "snapshot": "base",
+          "commit_sha": "8ff25d082567cf8d22b25e393160565f3490f9f1",
+          "rendering": "reference",
+          "reference": "src/sync/pass2.rs@8ff25d082567cf8d22b25e393160565f3490f9f1"
+        },
+        "head": {
+          "selector": "symbol:src/sync/pass2.rs#SymbolCandidate:struct",
+          "snapshot": "head",
+          "commit_sha": "9e5c15986b14c51665145b1df84de7623c70dcd2",
+          "rendering": "reference",
+          "reference": "src/sync/pass2.rs@9e5c15986b14c51665145b1df84de7623c70dcd2"
+        },
+        "supporting_snapshots": [
+          "base",
+          "head"
+        ],
+        "file_change": "modified",
+        "base_path": "src/sync/pass2.rs",
+        "head_path": "src/sync/pass2.rs",
+        "uncertain_candidates": [],
+        "note": "body changed; signature line is unchanged"
+      },
+      {
+        "status": "added",
+        "pairing": "same_selector",
+        "pairing_evidence": "selector",
+        "base": null,
+        "head": {
+          "selector": "symbol:src/sync/pass2.rs#candidate:method",
+          "snapshot": "head",
+          "commit_sha": "9e5c15986b14c51665145b1df84de7623c70dcd2",
+          "rendering": "reference",
+          "reference": "src/sync/pass2.rs@9e5c15986b14c51665145b1df84de7623c70dcd2"
+        },
+        "supporting_snapshots": [
+          "head"
+        ],
+        "file_change": "modified",
+        "base_path": "src/sync/pass2.rs",
+        "head_path": "src/sync/pass2.rs",
+        "uncertain_candidates": [],
+        "note": "Present in head and absent from base. This is not a claim that it did not exist under another identity."
+      },
+      {
+        "status": "added",
+        "pairing": "same_selector",
+        "pairing_evidence": "selector",
+        "base": null,
+        "head": {
+          "selector": "symbol:src/sync/pass2.rs#candidate_matches_module:function",
+          "snapshot": "head",
+          "commit_sha": "9e5c15986b14c51665145b1df84de7623c70dcd2",
+          "rendering": "reference",
+          "reference": "src/sync/pass2.rs@9e5c15986b14c51665145b1df84de7623c70dcd2"
+        },
+        "supporting_snapshots": [
+          "head"
+        ],
+        "file_change": "modified",
+        "base_path": "src/sync/pass2.rs",
+        "head_path": "src/sync/pass2.rs",
+        "uncertain_candidates": [],
+        "note": "Present in head and absent from base. This is not a claim that it did not exist under another identity."
+      },
+      {
+        "status": "added",
+        "pairing": "same_selector",
+        "pairing_evidence": "selector",
+        "base": null,
+        "head": {
+          "selector": "symbol:src/sync/pass2.rs#candidate_matches_qualified:function",
+          "snapshot": "head",
+          "commit_sha": "9e5c15986b14c51665145b1df84de7623c70dcd2",
+          "rendering": "reference",
+          "reference": "src/sync/pass2.rs@9e5c15986b14c51665145b1df84de7623c70dcd2"
+        },
+        "supporting_snapshots": [
+          "head"
+        ],
+        "file_change": "modified",
+        "base_path": "src/sync/pass2.rs",
+        "head_path": "src/sync/pass2.rs",
+        "uncertain_candidates": [],
+        "note": "Present in head and absent from base. This is not a claim that it did not exist under another identity."
+      },
+      {
+        "status": "added",
+        "pairing": "same_selector",
+        "pairing_evidence": "selector",
+        "base": null,
+        "head": {
+          "selector": "symbol:src/sync/pass2.rs#file_module_parts:function",
+          "snapshot": "head",
+          "commit_sha": "9e5c15986b14c51665145b1df84de7623c70dcd2",
+          "rendering": "reference",
+          "reference": "src/sync/pass2.rs@9e5c15986b14c51665145b1df84de7623c70dcd2"
+        },
+        "supporting_snapshots": [
+          "head"
+        ],
+        "file_change": "modified",
+        "base_path": "src/sync/pass2.rs",
+        "head_path": "src/sync/pass2.rs",
+        "uncertain_candidates": [],
+        "note": "Present in head and absent from base. This is not a claim that it did not exist under another identity."
+      },
+      {
+        "status": "added",
+        "pairing": "same_selector",
+        "pairing_evidence": "selector",
+        "base": null,
+        "head": {
+          "selector": "symbol:src/sync/pass2.rs#import_module_for_ref:function",
+          "snapshot": "head",
+          "commit_sha": "9e5c15986b14c51665145b1df84de7623c70dcd2",
+          "rendering": "reference",
+          "reference": "src/sync/pass2.rs@9e5c15986b14c51665145b1df84de7623c70dcd2"
+        },
+        "supporting_snapshots": [
+          "head"
+        ],
+        "file_change": "modified",
+        "base_path": "src/sync/pass2.rs",
+        "head_path": "src/sync/pass2.rs",
+        "uncertain_candidates": [],
+        "note": "Present in head and absent from base. This is not a claim that it did not exist under another identity."
+      },
+      {
+        "status": "modified",
+        "pairing": "same_selector",
+        "pairing_evidence": "selector",
+        "base": {
+          "selector": "symbol:src/sync/pass2.rs#insert_ref:function",
+          "snapshot": "base",
+          "commit_sha": "8ff25d082567cf8d22b25e393160565f3490f9f1",
+          "rendering": "reference",
+          "reference": "src/sync/pass2.rs@8ff25d082567cf8d22b25e393160565f3490f9f1"
+        },
+        "head": {
+          "selector": "symbol:src/sync/pass2.rs#insert_ref:function",
+          "snapshot": "head",
+          "commit_sha": "9e5c15986b14c51665145b1df84de7623c70dcd2",
+          "rendering": "reference",
+          "reference": "src/sync/pass2.rs@9e5c15986b14c51665145b1df84de7623c70dcd2"
+        },
+        "supporting_snapshots": [
+          "base",
+          "head"
+        ],
+        "file_change": "modified",
+        "base_path": "src/sync/pass2.rs",
+        "head_path": "src/sync/pass2.rs",
+        "uncertain_candidates": [],
+        "note": "body changed; signature line is unchanged"
+      },
+      {
+        "status": "added",
+        "pairing": "same_selector",
+        "pairing_evidence": "selector",
+        "base": null,
+        "head": {
+          "selector": "symbol:src/sync/pass2.rs#join_module_symbol:function",
+          "snapshot": "head",
+          "commit_sha": "9e5c15986b14c51665145b1df84de7623c70dcd2",
+          "rendering": "reference",
+          "reference": "src/sync/pass2.rs@9e5c15986b14c51665145b1df84de7623c70dcd2"
+        },
+        "supporting_snapshots": [
+          "head"
+        ],
+        "file_change": "modified",
+        "base_path": "src/sync/pass2.rs",
+        "head_path": "src/sync/pass2.rs",
+        "uncertain_candidates": [],
+        "note": "Present in head and absent from base. This is not a claim that it did not exist under another identity."
+      },
+      {
+        "status": "added",
+        "pairing": "same_selector",
+        "pairing_evidence": "selector",
+        "base": null,
+        "head": {
+          "selector": "symbol:src/sync/pass2.rs#module_prefixes_for_candidate:function",
+          "snapshot": "head",
+          "commit_sha": "9e5c15986b14c51665145b1df84de7623c70dcd2",
+          "rendering": "reference",
+          "reference": "src/sync/pass2.rs@9e5c15986b14c51665145b1df84de7623c70dcd2"
+        },
+        "supporting_snapshots": [
+          "head"
+        ],
+        "file_change": "modified",
+        "base_path": "src/sync/pass2.rs",
+        "head_path": "src/sync/pass2.rs",
+        "uncertain_candidates": [],
+        "note": "Present in head and absent from base. This is not a claim that it did not exist under another identity."
+      },
+      {
+        "status": "modified",
+        "pairing": "same_selector",
+        "pairing_evidence": "selector",
+        "base": {
+          "selector": "symbol:src/sync/pass2.rs#module_prefixes_for_file:function",
+          "snapshot": "base",
+          "commit_sha": "8ff25d082567cf8d22b25e393160565f3490f9f1",
+          "rendering": "reference",
+          "reference": "src/sync/pass2.rs@8ff25d082567cf8d22b25e393160565f3490f9f1"
+        },
+        "head": {
+          "selector": "symbol:src/sync/pass2.rs#module_prefixes_for_file:function",
+          "snapshot": "head",
+          "commit_sha": "9e5c15986b14c51665145b1df84de7623c70dcd2",
+          "rendering": "reference",
+          "reference": "src/sync/pass2.rs@9e5c15986b14c51665145b1df84de7623c70dcd2"
+        },
+        "supporting_snapshots": [
+          "base",
+          "head"
+        ],
+        "file_change": "modified",
+        "base_path": "src/sync/pass2.rs",
+        "head_path": "src/sync/pass2.rs",
+        "uncertain_candidates": [],
+        "note": "body changed; signature line is unchanged"
+      },
+      {
+        "status": "added",
+        "pairing": "same_selector",
+        "pairing_evidence": "selector",
+        "base": null,
+        "head": {
+          "selector": "symbol:src/sync/pass2.rs#normalize_module_path:function",
+          "snapshot": "head",
+          "commit_sha": "9e5c15986b14c51665145b1df84de7623c70dcd2",
+          "rendering": "reference",
+          "reference": "src/sync/pass2.rs@9e5c15986b14c51665145b1df84de7623c70dcd2"
+        },
+        "supporting_snapshots": [
+          "head"
+        ],
+        "file_change": "modified",
+        "base_path": "src/sync/pass2.rs",
+        "head_path": "src/sync/pass2.rs",
+        "uncertain_candidates": [],
+        "note": "Present in head and absent from base. This is not a claim that it did not exist under another identity."
+      },
+      {
+        "status": "removed",
+        "pairing": "same_selector",
+        "pairing_evidence": "selector",
+        "base": {
+          "selector": "symbol:src/sync/pass2.rs#qualified:method",
+          "snapshot": "base",
+          "commit_sha": "8ff25d082567cf8d22b25e393160565f3490f9f1",
+          "rendering": "reference",
+          "reference": "src/sync/pass2.rs@8ff25d082567cf8d22b25e393160565f3490f9f1"
+        },
+        "head": null,
+        "supporting_snapshots": [
+          "base"
+        ],
+        "file_change": "modified",
+        "base_path": "src/sync/pass2.rs",
+        "head_path": "src/sync/pass2.rs",
+        "uncertain_candidates": [],
+        "note": "Present in base and absent from head. This is not a claim that nothing replaced it."
+      },
+      {
+        "status": "removed",
+        "pairing": "same_selector",
+        "pairing_evidence": "selector",
+        "base": {
+          "selector": "symbol:src/sync/pass2.rs#qualified_matches_import:function",
+          "snapshot": "base",
+          "commit_sha": "8ff25d082567cf8d22b25e393160565f3490f9f1",
+          "rendering": "reference",
+          "reference": "src/sync/pass2.rs@8ff25d082567cf8d22b25e393160565f3490f9f1"
+        },
+        "head": null,
+        "supporting_snapshots": [
+          "base"
+        ],
+        "file_change": "modified",
+        "base_path": "src/sync/pass2.rs",
+        "head_path": "src/sync/pass2.rs",
+        "uncertain_candidates": [],
+        "note": "Present in base and absent from head. This is not a claim that nothing replaced it."
+      },
+      {
+        "status": "modified",
+        "pairing": "same_selector",
+        "pairing_evidence": "selector",
+        "base": {
+          "selector": "symbol:src/sync/pass2.rs#resolve_exact:function",
+          "snapshot": "base",
+          "commit_sha": "8ff25d082567cf8d22b25e393160565f3490f9f1",
+          "rendering": "reference",
+          "reference": "src/sync/pass2.rs@8ff25d082567cf8d22b25e393160565f3490f9f1"
+        },
+        "head": {
+          "selector": "symbol:src/sync/pass2.rs#resolve_exact:function",
+          "snapshot": "head",
+          "commit_sha": "9e5c15986b14c51665145b1df84de7623c70dcd2",
+          "rendering": "reference",
+          "reference": "src/sync/pass2.rs@9e5c15986b14c51665145b1df84de7623c70dcd2"
+        },
+        "supporting_snapshots": [
+          "base",
+          "head"
+        ],
+        "file_change": "modified",
+        "base_path": "src/sync/pass2.rs",
+        "head_path": "src/sync/pass2.rs",
+        "uncertain_candidates": [],
+        "note": "body changed; signature line is unchanged"
+      },
+      {
+        "status": "modified",
+        "pairing": "same_selector",
+        "pairing_evidence": "selector",
+        "base": {
+          "selector": "symbol:src/sync/pass2.rs#resolve_import:function",
+          "snapshot": "base",
+          "commit_sha": "8ff25d082567cf8d22b25e393160565f3490f9f1",
+          "rendering": "reference",
+          "reference": "src/sync/pass2.rs@8ff25d082567cf8d22b25e393160565f3490f9f1"
+        },
+        "head": {
+          "selector": "symbol:src/sync/pass2.rs#resolve_import:function",
+          "snapshot": "head",
+          "commit_sha": "9e5c15986b14c51665145b1df84de7623c70dcd2",
+          "rendering": "reference",
+          "reference": "src/sync/pass2.rs@9e5c15986b14c51665145b1df84de7623c70dcd2"
+        },
+        "supporting_snapshots": [
+          "base",
+          "head"
+        ],
+        "file_change": "modified",
+        "base_path": "src/sync/pass2.rs",
+        "head_path": "src/sync/pass2.rs",
+        "uncertain_candidates": [],
+        "note": "body changed; signature line is unchanged"
+      },
+      {
+        "status": "added",
+        "pairing": "same_selector",
+        "pairing_evidence": "selector",
+        "base": null,
+        "head": {
+          "selector": "symbol:src/sync/pass2.rs#resolve_import_path:function",
+          "snapshot": "head",
+          "commit_sha": "9e5c15986b14c51665145b1df84de7623c70dcd2",
+          "rendering": "reference",
+          "reference": "src/sync/pass2.rs@9e5c15986b14c51665145b1df84de7623c70dcd2"
+        },
+        "supporting_snapshots": [
+          "head"
+        ],
+        "file_change": "modified",
+        "base_path": "src/sync/pass2.rs",
+        "head_path": "src/sync/pass2.rs",
+        "uncertain_candidates": [],
+        "note": "Present in head and absent from base. This is not a claim that it did not exist under another identity."
+      },
+      {
+        "status": "added",
+        "pairing": "same_selector",
+        "pairing_evidence": "selector",
+        "base": null,
+        "head": {
+          "selector": "symbol:src/sync/pass2.rs#resolve_qualified:function",
+          "snapshot": "head",
+          "commit_sha": "9e5c15986b14c51665145b1df84de7623c70dcd2",
+          "rendering": "reference",
+          "reference": "src/sync/pass2.rs@9e5c15986b14c51665145b1df84de7623c70dcd2"
+        },
+        "supporting_snapshots": [
+          "head"
+        ],
+        "file_change": "modified",
+        "base_path": "src/sync/pass2.rs",
+        "head_path": "src/sync/pass2.rs",
+        "uncertain_candidates": [],
+        "note": "Present in head and absent from base. This is not a claim that it did not exist under another identity."
+      },
+      {
+        "status": "modified",
+        "pairing": "same_selector",
+        "pairing_evidence": "selector",
+        "base": {
+          "selector": "symbol:src/sync/pass2.rs#resolve_ref:function",
+          "snapshot": "base",
+          "commit_sha": "8ff25d082567cf8d22b25e393160565f3490f9f1",
+          "rendering": "reference",
+          "reference": "src/sync/pass2.rs@8ff25d082567cf8d22b25e393160565f3490f9f1"
+        },
+        "head": {
+          "selector": "symbol:src/sync/pass2.rs#resolve_ref:function",
+          "snapshot": "head",
+          "commit_sha": "9e5c15986b14c51665145b1df84de7623c70dcd2",
+          "rendering": "reference",
+          "reference": "src/sync/pass2.rs@9e5c15986b14c51665145b1df84de7623c70dcd2"
+        },
+        "supporting_snapshots": [
+          "base",
+          "head"
+        ],
+        "file_change": "modified",
+        "base_path": "src/sync/pass2.rs",
+        "head_path": "src/sync/pass2.rs",
+        "uncertain_candidates": [],
+        "note": "body changed; signature line is unchanged"
+      },
+      {
+        "status": "modified",
+        "pairing": "same_selector",
+        "pairing_evidence": "selector",
+        "base": {
+          "selector": "symbol:src/sync/pass2.rs#resolve_same_module:function",
+          "snapshot": "base",
+          "commit_sha": "8ff25d082567cf8d22b25e393160565f3490f9f1",
+          "rendering": "reference",
+          "reference": "src/sync/pass2.rs@8ff25d082567cf8d22b25e393160565f3490f9f1"
+        },
+        "head": {
+          "selector": "symbol:src/sync/pass2.rs#resolve_same_module:function",
+          "snapshot": "head",
+          "commit_sha": "9e5c15986b14c51665145b1df84de7623c70dcd2",
+          "rendering": "reference",
+          "reference": "src/sync/pass2.rs@9e5c15986b14c51665145b1df84de7623c70dcd2"
+        },
+        "supporting_snapshots": [
+          "base",
+          "head"
+        ],
+        "file_change": "modified",
+        "base_path": "src/sync/pass2.rs",
+        "head_path": "src/sync/pass2.rs",
+        "uncertain_candidates": [],
+        "note": "body changed; signature line is unchanged"
+      },
+      {
+        "status": "modified",
+        "pairing": "same_selector",
+        "pairing_evidence": "selector",
+        "base": {
+          "selector": "symbol:src/sync/pass2.rs#symbol_candidate_from_row:function",
+          "snapshot": "base",
+          "commit_sha": "8ff25d082567cf8d22b25e393160565f3490f9f1",
+          "rendering": "reference",
+          "reference": "src/sync/pass2.rs@8ff25d082567cf8d22b25e393160565f3490f9f1"
+        },
+        "head": {
+          "selector": "symbol:src/sync/pass2.rs#symbol_candidate_from_row:function",
+          "snapshot": "head",
+          "commit_sha": "9e5c15986b14c51665145b1df84de7623c70dcd2",
+          "rendering": "reference",
+          "reference": "src/sync/pass2.rs@9e5c15986b14c51665145b1df84de7623c70dcd2"
+        },
+        "supporting_snapshots": [
+          "base",
+          "head"
+        ],
+        "file_change": "modified",
+        "base_path": "src/sync/pass2.rs",
+        "head_path": "src/sync/pass2.rs",
+        "uncertain_candidates": [],
+        "note": "body changed; signature line is unchanged"
+      },
+      {
+        "status": "added",
+        "pairing": "same_selector",
+        "pairing_evidence": "selector",
+        "base": null,
+        "head": {
+          "selector": "symbol:src/sync/pass2.rs#unique_candidate:function",
+          "snapshot": "head",
+          "commit_sha": "9e5c15986b14c51665145b1df84de7623c70dcd2",
+          "rendering": "reference",
+          "reference": "src/sync/pass2.rs@9e5c15986b14c51665145b1df84de7623c70dcd2"
+        },
+        "supporting_snapshots": [
+          "head"
+        ],
+        "file_change": "modified",
+        "base_path": "src/sync/pass2.rs",
+        "head_path": "src/sync/pass2.rs",
+        "uncertain_candidates": [],
+        "note": "Present in head and absent from base. This is not a claim that it did not exist under another identity."
+      },
+      {
+        "status": "removed",
+        "pairing": "same_selector",
+        "pairing_evidence": "selector",
+        "base": {
+          "selector": "symbol:src/sync/pass2.rs#unique_candidate_qualified:function",
+          "snapshot": "base",
+          "commit_sha": "8ff25d082567cf8d22b25e393160565f3490f9f1",
+          "rendering": "reference",
+          "reference": "src/sync/pass2.rs@8ff25d082567cf8d22b25e393160565f3490f9f1"
+        },
+        "head": null,
+        "supporting_snapshots": [
+          "base"
+        ],
+        "file_change": "modified",
+        "base_path": "src/sync/pass2.rs",
+        "head_path": "src/sync/pass2.rs",
+        "uncertain_candidates": [],
+        "note": "Present in base and absent from head. This is not a claim that nothing replaced it."
+      },
+      {
+        "status": "removed",
+        "pairing": "same_selector",
+        "pairing_evidence": "selector",
+        "base": {
+          "selector": "symbol:src/sync/pass2.rs#unique_distinct_qualified:function",
+          "snapshot": "base",
+          "commit_sha": "8ff25d082567cf8d22b25e393160565f3490f9f1",
+          "rendering": "reference",
+          "reference": "src/sync/pass2.rs@8ff25d082567cf8d22b25e393160565f3490f9f1"
+        },
+        "head": null,
+        "supporting_snapshots": [
+          "base"
+        ],
+        "file_change": "modified",
+        "base_path": "src/sync/pass2.rs",
+        "head_path": "src/sync/pass2.rs",
+        "uncertain_candidates": [],
+        "note": "Present in base and absent from head. This is not a claim that nothing replaced it."
+      },
+      {
+        "status": "removed",
+        "pairing": "same_selector",
+        "pairing_evidence": "selector",
+        "base": {
+          "selector": "symbol:src/sync/pass2.rs#unique_symbol_id_for_qualified:function",
+          "snapshot": "base",
+          "commit_sha": "8ff25d082567cf8d22b25e393160565f3490f9f1",
+          "rendering": "reference",
+          "reference": "src/sync/pass2.rs@8ff25d082567cf8d22b25e393160565f3490f9f1"
+        },
+        "head": null,
+        "supporting_snapshots": [
+          "base"
+        ],
+        "file_change": "modified",
+        "base_path": "src/sync/pass2.rs",
+        "head_path": "src/sync/pass2.rs",
+        "uncertain_candidates": [],
+        "note": "Present in base and absent from head. This is not a claim that nothing replaced it."
+      },
+      {
+        "status": "uncertain",
+        "pairing": "uncertain",
+        "pairing_evidence": "none",
+        "base": {
+          "selector": "symbol:src/sync/tests/pass2.rs#TestWorktree:impl",
+          "snapshot": "base",
+          "commit_sha": "8ff25d082567cf8d22b25e393160565f3490f9f1",
+          "rendering": "reference",
+          "reference": "src/sync/tests/pass2.rs@8ff25d082567cf8d22b25e393160565f3490f9f1"
+        },
+        "head": {
+          "selector": "symbol:src/sync/tests/pass2.rs#TestWorktree:impl",
+          "snapshot": "head",
+          "commit_sha": "9e5c15986b14c51665145b1df84de7623c70dcd2",
+          "rendering": "reference",
+          "reference": "src/sync/tests/pass2.rs@9e5c15986b14c51665145b1df84de7623c70dcd2"
+        },
+        "supporting_snapshots": [
+          "base",
+          "head"
+        ],
+        "file_change": "modified",
+        "base_path": "src/sync/tests/pass2.rs",
+        "head_path": "src/sync/tests/pass2.rs",
+        "uncertain_candidates": [
+          {
+            "selector": "symbol:src/sync/tests/pass2.rs#TestWorktree:impl",
+            "snapshot": "base",
+            "commit_sha": "8ff25d082567cf8d22b25e393160565f3490f9f1",
+            "reason": "the selector addresses more than one indexed symbol on this side"
+          },
+          {
+            "selector": "symbol:src/sync/tests/pass2.rs#TestWorktree:impl",
+            "snapshot": "head",
+            "commit_sha": "9e5c15986b14c51665145b1df84de7623c70dcd2",
+            "reason": "the selector addresses more than one indexed symbol on this side"
+          }
+        ],
+        "note": "Several indexed symbols share this canonical selector; the index collapses them, so no candidate is chosen."
+      },
+      {
+        "status": "added",
+        "pairing": "same_selector",
+        "pairing_evidence": "selector",
+        "base": null,
+        "head": {
+          "selector": "symbol:src/sync/tests/pass2.rs#ambiguous_explicit_imports_do_not_choose_a_target:test",
+          "snapshot": "head",
+          "commit_sha": "9e5c15986b14c51665145b1df84de7623c70dcd2",
+          "rendering": "reference",
+          "reference": "src/sync/tests/pass2.rs@9e5c15986b14c51665145b1df84de7623c70dcd2"
+        },
+        "supporting_snapshots": [
+          "head"
+        ],
+        "file_change": "modified",
+        "base_path": "src/sync/tests/pass2.rs",
+        "head_path": "src/sync/tests/pass2.rs",
+        "uncertain_candidates": [],
+        "note": "Present in head and absent from base. This is not a claim that it did not exist under another identity."
+      },
+      {
+        "status": "added",
+        "pairing": "same_selector",
+        "pairing_evidence": "selector",
+        "base": null,
+        "head": {
+          "selector": "symbol:src/sync/tests/pass2.rs#duplicate_import_targets_remain_fuzzy_and_unhinted:test",
+          "snapshot": "head",
+          "commit_sha": "9e5c15986b14c51665145b1df84de7623c70dcd2",
+          "rendering": "reference",
+          "reference": "src/sync/tests/pass2.rs@9e5c15986b14c51665145b1df84de7623c70dcd2"
+        },
+        "supporting_snapshots": [
+          "head"
+        ],
+        "file_change": "modified",
+        "base_path": "src/sync/tests/pass2.rs",
+        "head_path": "src/sync/tests/pass2.rs",
+        "uncertain_candidates": [],
+        "note": "Present in head and absent from base. This is not a claim that it did not exist under another identity."
+      },
+      {
+        "status": "modified",
+        "pairing": "same_selector",
+        "pairing_evidence": "selector",
+        "base": {
+          "selector": "symbol:src/sync/tests/pass2.rs#fuzzy_refs_are_null_and_non_fuzzy_refs_are_populated_in_three_file_sync:test",
+          "snapshot": "base",
+          "commit_sha": "8ff25d082567cf8d22b25e393160565f3490f9f1",
+          "rendering": "reference",
+          "reference": "src/sync/tests/pass2.rs@8ff25d082567cf8d22b25e393160565f3490f9f1"
+        },
+        "head": {
+          "selector": "symbol:src/sync/tests/pass2.rs#fuzzy_refs_are_null_and_non_fuzzy_refs_are_populated_in_three_file_sync:test",
+          "snapshot": "head",
+          "commit_sha": "9e5c15986b14c51665145b1df84de7623c70dcd2",
+          "rendering": "reference",
+          "reference": "src/sync/tests/pass2.rs@9e5c15986b14c51665145b1df84de7623c70dcd2"
+        },
+        "supporting_snapshots": [
+          "base",
+          "head"
+        ],
+        "file_change": "modified",
+        "base_path": "src/sync/tests/pass2.rs",
+        "head_path": "src/sync/tests/pass2.rs",
+        "uncertain_candidates": [],
+        "note": "body changed; signature line is unchanged"
+      },
+      {
+        "status": "added",
+        "pairing": "same_selector",
+        "pairing_evidence": "selector",
+        "base": null,
+        "head": {
+          "selector": "symbol:src/sync/tests/pass2.rs#python_from_module_and_aliased_module_imports_resolve:test",
+          "snapshot": "head",
+          "commit_sha": "9e5c15986b14c51665145b1df84de7623c70dcd2",
+          "rendering": "reference",
+          "reference": "src/sync/tests/pass2.rs@9e5c15986b14c51665145b1df84de7623c70dcd2"
+        },
+        "supporting_snapshots": [
+          "head"
+        ],
+        "file_change": "modified",
+        "base_path": "src/sync/tests/pass2.rs",
+        "head_path": "src/sync/tests/pass2.rs",
+        "uncertain_candidates": [],
+        "note": "Present in head and absent from base. This is not a claim that it did not exist under another identity."
+      },
+      {
+        "status": "added",
+        "pairing": "same_selector",
+        "pairing_evidence": "selector",
+        "base": null,
+        "head": {
+          "selector": "symbol:src/sync/tests/pass2.rs#qualified_cross_file_resolution_is_exact:test",
+          "snapshot": "head",
+          "commit_sha": "9e5c15986b14c51665145b1df84de7623c70dcd2",
+          "rendering": "reference",
+          "reference": "src/sync/tests/pass2.rs@9e5c15986b14c51665145b1df84de7623c70dcd2"
+        },
+        "supporting_snapshots": [
+          "head"
+        ],
+        "file_change": "modified",
+        "base_path": "src/sync/tests/pass2.rs",
+        "head_path": "src/sync/tests/pass2.rs",
+        "uncertain_candidates": [],
+        "note": "Present in head and absent from base. This is not a claim that it did not exist under another identity."
+      },
+      {
+        "status": "added",
+        "pairing": "same_selector",
+        "pairing_evidence": "selector",
+        "base": null,
+        "head": {
+          "selector": "symbol:src/sync/tests/pass2.rs#rust_grouped_super_and_whole_module_imports_resolve:test",
+          "snapshot": "head",
+          "commit_sha": "9e5c15986b14c51665145b1df84de7623c70dcd2",
+          "rendering": "reference",
+          "reference": "src/sync/tests/pass2.rs@9e5c15986b14c51665145b1df84de7623c70dcd2"
+        },
+        "supporting_snapshots": [
+          "head"
+        ],
+        "file_change": "modified",
+        "base_path": "src/sync/tests/pass2.rs",
+        "head_path": "src/sync/tests/pass2.rs",
+        "uncertain_candidates": [],
+        "note": "Present in head and absent from base. This is not a claim that it did not exist under another identity."
+      },
+      {
+        "status": "removed",
+        "pairing": "same_selector",
+        "pairing_evidence": "selector",
+        "base": {
+          "selector": "symbol:src/sync/tests/pass2.rs#same_module_resolution_uses_unique_cross_file_module_match:test",
+          "snapshot": "base",
+          "commit_sha": "8ff25d082567cf8d22b25e393160565f3490f9f1",
+          "rendering": "reference",
+          "reference": "src/sync/tests/pass2.rs@8ff25d082567cf8d22b25e393160565f3490f9f1"
+        },
+        "head": null,
+        "supporting_snapshots": [
+          "base"
+        ],
+        "file_change": "modified",
+        "base_path": "src/sync/tests/pass2.rs",
+        "head_path": "src/sync/tests/pass2.rs",
+        "uncertain_candidates": [],
+        "note": "Present in base and absent from head. This is not a claim that nothing replaced it."
+      },
+      {
+        "status": "removed",
+        "pairing": "same_selector",
+        "pairing_evidence": "selector",
+        "base": {
+          "selector": "symbol:src/sync/tests/pass2.rs#target_symbol_hint_is_null_when_resolved_qualified_is_ambiguous:test",
+          "snapshot": "base",
+          "commit_sha": "8ff25d082567cf8d22b25e393160565f3490f9f1",
+          "rendering": "reference",
+          "reference": "src/sync/tests/pass2.rs@8ff25d082567cf8d22b25e393160565f3490f9f1"
+        },
+        "head": null,
+        "supporting_snapshots": [
+          "base"
+        ],
+        "file_change": "modified",
+        "base_path": "src/sync/tests/pass2.rs",
+        "head_path": "src/sync/tests/pass2.rs",
+        "uncertain_candidates": [],
+        "note": "Present in base and absent from head. This is not a claim that nothing replaced it."
+      }
+    ],
+    "out_of_scope": [],
+    "filtered_out": []
+  },
+  "evidence_paths": [
+    {
+      "schema_version": 1,
+      "path_id": "p-1",
+      "from": {
+        "selector": "symbol:src/query/refs.rs#run:function",
+        "snapshot": "base",
+        "label": "src/query/refs.rs#run",
+        "origin": "symbol"
+      },
+      "to": {
+        "selector": "symbol:src/query/refs.rs#resolve_target:function",
+        "snapshot": "base",
+        "label": "src/query/refs.rs#resolve_target",
+        "origin": "symbol"
+      },
+      "distance": 1,
+      "category": "resolved_call",
+      "truncated": false,
+      "truncated_by": null,
+      "edges": [
+        {
+          "from": "src/query/refs.rs#run",
+          "from_selector": "symbol:src/query/refs.rs#run:function",
+          "from_origin": "symbol",
+          "to": "src/query/refs.rs#resolve_target",
+          "to_selector": "symbol:src/query/refs.rs#resolve_target:function",
+          "relationship": "call",
+          "category": "resolved_call",
+          "confidence": "exact",
+          "snapshot": "base",
+          "commit_sha": "8ff25d082567cf8d22b25e393160565f3490f9f1",
+          "source": {
+            "file": "src/query/refs.rs",
+            "line": 23
+          },
+          "note": null,
+          "rendering": "reference",
+          "reference": "src/query/refs.rs:23@8ff25d082567cf8d22b25e393160565f3490f9f1"
+        }
+      ]
+    },
+    {
+      "schema_version": 1,
+      "path_id": "p-1",
+      "from": {
+        "selector": "symbol:src/query/refs.rs#run:function",
+        "snapshot": "head",
+        "label": "src/query/refs.rs#run",
+        "origin": "symbol"
+      },
+      "to": {
+        "selector": "symbol:src/query/refs.rs#resolve_target:function",
+        "snapshot": "head",
+        "label": "src/query/refs.rs#resolve_target",
+        "origin": "symbol"
+      },
+      "distance": 1,
+      "category": "resolved_call",
+      "truncated": false,
+      "truncated_by": null,
+      "edges": [
+        {
+          "from": "src/query/refs.rs#run",
+          "from_selector": "symbol:src/query/refs.rs#run:function",
+          "from_origin": "symbol",
+          "to": "src/query/refs.rs#resolve_target",
+          "to_selector": "symbol:src/query/refs.rs#resolve_target:function",
+          "relationship": "call",
+          "category": "resolved_call",
+          "confidence": "exact",
+          "snapshot": "head",
+          "commit_sha": "9e5c15986b14c51665145b1df84de7623c70dcd2",
+          "source": {
+            "file": "src/query/refs.rs",
+            "line": 23
+          },
+          "note": null,
+          "rendering": "reference",
+          "reference": "src/query/refs.rs:23@9e5c15986b14c51665145b1df84de7623c70dcd2"
+        }
+      ]
+    },
+    {
+      "schema_version": 1,
+      "path_id": "p-1",
+      "from": {
+        "selector": "symbol:src/sync/pass2.rs#run:function",
+        "snapshot": "base",
+        "label": "src/sync/pass2.rs#run",
+        "origin": "symbol"
+      },
+      "to": {
+        "selector": "symbol:src/sync/pass2.rs#resolve_ref:function",
+        "snapshot": "base",
+        "label": "src/sync/pass2.rs#resolve_ref",
+        "origin": "symbol"
+      },
+      "distance": 1,
+      "category": "resolved_call",
+      "truncated": false,
+      "truncated_by": null,
+      "edges": [
+        {
+          "from": "src/sync/pass2.rs#run",
+          "from_selector": "symbol:src/sync/pass2.rs#run:function",
+          "from_origin": "symbol",
+          "to": "src/sync/pass2.rs#resolve_ref",
+          "to_selector": "symbol:src/sync/pass2.rs#resolve_ref:function",
+          "relationship": "call",
+          "category": "resolved_call",
+          "confidence": "exact",
+          "snapshot": "base",
+          "commit_sha": "8ff25d082567cf8d22b25e393160565f3490f9f1",
+          "source": {
+            "file": "src/sync/pass2.rs",
+            "line": 37
+          },
+          "note": null,
+          "rendering": "reference",
+          "reference": "src/sync/pass2.rs:37@8ff25d082567cf8d22b25e393160565f3490f9f1"
+        }
+      ]
+    },
+    {
+      "schema_version": 1,
+      "path_id": "p-1",
+      "from": {
+        "selector": "symbol:src/sync/pass2.rs#run:function",
+        "snapshot": "head",
+        "label": "src/sync/pass2.rs#run",
+        "origin": "symbol"
+      },
+      "to": {
+        "selector": "symbol:src/sync/pass2.rs#resolve_ref:function",
+        "snapshot": "head",
+        "label": "src/sync/pass2.rs#resolve_ref",
+        "origin": "symbol"
+      },
+      "distance": 1,
+      "category": "resolved_call",
+      "truncated": false,
+      "truncated_by": null,
+      "edges": [
+        {
+          "from": "src/sync/pass2.rs#run",
+          "from_selector": "symbol:src/sync/pass2.rs#run:function",
+          "from_origin": "symbol",
+          "to": "src/sync/pass2.rs#resolve_ref",
+          "to_selector": "symbol:src/sync/pass2.rs#resolve_ref:function",
+          "relationship": "call",
+          "category": "resolved_call",
+          "confidence": "exact",
+          "snapshot": "head",
+          "commit_sha": "9e5c15986b14c51665145b1df84de7623c70dcd2",
+          "source": {
+            "file": "src/sync/pass2.rs",
+            "line": 37
+          },
+          "note": null,
+          "rendering": "reference",
+          "reference": "src/sync/pass2.rs:37@9e5c15986b14c51665145b1df84de7623c70dcd2"
+        }
+      ]
+    }
+  ],
+  "entry_points": [],
+  "candidate_tests": {
+    "schema_version": 1,
+    "candidates": [
+      {
+        "queried": {
+          "selector": "symbol:src/query/refs.rs#resolve_target:function",
+          "snapshot": "base",
+          "label": "src/query/refs.rs#resolve_target",
+          "origin": "symbol"
+        },
+        "test": {
+          "selector": "file:src/query/tests/refs.golden.json",
+          "snapshot": "base",
+          "label": "src/query/tests/refs.golden.json",
+          "origin": "file"
+        },
+        "rendering": "reference",
+        "reference": "src/query/tests/refs.golden.json@8ff25d082567cf8d22b25e393160565f3490f9f1",
+        "source": "naming_heuristic",
+        "label": "naming-heuristic",
+        "category": "heuristic_match",
+        "path_id": null,
+        "changed_symbols": [
+          "symbol:src/query/refs.rs#resolve_target:function"
+        ],
+        "truncated": false,
+        "note": "file name matches src/query/refs.rs"
+      },
+      {
+        "queried": {
+          "selector": "symbol:src/query/refs.rs#resolve_target:function",
+          "snapshot": "head",
+          "label": "src/query/refs.rs#resolve_target",
+          "origin": "symbol"
+        },
+        "test": {
+          "selector": "file:src/query/tests/refs.golden.json",
+          "snapshot": "head",
+          "label": "src/query/tests/refs.golden.json",
+          "origin": "file"
+        },
+        "rendering": "reference",
+        "reference": "src/query/tests/refs.golden.json@9e5c15986b14c51665145b1df84de7623c70dcd2",
+        "source": "naming_heuristic",
+        "label": "naming-heuristic",
+        "category": "heuristic_match",
+        "path_id": null,
+        "changed_symbols": [
+          "symbol:src/query/refs.rs#resolve_target:function"
+        ],
+        "truncated": false,
+        "note": "file name matches src/query/refs.rs"
+      },
+      {
+        "queried": {
+          "selector": "symbol:src/query/refs.rs#resolve_target:function",
+          "snapshot": "base",
+          "label": "src/query/refs.rs#resolve_target",
+          "origin": "symbol"
+        },
+        "test": {
+          "selector": "file:src/query/tests/refs.rs",
+          "snapshot": "base",
+          "label": "src/query/tests/refs.rs",
+          "origin": "file"
+        },
+        "rendering": "reference",
+        "reference": "src/query/tests/refs.rs@8ff25d082567cf8d22b25e393160565f3490f9f1",
+        "source": "naming_heuristic",
+        "label": "naming-heuristic",
+        "category": "heuristic_match",
+        "path_id": null,
+        "changed_symbols": [
+          "symbol:src/query/refs.rs#resolve_target:function"
+        ],
+        "truncated": false,
+        "note": "file name matches src/query/refs.rs"
+      },
+      {
+        "queried": {
+          "selector": "symbol:src/query/refs.rs#resolve_target:function",
+          "snapshot": "head",
+          "label": "src/query/refs.rs#resolve_target",
+          "origin": "symbol"
+        },
+        "test": {
+          "selector": "file:src/query/tests/refs.rs",
+          "snapshot": "head",
+          "label": "src/query/tests/refs.rs",
+          "origin": "file"
+        },
+        "rendering": "reference",
+        "reference": "src/query/tests/refs.rs@9e5c15986b14c51665145b1df84de7623c70dcd2",
+        "source": "naming_heuristic",
+        "label": "naming-heuristic",
+        "category": "heuristic_match",
+        "path_id": null,
+        "changed_symbols": [
+          "symbol:src/query/refs.rs#resolve_target:function"
+        ],
+        "truncated": false,
+        "note": "file name matches src/query/refs.rs"
+      },
+      {
+        "queried": {
+          "selector": "symbol:src/sync/pass2.rs#resolve_ref:function",
+          "snapshot": "base",
+          "label": "src/sync/pass2.rs#resolve_ref",
+          "origin": "symbol"
+        },
+        "test": {
+          "selector": "file:src/query/tests/impact.rs",
+          "snapshot": "base",
+          "label": "src/query/tests/impact.rs",
+          "origin": "file"
+        },
+        "rendering": "reference",
+        "reference": "src/query/tests/impact.rs@8ff25d082567cf8d22b25e393160565f3490f9f1",
+        "source": "import_relationship",
+        "label": "import",
+        "category": "import_relationship",
+        "path_id": null,
+        "changed_symbols": [
+          "symbol:src/sync/pass2.rs#resolve_ref:function"
+        ],
+        "truncated": false,
+        "note": "imports `crate::sync`; an import is a file-level relationship, not a call"
+      },
+      {
+        "queried": {
+          "selector": "symbol:src/sync/pass2.rs#resolve_ref:function",
+          "snapshot": "head",
+          "label": "src/sync/pass2.rs#resolve_ref",
+          "origin": "symbol"
+        },
+        "test": {
+          "selector": "file:src/query/tests/impact.rs",
+          "snapshot": "head",
+          "label": "src/query/tests/impact.rs",
+          "origin": "file"
+        },
+        "rendering": "reference",
+        "reference": "src/query/tests/impact.rs@9e5c15986b14c51665145b1df84de7623c70dcd2",
+        "source": "import_relationship",
+        "label": "import",
+        "category": "import_relationship",
+        "path_id": null,
+        "changed_symbols": [
+          "symbol:src/sync/pass2.rs#resolve_ref:function"
+        ],
+        "truncated": false,
+        "note": "imports `crate::sync`; an import is a file-level relationship, not a call"
+      },
+      {
+        "queried": {
+          "selector": "symbol:src/sync/pass2.rs#resolve_ref:function",
+          "snapshot": "base",
+          "label": "src/sync/pass2.rs#resolve_ref",
+          "origin": "symbol"
+        },
+        "test": {
+          "selector": "file:src/query/tests/refs.rs",
+          "snapshot": "base",
+          "label": "src/query/tests/refs.rs",
+          "origin": "file"
+        },
+        "rendering": "reference",
+        "reference": "src/query/tests/refs.rs@8ff25d082567cf8d22b25e393160565f3490f9f1",
+        "source": "import_relationship",
+        "label": "import",
+        "category": "import_relationship",
+        "path_id": null,
+        "changed_symbols": [
+          "symbol:src/sync/pass2.rs#resolve_ref:function"
+        ],
+        "truncated": false,
+        "note": "imports `crate::sync`; an import is a file-level relationship, not a call"
+      },
+      {
+        "queried": {
+          "selector": "symbol:src/sync/pass2.rs#resolve_ref:function",
+          "snapshot": "head",
+          "label": "src/sync/pass2.rs#resolve_ref",
+          "origin": "symbol"
+        },
+        "test": {
+          "selector": "file:src/query/tests/refs.rs",
+          "snapshot": "head",
+          "label": "src/query/tests/refs.rs",
+          "origin": "file"
+        },
+        "rendering": "reference",
+        "reference": "src/query/tests/refs.rs@9e5c15986b14c51665145b1df84de7623c70dcd2",
+        "source": "import_relationship",
+        "label": "import",
+        "category": "import_relationship",
+        "path_id": null,
+        "changed_symbols": [
+          "symbol:src/sync/pass2.rs#resolve_ref:function"
+        ],
+        "truncated": false,
+        "note": "imports `crate::sync`; an import is a file-level relationship, not a call"
+      },
+      {
+        "queried": {
+          "selector": "symbol:src/sync/pass2.rs#resolve_ref:function",
+          "snapshot": "base",
+          "label": "src/sync/pass2.rs#resolve_ref",
+          "origin": "symbol"
+        },
+        "test": {
+          "selector": "file:src/query/tests/search.rs",
+          "snapshot": "base",
+          "label": "src/query/tests/search.rs",
+          "origin": "file"
+        },
+        "rendering": "reference",
+        "reference": "src/query/tests/search.rs@8ff25d082567cf8d22b25e393160565f3490f9f1",
+        "source": "import_relationship",
+        "label": "import",
+        "category": "import_relationship",
+        "path_id": null,
+        "changed_symbols": [
+          "symbol:src/sync/pass2.rs#resolve_ref:function"
+        ],
+        "truncated": false,
+        "note": "imports `crate::sync`; an import is a file-level relationship, not a call"
+      },
+      {
+        "queried": {
+          "selector": "symbol:src/sync/pass2.rs#resolve_ref:function",
+          "snapshot": "head",
+          "label": "src/sync/pass2.rs#resolve_ref",
+          "origin": "symbol"
+        },
+        "test": {
+          "selector": "file:src/query/tests/search.rs",
+          "snapshot": "head",
+          "label": "src/query/tests/search.rs",
+          "origin": "file"
+        },
+        "rendering": "reference",
+        "reference": "src/query/tests/search.rs@9e5c15986b14c51665145b1df84de7623c70dcd2",
+        "source": "import_relationship",
+        "label": "import",
+        "category": "import_relationship",
+        "path_id": null,
+        "changed_symbols": [
+          "symbol:src/sync/pass2.rs#resolve_ref:function"
+        ],
+        "truncated": false,
+        "note": "imports `crate::sync`; an import is a file-level relationship, not a call"
+      },
+      {
+        "queried": {
+          "selector": "symbol:src/sync/pass2.rs#resolve_ref:function",
+          "snapshot": "base",
+          "label": "src/sync/pass2.rs#resolve_ref",
+          "origin": "symbol"
+        },
+        "test": {
+          "selector": "file:src/query/tests/show.rs",
+          "snapshot": "base",
+          "label": "src/query/tests/show.rs",
+          "origin": "file"
+        },
+        "rendering": "reference",
+        "reference": "src/query/tests/show.rs@8ff25d082567cf8d22b25e393160565f3490f9f1",
+        "source": "import_relationship",
+        "label": "import",
+        "category": "import_relationship",
+        "path_id": null,
+        "changed_symbols": [
+          "symbol:src/sync/pass2.rs#resolve_ref:function"
+        ],
+        "truncated": false,
+        "note": "imports `crate::sync`; an import is a file-level relationship, not a call"
+      },
+      {
+        "queried": {
+          "selector": "symbol:src/sync/pass2.rs#resolve_ref:function",
+          "snapshot": "head",
+          "label": "src/sync/pass2.rs#resolve_ref",
+          "origin": "symbol"
+        },
+        "test": {
+          "selector": "file:src/query/tests/show.rs",
+          "snapshot": "head",
+          "label": "src/query/tests/show.rs",
+          "origin": "file"
+        },
+        "rendering": "reference",
+        "reference": "src/query/tests/show.rs@9e5c15986b14c51665145b1df84de7623c70dcd2",
+        "source": "import_relationship",
+        "label": "import",
+        "category": "import_relationship",
+        "path_id": null,
+        "changed_symbols": [
+          "symbol:src/sync/pass2.rs#resolve_ref:function"
+        ],
+        "truncated": false,
+        "note": "imports `crate::sync`; an import is a file-level relationship, not a call"
+      },
+      {
+        "queried": {
+          "selector": "symbol:src/sync/pass2.rs#resolve_ref:function",
+          "snapshot": "base",
+          "label": "src/sync/pass2.rs#resolve_ref",
+          "origin": "symbol"
+        },
+        "test": {
+          "selector": "file:src/query/tests/trace.rs",
+          "snapshot": "base",
+          "label": "src/query/tests/trace.rs",
+          "origin": "file"
+        },
+        "rendering": "reference",
+        "reference": "src/query/tests/trace.rs@8ff25d082567cf8d22b25e393160565f3490f9f1",
+        "source": "import_relationship",
+        "label": "import",
+        "category": "import_relationship",
+        "path_id": null,
+        "changed_symbols": [
+          "symbol:src/sync/pass2.rs#resolve_ref:function"
+        ],
+        "truncated": false,
+        "note": "imports `crate::sync`; an import is a file-level relationship, not a call"
+      },
+      {
+        "queried": {
+          "selector": "symbol:src/sync/pass2.rs#resolve_ref:function",
+          "snapshot": "head",
+          "label": "src/sync/pass2.rs#resolve_ref",
+          "origin": "symbol"
+        },
+        "test": {
+          "selector": "file:src/query/tests/trace.rs",
+          "snapshot": "head",
+          "label": "src/query/tests/trace.rs",
+          "origin": "file"
+        },
+        "rendering": "reference",
+        "reference": "src/query/tests/trace.rs@9e5c15986b14c51665145b1df84de7623c70dcd2",
+        "source": "import_relationship",
+        "label": "import",
+        "category": "import_relationship",
+        "path_id": null,
+        "changed_symbols": [
+          "symbol:src/sync/pass2.rs#resolve_ref:function"
+        ],
+        "truncated": false,
+        "note": "imports `crate::sync`; an import is a file-level relationship, not a call"
+      },
+      {
+        "queried": {
+          "selector": "symbol:src/sync/pass2.rs#resolve_ref:function",
+          "snapshot": "base",
+          "label": "src/sync/pass2.rs#resolve_ref",
+          "origin": "symbol"
+        },
+        "test": {
+          "selector": "file:src/sync/tests/mod.rs",
+          "snapshot": "base",
+          "label": "src/sync/tests/mod.rs",
+          "origin": "file"
+        },
+        "rendering": "reference",
+        "reference": "src/sync/tests/mod.rs@8ff25d082567cf8d22b25e393160565f3490f9f1",
+        "source": "import_relationship",
+        "label": "import",
+        "category": "import_relationship",
+        "path_id": null,
+        "changed_symbols": [
+          "symbol:src/sync/pass2.rs#resolve_ref:function"
+        ],
+        "truncated": false,
+        "note": "imports `crate::sync`; an import is a file-level relationship, not a call"
+      },
+      {
+        "queried": {
+          "selector": "symbol:src/sync/pass2.rs#resolve_ref:function",
+          "snapshot": "head",
+          "label": "src/sync/pass2.rs#resolve_ref",
+          "origin": "symbol"
+        },
+        "test": {
+          "selector": "file:src/sync/tests/mod.rs",
+          "snapshot": "head",
+          "label": "src/sync/tests/mod.rs",
+          "origin": "file"
+        },
+        "rendering": "reference",
+        "reference": "src/sync/tests/mod.rs@9e5c15986b14c51665145b1df84de7623c70dcd2",
+        "source": "import_relationship",
+        "label": "import",
+        "category": "import_relationship",
+        "path_id": null,
+        "changed_symbols": [
+          "symbol:src/sync/pass2.rs#resolve_ref:function"
+        ],
+        "truncated": false,
+        "note": "imports `crate::sync`; an import is a file-level relationship, not a call"
+      },
+      {
+        "queried": {
+          "selector": "symbol:src/sync/pass2.rs#resolve_ref:function",
+          "snapshot": "base",
+          "label": "src/sync/pass2.rs#resolve_ref",
+          "origin": "symbol"
+        },
+        "test": {
+          "selector": "file:src/sync/tests/scanner.rs",
+          "snapshot": "base",
+          "label": "src/sync/tests/scanner.rs",
+          "origin": "file"
+        },
+        "rendering": "reference",
+        "reference": "src/sync/tests/scanner.rs@8ff25d082567cf8d22b25e393160565f3490f9f1",
+        "source": "import_relationship",
+        "label": "import",
+        "category": "import_relationship",
+        "path_id": null,
+        "changed_symbols": [
+          "symbol:src/sync/pass2.rs#resolve_ref:function"
+        ],
+        "truncated": false,
+        "note": "imports `crate::sync`; an import is a file-level relationship, not a call"
+      },
+      {
+        "queried": {
+          "selector": "symbol:src/sync/pass2.rs#resolve_ref:function",
+          "snapshot": "head",
+          "label": "src/sync/pass2.rs#resolve_ref",
+          "origin": "symbol"
+        },
+        "test": {
+          "selector": "file:src/sync/tests/scanner.rs",
+          "snapshot": "head",
+          "label": "src/sync/tests/scanner.rs",
+          "origin": "file"
+        },
+        "rendering": "reference",
+        "reference": "src/sync/tests/scanner.rs@9e5c15986b14c51665145b1df84de7623c70dcd2",
+        "source": "import_relationship",
+        "label": "import",
+        "category": "import_relationship",
+        "path_id": null,
+        "changed_symbols": [
+          "symbol:src/sync/pass2.rs#resolve_ref:function"
+        ],
+        "truncated": false,
+        "note": "imports `crate::sync`; an import is a file-level relationship, not a call"
+      },
+      {
+        "queried": {
+          "selector": "symbol:src/sync/pass2.rs#resolve_ref:function",
+          "snapshot": "base",
+          "label": "src/sync/pass2.rs#resolve_ref",
+          "origin": "symbol"
+        },
+        "test": {
+          "selector": "file:src/tests/lib.rs",
+          "snapshot": "base",
+          "label": "src/tests/lib.rs",
+          "origin": "file"
+        },
+        "rendering": "reference",
+        "reference": "src/tests/lib.rs@8ff25d082567cf8d22b25e393160565f3490f9f1",
+        "source": "import_relationship",
+        "label": "import",
+        "category": "import_relationship",
+        "path_id": null,
+        "changed_symbols": [
+          "symbol:src/sync/pass2.rs#resolve_ref:function"
+        ],
+        "truncated": false,
+        "note": "imports `crate::sync`; an import is a file-level relationship, not a call"
+      },
+      {
+        "queried": {
+          "selector": "symbol:src/sync/pass2.rs#resolve_ref:function",
+          "snapshot": "head",
+          "label": "src/sync/pass2.rs#resolve_ref",
+          "origin": "symbol"
+        },
+        "test": {
+          "selector": "file:src/tests/lib.rs",
+          "snapshot": "head",
+          "label": "src/tests/lib.rs",
+          "origin": "file"
+        },
+        "rendering": "reference",
+        "reference": "src/tests/lib.rs@9e5c15986b14c51665145b1df84de7623c70dcd2",
+        "source": "import_relationship",
+        "label": "import",
+        "category": "import_relationship",
+        "path_id": null,
+        "changed_symbols": [
+          "symbol:src/sync/pass2.rs#resolve_ref:function"
+        ],
+        "truncated": false,
+        "note": "imports `crate::sync`; an import is a file-level relationship, not a call"
+      },
+      {
+        "queried": {
+          "selector": "symbol:src/sync/pass2.rs#resolve_ref:function",
+          "snapshot": "base",
+          "label": "src/sync/pass2.rs#resolve_ref",
+          "origin": "symbol"
+        },
+        "test": {
+          "selector": "file:src/sync/tests/pass2.rs",
+          "snapshot": "base",
+          "label": "src/sync/tests/pass2.rs",
+          "origin": "file"
+        },
+        "rendering": "reference",
+        "reference": "src/sync/tests/pass2.rs@8ff25d082567cf8d22b25e393160565f3490f9f1",
+        "source": "naming_heuristic",
+        "label": "naming-heuristic",
+        "category": "heuristic_match",
+        "path_id": null,
+        "changed_symbols": [
+          "symbol:src/sync/pass2.rs#resolve_ref:function"
+        ],
+        "truncated": false,
+        "note": "file name matches src/sync/pass2.rs"
+      },
+      {
+        "queried": {
+          "selector": "symbol:src/sync/pass2.rs#resolve_ref:function",
+          "snapshot": "head",
+          "label": "src/sync/pass2.rs#resolve_ref",
+          "origin": "symbol"
+        },
+        "test": {
+          "selector": "file:src/sync/tests/pass2.rs",
+          "snapshot": "head",
+          "label": "src/sync/tests/pass2.rs",
+          "origin": "file"
+        },
+        "rendering": "reference",
+        "reference": "src/sync/tests/pass2.rs@9e5c15986b14c51665145b1df84de7623c70dcd2",
+        "source": "naming_heuristic",
+        "label": "naming-heuristic",
+        "category": "heuristic_match",
+        "path_id": null,
+        "changed_symbols": [
+          "symbol:src/sync/pass2.rs#resolve_ref:function"
+        ],
+        "truncated": false,
+        "note": "file name matches src/sync/pass2.rs"
+      }
+    ],
+    "unsupported_scope": [],
+    "truncated": true
+  },
+  "unresolved": [
+    {
+      "selector": "symbol:src/query/refs.rs#resolve_target:function",
+      "snapshot": "base",
+      "kind": "entry_points",
+      "reasons": [
+        "No affected symbol matched a disclosed entry-point rule. The rules are listed in this response; a symbol reached only through evidence a rule does not cover is not classified, and no score is assigned in place of a rule."
+      ]
+    },
+    {
+      "selector": "symbol:src/query/refs.rs#resolve_target:function",
+      "snapshot": "head",
+      "kind": "entry_points",
+      "reasons": [
+        "No affected symbol matched a disclosed entry-point rule. The rules are listed in this response; a symbol reached only through evidence a rule does not cover is not classified, and no score is assigned in place of a rule."
+      ]
+    },
+    {
+      "selector": "symbol:src/sync/pass2.rs#resolve_ref:function",
+      "snapshot": "base",
+      "kind": "entry_points",
+      "reasons": [
+        "No affected symbol matched a disclosed entry-point rule. The rules are listed in this response; a symbol reached only through evidence a rule does not cover is not classified, and no score is assigned in place of a rule."
+      ]
+    },
+    {
+      "selector": "symbol:src/sync/pass2.rs#resolve_ref:function",
+      "snapshot": "head",
+      "kind": "entry_points",
+      "reasons": [
+        "No affected symbol matched a disclosed entry-point rule. The rules are listed in this response; a symbol reached only through evidence a rule does not cover is not classified, and no score is assigned in place of a rule."
+      ]
+    }
+  ],
+  "scope": {
+    "truncated": [
+      {
+        "what": "entry_points:symbol:src/query/refs.rs#resolve_target:function@base",
+        "bound": "depth",
+        "value": 1
+      },
+      {
+        "what": "entry_points:symbol:src/query/refs.rs#resolve_target:function@head",
+        "bound": "depth",
+        "value": 1
+      },
+      {
+        "what": "entry_points:symbol:src/sync/pass2.rs#resolve_ref:function@base",
+        "bound": "depth",
+        "value": 1
+      },
+      {
+        "what": "entry_points:symbol:src/sync/pass2.rs#resolve_ref:function@head",
+        "bound": "depth",
+        "value": 1
+      },
+      {
+        "what": "evidence:symbol:src/query/refs.rs#resolve_target:function@base",
+        "bound": "depth",
+        "value": 1
+      },
+      {
+        "what": "evidence:symbol:src/query/refs.rs#resolve_target:function@head",
+        "bound": "depth",
+        "value": 1
+      },
+      {
+        "what": "evidence:symbol:src/sync/pass2.rs#resolve_ref:function@base",
+        "bound": "depth",
+        "value": 1
+      },
+      {
+        "what": "evidence:symbol:src/sync/pass2.rs#resolve_ref:function@head",
+        "bound": "depth",
+        "value": 1
+      }
+    ],
+    "unsupported": [],
+    "excluded": []
+  },
+  "source_rendering": "reference"
+}
