@@ -10,7 +10,6 @@
 #![allow(clippy::expect_used)]
 
 use std::net::TcpStream;
-use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
 use git2::Repository;
@@ -472,9 +471,19 @@ fn search_parameters_are_refused_with_a_reason() {
 }
 
 #[test]
-fn status_reports_monotonic_progress_during_a_cold_build_of_this_repository() {
-    let (base, head) = workspace_head_and_parent();
-    let service = Service::launch_at(workspace_root(), base, head, Box::new(()));
+fn status_reports_monotonic_progress_during_a_cold_build_of_a_large_repository() {
+    // A synthetic repository rather than this workspace's own history: CI
+    // checks the workspace out at depth 1, so `HEAD` has no parent there.
+    let (repository, base, head) = build_large_repo(2_000);
+    let cache_dir = TempDir::new().expect("create cache directory");
+    let cache_dir_str = cache_dir.path().to_string_lossy().into_owned();
+    let service = Service::launch_at_with(
+        repository.path().to_path_buf(),
+        base,
+        head,
+        Box::new(repository),
+        &["--cache-dir", cache_dir_str.as_str()],
+    );
 
     let mut previous = [0u64, 0u64];
     let mut ready = [false, false];
@@ -681,26 +690,6 @@ fn build_large_repo(file_count: usize) -> (TempDir, String, String) {
     let head = commit_files(&repo, dir.path(), head_refs.as_slice(), "head", 1);
 
     (dir, base, head)
-}
-
-/// Workspace root two directories above this crate: `crates/<this>/../..`.
-fn workspace_root() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../..")
-        .canonicalize()
-        .expect("resolve workspace root")
-}
-
-/// `HEAD` and its first parent in the workspace repository, for a cold build
-/// large enough to observe real indexing progress.
-fn workspace_head_and_parent() -> (String, String) {
-    let repo = Repository::discover(workspace_root()).expect("discover workspace repository");
-    let head = repo
-        .head()
-        .and_then(|reference| reference.peel_to_commit())
-        .expect("resolve workspace HEAD");
-    let parent = head.parent(0).expect("workspace HEAD has a parent commit");
-    (parent.id().to_string(), head.id().to_string())
 }
 
 /// The in-process lifecycle: a service owns its snapshot trees and releases
