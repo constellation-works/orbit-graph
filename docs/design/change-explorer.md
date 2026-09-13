@@ -460,6 +460,9 @@ rejected — the scope is never inferred from the request.
 | `GET /api/evidence?selector=…&side=…&depth=…&confidence=…` | Relationship evidence for one symbol in one snapshot | Evidence-path payloads |
 | `GET /api/candidate-tests?selector=…&side=…&confidence=…` | Candidate tests for one changed symbol in one snapshot | Candidate-test payload |
 | `GET /api/source?selector=…&side=…` | Bounded source excerpt for an evidence location | `{"file","span","bytes_or_text","truncated","snapshot"}` |
+| `GET /api/search?q=…&side=…&kind=…&lang=…&limit=…` | Full-text search over one snapshot's symbols, strings, and config keys (milestone 4) | Selector-addressed matches, each labelled with its changed-symbol status |
+| `GET /api/status` | Per-side cold-build progress for the launch scope (milestone 4) | `{"indexing":{"base":{...},"head":{...}}}` |
+| `POST /api/cancel` | Abort an in-progress index build for the launch scope (milestone 4) | `{"cancelling":true,"indexing":{...}}` |
 | `POST /api/report` | Export the current report | Exported change-report payload |
 | `GET /api/health` | Liveness and scope echo | `{"status","repository","base_sha","head_sha","mode"}` |
 
@@ -503,21 +506,68 @@ Rules:
   `side`, `requested_ref`, `commit_sha`, `files_indexed`, `files_written`,
   `extractor_version`, and `excluded` entries (`path` and `reason`). Health
   returns the launch identifiers plus `status: "ok"` and indexing fields.
-  Indexing statuses are `indexing`, `ready`, and `failed`.
+  Coarse indexing statuses (`indexing_status`, on health, the scope envelope,
+  and `GET /api/status`) are `indexing`, `ready`, `failed`, and `cancelled`
+  (milestone 4).
+- (Milestone 4) `/api/comparison` and `GET /api/status` both carry an
+  `indexing` object with per-side progress:
+  `{"base": {...}, "head": {...}}`, each side
+  `{"state","files_seen","files_indexed","files_ignored",
+  "unsupported_constructs","languages","started_at","elapsed_ms","error"}`.
+  `state` is `pending`, `materializing`, `indexing`, `ready`, `failed`, or
+  `cancelled`. `files_seen` and `files_indexed` are reported live during the
+  `indexing` phase and increase monotonically; `files_ignored` and
+  `unsupported_constructs` come from materialization and are fixed once
+  indexing starts; `languages` is a best-effort, extension-derived list built
+  up as indexing progresses. `started_at` is milliseconds since the Unix
+  epoch; `elapsed_ms` is live while a side is in progress and frozen at its
+  value once the side reaches `ready`, `failed`, or `cancelled`. A query
+  endpoint that needs a side that is not `ready` returns 409
+  `side_not_ready` with the current `indexing` object in `error.details`
+  rather than blocking.
+- (Milestone 4) `POST /api/cancel` requests cancellation of an in-progress
+  build; it is non-blocking; it returns 200 `{"cancelling":true,...}` when a
+  build was in progress, or 409 `not_indexing` when neither side had a build
+  running. `GET /api/status` reports the eventual transition to `cancelled`,
+  and no cache entry is published for a side that ends `cancelled`
+  regardless of the phase cancellation was requested in. The next `/api/*`
+  request restarts the build for the launch scope.
+- (Milestone 4) `GET /api/search` runs the core `Graph::search` FTS5 query
+  against the requested side. Each match carries `kind` (`symbol`, `string`,
+  or `config`), the canonical `selector` the other selector-addressed routes
+  accept, `label`, `file`, `line`, and `changed` — the match's status in the
+  current comparison's changed-symbol list (`added`, `removed`, `modified`,
+  `signature_changed`, `moved`, `renamed`, `uncertain`, or `unchanged` when
+  the selector is not in that list; a string or config match, which has no
+  symbol identity, is addressed by `file:<path>` and is always `unchanged`).
+  The response also carries `q` (the query, echoed as received), `snapshot`,
+  `limit` (defaults to 20, the core default), `truncated`, and
+  `truncated_by` (`"limit"` when the match count reaches the limit). A
+  `limit` above 200 is refused as `unsupported_limit` rather than silently
+  clamped — the same rule `depth` follows. Query text is always bound to
+  FTS5 as data, never interpolated into SQL or a shell; a query that still
+  fails at the FTS5 layer — an embedded NUL byte defeats SQLite's C-string
+  binding, for example — is `invalid_query` (400), never a 500.
 - `GET /api/source` returns `schema_version`, `scope`, `selector`, `snapshot`,
   `commit_sha`, `file`, `span.start`, `span.end`, `kind`, `name`, `qualified`,
   `encoding`, `bytes_or_text`, `truncated`, `truncated_by`, and
   `source_max_bytes`. `encoding` is `text` or `bytes`; a missing selector on
   the requested side returns 404 with error code `not_in_snapshot`.
-- Errors use `{"schema_version":1,"error":{"code","message"}}`, with a
-  `scope` envelope on comparison-dependent errors. The service emits
-  `unauthorized` (401), `host_mismatch`, `origin_mismatch`, or
-  `repository_out_of_scope` (403), `invalid_side`, `invalid_confidence`,
-  `missing_selector`, `unsupported_depth`, `evidence_failed`,
-  `candidate_tests_failed`, or `invalid_selector` (400), `not_found` (404),
-  `method_not_allowed` (405), `index_unavailable`, `indexing_failed`,
-  `changed_symbols_failed`, or `source_failed` (500), `indexing` (503), and
-  `not_implemented` (501). `POST /api/report` deliberately returns 501.
+- Errors use `{"schema_version":1,"error":{"code","message","details"}}`
+  (milestone 4 adds `details`, a JSON object with whatever structured context
+  is useful — empty when there is none), with a `scope` envelope on
+  comparison-dependent errors. The service emits `unauthorized` (401),
+  `host_mismatch`, `origin_mismatch`, or `repository_out_of_scope` (403),
+  `invalid_side`, `invalid_confidence`, `missing_selector`,
+  `unsupported_depth`, `evidence_failed`, `candidate_tests_failed`,
+  `invalid_selector`, `invalid_query`, `invalid_kind`, `invalid_limit`, or
+  `unsupported_limit` (400), `not_found` (404), `method_not_allowed` (405),
+  `index_unavailable`, `indexing_failed`, `changed_symbols_failed`, or
+  `source_failed` (500), `side_not_ready` or `not_indexing` (409), and
+  `not_implemented` (501). `POST /api/report` deliberately returns 501. The
+  pre-milestone-4 `indexing` (503) code is retired: a side that is not ready
+  now answers 409 `side_not_ready` for every query endpoint, matching the new
+  `POST /api/cancel` refusal.
 - Responses are read-only with respect to the user's repository. No endpoint
   writes to the working tree, the Git index, or the object store.
 - The service exits when its session ends, taking both snapshot trees with it.

@@ -26,6 +26,7 @@ fn panicking_extractor_skips_file_and_preserves_other_writes() {
         SyncMode::Auto,
         &diff,
         &PanickingBackend,
+        None,
     )
     .expect("pass1 skips panicking file");
 
@@ -174,6 +175,7 @@ fn helper() {}
         worktree.path(),
         SyncMode::Full,
         &diff,
+        None,
     )
     .expect("run pass1");
 
@@ -207,6 +209,7 @@ fn main() {
         worktree.path(),
         SyncMode::Full,
         &diff,
+        None,
     )
     .expect("run pass1");
 

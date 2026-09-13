@@ -29,3 +29,4 @@ pub mod filters;
 pub mod report;
 pub mod service;
 pub mod snapshot;
+mod status;

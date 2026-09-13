@@ -33,14 +33,17 @@
 //! separately, and a dirty state is reported through
 //! [`Comparison::working_tree`] so the caller can disclose it.
 
+use std::collections::BTreeSet;
 use std::fmt::{Display, Formatter};
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
 use git2::{ObjectType, Oid, Repository, RepositoryInitOptions, Status, StatusOptions, TreeEntry};
 use orbit_graph::{
-    Confidence, Graph, GraphError, ImpactResult, RefOpts, RefResult, Selector, SyncMode, SyncPolicy,
+    Confidence, Graph, GraphError, ImpactResult, RefOpts, RefResult, Selector, SyncMode,
+    SyncObserver, SyncOutcome, SyncPolicy, SyncProgress,
 };
 use tempfile::TempDir;
 use thiserror::Error;
@@ -110,6 +113,124 @@ impl Display for SnapshotSide {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         f.write_str(self.label())
     }
+}
+
+/// State of one side's cold build, observed through [`ComparisonProgress`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BuildState {
+    /// The build has not started.
+    Pending,
+    /// The commit tree is being materialized into the cache or a temporary
+    /// directory.
+    Materializing,
+    /// The materialized tree is being indexed.
+    Indexing,
+    /// The side is indexed and queryable.
+    Ready,
+    /// The build failed. [`Comparison::open_with_progress`] itself never
+    /// reports this state: it surfaces a failure as an `Err`, and a caller
+    /// that wants this state in its own status board, such as the explorer
+    /// service, sets it after catching that `Err`.
+    Failed,
+    /// [`ComparisonProgress::is_cancelled`] stopped the build before it
+    /// reached [`BuildState::Ready`].
+    Cancelled,
+}
+
+impl BuildState {
+    /// Stable label used in payloads and reports.
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Pending => "pending",
+            Self::Materializing => "materializing",
+            Self::Indexing => "indexing",
+            Self::Ready => "ready",
+            Self::Failed => "failed",
+            Self::Cancelled => "cancelled",
+        }
+    }
+}
+
+/// Live progress for one side of a comparison build.
+///
+/// [`Comparison::open_with_progress`] itself never reports
+/// [`BuildState::Failed`]: a build failure surfaces as an `Err` from that
+/// call, and a caller that wants the failure folded into its own status board
+/// sets that state itself after catching the `Err`, alongside the reason.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BuildStatus {
+    /// Current phase of the build.
+    pub state: BuildState,
+    /// Total files this phase will touch, once known; `0` before that.
+    pub files_seen: usize,
+    /// Files processed so far; increases monotonically up to `files_seen`.
+    pub files_indexed: usize,
+    /// Tree entries materialization deliberately did not write (symlinks,
+    /// submodules, oversize blobs, unsafe names, and unsupported object
+    /// kinds).
+    pub files_ignored: usize,
+    /// The subset of `files_ignored` excluded because their Git object kind
+    /// is not one this crate materializes (see
+    /// [`ExclusionReason::UnsupportedKind`]).
+    pub unsupported_constructs: usize,
+    /// Languages observed among the files indexed so far, sorted and
+    /// deduplicated. Best-effort: derived from file extensions as indexing
+    /// progresses, not from the extractor that actually ran.
+    pub languages: Vec<String>,
+}
+
+impl BuildStatus {
+    fn pending() -> Self {
+        Self {
+            state: BuildState::Pending,
+            files_seen: 0,
+            files_indexed: 0,
+            files_ignored: 0,
+            unsupported_constructs: 0,
+            languages: Vec::new(),
+        }
+    }
+}
+
+/// Observes live per-side status while [`Comparison::open_with_progress`]
+/// materializes and indexes both sides, and can request cancellation.
+pub trait ComparisonProgress: Send + Sync {
+    /// Called whenever `side`'s status changes.
+    fn on_status(&self, side: SnapshotSide, status: &BuildStatus);
+    /// Checked between materialization entries and between indexed files;
+    /// once this returns `true`, the build stops as soon as it safely can.
+    fn is_cancelled(&self) -> bool;
+}
+
+/// Outcome of [`Comparison::open_with_progress`].
+pub enum ComparisonOutcome {
+    /// Both sides were materialized and indexed.
+    Ready(Box<Comparison>),
+    /// [`ComparisonProgress::is_cancelled`] stopped the build. Neither side's
+    /// cache entry, if any was being built, was published.
+    Cancelled,
+}
+
+/// Best-effort language guess from a file extension, for live status display
+/// only. Mirrors the extensions `orbit_graph`'s registered extractors accept;
+/// a mismatch here never affects what gets indexed.
+fn language_hint(path: &str) -> Option<&'static str> {
+    let extension = Path::new(path).extension()?.to_str()?;
+    Some(match extension {
+        "rs" => "rust",
+        "c" | "h" => "c",
+        "md" | "markdown" => "markdown",
+        "yaml" | "yml" | "toml" | "json" | "env" => "config",
+        "java" => "java",
+        "js" | "jsx" => "javascript",
+        "kt" | "kts" => "kotlin",
+        "cs" => "csharp",
+        "go" => "go",
+        "py" => "python",
+        "rb" => "ruby",
+        "ts" | "tsx" => "typescript",
+        _ => return None,
+    })
 }
 
 /// Why a tree entry was not materialized into a snapshot.
@@ -467,22 +588,32 @@ impl Snapshot {
         }
     }
 
+    /// Build this side, reporting live status through `progress`.
+    ///
+    /// Returns `Ok(None)` if `progress.is_cancelled()` stopped the build
+    /// before it reached [`BuildState::Ready`]; a cache entry that was being
+    /// built for this side is discarded, never published, so no later launch
+    /// can see a half-indexed tree under this commit's SHA.
     fn build(
         repo: &Repository,
         side: SnapshotSide,
         requested_ref: &str,
         cache: Option<&SnapshotCache>,
-    ) -> Result<Self, SnapshotError> {
+        progress: &dyn ComparisonProgress,
+    ) -> Result<Option<Self>, SnapshotError> {
         let started = Instant::now();
         let commit = resolve_commit(repo, requested_ref)?;
         let commit_sha = commit.to_string();
 
         let prepared = match cache {
-            Some(cache) => Self::prepare_cached(repo, side, commit, cache)?,
-            None => Self::prepare_temporary(repo, side, commit)?,
+            Some(cache) => Self::prepare_cached(repo, side, commit, cache, progress)?,
+            None => Self::prepare_temporary(repo, side, commit, progress)?,
+        };
+        let Some(prepared) = prepared else {
+            return Ok(None);
         };
 
-        Ok(Self {
+        Ok(Some(Self {
             side,
             requested_ref: requested_ref.to_string(),
             commit_sha,
@@ -495,7 +626,7 @@ impl Snapshot {
             cache: prepared.cache,
             cache_note: prepared.cache_note,
             prepared_in: started.elapsed(),
-        })
+        }))
     }
 
     /// Open a cached entry for `commit`, building and publishing one when no
@@ -505,7 +636,8 @@ impl Snapshot {
         side: SnapshotSide,
         commit: Oid,
         cache: &SnapshotCache,
-    ) -> Result<PreparedSnapshot, SnapshotError> {
+        progress: &dyn ComparisonProgress,
+    ) -> Result<Option<PreparedSnapshot>, SnapshotError> {
         let commit_sha = commit.to_string();
         if let Some(entry) = cache.lookup(commit_sha.as_str()).map_err(cache_error)? {
             // The tree and the index are immutable, and the key already proves
@@ -520,7 +652,8 @@ impl Snapshot {
                 db_path.as_path(),
             )?;
             let build = entry.metadata().build.clone();
-            return Ok(PreparedSnapshot {
+            progress.on_status(side, &ready_status(&build));
+            return Ok(Some(PreparedSnapshot {
                 graph,
                 storage: SnapshotStorage::Cached(entry.root().to_path_buf()),
                 tree_root,
@@ -529,14 +662,33 @@ impl Snapshot {
                 files_indexed: build.files_indexed,
                 cache: CacheOutcome::Hit,
                 cache_note: None,
-            });
+            }));
         }
+
+        if progress.is_cancelled() {
+            return Ok(None);
+        }
+        progress.on_status(
+            side,
+            &BuildStatus {
+                state: BuildState::Materializing,
+                ..BuildStatus::pending()
+            },
+        );
 
         let staged = cache.stage(commit_sha.as_str()).map_err(cache_error)?;
         let staged_tree = staged.tree();
         let staged_db = staged.db();
         let materialization = materialize_commit(repo, commit, staged_tree.as_path())?;
         anchor_git_discovery(staged_tree.as_path())?;
+
+        if progress.is_cancelled() {
+            cache.discard(staged).map_err(cache_error)?;
+            return Ok(None);
+        }
+
+        let files_ignored = materialization.excluded.len();
+        let unsupported_constructs = unsupported_construct_count(&materialization);
         let files_indexed = {
             // The handle is dropped before the entry is renamed into place, so
             // the database and its write-ahead log are closed when the
@@ -547,15 +699,22 @@ impl Snapshot {
                 staged_tree.as_path(),
                 staged_db.as_path(),
             )?;
-            let report = graph
-                .sync(SyncMode::Full)
-                .map_err(|source| SnapshotError::Graph {
-                    operation: "index snapshot tree",
-                    side,
-                    commit_sha: commit_sha.clone(),
-                    source,
-                })?;
-            report.files_indexed
+            let indexed = index_with_progress(
+                &graph,
+                side,
+                commit_sha.as_str(),
+                files_ignored,
+                unsupported_constructs,
+                progress,
+            )?;
+            drop(graph);
+            match indexed {
+                Some(files_indexed) => files_indexed,
+                None => {
+                    cache.discard(staged).map_err(cache_error)?;
+                    return Ok(None);
+                }
+            }
         };
 
         let entry = cache
@@ -570,7 +729,8 @@ impl Snapshot {
             db_path.as_path(),
         )?;
         let build = entry.metadata().build.clone();
-        Ok(PreparedSnapshot {
+        progress.on_status(side, &ready_status(&build));
+        Ok(Some(PreparedSnapshot {
             graph,
             storage: SnapshotStorage::Cached(entry.root().to_path_buf()),
             tree_root,
@@ -579,7 +739,7 @@ impl Snapshot {
             files_indexed: build.files_indexed,
             cache: CacheOutcome::Miss,
             cache_note: None,
-        })
+        }))
     }
 
     /// Materialize and index into a task-owned temporary tree.
@@ -590,7 +750,19 @@ impl Snapshot {
         repo: &Repository,
         side: SnapshotSide,
         commit: Oid,
-    ) -> Result<PreparedSnapshot, SnapshotError> {
+        progress: &dyn ComparisonProgress,
+    ) -> Result<Option<PreparedSnapshot>, SnapshotError> {
+        if progress.is_cancelled() {
+            return Ok(None);
+        }
+        progress.on_status(
+            side,
+            &BuildStatus {
+                state: BuildState::Materializing,
+                ..BuildStatus::pending()
+            },
+        );
+
         let commit_sha = commit.to_string();
         let tree = TempDir::with_prefix(format!("orbit-graph-explorer-{}-", side.label()))
             .map_err(|source| SnapshotError::Io {
@@ -601,6 +773,14 @@ impl Snapshot {
         let materialization = materialize_commit(repo, commit, tree.path())?;
         anchor_git_discovery(tree.path())?;
 
+        if progress.is_cancelled() {
+            // `tree` drops here, removing the temporary directory. Nothing was
+            // ever written to the cache, so there is nothing else to discard.
+            return Ok(None);
+        }
+
+        let files_ignored = materialization.excluded.len();
+        let unsupported_constructs = unsupported_construct_count(&materialization);
         let graph = Graph::open(tree.path(), SyncPolicy::Manual).map_err(|source| {
             SnapshotError::Graph {
                 operation: "open snapshot graph",
@@ -609,26 +789,169 @@ impl Snapshot {
                 source,
             }
         })?;
-        let report = graph
-            .sync(SyncMode::Full)
-            .map_err(|source| SnapshotError::Graph {
-                operation: "index snapshot tree",
-                side,
-                commit_sha: commit_sha.clone(),
-                source,
-            })?;
+        let Some(files_indexed) = index_with_progress(
+            &graph,
+            side,
+            commit_sha.as_str(),
+            files_ignored,
+            unsupported_constructs,
+            progress,
+        )?
+        else {
+            return Ok(None);
+        };
         let tree_root = tree.path().to_path_buf();
         let db_path = graph.db_path().path().to_path_buf();
-        Ok(PreparedSnapshot {
+        progress.on_status(
+            side,
+            &BuildStatus {
+                state: BuildState::Ready,
+                files_seen: files_indexed,
+                files_indexed,
+                files_ignored,
+                unsupported_constructs,
+                languages: Vec::new(),
+            },
+        );
+        Ok(Some(PreparedSnapshot {
             graph,
             storage: SnapshotStorage::Temporary(tree),
             tree_root,
             db_path,
             materialization,
-            files_indexed: report.files_indexed,
+            files_indexed,
             cache: CacheOutcome::Disabled,
             cache_note: None,
-        })
+        }))
+    }
+}
+
+/// Reports [`ComparisonProgress`] no status has been requested for, and never
+/// cancels. Used by [`Comparison::open_with_options`], so it shares the exact
+/// build path [`Comparison::open_with_progress`] uses without asking any
+/// caller to observe progress.
+struct NoopComparisonProgress;
+
+impl ComparisonProgress for NoopComparisonProgress {
+    fn on_status(&self, _side: SnapshotSide, _status: &BuildStatus) {}
+
+    fn is_cancelled(&self) -> bool {
+        false
+    }
+}
+
+/// Bridges [`ComparisonProgress`] to `orbit_graph`'s [`SyncObserver`], adding
+/// the materialization counts (fixed before indexing starts) and a running
+/// language guess.
+struct ProgressSyncObserver<'a> {
+    side: SnapshotSide,
+    progress: &'a dyn ComparisonProgress,
+    files_ignored: usize,
+    unsupported_constructs: usize,
+    languages: Mutex<BTreeSet<&'static str>>,
+}
+
+impl SyncObserver for ProgressSyncObserver<'_> {
+    fn on_progress(&self, sync_progress: &SyncProgress) {
+        let languages = {
+            let mut languages = self
+                .languages
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            if let Some(path) = sync_progress.current_path.as_deref()
+                && let Some(lang) = language_hint(path)
+            {
+                languages.insert(lang);
+            }
+            languages.iter().map(|lang| lang.to_string()).collect()
+        };
+        self.progress.on_status(
+            self.side,
+            &BuildStatus {
+                state: BuildState::Indexing,
+                files_seen: sync_progress.files_seen,
+                files_indexed: sync_progress.files_indexed,
+                files_ignored: self.files_ignored,
+                unsupported_constructs: self.unsupported_constructs,
+                languages,
+            },
+        );
+    }
+
+    fn is_cancelled(&self) -> bool {
+        self.progress.is_cancelled()
+    }
+}
+
+/// Index `graph`, reporting progress through `progress`.
+///
+/// Returns the number of files indexed, or `None` if `progress` requested
+/// cancellation before indexing finished.
+fn index_with_progress(
+    graph: &Graph,
+    side: SnapshotSide,
+    commit_sha: &str,
+    files_ignored: usize,
+    unsupported_constructs: usize,
+    progress: &dyn ComparisonProgress,
+) -> Result<Option<usize>, SnapshotError> {
+    if progress.is_cancelled() {
+        return Ok(None);
+    }
+    progress.on_status(
+        side,
+        &BuildStatus {
+            state: BuildState::Indexing,
+            files_ignored,
+            unsupported_constructs,
+            ..BuildStatus::pending()
+        },
+    );
+    let observer = ProgressSyncObserver {
+        side,
+        progress,
+        files_ignored,
+        unsupported_constructs,
+        languages: Mutex::new(BTreeSet::new()),
+    };
+    let outcome = graph
+        .sync_with_observer(SyncMode::Full, &observer)
+        .map_err(|source| SnapshotError::Graph {
+            operation: "index snapshot tree",
+            side,
+            commit_sha: commit_sha.to_string(),
+            source,
+        })?;
+    Ok(match outcome {
+        SyncOutcome::Completed(report) => Some(report.files_indexed),
+        SyncOutcome::Cancelled(_) => None,
+    })
+}
+
+/// Count of `materialization.excluded` entries excluded because their Git
+/// object kind is not one this crate materializes.
+fn unsupported_construct_count(materialization: &MaterializationReport) -> usize {
+    materialization
+        .excluded
+        .iter()
+        .filter(|entry| matches!(entry.reason, ExclusionReason::UnsupportedKind))
+        .count()
+}
+
+/// [`BuildStatus::Ready`] status for a cache entry opened as it stood, with no
+/// live materialization or indexing to report progress for.
+fn ready_status(build: &StoredBuild) -> BuildStatus {
+    BuildStatus {
+        state: BuildState::Ready,
+        files_seen: build.files_indexed,
+        files_indexed: build.files_indexed,
+        files_ignored: build.excluded.len(),
+        unsupported_constructs: build
+            .excluded
+            .iter()
+            .filter(|entry| entry.reason == "unsupported_kind")
+            .count(),
+        languages: Vec::new(),
     }
 }
 
@@ -751,6 +1074,34 @@ impl Comparison {
         head_ref: &str,
         options: &ComparisonOptions,
     ) -> Result<Self, SnapshotError> {
+        match Self::open_with_progress(
+            repository,
+            base_ref,
+            head_ref,
+            options,
+            &NoopComparisonProgress,
+        )? {
+            ComparisonOutcome::Ready(comparison) => Ok(*comparison),
+            ComparisonOutcome::Cancelled => {
+                unreachable!("NoopComparisonProgress::is_cancelled never returns true")
+            }
+        }
+    }
+
+    /// Open a comparison like [`Comparison::open_with_options`], but report
+    /// live per-side status through `progress` and stop early once it
+    /// requests cancellation.
+    ///
+    /// On cancellation, neither side's cache entry, if one was being built,
+    /// is published: a subsequent open of the same scope starts that side's
+    /// build over from nothing cached.
+    pub fn open_with_progress(
+        repository: &Path,
+        base_ref: &str,
+        head_ref: &str,
+        options: &ComparisonOptions,
+        progress: &dyn ComparisonProgress,
+    ) -> Result<ComparisonOutcome, SnapshotError> {
         let started = Instant::now();
         let repo = open_working_tree(repository)?;
         let workdir = repo
@@ -758,6 +1109,10 @@ impl Comparison {
             .map(|path| fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf()))
             .unwrap_or_else(|| repository.to_path_buf());
         let working_tree = working_tree_state(&repo)?;
+
+        for side in [SnapshotSide::Base, SnapshotSide::Head] {
+            progress.on_status(side, &BuildStatus::pending());
+        }
 
         let mut cache_note = None;
         let cache = if options.no_cache {
@@ -781,10 +1136,31 @@ impl Comparison {
             }
         };
 
-        let base = Snapshot::build(&repo, SnapshotSide::Base, base_ref, cache.as_ref())?;
-        let head = Snapshot::build(&repo, SnapshotSide::Head, head_ref, cache.as_ref())?;
+        if progress.is_cancelled() {
+            return Ok(ComparisonOutcome::Cancelled);
+        }
+        let Some(base) = Snapshot::build(
+            &repo,
+            SnapshotSide::Base,
+            base_ref,
+            cache.as_ref(),
+            progress,
+        )?
+        else {
+            return Ok(ComparisonOutcome::Cancelled);
+        };
+        let Some(head) = Snapshot::build(
+            &repo,
+            SnapshotSide::Head,
+            head_ref,
+            cache.as_ref(),
+            progress,
+        )?
+        else {
+            return Ok(ComparisonOutcome::Cancelled);
+        };
 
-        Ok(Self {
+        Ok(ComparisonOutcome::Ready(Box::new(Self {
             repository: workdir,
             mode: ComparisonMode::DirectBaseHead,
             base,
@@ -793,7 +1169,7 @@ impl Comparison {
             cache_dir: cache.map(|cache| cache.dir().to_path_buf()),
             cache_note,
             prepared_in: started.elapsed(),
-        })
+        })))
     }
 
     /// Cache directory both snapshots used, when caching was available.

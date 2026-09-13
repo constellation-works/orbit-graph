@@ -23,13 +23,16 @@ use rayon::prelude::*;
 use rusqlite::{Connection, Transaction, TransactionBehavior, params};
 
 use super::scanner::{Diff, mtime_ns, normalize_path};
-use crate::{GraphError, SyncMode};
+use crate::{GraphError, SyncMode, SyncObserver, SyncProgress};
 
 pub(crate) struct Pass1Output {
     pub(crate) refs: Vec<ExtractedFileRefs>,
     pub(crate) files_written: usize,
     pub(crate) files_removed: usize,
     pub(crate) files_indexed: usize,
+    /// Whether `observer.is_cancelled()` stopped this pass before every file
+    /// was processed.
+    pub(crate) cancelled: bool,
 }
 
 pub(crate) struct ExtractedFileRefs {
@@ -42,6 +45,7 @@ pub(crate) fn run(
     worktree_root: &Path,
     _mode: SyncMode,
     diff: &Diff,
+    observer: Option<&dyn SyncObserver>,
 ) -> Result<Pass1Output, GraphError> {
     run_with_backend(
         db_path,
@@ -49,6 +53,7 @@ pub(crate) fn run(
         _mode,
         diff,
         &DefaultExtractorBackend,
+        observer,
     )
 }
 
@@ -58,6 +63,7 @@ fn run_with_backend(
     _mode: SyncMode,
     diff: &Diff,
     backend: &dyn ExtractorBackend,
+    observer: Option<&dyn SyncObserver>,
 ) -> Result<Pass1Output, GraphError> {
     let changed = changed_files(diff);
     let mut extracted = extract_changed_files(worktree_root, &changed, backend);
@@ -65,25 +71,62 @@ fn run_with_backend(
 
     let mut conn = open_writer_connection(db_path)?;
 
+    let total_files = diff.deleted.len() + extracted.len();
+    let mut files_touched = 0usize;
+    if let Some(observer) = observer {
+        observer.on_progress(&SyncProgress {
+            files_seen: total_files,
+            files_indexed: files_touched,
+            current_path: None,
+        });
+    }
+
+    let mut cancelled = false;
     let mut files_removed = 0;
     for rel_path in &diff.deleted {
+        if observer.is_some_and(|observer| observer.is_cancelled()) {
+            cancelled = true;
+            break;
+        }
         delete_file_transaction(&mut conn, rel_path)?;
         files_removed += 1;
+        files_touched += 1;
+        if let Some(observer) = observer {
+            observer.on_progress(&SyncProgress {
+                files_seen: total_files,
+                files_indexed: files_touched,
+                current_path: Some(normalize_path(rel_path)),
+            });
+        }
     }
 
     let mut refs = Vec::new();
     let mut commands = Vec::new();
     let mut files_written = 0;
-    for mut file in extracted {
-        let file_refs = std::mem::take(&mut file.rows.refs);
-        let file_commands = std::mem::take(&mut file.rows.commands);
-        write_file_transaction(&mut conn, &file)?;
-        refs.push(ExtractedFileRefs {
-            file_path: file.file_path.clone(),
-            refs: file_refs,
-        });
-        commands.extend(file_commands);
-        files_written += 1;
+    if !cancelled {
+        for mut file in extracted {
+            if observer.is_some_and(|observer| observer.is_cancelled()) {
+                cancelled = true;
+                break;
+            }
+            let file_refs = std::mem::take(&mut file.rows.refs);
+            let file_commands = std::mem::take(&mut file.rows.commands);
+            write_file_transaction(&mut conn, &file)?;
+            refs.push(ExtractedFileRefs {
+                file_path: file.file_path.clone(),
+                refs: file_refs,
+            });
+            commands.extend(file_commands);
+            files_written += 1;
+            files_touched += 1;
+            if let Some(observer) = observer {
+                observer.on_progress(&SyncProgress {
+                    files_seen: total_files,
+                    files_indexed: files_touched,
+                    current_path: Some(file.file_path.clone()),
+                });
+            }
+        }
     }
     insert_commands_transaction(&mut conn, &commands)?;
 
@@ -94,6 +137,7 @@ fn run_with_backend(
         files_written,
         files_removed,
         files_indexed,
+        cancelled,
     })
 }
 
