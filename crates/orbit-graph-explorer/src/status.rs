@@ -92,20 +92,18 @@ impl StatusBoard {
         }
     }
 
-    /// Reset both sides to pending with a fresh start time, for a new build
-    /// attempt: the first one, or a restart after cancellation.
+    /// Reset both sides to pending, for a new build attempt: the first one,
+    /// or a restart after cancellation.
+    ///
+    /// Neither side gets a start time here: the two sides build sequentially,
+    /// so stamping both now would make the second side's `elapsed_ms` count
+    /// from the first side's start rather than its own. `set_status` stamps
+    /// each side's own `started_at` the first time it actually leaves
+    /// `pending`.
     pub(crate) fn reset(&self) {
-        let started_at = Instant::now();
-        let started_at_unix_ms = Some(unix_millis_now());
         for slot in [&self.base, &self.head] {
             let mut report = slot.lock().unwrap_or_else(PoisonError::into_inner);
-            *report = SideReport {
-                status: pending_status(),
-                started_at: Some(started_at),
-                started_at_unix_ms,
-                finished_ms: None,
-                error: None,
-            };
+            *report = SideReport::pending();
         }
     }
 
@@ -121,6 +119,16 @@ impl StatusBoard {
             .slot(side)
             .lock()
             .unwrap_or_else(PoisonError::into_inner);
+        // The very first status a side ever receives is the synchronizing
+        // `pending()` push both sides get when a comparison starts (see
+        // `Comparison::open_with_progress`); that must not stamp a start
+        // time, or a side still waiting its turn would start ticking before
+        // its own build begins. The side's own start is whenever it first
+        // reports something other than `pending`.
+        if report.started_at.is_none() && !matches!(status.state, BuildState::Pending) {
+            report.started_at = Some(Instant::now());
+            report.started_at_unix_ms = Some(unix_millis_now());
+        }
         report.status = status.clone();
         if matches!(status.state, BuildState::Ready | BuildState::Cancelled) {
             report.finished_ms = Some(report.elapsed_ms());
@@ -202,5 +210,97 @@ impl ComparisonProgress for ServiceProgress {
 
     fn is_cancelled(&self) -> bool {
         self.cancel.load(Ordering::Relaxed)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::thread::sleep;
+    use std::time::Duration;
+
+    use super::*;
+
+    fn materializing() -> BuildStatus {
+        BuildStatus {
+            state: BuildState::Materializing,
+            ..pending_status()
+        }
+    }
+
+    /// `Comparison::open_with_progress` pushes a synchronizing `pending()`
+    /// report for both sides before either side's build begins (see
+    /// `open_with_progress` in `snapshot.rs`); that must not be mistaken for
+    /// a side starting its build.
+    #[test]
+    fn a_pending_report_never_starts_the_clock() {
+        let board = StatusBoard::new();
+        board.reset();
+        board.set_status(SnapshotSide::Base, &pending_status());
+        sleep(Duration::from_millis(20));
+
+        let json = board.to_json();
+        assert!(json["base"]["started_at"].is_null(), "{json}");
+        assert_eq!(json["base"]["elapsed_ms"], 0, "{json}");
+    }
+
+    /// The two sides build sequentially. Before this fix, `reset` stamped one
+    /// `started_at` for both, so the side waiting its turn ticked while
+    /// `pending` and then reported the sum of both builds' durations once it
+    /// actually started. Each side must instead get its own start time, set
+    /// only when that side itself leaves `pending`.
+    #[test]
+    fn each_side_gets_its_own_start_time_instead_of_sharing_one() {
+        let board = StatusBoard::new();
+        board.reset();
+
+        board.set_status(SnapshotSide::Base, &materializing());
+        sleep(Duration::from_millis(30));
+        let mid_build = board.to_json();
+        assert_eq!(
+            mid_build["head"]["elapsed_ms"], 0,
+            "a side still pending must not tick just because the other side started: {mid_build}"
+        );
+        assert!(mid_build["head"]["started_at"].is_null(), "{mid_build}");
+        let base_elapsed_mid_build = mid_build["base"]["elapsed_ms"]
+            .as_u64()
+            .expect("base elapsed_ms");
+        assert!(base_elapsed_mid_build >= 25, "{mid_build}");
+
+        board.set_status(SnapshotSide::Head, &materializing());
+        let both_building = board.to_json();
+        let base_started = both_building["base"]["started_at"]
+            .as_u64()
+            .expect("base started_at");
+        let head_started = both_building["head"]["started_at"]
+            .as_u64()
+            .expect("head started_at");
+        assert_ne!(
+            base_started, head_started,
+            "the two sides must not share one started_at: {both_building}"
+        );
+        let head_elapsed_at_start = both_building["head"]["elapsed_ms"]
+            .as_u64()
+            .expect("head elapsed_ms");
+        assert!(
+            head_elapsed_at_start < base_elapsed_mid_build,
+            "head's own elapsed time must not include base's build time: {both_building}"
+        );
+    }
+
+    #[test]
+    fn languages_reported_at_ready_are_not_overwritten() {
+        let board = StatusBoard::new();
+        board.reset();
+        board.set_status(
+            SnapshotSide::Base,
+            &BuildStatus {
+                state: BuildState::Ready,
+                languages: vec!["rust".to_string(), "markdown".to_string()],
+                ..pending_status()
+            },
+        );
+
+        let json = board.to_json();
+        assert_eq!(json["base"]["languages"], json!(["rust", "markdown"]));
     }
 }

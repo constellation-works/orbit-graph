@@ -7,9 +7,13 @@
 
 use std::collections::BTreeMap;
 use std::fs;
+use std::sync::Mutex;
 
 use orbit_graph::{Confidence, DEFAULT_IMPACT_DEPTH, RefOpts, Selector};
-use orbit_graph_explorer::snapshot::{Comparison, SnapshotSide, WorkingTreeChange};
+use orbit_graph_explorer::snapshot::{
+    BuildState, BuildStatus, Comparison, ComparisonOptions, ComparisonOutcome, ComparisonProgress,
+    SnapshotSide, WorkingTreeChange,
+};
 
 mod common;
 
@@ -216,4 +220,109 @@ fn unresolvable_reference_is_reported_without_materializing() {
     .expect("unknown ref fails");
     let message = error.to_string();
     assert!(message.contains("does-not-exist"), "{message}");
+}
+
+/// Records the last [`BuildStatus`] reported for each side, so a test can
+/// inspect what a build's terminal report looked like.
+#[derive(Default)]
+struct RecordingProgress {
+    base: Mutex<Option<BuildStatus>>,
+    head: Mutex<Option<BuildStatus>>,
+}
+
+impl RecordingProgress {
+    fn slot(&self, side: SnapshotSide) -> &Mutex<Option<BuildStatus>> {
+        match side {
+            SnapshotSide::Base => &self.base,
+            SnapshotSide::Head => &self.head,
+        }
+    }
+
+    fn last_status(&self, side: SnapshotSide) -> BuildStatus {
+        self.slot(side)
+            .lock()
+            .expect("recording progress lock")
+            .clone()
+            .unwrap_or_else(|| panic!("no status recorded for {side}"))
+    }
+}
+
+impl ComparisonProgress for RecordingProgress {
+    fn on_status(&self, side: SnapshotSide, status: &BuildStatus) {
+        *self.slot(side).lock().expect("recording progress lock") = Some(status.clone());
+    }
+
+    fn is_cancelled(&self) -> bool {
+        false
+    }
+}
+
+/// `docs/design/change-explorer.md` (Milestone 4) describes `languages` as
+/// "a best-effort, extension-derived list built up as indexing progresses",
+/// reported live in the `indexing` object. A cold build must land that list
+/// on the side's `ready` status rather than dropping it once indexing
+/// finishes, and a cache hit — which never runs the live indexer at all —
+/// must still be able to report it, from whatever the original build
+/// persisted.
+#[test]
+fn languages_survive_into_the_ready_status_on_a_cold_build_and_a_cache_hit() {
+    let fixture = build_fixture();
+
+    let cold = RecordingProgress::default();
+    let outcome = Comparison::open_with_progress(
+        fixture.path(),
+        fixture.base.as_str(),
+        fixture.head.as_str(),
+        &ComparisonOptions::default(),
+        &cold,
+    )
+    .expect("cold build succeeds");
+    let ComparisonOutcome::Ready(comparison) = outcome else {
+        panic!("a build with no cancellation must not report Cancelled");
+    };
+    for side in [SnapshotSide::Base, SnapshotSide::Head] {
+        assert_eq!(
+            comparison.snapshot(side).cache_outcome().label(),
+            "miss",
+            "{side} is built on a cold cache"
+        );
+        let status = cold.last_status(side);
+        assert_eq!(status.state, BuildState::Ready);
+        assert_eq!(
+            status.languages,
+            vec!["rust".to_string()],
+            "{side}'s ready status must keep the language(s) seen while indexing, not reset to empty"
+        );
+    }
+    drop(comparison);
+
+    // Reopen the same scope: both sides are now cache hits, which open the
+    // published entry as it stands and never run the live indexer that
+    // originally derived `languages`.
+    let warm = RecordingProgress::default();
+    let outcome = Comparison::open_with_progress(
+        fixture.path(),
+        fixture.base.as_str(),
+        fixture.head.as_str(),
+        &ComparisonOptions::default(),
+        &warm,
+    )
+    .expect("warm build succeeds");
+    let ComparisonOutcome::Ready(comparison) = outcome else {
+        panic!("a build with no cancellation must not report Cancelled");
+    };
+    for side in [SnapshotSide::Base, SnapshotSide::Head] {
+        assert_eq!(
+            comparison.snapshot(side).cache_outcome().label(),
+            "hit",
+            "{side} must reuse the entry the cold build published"
+        );
+        let status = warm.last_status(side);
+        assert_eq!(status.state, BuildState::Ready);
+        assert_eq!(
+            status.languages,
+            vec!["rust".to_string()],
+            "a cache hit for {side} must still report the languages the original build persisted"
+        );
+    }
 }

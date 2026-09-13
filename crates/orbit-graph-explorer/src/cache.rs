@@ -158,6 +158,12 @@ pub struct StoredBuild {
     pub excluded: Vec<StoredExclusion>,
     /// Files the extractor indexed.
     pub files_indexed: usize,
+    /// Best-effort, extension-derived languages seen while indexing.
+    ///
+    /// Absent from entries published before this field existed; those
+    /// deserialize to an empty list rather than failing to load.
+    #[serde(default)]
+    pub languages: Vec<String>,
 }
 
 /// The on-disk `entry.json` document.
