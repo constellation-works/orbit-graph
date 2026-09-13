@@ -1,0 +1,904 @@
+{
+  "schema_version": 1,
+  "generated_at": "2026-09-13T00:00:00Z",
+  "comparison": {
+    "schema_version": 1,
+    "repository": null,
+    "mode": "direct_base_head",
+    "base": {
+      "requested_ref": "fe91baf858947f0a41aff9228f7d8dd0fbb988a9",
+      "commit_sha": "fe91baf858947f0a41aff9228f7d8dd0fbb988a9"
+    },
+    "head": {
+      "requested_ref": "647eb9016d65c03a7a13a1dc92820e8754e7da48",
+      "commit_sha": "647eb9016d65c03a7a13a1dc92820e8754e7da48"
+    },
+    "effective_base_sha": "fe91baf858947f0a41aff9228f7d8dd0fbb988a9",
+    "working_tree": {
+      "dirty": false,
+      "notice": null,
+      "truncated": false,
+      "entries": []
+    },
+    "snapshots": [
+      {
+        "side": "base",
+        "requested_ref": "fe91baf858947f0a41aff9228f7d8dd0fbb988a9",
+        "commit_sha": "fe91baf858947f0a41aff9228f7d8dd0fbb988a9",
+        "files_indexed": 2,
+        "files_written": 2,
+        "extractor_version": 8,
+        "excluded": []
+      },
+      {
+        "side": "head",
+        "requested_ref": "647eb9016d65c03a7a13a1dc92820e8754e7da48",
+        "commit_sha": "647eb9016d65c03a7a13a1dc92820e8754e7da48",
+        "files_indexed": 2,
+        "files_written": 2,
+        "extractor_version": 8,
+        "excluded": []
+      }
+    ]
+  },
+  "index_identity": {
+    "extractor_version": 8,
+    "store_schema_version": 1,
+    "orbit_graph_version": "0.9.2",
+    "explorer_version": "0.9.2",
+    "base_index_identity": "blake3:919fb3f4a759e23f22602bba46245206ea962c28d7c9572b7f81b91b073c2141",
+    "head_index_identity": "blake3:419b7e633b12b7180f6d18b14a37a2cbcd43b9f2fc9860a94fd69d6027dee6ac"
+  },
+  "query_options": {
+    "depth": 3,
+    "direction": "inbound",
+    "min_confidence": "same_module",
+    "kind": null,
+    "node_cap": 200,
+    "time_budget_ms": 5000,
+    "source_max_bytes": 65536,
+    "language": null,
+    "change_kind": [],
+    "scope": null,
+    "excerpts": "controlled",
+    "excerpt_radius_lines": 5,
+    "selection": []
+  },
+  "changed_symbols": {
+    "schema_version": 1,
+    "symbols": [
+      {
+        "status": "modified",
+        "pairing": "same_selector",
+        "pairing_evidence": "selector",
+        "base": {
+          "selector": "symbol:src/lib.rs#helper:function",
+          "snapshot": "base",
+          "commit_sha": "fe91baf858947f0a41aff9228f7d8dd0fbb988a9",
+          "rendering": "embedded",
+          "excerpt": {
+            "start_line": 1,
+            "end_line": 3,
+            "text": "pub fn helper() -> i32 {\n    1\n}",
+            "truncated": false
+          }
+        },
+        "head": {
+          "selector": "symbol:src/lib.rs#helper:function",
+          "snapshot": "head",
+          "commit_sha": "647eb9016d65c03a7a13a1dc92820e8754e7da48",
+          "rendering": "embedded",
+          "excerpt": {
+            "start_line": 1,
+            "end_line": 3,
+            "text": "pub fn helper() -> i32 {\n    2\n}",
+            "truncated": false
+          }
+        },
+        "supporting_snapshots": [
+          "base",
+          "head"
+        ],
+        "file_change": "modified",
+        "base_path": "src/lib.rs",
+        "head_path": "src/lib.rs",
+        "uncertain_candidates": [],
+        "note": "body changed; signature line is unchanged"
+      }
+    ],
+    "out_of_scope": [],
+    "filtered_out": []
+  },
+  "evidence_paths": [
+    {
+      "schema_version": 1,
+      "path_id": "p-1",
+      "from": {
+        "selector": "symbol:src/lib.rs#entry:function",
+        "snapshot": "base",
+        "label": "src/lib.rs#entry",
+        "origin": "symbol"
+      },
+      "to": {
+        "selector": "symbol:src/lib.rs#helper:function",
+        "snapshot": "base",
+        "label": "src/lib.rs#helper",
+        "origin": "symbol"
+      },
+      "distance": 1,
+      "category": "resolved_call",
+      "truncated": false,
+      "truncated_by": null,
+      "edges": [
+        {
+          "from": "src/lib.rs#entry",
+          "from_selector": "symbol:src/lib.rs#entry:function",
+          "from_origin": "symbol",
+          "to": "src/lib.rs#helper",
+          "to_selector": "symbol:src/lib.rs#helper:function",
+          "relationship": "call",
+          "category": "resolved_call",
+          "confidence": "exact",
+          "snapshot": "base",
+          "commit_sha": "fe91baf858947f0a41aff9228f7d8dd0fbb988a9",
+          "source": {
+            "file": "src/lib.rs",
+            "line": 6
+          },
+          "note": null,
+          "rendering": "embedded",
+          "excerpt": {
+            "start_line": 1,
+            "end_line": 7,
+            "text": "pub fn helper() -> i32 {\n    1\n}\n\npub fn entry() -> i32 {\n    helper() + 1\n}",
+            "truncated": false
+          }
+        }
+      ]
+    },
+    {
+      "schema_version": 1,
+      "path_id": "p-2",
+      "from": {
+        "selector": "symbol:tests/test_lib.rs#test_helper:function",
+        "snapshot": "base",
+        "label": "tests/test_lib.rs#test_helper",
+        "origin": "symbol"
+      },
+      "to": {
+        "selector": "symbol:src/lib.rs#helper:function",
+        "snapshot": "base",
+        "label": "src/lib.rs#helper",
+        "origin": "symbol"
+      },
+      "distance": 1,
+      "category": "observed_reference",
+      "truncated": false,
+      "truncated_by": null,
+      "edges": [
+        {
+          "from": "tests/test_lib.rs#test_helper",
+          "from_selector": "symbol:tests/test_lib.rs#test_helper:function",
+          "from_origin": "symbol",
+          "to": "src/lib.rs#helper",
+          "to_selector": "symbol:src/lib.rs#helper:function",
+          "relationship": "call",
+          "category": "observed_reference",
+          "confidence": "same_module",
+          "snapshot": "base",
+          "commit_sha": "fe91baf858947f0a41aff9228f7d8dd0fbb988a9",
+          "source": {
+            "file": "tests/test_lib.rs",
+            "line": 2
+          },
+          "note": null,
+          "rendering": "embedded",
+          "excerpt": {
+            "start_line": 1,
+            "end_line": 3,
+            "text": "fn test_helper() {\n    let _ = helper();\n}",
+            "truncated": false
+          }
+        }
+      ]
+    },
+    {
+      "schema_version": 1,
+      "path_id": "p-1",
+      "from": {
+        "selector": "symbol:src/lib.rs#entry:function",
+        "snapshot": "head",
+        "label": "src/lib.rs#entry",
+        "origin": "symbol"
+      },
+      "to": {
+        "selector": "symbol:src/lib.rs#helper:function",
+        "snapshot": "head",
+        "label": "src/lib.rs#helper",
+        "origin": "symbol"
+      },
+      "distance": 1,
+      "category": "resolved_call",
+      "truncated": false,
+      "truncated_by": null,
+      "edges": [
+        {
+          "from": "src/lib.rs#entry",
+          "from_selector": "symbol:src/lib.rs#entry:function",
+          "from_origin": "symbol",
+          "to": "src/lib.rs#helper",
+          "to_selector": "symbol:src/lib.rs#helper:function",
+          "relationship": "call",
+          "category": "resolved_call",
+          "confidence": "exact",
+          "snapshot": "head",
+          "commit_sha": "647eb9016d65c03a7a13a1dc92820e8754e7da48",
+          "source": {
+            "file": "src/lib.rs",
+            "line": 6
+          },
+          "note": null,
+          "rendering": "embedded",
+          "excerpt": {
+            "start_line": 1,
+            "end_line": 7,
+            "text": "pub fn helper() -> i32 {\n    2\n}\n\npub fn entry() -> i32 {\n    helper() + 1\n}",
+            "truncated": false
+          }
+        }
+      ]
+    },
+    {
+      "schema_version": 1,
+      "path_id": "p-2",
+      "from": {
+        "selector": "symbol:tests/test_lib.rs#test_helper:function",
+        "snapshot": "head",
+        "label": "tests/test_lib.rs#test_helper",
+        "origin": "symbol"
+      },
+      "to": {
+        "selector": "symbol:src/lib.rs#helper:function",
+        "snapshot": "head",
+        "label": "src/lib.rs#helper",
+        "origin": "symbol"
+      },
+      "distance": 1,
+      "category": "observed_reference",
+      "truncated": false,
+      "truncated_by": null,
+      "edges": [
+        {
+          "from": "tests/test_lib.rs#test_helper",
+          "from_selector": "symbol:tests/test_lib.rs#test_helper:function",
+          "from_origin": "symbol",
+          "to": "src/lib.rs#helper",
+          "to_selector": "symbol:src/lib.rs#helper:function",
+          "relationship": "call",
+          "category": "observed_reference",
+          "confidence": "same_module",
+          "snapshot": "head",
+          "commit_sha": "647eb9016d65c03a7a13a1dc92820e8754e7da48",
+          "source": {
+            "file": "tests/test_lib.rs",
+            "line": 2
+          },
+          "note": null,
+          "rendering": "embedded",
+          "excerpt": {
+            "start_line": 1,
+            "end_line": 3,
+            "text": "fn test_helper() {\n    let _ = helper();\n}",
+            "truncated": false
+          }
+        }
+      ]
+    }
+  ],
+  "outbound_paths": [],
+  "entry_points": [
+    {
+      "queried": {
+        "selector": "symbol:src/lib.rs#helper:function",
+        "snapshot": "base",
+        "label": "src/lib.rs#helper",
+        "origin": "symbol"
+      },
+      "node": {
+        "selector": "symbol:src/lib.rs#helper:function",
+        "snapshot": "base",
+        "label": "src/lib.rs#helper",
+        "origin": "symbol"
+      },
+      "rendering": "embedded",
+      "excerpt": {
+        "start_line": 1,
+        "end_line": 3,
+        "text": "pub fn helper() -> i32 {\n    1\n}",
+        "truncated": false
+      },
+      "rule": "crate_root_public_item",
+      "rule_description": "A public function or type declared at a crate root or package initializer (`lib.rs`, `main.rs`, `__init__.py`, `index.js`, `index.ts`) outside any test-classified path: the surface another package can call. A same-named root file under a test-classified path (for example a fixture tree) is not the repository's own crate root and never fires this rule.",
+      "rules": [
+        "crate_root_public_item"
+      ],
+      "distance": 0,
+      "category": "observed_reference",
+      "path": {
+        "schema_version": 1,
+        "path_id": "p-0",
+        "from": {
+          "selector": "symbol:src/lib.rs#helper:function",
+          "snapshot": "base",
+          "label": "src/lib.rs#helper",
+          "origin": "symbol"
+        },
+        "to": {
+          "selector": "symbol:src/lib.rs#helper:function",
+          "snapshot": "base",
+          "label": "src/lib.rs#helper",
+          "origin": "symbol"
+        },
+        "distance": 0,
+        "category": "observed_reference",
+        "truncated": false,
+        "truncated_by": null,
+        "edges": []
+      },
+      "note": "public `function` declared in the crate root src/lib.rs"
+    },
+    {
+      "queried": {
+        "selector": "symbol:src/lib.rs#helper:function",
+        "snapshot": "base",
+        "label": "src/lib.rs#helper",
+        "origin": "symbol"
+      },
+      "node": {
+        "selector": "symbol:src/lib.rs#entry:function",
+        "snapshot": "base",
+        "label": "src/lib.rs#entry",
+        "origin": "symbol"
+      },
+      "rendering": "embedded",
+      "excerpt": {
+        "start_line": 1,
+        "end_line": 3,
+        "text": "pub fn entry() -> i32 {\n    helper() + 1\n}",
+        "truncated": false
+      },
+      "rule": "crate_root_public_item",
+      "rule_description": "A public function or type declared at a crate root or package initializer (`lib.rs`, `main.rs`, `__init__.py`, `index.js`, `index.ts`) outside any test-classified path: the surface another package can call. A same-named root file under a test-classified path (for example a fixture tree) is not the repository's own crate root and never fires this rule.",
+      "rules": [
+        "crate_root_public_item"
+      ],
+      "distance": 1,
+      "category": "resolved_call",
+      "path": {
+        "schema_version": 1,
+        "path_id": "p-1",
+        "from": {
+          "selector": "symbol:src/lib.rs#entry:function",
+          "snapshot": "base",
+          "label": "src/lib.rs#entry",
+          "origin": "symbol"
+        },
+        "to": {
+          "selector": "symbol:src/lib.rs#helper:function",
+          "snapshot": "base",
+          "label": "src/lib.rs#helper",
+          "origin": "symbol"
+        },
+        "distance": 1,
+        "category": "resolved_call",
+        "truncated": false,
+        "truncated_by": null,
+        "edges": [
+          {
+            "from": "src/lib.rs#entry",
+            "from_selector": "symbol:src/lib.rs#entry:function",
+            "from_origin": "symbol",
+            "to": "src/lib.rs#helper",
+            "to_selector": "symbol:src/lib.rs#helper:function",
+            "relationship": "call",
+            "category": "resolved_call",
+            "confidence": "exact",
+            "snapshot": "base",
+            "commit_sha": "fe91baf858947f0a41aff9228f7d8dd0fbb988a9",
+            "source": {
+              "file": "src/lib.rs",
+              "line": 6
+            },
+            "note": null,
+            "rendering": "embedded",
+            "excerpt": {
+              "start_line": 1,
+              "end_line": 7,
+              "text": "pub fn helper() -> i32 {\n    1\n}\n\npub fn entry() -> i32 {\n    helper() + 1\n}",
+              "truncated": false
+            }
+          }
+        ]
+      },
+      "note": "public `function` declared in the crate root src/lib.rs"
+    },
+    {
+      "queried": {
+        "selector": "symbol:src/lib.rs#helper:function",
+        "snapshot": "base",
+        "label": "src/lib.rs#helper",
+        "origin": "symbol"
+      },
+      "node": {
+        "selector": "symbol:tests/test_lib.rs#test_helper:function",
+        "snapshot": "base",
+        "label": "tests/test_lib.rs#test_helper",
+        "origin": "symbol"
+      },
+      "rendering": "embedded",
+      "excerpt": {
+        "start_line": 1,
+        "end_line": 3,
+        "text": "fn test_helper() {\n    let _ = helper();\n}",
+        "truncated": false
+      },
+      "rule": "test_function",
+      "rule_description": "A test function: a symbol in a test-classified path, or one carrying a `test`/`spec` affix. These also feed the candidate-test list.",
+      "rules": [
+        "test_function"
+      ],
+      "distance": 1,
+      "category": "observed_reference",
+      "path": {
+        "schema_version": 1,
+        "path_id": "p-2",
+        "from": {
+          "selector": "symbol:tests/test_lib.rs#test_helper:function",
+          "snapshot": "base",
+          "label": "tests/test_lib.rs#test_helper",
+          "origin": "symbol"
+        },
+        "to": {
+          "selector": "symbol:src/lib.rs#helper:function",
+          "snapshot": "base",
+          "label": "src/lib.rs#helper",
+          "origin": "symbol"
+        },
+        "distance": 1,
+        "category": "observed_reference",
+        "truncated": false,
+        "truncated_by": null,
+        "edges": [
+          {
+            "from": "tests/test_lib.rs#test_helper",
+            "from_selector": "symbol:tests/test_lib.rs#test_helper:function",
+            "from_origin": "symbol",
+            "to": "src/lib.rs#helper",
+            "to_selector": "symbol:src/lib.rs#helper:function",
+            "relationship": "call",
+            "category": "observed_reference",
+            "confidence": "same_module",
+            "snapshot": "base",
+            "commit_sha": "fe91baf858947f0a41aff9228f7d8dd0fbb988a9",
+            "source": {
+              "file": "tests/test_lib.rs",
+              "line": 2
+            },
+            "note": null,
+            "rendering": "embedded",
+            "excerpt": {
+              "start_line": 1,
+              "end_line": 3,
+              "text": "fn test_helper() {\n    let _ = helper();\n}",
+              "truncated": false
+            }
+          }
+        ]
+      },
+      "note": "`test_helper` is a test symbol by path or naming convention"
+    },
+    {
+      "queried": {
+        "selector": "symbol:src/lib.rs#helper:function",
+        "snapshot": "head",
+        "label": "src/lib.rs#helper",
+        "origin": "symbol"
+      },
+      "node": {
+        "selector": "symbol:src/lib.rs#helper:function",
+        "snapshot": "head",
+        "label": "src/lib.rs#helper",
+        "origin": "symbol"
+      },
+      "rendering": "embedded",
+      "excerpt": {
+        "start_line": 1,
+        "end_line": 3,
+        "text": "pub fn helper() -> i32 {\n    2\n}",
+        "truncated": false
+      },
+      "rule": "crate_root_public_item",
+      "rule_description": "A public function or type declared at a crate root or package initializer (`lib.rs`, `main.rs`, `__init__.py`, `index.js`, `index.ts`) outside any test-classified path: the surface another package can call. A same-named root file under a test-classified path (for example a fixture tree) is not the repository's own crate root and never fires this rule.",
+      "rules": [
+        "crate_root_public_item"
+      ],
+      "distance": 0,
+      "category": "observed_reference",
+      "path": {
+        "schema_version": 1,
+        "path_id": "p-0",
+        "from": {
+          "selector": "symbol:src/lib.rs#helper:function",
+          "snapshot": "head",
+          "label": "src/lib.rs#helper",
+          "origin": "symbol"
+        },
+        "to": {
+          "selector": "symbol:src/lib.rs#helper:function",
+          "snapshot": "head",
+          "label": "src/lib.rs#helper",
+          "origin": "symbol"
+        },
+        "distance": 0,
+        "category": "observed_reference",
+        "truncated": false,
+        "truncated_by": null,
+        "edges": []
+      },
+      "note": "public `function` declared in the crate root src/lib.rs"
+    },
+    {
+      "queried": {
+        "selector": "symbol:src/lib.rs#helper:function",
+        "snapshot": "head",
+        "label": "src/lib.rs#helper",
+        "origin": "symbol"
+      },
+      "node": {
+        "selector": "symbol:src/lib.rs#entry:function",
+        "snapshot": "head",
+        "label": "src/lib.rs#entry",
+        "origin": "symbol"
+      },
+      "rendering": "embedded",
+      "excerpt": {
+        "start_line": 1,
+        "end_line": 3,
+        "text": "pub fn entry() -> i32 {\n    helper() + 1\n}",
+        "truncated": false
+      },
+      "rule": "crate_root_public_item",
+      "rule_description": "A public function or type declared at a crate root or package initializer (`lib.rs`, `main.rs`, `__init__.py`, `index.js`, `index.ts`) outside any test-classified path: the surface another package can call. A same-named root file under a test-classified path (for example a fixture tree) is not the repository's own crate root and never fires this rule.",
+      "rules": [
+        "crate_root_public_item"
+      ],
+      "distance": 1,
+      "category": "resolved_call",
+      "path": {
+        "schema_version": 1,
+        "path_id": "p-1",
+        "from": {
+          "selector": "symbol:src/lib.rs#entry:function",
+          "snapshot": "head",
+          "label": "src/lib.rs#entry",
+          "origin": "symbol"
+        },
+        "to": {
+          "selector": "symbol:src/lib.rs#helper:function",
+          "snapshot": "head",
+          "label": "src/lib.rs#helper",
+          "origin": "symbol"
+        },
+        "distance": 1,
+        "category": "resolved_call",
+        "truncated": false,
+        "truncated_by": null,
+        "edges": [
+          {
+            "from": "src/lib.rs#entry",
+            "from_selector": "symbol:src/lib.rs#entry:function",
+            "from_origin": "symbol",
+            "to": "src/lib.rs#helper",
+            "to_selector": "symbol:src/lib.rs#helper:function",
+            "relationship": "call",
+            "category": "resolved_call",
+            "confidence": "exact",
+            "snapshot": "head",
+            "commit_sha": "647eb9016d65c03a7a13a1dc92820e8754e7da48",
+            "source": {
+              "file": "src/lib.rs",
+              "line": 6
+            },
+            "note": null,
+            "rendering": "embedded",
+            "excerpt": {
+              "start_line": 1,
+              "end_line": 7,
+              "text": "pub fn helper() -> i32 {\n    2\n}\n\npub fn entry() -> i32 {\n    helper() + 1\n}",
+              "truncated": false
+            }
+          }
+        ]
+      },
+      "note": "public `function` declared in the crate root src/lib.rs"
+    },
+    {
+      "queried": {
+        "selector": "symbol:src/lib.rs#helper:function",
+        "snapshot": "head",
+        "label": "src/lib.rs#helper",
+        "origin": "symbol"
+      },
+      "node": {
+        "selector": "symbol:tests/test_lib.rs#test_helper:function",
+        "snapshot": "head",
+        "label": "tests/test_lib.rs#test_helper",
+        "origin": "symbol"
+      },
+      "rendering": "embedded",
+      "excerpt": {
+        "start_line": 1,
+        "end_line": 3,
+        "text": "fn test_helper() {\n    let _ = helper();\n}",
+        "truncated": false
+      },
+      "rule": "test_function",
+      "rule_description": "A test function: a symbol in a test-classified path, or one carrying a `test`/`spec` affix. These also feed the candidate-test list.",
+      "rules": [
+        "test_function"
+      ],
+      "distance": 1,
+      "category": "observed_reference",
+      "path": {
+        "schema_version": 1,
+        "path_id": "p-2",
+        "from": {
+          "selector": "symbol:tests/test_lib.rs#test_helper:function",
+          "snapshot": "head",
+          "label": "tests/test_lib.rs#test_helper",
+          "origin": "symbol"
+        },
+        "to": {
+          "selector": "symbol:src/lib.rs#helper:function",
+          "snapshot": "head",
+          "label": "src/lib.rs#helper",
+          "origin": "symbol"
+        },
+        "distance": 1,
+        "category": "observed_reference",
+        "truncated": false,
+        "truncated_by": null,
+        "edges": [
+          {
+            "from": "tests/test_lib.rs#test_helper",
+            "from_selector": "symbol:tests/test_lib.rs#test_helper:function",
+            "from_origin": "symbol",
+            "to": "src/lib.rs#helper",
+            "to_selector": "symbol:src/lib.rs#helper:function",
+            "relationship": "call",
+            "category": "observed_reference",
+            "confidence": "same_module",
+            "snapshot": "head",
+            "commit_sha": "647eb9016d65c03a7a13a1dc92820e8754e7da48",
+            "source": {
+              "file": "tests/test_lib.rs",
+              "line": 2
+            },
+            "note": null,
+            "rendering": "embedded",
+            "excerpt": {
+              "start_line": 1,
+              "end_line": 3,
+              "text": "fn test_helper() {\n    let _ = helper();\n}",
+              "truncated": false
+            }
+          }
+        ]
+      },
+      "note": "`test_helper` is a test symbol by path or naming convention"
+    }
+  ],
+  "candidate_tests": {
+    "schema_version": 1,
+    "candidates": [
+      {
+        "queried": {
+          "selector": "symbol:src/lib.rs#helper:function",
+          "snapshot": "base",
+          "label": "src/lib.rs#helper",
+          "origin": "symbol"
+        },
+        "test": {
+          "selector": "symbol:tests/test_lib.rs#test_helper:function",
+          "snapshot": "base",
+          "label": "tests/test_lib.rs#test_helper",
+          "origin": "symbol"
+        },
+        "rendering": "embedded",
+        "excerpt": {
+          "start_line": 1,
+          "end_line": 3,
+          "text": "fn test_helper() {\n    let _ = helper();\n}",
+          "truncated": false
+        },
+        "source": "call_path",
+        "label": "call-path",
+        "category": "observed_reference",
+        "path_id": "p-2",
+        "changed_symbols": [
+          "symbol:src/lib.rs#helper:function"
+        ],
+        "truncated": false,
+        "note": "call reference at tests/test_lib.rs:2; 1 hop(s) to the changed symbol"
+      },
+      {
+        "queried": {
+          "selector": "symbol:src/lib.rs#helper:function",
+          "snapshot": "head",
+          "label": "src/lib.rs#helper",
+          "origin": "symbol"
+        },
+        "test": {
+          "selector": "symbol:tests/test_lib.rs#test_helper:function",
+          "snapshot": "head",
+          "label": "tests/test_lib.rs#test_helper",
+          "origin": "symbol"
+        },
+        "rendering": "embedded",
+        "excerpt": {
+          "start_line": 1,
+          "end_line": 3,
+          "text": "fn test_helper() {\n    let _ = helper();\n}",
+          "truncated": false
+        },
+        "source": "call_path",
+        "label": "call-path",
+        "category": "observed_reference",
+        "path_id": "p-2",
+        "changed_symbols": [
+          "symbol:src/lib.rs#helper:function"
+        ],
+        "truncated": false,
+        "note": "call reference at tests/test_lib.rs:2; 1 hop(s) to the changed symbol"
+      },
+      {
+        "queried": {
+          "selector": "symbol:src/lib.rs#helper:function",
+          "snapshot": "base",
+          "label": "src/lib.rs#helper",
+          "origin": "symbol"
+        },
+        "test": {
+          "selector": "file:tests/test_lib.rs",
+          "snapshot": "base",
+          "label": "tests/test_lib.rs",
+          "origin": "file"
+        },
+        "rendering": "reference",
+        "reference": "tests/test_lib.rs@fe91baf858947f0a41aff9228f7d8dd0fbb988a9",
+        "source": "naming_heuristic",
+        "label": "naming-heuristic",
+        "category": "heuristic_match",
+        "path_id": null,
+        "changed_symbols": [
+          "symbol:src/lib.rs#helper:function"
+        ],
+        "truncated": false,
+        "note": "file name matches src/lib.rs"
+      },
+      {
+        "queried": {
+          "selector": "symbol:src/lib.rs#helper:function",
+          "snapshot": "head",
+          "label": "src/lib.rs#helper",
+          "origin": "symbol"
+        },
+        "test": {
+          "selector": "file:tests/test_lib.rs",
+          "snapshot": "head",
+          "label": "tests/test_lib.rs",
+          "origin": "file"
+        },
+        "rendering": "reference",
+        "reference": "tests/test_lib.rs@647eb9016d65c03a7a13a1dc92820e8754e7da48",
+        "source": "naming_heuristic",
+        "label": "naming-heuristic",
+        "category": "heuristic_match",
+        "path_id": null,
+        "changed_symbols": [
+          "symbol:src/lib.rs#helper:function"
+        ],
+        "truncated": false,
+        "note": "file name matches src/lib.rs"
+      },
+      {
+        "queried": {
+          "selector": "symbol:src/lib.rs#helper:function",
+          "snapshot": "base",
+          "label": "src/lib.rs#helper",
+          "origin": "symbol"
+        },
+        "test": {
+          "selector": "symbol:tests/test_lib.rs#test_helper:function",
+          "snapshot": "base",
+          "label": "tests/test_lib.rs#test_helper",
+          "origin": "symbol"
+        },
+        "rendering": "embedded",
+        "excerpt": {
+          "start_line": 1,
+          "end_line": 3,
+          "text": "fn test_helper() {\n    let _ = helper();\n}",
+          "truncated": false
+        },
+        "source": "naming_heuristic",
+        "label": "naming-heuristic",
+        "category": "heuristic_match",
+        "path_id": null,
+        "changed_symbols": [
+          "symbol:src/lib.rs#helper:function"
+        ],
+        "truncated": false,
+        "note": "test name `test_helper` resembles `helper`; name similarity only, no call or import edge is asserted"
+      },
+      {
+        "queried": {
+          "selector": "symbol:src/lib.rs#helper:function",
+          "snapshot": "head",
+          "label": "src/lib.rs#helper",
+          "origin": "symbol"
+        },
+        "test": {
+          "selector": "symbol:tests/test_lib.rs#test_helper:function",
+          "snapshot": "head",
+          "label": "tests/test_lib.rs#test_helper",
+          "origin": "symbol"
+        },
+        "rendering": "embedded",
+        "excerpt": {
+          "start_line": 1,
+          "end_line": 3,
+          "text": "fn test_helper() {\n    let _ = helper();\n}",
+          "truncated": false
+        },
+        "source": "naming_heuristic",
+        "label": "naming-heuristic",
+        "category": "heuristic_match",
+        "path_id": null,
+        "changed_symbols": [
+          "symbol:src/lib.rs#helper:function"
+        ],
+        "truncated": false,
+        "note": "test name `test_helper` resembles `helper`; name similarity only, no call or import edge is asserted"
+      }
+    ],
+    "unsupported_scope": [],
+    "truncated": false
+  },
+  "unresolved": [
+    {
+      "selector": "symbol:src/lib.rs#helper:function",
+      "snapshot": "base",
+      "kind": "outbound_evidence",
+      "reasons": [
+        "The index is syntax-driven: dynamic dispatch, reflection, runtime imports, and calls written inside macro invocations produce no edge.",
+        "Generated and macro-expanded code is indexed as written, not as expanded."
+      ]
+    },
+    {
+      "selector": "symbol:src/lib.rs#helper:function",
+      "snapshot": "head",
+      "kind": "outbound_evidence",
+      "reasons": [
+        "The index is syntax-driven: dynamic dispatch, reflection, runtime imports, and calls written inside macro invocations produce no edge.",
+        "Generated and macro-expanded code is indexed as written, not as expanded."
+      ]
+    }
+  ],
+  "scope": {
+    "truncated": [],
+    "unsupported": [],
+    "excluded": []
+  },
+  "source_rendering": "excerpt"
+}

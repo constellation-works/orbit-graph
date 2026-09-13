@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Change report: fe91baf85894 → 647eb9016d65</title>
+<style>
+body { font-family: system-ui, sans-serif; margin: 2rem; color: #1a1a1a; }
+code, pre { font-family: ui-monospace, monospace; }
+pre { background: #f4f4f4; padding: 0.5rem; overflow-x: auto; white-space: pre-wrap; }
+.banner { background: #eef6ff; border: 1px solid #90c2ff; padding: 0.75rem; margin: 1rem 0; }
+.tag { display: inline-block; border: 1px solid #999; border-radius: 3px; padding: 0 0.3rem; font-size: 0.85em; }
+.tag-embedded { background: #e6ffed; border-color: #2ea44f; }
+.tag-reference { background: #fff5e6; border-color: #d9822b; }
+.tag-truncated { background: #ffe6e6; border-color: #d92b2b; }
+.warning { color: #a33; }
+.note { font-style: italic; }
+article.symbol { border-top: 2px solid #ccc; padding-top: 1rem; margin-top: 1rem; }
+.location { margin: 0.25rem 0; }
+ul.edges { list-style: none; padding-left: 0; }
+li.edge { margin: 0.25rem 0; }
+</style>
+</head>
+<body>
+<header>
+<h1>Change report</h1>
+<dl>
+<dt>Base</dt><dd><code>fe91baf858947f0a41aff9228f7d8dd0fbb988a9</code> (fe91baf858947f0a41aff9228f7d8dd0fbb988a9)</dd>
+<dt>Head</dt><dd><code>647eb9016d65c03a7a13a1dc92820e8754e7da48</code> (647eb9016d65c03a7a13a1dc92820e8754e7da48)</dd>
+<dt>Mode</dt><dd>direct_base_head (effective base <code>fe91baf858947f0a41aff9228f7d8dd0fbb988a9</code>)</dd>
+<dt>Generated</dt><dd>2026-09-13T00:00:00Z</dd>
+</dl>
+</header>
+<div class="banner">This report embeds 20 source location(s) directly. 2 location(s) are references only and need repository access to view: look for the <span class="tag tag-reference">reference</span> marker.</div>
+<section id="scope">
+<h2>Scope</h2>
+<p>Excerpt mode: <strong>controlled</strong> (radius 5 line(s)). Confidence floor: same_module. Depth: 3.</p>
+<p>No bound was reached while producing this report.</p>
+<h3>Unresolved areas</h3>
+<ul>
+<li><code>symbol:src/lib.rs#helper:function</code> (base, outbound_evidence)<ul><li>The index is syntax-driven: dynamic dispatch, reflection, runtime imports, and calls written inside macro invocations produce no edge.</li><li>Generated and macro-expanded code is indexed as written, not as expanded.</li></ul></li>
+<li><code>symbol:src/lib.rs#helper:function</code> (head, outbound_evidence)<ul><li>The index is syntax-driven: dynamic dispatch, reflection, runtime imports, and calls written inside macro invocations produce no edge.</li><li>Generated and macro-expanded code is indexed as written, not as expanded.</li></ul></li>
+</ul>
+</section>
+<section id="symbols">
+<h2>Changed symbols</h2>
+<article class="symbol">
+<h3><span class="tag">modified</span> <code>symbol:src/lib.rs#helper:function</code></h3>
+<p>Pairing: same_selector (selector)</p>
+<p class="note">body changed; signature line is unchanged</p>
+<div class="occurrence"><p><strong>Base</strong> <code>symbol:src/lib.rs#helper:function</code></p><div class="location embedded"><span class="tag tag-embedded">embedded</span> <span class="lines">lines 1–3</span><pre>pub fn helper() -&gt; i32 {
+    1
+}</pre></div></div>
+<div class="occurrence"><p><strong>Head</strong> <code>symbol:src/lib.rs#helper:function</code></p><div class="location embedded"><span class="tag tag-embedded">embedded</span> <span class="lines">lines 1–3</span><pre>pub fn helper() -&gt; i32 {
+    2
+}</pre></div></div>
+<h4>Evidence paths</h4>
+<div class="path"><p><strong>src/lib.rs#entry</strong> → <strong>src/lib.rs#helper</strong> (distance 1, category resolved_call)</p><ul class="edges"><li class="edge"><code>src/lib.rs#entry</code> → <code>src/lib.rs#helper</code> <span class="tag">call</span> <span class="tag">resolved_call</span> <span class="tag">exact</span> (base)<div class="location embedded"><span class="tag tag-embedded">embedded</span> <span class="lines">lines 1–7</span><pre>pub fn helper() -&gt; i32 {
+    1
+}
+
+pub fn entry() -&gt; i32 {
+    helper() + 1
+}</pre></div></li></ul></div><div class="path"><p><strong>tests/test_lib.rs#test_helper</strong> → <strong>src/lib.rs#helper</strong> (distance 1, category observed_reference)</p><ul class="edges"><li class="edge"><code>tests/test_lib.rs#test_helper</code> → <code>src/lib.rs#helper</code> <span class="tag">call</span> <span class="tag">observed_reference</span> <span class="tag">same_module</span> (base)<div class="location embedded"><span class="tag tag-embedded">embedded</span> <span class="lines">lines 1–3</span><pre>fn test_helper() {
+    let _ = helper();
+}</pre></div></li></ul></div><div class="path"><p><strong>src/lib.rs#entry</strong> → <strong>src/lib.rs#helper</strong> (distance 1, category resolved_call)</p><ul class="edges"><li class="edge"><code>src/lib.rs#entry</code> → <code>src/lib.rs#helper</code> <span class="tag">call</span> <span class="tag">resolved_call</span> <span class="tag">exact</span> (head)<div class="location embedded"><span class="tag tag-embedded">embedded</span> <span class="lines">lines 1–7</span><pre>pub fn helper() -&gt; i32 {
+    2
+}
+
+pub fn entry() -&gt; i32 {
+    helper() + 1
+}</pre></div></li></ul></div><div class="path"><p><strong>tests/test_lib.rs#test_helper</strong> → <strong>src/lib.rs#helper</strong> (distance 1, category observed_reference)</p><ul class="edges"><li class="edge"><code>tests/test_lib.rs#test_helper</code> → <code>src/lib.rs#helper</code> <span class="tag">call</span> <span class="tag">observed_reference</span> <span class="tag">same_module</span> (head)<div class="location embedded"><span class="tag tag-embedded">embedded</span> <span class="lines">lines 1–3</span><pre>fn test_helper() {
+    let _ = helper();
+}</pre></div></li></ul></div><h4>Entry points</h4>
+<ul>
+<li><code>src/lib.rs#helper</code> via <strong>crate_root_public_item</strong> (distance 0)<div class="location embedded"><span class="tag tag-embedded">embedded</span> <span class="lines">lines 1–3</span><pre>pub fn helper() -&gt; i32 {
+    1
+}</pre></div></li>
+<li><code>src/lib.rs#entry</code> via <strong>crate_root_public_item</strong> (distance 1)<div class="location embedded"><span class="tag tag-embedded">embedded</span> <span class="lines">lines 1–3</span><pre>pub fn entry() -&gt; i32 {
+    helper() + 1
+}</pre></div></li>
+<li><code>tests/test_lib.rs#test_helper</code> via <strong>test_function</strong> (distance 1)<div class="location embedded"><span class="tag tag-embedded">embedded</span> <span class="lines">lines 1–3</span><pre>fn test_helper() {
+    let _ = helper();
+}</pre></div></li>
+<li><code>src/lib.rs#helper</code> via <strong>crate_root_public_item</strong> (distance 0)<div class="location embedded"><span class="tag tag-embedded">embedded</span> <span class="lines">lines 1–3</span><pre>pub fn helper() -&gt; i32 {
+    2
+}</pre></div></li>
+<li><code>src/lib.rs#entry</code> via <strong>crate_root_public_item</strong> (distance 1)<div class="location embedded"><span class="tag tag-embedded">embedded</span> <span class="lines">lines 1–3</span><pre>pub fn entry() -&gt; i32 {
+    helper() + 1
+}</pre></div></li>
+<li><code>tests/test_lib.rs#test_helper</code> via <strong>test_function</strong> (distance 1)<div class="location embedded"><span class="tag tag-embedded">embedded</span> <span class="lines">lines 1–3</span><pre>fn test_helper() {
+    let _ = helper();
+}</pre></div></li>
+</ul>
+<h4>Candidate tests</h4>
+<ul>
+<li><code>tests/test_lib.rs#test_helper</code> <span class="tag">call-path</span> — call reference at tests/test_lib.rs:2; 1 hop(s) to the changed symbol<div class="location embedded"><span class="tag tag-embedded">embedded</span> <span class="lines">lines 1–3</span><pre>fn test_helper() {
+    let _ = helper();
+}</pre></div></li>
+<li><code>tests/test_lib.rs#test_helper</code> <span class="tag">call-path</span> — call reference at tests/test_lib.rs:2; 1 hop(s) to the changed symbol<div class="location embedded"><span class="tag tag-embedded">embedded</span> <span class="lines">lines 1–3</span><pre>fn test_helper() {
+    let _ = helper();
+}</pre></div></li>
+<li><code>tests/test_lib.rs</code> <span class="tag">naming-heuristic</span> — file name matches src/lib.rs<div class="location reference"><span class="tag tag-reference">reference</span> <code>tests/test_lib.rs@fe91baf858947f0a41aff9228f7d8dd0fbb988a9</code></div></li>
+<li><code>tests/test_lib.rs</code> <span class="tag">naming-heuristic</span> — file name matches src/lib.rs<div class="location reference"><span class="tag tag-reference">reference</span> <code>tests/test_lib.rs@647eb9016d65c03a7a13a1dc92820e8754e7da48</code></div></li>
+<li><code>tests/test_lib.rs#test_helper</code> <span class="tag">naming-heuristic</span> — test name `test_helper` resembles `helper`; name similarity only, no call or import edge is asserted<div class="location embedded"><span class="tag tag-embedded">embedded</span> <span class="lines">lines 1–3</span><pre>fn test_helper() {
+    let _ = helper();
+}</pre></div></li>
+<li><code>tests/test_lib.rs#test_helper</code> <span class="tag">naming-heuristic</span> — test name `test_helper` resembles `helper`; name similarity only, no call or import edge is asserted<div class="location embedded"><span class="tag tag-embedded">embedded</span> <span class="lines">lines 1–3</span><pre>fn test_helper() {
+    let _ = helper();
+}</pre></div></li>
+</ul>
+</article>
+</section>
+</body>
+</html>
