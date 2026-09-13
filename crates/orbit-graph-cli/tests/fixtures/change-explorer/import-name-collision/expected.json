@@ -1,0 +1,41 @@
+{
+  "case_id": "import-name-collision",
+  "languages": [
+    "python"
+  ],
+  "description": "pkg_a/run.py#main and pkg_b/cli.py#main are unrelated functions in different packages that happen to share a bare name. tests/test_cli.py imports only pkg_b's main. A test file that imports a same-named symbol from an unrelated module must not be reported as an import_relationship candidate for pkg_a's main: that import asserts no relationship to pkg_a/run.py at all, so it is at most a naming_heuristic. Regression case for ORB-12411.",
+  "topology": "linear",
+  "changed_symbols": [
+    {
+      "selector": "symbol:pkg_a/run.py#main:function",
+      "change": "modified",
+      "present_in": [
+        "base",
+        "head"
+      ],
+      "absent_in": []
+    }
+  ],
+  "unchanged_symbols": [
+    {
+      "selector": "symbol:pkg_b/cli.py#main:function",
+      "present_in": [
+        "base",
+        "head"
+      ],
+      "note": "The other package's `main`, byte-identical across the change. Sharing a bare name with pkg_a's `main` must not, by itself, attach tests/test_cli.py to pkg_a's `main` as an import_relationship."
+    }
+  ],
+  "expected_references": [],
+  "expected_impact": [],
+  "candidate_tests": [
+    {
+      "test_selector": "file:tests/test_cli.py",
+      "target": "symbol:pkg_a/run.py#main:function",
+      "category": "naming-heuristic",
+      "snapshot": "head",
+      "rationale": "tests/test_cli.py imports `pkg_b.cli.main`. Its bare name matches pkg_a/run.py's `main`, but the import specifier names a different module, so this is a name-only association, not an observed import edge to pkg_a's `main`."
+    }
+  ],
+  "known_gaps": []
+}

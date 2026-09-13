@@ -1986,6 +1986,15 @@ impl<'a> EvidenceCollector<'a> {
     }
 
     /// Source 2: an import edge from a test file to the symbol's module.
+    ///
+    /// A module match (the import's specifier resolves to the changed
+    /// symbol's file) is the only case that earns `import_relationship`: it
+    /// is an observed file-level edge. An import whose bare `target_symbol`
+    /// happens to equal the changed symbol's name, but whose specifier names
+    /// a different module, asserts no relationship to this file at all — it
+    /// may be an unrelated symbol that merely shares a name — so it is
+    /// reported as a `naming_heuristic` `heuristic_match` instead, never
+    /// promoted to `import_relationship`.
     fn import_candidates(
         &mut self,
         selector: &str,
@@ -2013,31 +2022,53 @@ impl<'a> EvidenceCollector<'a> {
                     side: self.side,
                     reason: error.to_string(),
                 })?;
-            let matched = deps.imports.iter().find(|edge| {
-                edge.target_symbol.as_deref() == Some(symbol_name)
-                    || module_keys.contains(&import_key(edge.target_path.as_str()))
-            });
-            let Some(matched) = matched else {
+            let test = EndpointRef {
+                selector: format!("file:{file}"),
+                snapshot: side_label.clone(),
+                label: file.clone(),
+                origin: origin_label(ImpactOrigin::File).to_string(),
+            };
+            if let Some(matched) = deps
+                .imports
+                .iter()
+                .find(|edge| module_keys.contains(&import_key(edge.target_path.as_str())))
+            {
+                candidates.push(CandidateTest {
+                    test,
+                    source: CandidateSource::ImportRelationship,
+                    label: CandidateSource::ImportRelationship
+                        .corpus_label()
+                        .to_string(),
+                    category: EvidenceCategory::ImportRelationship,
+                    path_id: None,
+                    changed_symbols: vec![selector.to_string()],
+                    truncated: false,
+                    note: Some(format!(
+                        "imports `{}`; an import is a file-level relationship, not a call",
+                        matched.target_path
+                    )),
+                });
+                continue;
+            }
+            let Some(name_only) = deps
+                .imports
+                .iter()
+                .find(|edge| edge.target_symbol.as_deref() == Some(symbol_name))
+            else {
                 continue;
             };
             candidates.push(CandidateTest {
-                test: EndpointRef {
-                    selector: format!("file:{file}"),
-                    snapshot: side_label.clone(),
-                    label: file.clone(),
-                    origin: origin_label(ImpactOrigin::File).to_string(),
-                },
-                source: CandidateSource::ImportRelationship,
-                label: CandidateSource::ImportRelationship
-                    .corpus_label()
-                    .to_string(),
-                category: EvidenceCategory::ImportRelationship,
+                test,
+                source: CandidateSource::NamingHeuristic,
+                label: CandidateSource::NamingHeuristic.corpus_label().to_string(),
+                category: EvidenceCategory::HeuristicMatch,
                 path_id: None,
                 changed_symbols: vec![selector.to_string()],
                 truncated: false,
                 note: Some(format!(
-                    "imports `{}`; an import is a file-level relationship, not a call",
-                    matched.target_path
+                    "imports `{}`, whose name matches `{symbol_name}` but not its module; a \
+                     name-only association, possibly a different symbol",
+                    name_only.target_path
                 )),
             });
         }
