@@ -273,14 +273,31 @@ The repository is a virtual Cargo workspace with three members under
   API.
 
 `cargo install --path crates/orbit-graph-cli` installs only the `orbit-graph`
-binary, and the explorer never reads Orbit control-plane state.
+binary; `cargo install --path crates/orbit-graph-explorer` installs the
+change explorer separately. Neither reads Orbit control-plane state.
 
-The explorer is at milestone 1: it provides base/head snapshot resolution —
-refs resolved to immutable SHAs, each commit materialized into an isolated
-temporary tree and indexed separately, dirty working trees detected and
-reported, and the user's working tree never touched — plus a diagnostic binary.
-Its evidence contract, snapshot semantics, service surface, and UI plan are in
-[the change-explorer design](docs/design/change-explorer.md).
+## Change explorer
+
+`orbit-graph-explorer` explains one Git change — a base revision and a head
+revision — through source relationships, over a loopback HTTP service with an
+embedded UI, a human `snapshot` diagnostic, and a `report` export to static
+JSON and HTML. It is built strictly on the public `orbit_graph` API in
+`crates/orbit-graph-cli`'s and this crate's own workspace sibling
+`crates/orbit-graph`, and it never reads Orbit control-plane state or touches
+the user's working tree.
+
+```sh
+cargo install --path crates/orbit-graph-explorer --locked
+orbit-graph-explorer serve --repo /path/to/your/repo --base main --head HEAD
+```
+
+See [`crates/orbit-graph-explorer/README.md`](crates/orbit-graph-explorer/README.md)
+for prerequisites, install, first launch, the cache directory, and every flag;
+[the change-explorer design](docs/design/change-explorer.md) for the evidence
+contract, snapshot semantics, and full API reference; and
+[the change-explorer evaluation](docs/evaluation/change-explorer/README.md)
+for five real-repository studies of what it gets right, gets wrong, and does
+not know.
 
 ## Library
 

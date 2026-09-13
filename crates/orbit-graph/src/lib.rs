@@ -83,6 +83,14 @@ mod tests;
 pub const EXTRACTOR_VERSION: u32 = 8;
 
 /// SQLite schema version used by the graph store.
+///
+/// # Examples
+///
+/// ```
+/// use orbit_graph::STORE_SCHEMA_VERSION;
+///
+/// assert!(STORE_SCHEMA_VERSION >= 1);
+/// ```
 pub const STORE_SCHEMA_VERSION: u32 = store::schema::SCHEMA_VERSION;
 
 /// Default graph distance used by callers that do not supply `--depth`.
@@ -120,6 +128,24 @@ impl Graph {
     /// Open a graph for a synthetic or detached tree identified by `revision`.
     ///
     /// The database uses the existing `detached-<short-sha>` naming contract.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use orbit_graph::{Graph, SyncPolicy};
+    ///
+    /// let dir = tempfile::tempdir()?;
+    /// let revision = "0123456789abcdef";
+    /// let graph = Graph::open_with_revision(dir.path(), revision, SyncPolicy::Manual)?;
+    /// assert!(
+    ///     graph
+    ///         .db_path()
+    ///         .path()
+    ///         .to_string_lossy()
+    ///         .contains("detached-0123456789ab")
+    /// );
+    /// # Ok::<(), Box<dyn std::error::Error>>(())
+    /// ```
     pub fn open_with_revision(
         worktree_root: &Path,
         revision: &str,
@@ -139,6 +165,18 @@ impl Graph {
     /// Open a graph that indexes `worktree_root` at a caller-supplied database path.
     ///
     /// Missing parent directories are created. The path must name a file.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use orbit_graph::{Graph, SyncPolicy};
+    ///
+    /// let dir = tempfile::tempdir()?;
+    /// let db_path = dir.path().join("custom").join("graph.db");
+    /// let graph = Graph::open_with_db_path(dir.path(), &db_path, SyncPolicy::Manual)?;
+    /// assert_eq!(graph.db_path().path(), db_path);
+    /// # Ok::<(), Box<dyn std::error::Error>>(())
+    /// ```
     pub fn open_with_db_path(
         worktree_root: &Path,
         db_path: &Path,
@@ -199,6 +237,38 @@ impl Graph {
     /// the same database. This method does not coalesce, and is intended for
     /// a single dedicated indexing thread, such as the change-explorer
     /// service's cold-build worker, that owns its database exclusively.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use std::fs;
+    ///
+    /// use orbit_graph::{Graph, SyncMode, SyncObserver, SyncOutcome, SyncPolicy, SyncProgress};
+    ///
+    /// struct CancelImmediately;
+    ///
+    /// impl SyncObserver for CancelImmediately {
+    ///     fn on_progress(&self, _progress: &SyncProgress) {}
+    ///     fn is_cancelled(&self) -> bool {
+    ///         true
+    ///     }
+    /// }
+    ///
+    /// let dir = tempfile::tempdir()?;
+    /// fs::create_dir_all(dir.path().join("src"))?;
+    /// fs::write(dir.path().join("src/a.rs"), "pub fn a() -> i32 { 1 }\n")?;
+    /// fs::write(dir.path().join("src/b.rs"), "pub fn b() -> i32 { 2 }\n")?;
+    ///
+    /// let graph = Graph::open(dir.path(), SyncPolicy::Manual)?;
+    /// let outcome = graph.sync_with_observer(SyncMode::Full, &CancelImmediately)?;
+    /// // Requesting cancellation up front still leaves the store consistent:
+    /// // either variant carries a report of exactly the files processed so far.
+    /// let report = match outcome {
+    ///     SyncOutcome::Completed(report) | SyncOutcome::Cancelled(report) => report,
+    /// };
+    /// assert!(report.files_indexed <= 2);
+    /// # Ok::<(), Box<dyn std::error::Error>>(())
+    /// ```
     pub fn sync_with_observer(
         &self,
         mode: SyncMode,
@@ -315,6 +385,39 @@ impl Graph {
     }
 
     /// Return the bounded impact set around `sel` in `direction`.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use std::fs;
+    ///
+    /// use orbit_graph::{Confidence, Graph, ImpactDirection, Selector, SyncMode, SyncPolicy};
+    ///
+    /// let dir = tempfile::tempdir()?;
+    /// fs::create_dir_all(dir.path().join("src"))?;
+    /// fs::write(
+    ///     dir.path().join("src/lib.rs"),
+    ///     "pub fn helper() -> i32 { 1 }\npub fn entry() -> i32 { helper() }\n",
+    /// )?;
+    ///
+    /// let graph = Graph::open(dir.path(), SyncPolicy::Manual)?;
+    /// graph.sync(SyncMode::Full)?;
+    ///
+    /// let selector: Selector = "symbol:src/lib.rs#entry:function".parse()?;
+    /// let impact = graph.impact_with_direction(
+    ///     &selector,
+    ///     3,
+    ///     Confidence::default(),
+    ///     ImpactDirection::Outbound,
+    /// )?;
+    /// assert!(
+    ///     impact
+    ///         .touched
+    ///         .iter()
+    ///         .any(|entry| entry.qualified_name.contains("helper"))
+    /// );
+    /// # Ok::<(), Box<dyn std::error::Error>>(())
+    /// ```
     pub fn impact_with_direction(
         &self,
         sel: &Selector,
@@ -1147,6 +1250,34 @@ pub struct CalleeEdge {
 }
 
 /// Options for [`Graph::callees_with_options`].
+///
+/// # Examples
+///
+/// ```
+/// use std::fs;
+///
+/// use orbit_graph::{CalleeOpts, Confidence, Graph, Selector, SyncMode, SyncPolicy};
+///
+/// let dir = tempfile::tempdir()?;
+/// fs::create_dir_all(dir.path().join("src"))?;
+/// fs::write(
+///     dir.path().join("src/lib.rs"),
+///     "pub fn helper() -> i32 { 1 }\npub fn entry() -> i32 { helper() }\n",
+/// )?;
+///
+/// let graph = Graph::open(dir.path(), SyncPolicy::Manual)?;
+/// graph.sync(SyncMode::Full)?;
+///
+/// let selector: Selector = "symbol:src/lib.rs#entry:function".parse()?;
+/// let opts = CalleeOpts {
+///     confidence: Confidence::Exact,
+///     kind: None,
+/// };
+/// let callees = graph.callees_with_options(&selector, &opts)?;
+/// assert_eq!(callees.len(), 1);
+/// assert_eq!(callees[0].target_name, "helper");
+/// # Ok::<(), Box<dyn std::error::Error>>(())
+/// ```
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct CalleeOpts {
     /// Minimum confidence included in returned edges.
