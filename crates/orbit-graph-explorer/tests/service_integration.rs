@@ -564,21 +564,40 @@ fn post_cancel_stops_a_cold_build_discards_its_cache_entry_and_a_later_request_r
         &["--cache-dir", cache_dir_str.as_str()],
     );
 
-    // A cold build of 4,000 files takes long enough to reliably observe a
-    // genuine side-not-ready refusal and a genuine cancellation; a
-    // `direct-call`-sized fixture would too often finish before either
-    // request lands.
-    let first = service.authorized("GET", "/api/comparison", &[]);
-    if first.status != 200 {
-        assert_eq!(first.status, 409, "{first:?}");
-        assert_eq!(first.json()["error"]["code"], "side_not_ready");
+    // Wait until both independent workers have actually started, while
+    // rejecting the old sequential behavior where one side could finish
+    // before the other had even left pending.
+    let deadline = Instant::now() + Duration::from_secs(60);
+    loop {
+        let status = service.authorized("GET", "/api/status", &[]).json();
+        let indexing = &status["indexing"];
+        let both_started = ["base", "head"]
+            .iter()
+            .all(|side| indexing[*side]["started_at"].is_u64());
+        let either_finished = ["base", "head"].iter().any(|side| {
+            matches!(
+                indexing[*side]["state"].as_str(),
+                Some("ready") | Some("cancelled") | Some("failed")
+            )
+        });
+        assert!(
+            !either_finished || both_started,
+            "a side finished before both cold workers started: {status}"
+        );
+        if both_started {
+            break;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "both cold workers did not start within the deadline: {status}"
+        );
+        std::thread::sleep(Duration::from_millis(5));
     }
 
     let cancel = service.authorized("POST", "/api/cancel", &[]);
-    assert!(matches!(cancel.status, 200 | 409), "{cancel:?}");
+    assert_eq!(cancel.status, 200, "{cancel:?}");
 
     let deadline = Instant::now() + Duration::from_secs(60);
-    let mut cancelled = false;
     loop {
         let status = service.authorized("GET", "/api/status", &[]).json();
         let states: Vec<&str> = ["base", "head"]
@@ -589,32 +608,32 @@ fn post_cancel_stops_a_cold_build_discards_its_cache_entry_and_a_later_request_r
                     .unwrap_or_default()
             })
             .collect();
-        if states.contains(&"cancelled") {
-            cancelled = true;
-            break;
-        }
-        if states.iter().all(|state| *state == "ready") {
+        if states.iter().all(|state| *state == "cancelled") {
             break;
         }
         assert!(
             Instant::now() < deadline,
-            "the build neither cancelled nor finished within the deadline: {status}"
+            "both builds did not cancel within the deadline: {status}"
         );
         std::thread::sleep(Duration::from_millis(5));
     }
-    assert!(
-        cancelled,
-        "the build must have been cancelled rather than racing to completion; \
-         raise the file count in `build_large_repo` if this is flaky"
-    );
 
-    // No half-indexed cache entry survives under either SHA.
+    // No half-indexed cache entry or abandoned staging directory survives.
     for sha in [base.as_str(), head.as_str()] {
         assert!(
             !cache_dir.path().join(sha).exists(),
             "a cancelled build must not leave a cache entry for {sha}"
         );
     }
+    let staging = std::fs::read_dir(cache_dir.path())
+        .expect("read cache directory after cancellation")
+        .filter_map(Result::ok)
+        .filter(|entry| entry.file_name().to_string_lossy().starts_with(".staging-"))
+        .collect::<Vec<_>>();
+    assert!(
+        staging.is_empty(),
+        "cancelled builds must discard their staging directories: {staging:?}"
+    );
 
     // The next request restarts the build, and it completes normally.
     let restarted = service.authorized("GET", "/api/comparison", &[]);
