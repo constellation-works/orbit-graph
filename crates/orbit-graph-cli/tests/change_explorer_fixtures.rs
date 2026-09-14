@@ -26,6 +26,7 @@ const CASES: &[&str] = &[
     "cycle",
     "branch-divergence",
     "import-name-collision",
+    "nested-function-rename",
 ];
 
 const FIXTURE_AUTHOR_NAME: &str = "Orbit Graph Fixture";

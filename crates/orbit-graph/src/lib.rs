@@ -75,12 +75,9 @@ mod tests;
 /// candidate lookups, so a type with any impl block resolves cross-file
 /// references instead of degrading every one of them to `fuzzy_name`.
 ///
-/// Version 8 rebuilds stored refs once more: a method call whose receiver type
-/// the extractor cannot determine (`args.execute()`) is recorded with its
-/// receiver, and pass 2 no longer resolves such a call by short name alone, so
-/// a dispatcher no longer reports its own dispatch lines as `exact` inbound
-/// references to itself.
-pub const EXTRACTOR_VERSION: u32 = 8;
+/// Version 9 includes nested Rust and Python function definitions, so their
+/// symbols and call ownership are present in rebuilt snapshots.
+pub const EXTRACTOR_VERSION: u32 = 9;
 
 /// SQLite schema version used by the graph store.
 ///

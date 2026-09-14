@@ -495,6 +495,18 @@ fn branch_divergence_is_reported_as_the_direct_reading_it_is() {
 }
 
 #[test]
+fn nested_function_rename_is_not_absent_from_changed_symbols() {
+    let case = Case::open("nested-function-rename");
+    case.assert_manifest_presence();
+
+    let removed = case.single("symbol:sample.py#snapshot:function");
+    assert_eq!(removed.status, ChangeStatus::Removed);
+
+    let added = case.single("symbol:sample.py#snap:function");
+    assert_eq!(added.status, ChangeStatus::Added);
+}
+
+#[test]
 fn import_of_a_same_named_symbol_in_another_module_is_a_naming_heuristic_not_an_import_relationship()
  {
     let case = Case::open("import-name-collision");
