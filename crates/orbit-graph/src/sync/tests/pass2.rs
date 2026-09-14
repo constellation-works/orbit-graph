@@ -861,6 +861,62 @@ impl WorkspaceCommand {
 }
 
 #[test]
+fn impl_self_calls_resolve_to_the_enclosing_type_and_trait_defaults_fall_back() {
+    let worktree = TestWorktree::new("impl-self-calls");
+    let graph = Graph::open(worktree.path(), SyncPolicy::Manual).expect("open graph");
+    worktree.write(
+        "src/lib.rs",
+        r#"
+trait DefaultRun {
+    fn default_run(&self) {}
+}
+
+struct A;
+struct B;
+
+impl A {
+    fn run(&self) { self.run(); }
+    fn helper(&self) { Self::run(self); }
+}
+
+impl B {
+    fn run(&self) {}
+}
+
+impl DefaultRun for A {
+    fn call_default(&self) { self.default_run(); }
+}
+"#,
+    );
+
+    graph.sync(SyncMode::Full).expect("sync graph");
+
+    let conn = open_test_connection(worktree.path());
+    let runs = refs_for_file(&conn, "src/lib.rs")
+        .into_iter()
+        .filter(|row| row.kind == "call" && row.target_name == "run")
+        .collect::<Vec<_>>();
+    assert_eq!(runs.len(), 2, "expected self.run and Self::run");
+    for row in runs {
+        assert_eq!(row.target_qualified.as_deref(), Some("<A>::run"), "{row:?}");
+        assert_eq!(
+            row.target_symbol_hint,
+            Some(symbol_id(&conn, "src/lib.rs", "<A>::run"))
+        );
+        assert_eq!(row.confidence, super::CONFIDENCE_EXACT, "{row:?}");
+    }
+
+    let fallback = call_ref(&conn, "src/lib.rs", "default_run");
+    // There is no `<A>::default_run` inherent method. The qualified attempt
+    // therefore falls through to the pre-existing short-name resolution.
+    assert_eq!(
+        fallback.target_qualified.as_deref(),
+        Some("DefaultRun::default_run")
+    );
+    assert_eq!(fallback.confidence, super::CONFIDENCE_EXACT);
+}
+
+#[test]
 fn python_attribute_call_does_not_resolve_to_a_same_module_function() {
     let worktree = TestWorktree::new("python-attribute");
     let graph = Graph::open(worktree.path(), SyncPolicy::Manual).expect("open graph");
