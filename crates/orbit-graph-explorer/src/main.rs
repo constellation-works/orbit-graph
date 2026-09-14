@@ -21,9 +21,10 @@
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
+use std::time::Duration;
 
 use orbit_graph::{Confidence, DEFAULT_IMPACT_DEPTH, IMPACT_NODE_CAP, RefOpts, Selector};
-use orbit_graph_explorer::cache::{SnapshotCache, default_cache_dir};
+use orbit_graph_explorer::cache::{CleanOptions, SnapshotCache, default_cache_dir};
 use orbit_graph_explorer::evidence::{
     DEFAULT_TIME_BUDGET_MS, MAX_EVIDENCE_DEPTH, parse_confidence,
 };
@@ -44,7 +45,7 @@ Usage:
                                [--include-absolute-paths] [--depth <N>] [--confidence <LEVEL>]
                                [--node-cap <N>] [--time-budget-ms <MS>] [--language <LANG>]
                                [--change-kind <KIND,...>] [--scope <PREFIX>]
-  orbit-graph-explorer clean [--repo <PATH>] [--cache-dir <PATH>]
+  orbit-graph-explorer clean [--repo <PATH>] [--cache-dir <PATH>] [--older-than <DURATION>] [--keep <N>]
 
 Options:
   --repo <PATH>            Repository to inspect (default: current directory).
@@ -80,6 +81,10 @@ Options:
                            path starts with this prefix.
   --cache-dir <PATH>       Snapshot cache directory
                            (default: <repo>/.orbit-graph/explorer/snapshots).
+  --older-than <DURATION>  For `clean`, remove live entries unused longer than
+                           a duration such as `14d`.
+  --keep <N>               For `clean`, retain at most N most-recently-used
+                           live entries after other cleanup rules apply.
   --no-cache               Index into task-owned temporary trees; reuse nothing.
   --time-budget-ms <MS>    Per-request traversal budget for `serve` and
                            `report`; `0` answers nothing and reports the budget
@@ -95,7 +100,8 @@ refused.
 Snapshot trees and indexes are cached per commit, keyed by commit SHA, extractor
 version, and store schema version. A key that does not match this binary is
 rebuilt, never reused. `clean` removes stale-key entries and entries for commits
-the repository no longer has, and nothing outside the cache directory.
+the repository no longer has. `--older-than` and `--keep` provide manual age
+and least-recently-used retention; no retention policy runs automatically.
 
 `snapshot` output is a human diagnostic, not a stable machine contract.
 
@@ -370,7 +376,21 @@ fn clean(invocation: &Invocation) -> Result<String, String> {
             .ok()
             .is_some_and(|oid| repo.find_commit(oid).is_ok())
     };
-    let report = cache.clean(&is_live).map_err(|error| error.to_string())?;
+    let older_than = invocation
+        .older_than
+        .as_deref()
+        .map(parse_duration)
+        .transpose()?;
+    let report = cache
+        .clean_with_options(
+            &is_live,
+            &CleanOptions {
+                older_than,
+                keep: invocation.keep,
+                ..CleanOptions::default()
+            },
+        )
+        .map_err(|error| error.to_string())?;
 
     let mut text = String::new();
     push_line(
@@ -386,19 +406,28 @@ fn clean(invocation: &Invocation) -> Result<String, String> {
                 entry.path.display()
             ),
         );
+        push_line(
+            &mut text,
+            format!("size\t{}\t{}", entry.size_bytes, entry.path.display()),
+        );
     }
     for entry in &report.kept {
         push_line(
             &mut text,
             format!("kept\t{}\t{}", entry.reason.label(), entry.path.display()),
         );
+        push_line(
+            &mut text,
+            format!("size\t{}\t{}", entry.size_bytes, entry.path.display()),
+        );
     }
     push_line(
         &mut text,
         format!(
-            "summary\tremoved\t{}\tkept\t{}",
+            "summary\tremoved\t{}\tkept\t{}\ttotal_size\t{}",
             report.removed.len(),
-            report.kept.len()
+            report.kept.len(),
+            report.total_size_bytes()
         ),
     );
     Ok(text)
@@ -439,6 +468,8 @@ struct Invocation {
     language: Option<String>,
     change_kind: Option<String>,
     scope: Option<String>,
+    older_than: Option<String>,
+    keep: Option<usize>,
 }
 
 impl Invocation {
@@ -473,6 +504,8 @@ impl Invocation {
         let mut language = None;
         let mut change_kind = None;
         let mut scope = None;
+        let mut older_than = None;
+        let mut keep = None;
         while let Some(flag) = rest.next() {
             let mut take_value = || -> Result<String, String> {
                 rest.next()
@@ -522,6 +555,14 @@ impl Invocation {
                 "--language" => language = Some(take_value()?),
                 "--change-kind" => change_kind = Some(take_value()?),
                 "--scope" => scope = Some(take_value()?),
+                "--older-than" => older_than = Some(take_value()?),
+                "--keep" => {
+                    let raw = take_value()?;
+                    keep =
+                        Some(raw.parse::<usize>().map_err(|error| {
+                            format!("`--keep` must be a whole number: {error}")
+                        })?);
+                }
                 other => return Err(format!("unknown option `{other}`\n\n{USAGE}")),
             }
         }
@@ -544,6 +585,11 @@ impl Invocation {
         {
             return Err(format!(
                 "`--time-budget-ms` and `--node-cap` apply to `serve` and `report` only\n\n{USAGE}"
+            ));
+        }
+        if command != Command::Clean && (older_than.is_some() || keep.is_some()) {
+            return Err(format!(
+                "`--older-than` and `--keep` apply to `clean` only\n\n{USAGE}"
             ));
         }
         if command != Command::Report
@@ -606,8 +652,41 @@ impl Invocation {
             language,
             change_kind,
             scope,
+            older_than,
+            keep,
         })
     }
+}
+
+fn parse_duration(raw: &str) -> Result<Duration, String> {
+    let split = raw
+        .find(|ch: char| !ch.is_ascii_digit())
+        .unwrap_or(raw.len());
+    let (amount, unit) = raw.split_at(split);
+    if amount.is_empty() || unit.is_empty() || unit.chars().any(|ch| !ch.is_ascii_alphabetic()) {
+        return Err(format!(
+            "`--older-than` must be a duration such as `14d`, not `{raw}`"
+        ));
+    }
+    let amount = amount
+        .parse::<u64>()
+        .map_err(|error| format!("`--older-than` must be a duration such as `14d`: {error}"))?;
+    let seconds = match unit {
+        "s" => 1,
+        "m" => 60,
+        "h" => 60 * 60,
+        "d" => 24 * 60 * 60,
+        "w" => 7 * 24 * 60 * 60,
+        _ => {
+            return Err(format!(
+                "`--older-than` must use s, m, h, d, or w, not `{raw}`"
+            ));
+        }
+    };
+    amount
+        .checked_mul(seconds)
+        .map(Duration::from_secs)
+        .ok_or_else(|| format!("`--older-than` duration is too large: `{raw}`"))
 }
 
 fn write_out(text: &str) -> io::Result<()> {

@@ -1133,7 +1133,7 @@ fn a_second_launch_hits_the_cache_and_a_stale_key_rebuilds_it() {
 }
 
 #[test]
-fn clean_removes_only_stale_and_unreferenced_cache_entries() {
+fn clean_applies_retention_and_preserves_existing_cleanup_reasons() {
     let cache = TempDir::new().expect("create cache directory");
     let cache_dir = cache.path().to_string_lossy().into_owned();
     let (repository, base, head) = build_chain_fixture();
@@ -1148,6 +1148,13 @@ fn clean_removes_only_stale_and_unreferenced_cache_entries() {
     service.wait_until_ready();
     let _ = service.authorized("GET", "/api/comparison", &[]);
     drop(service);
+
+    // The fixture has two live cached comparisons. Make their retention order
+    // deterministic so the real `clean --keep` executable path evicts base.
+    fs::write(cache.path().join(base.as_str()).join("last_used"), b"100")
+        .expect("set base last-used time");
+    fs::write(cache.path().join(head.as_str()).join("last_used"), b"200")
+        .expect("set head last-used time");
 
     // An entry for a commit this repository does not have (with the current
     // key, so it is unreferenced rather than stale), and a file that is not a
@@ -1178,6 +1185,8 @@ fn clean_removes_only_stale_and_unreferenced_cache_entries() {
             repository.path().to_str().expect("utf8 path"),
             "--cache-dir",
             cache_dir.as_str(),
+            "--keep",
+            "1",
         ])
         .output()
         .expect("run clean");
@@ -1188,7 +1197,14 @@ fn clean_removes_only_stale_and_unreferenced_cache_entries() {
         stdout.contains("removed\tunreferenced_commit\t"),
         "{stdout}"
     );
+    assert!(stdout.contains("removed\tevicted_lru\t"), "{stdout}");
+    assert!(stdout.contains("size\t"), "{stdout}");
+    assert!(stdout.contains("total_size\t"), "{stdout}");
     assert!(!entry_root.exists(), "an unreferenced entry is removed");
+    assert!(
+        !cache.path().join(base.as_str()).exists(),
+        "the older live entry is evicted: {stdout}"
+    );
     assert!(
         cache.path().join(head.as_str()).exists(),
         "a current entry is kept: {stdout}"

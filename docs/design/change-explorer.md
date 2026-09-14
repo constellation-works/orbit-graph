@@ -841,7 +841,11 @@ ORB-12416/ORB-12417; read that document directly rather than a copy of it.
   under `<repo>/.orbit-graph/explorer/snapshots`: it is never shared across
   separate clones or worktrees of the same repository, it accumulates one
   entry per distinct base/head SHA ever compared until `clean` is run
-  manually, and it has no automatic size cap or eviction policy. Correctness
+  manually. `clean --older-than <duration>` removes live entries that have not
+  been used within a humantime-style duration, and `clean --keep <N>` retains
+  the N most-recently-used live entries; both are explicit operator actions,
+  not automatic eviction at launch. Its report includes per-entry and total
+  sizes. Correctness
   relies entirely on its `(commit SHA, EXTRACTOR_VERSION,
   STORE_SCHEMA_VERSION)` key, which cannot mismatch a commit's real content
   because the key includes the content-addressed SHA itself; it can, and by
