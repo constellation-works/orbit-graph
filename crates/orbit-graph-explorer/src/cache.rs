@@ -31,6 +31,7 @@
 
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use orbit_graph::{EXTRACTOR_VERSION, STORE_SCHEMA_VERSION};
@@ -306,10 +307,16 @@ impl SnapshotCache {
 
     /// Create a staging directory for a fresh build of `commit_sha`.
     pub fn stage(&self, commit_sha: &str) -> Result<StagedEntry, CacheError> {
+        // The clock alone is not unique: two workers in one process (a
+        // comparison whose base and head coincide) can stage the same commit
+        // within one timer tick, and the second would wipe the first's
+        // half-built tree. A process-wide counter keeps every name distinct.
+        static STAGE_SEQUENCE: AtomicU64 = AtomicU64::new(0);
         let name = format!(
-            "{STAGING_PREFIX}{commit_sha}-{}-{}",
+            "{STAGING_PREFIX}{commit_sha}-{}-{}-{}",
             std::process::id(),
-            now_nanos()
+            now_nanos(),
+            STAGE_SEQUENCE.fetch_add(1, Ordering::Relaxed)
         );
         let root = self.dir.join(name);
         if root.exists() {
@@ -349,30 +356,45 @@ impl SnapshotCache {
 
         let destination = self.entry_root(staged.commit_sha.as_str())?;
         if destination.exists() {
-            // Another launch published this commit while this one was
-            // building. Its entry carries the same key, so the staged build is
-            // discarded rather than racing a rename over a directory another
-            // process may already have open.
-            self.remove_entry(staged.root.as_path())?;
-            if let Some(existing) = self.lookup(staged.commit_sha.as_str())? {
-                return Ok(existing);
-            }
-            return Err(CacheError::Io {
-                operation: "publish snapshot cache entry",
-                path: destination,
-                reason: "an entry appeared and then failed its own key check".to_string(),
-            });
+            return self.adopt_published(staged, destination);
         }
-        fs::rename(staged.root.as_path(), destination.as_path()).map_err(|source| {
-            CacheError::io(
+        match fs::rename(staged.root.as_path(), destination.as_path()) {
+            Ok(()) => Ok(CachedEntry {
+                root: destination,
+                metadata,
+            }),
+            // The existence check above and the rename are not atomic: a
+            // concurrent worker for the same commit (a comparison whose base
+            // and head coincide builds both sides at once) can publish in
+            // between, and the rename then fails because the destination is a
+            // non-empty directory. Treat that exactly like finding the entry
+            // already published.
+            Err(_) if destination.exists() => self.adopt_published(staged, destination),
+            Err(source) => Err(CacheError::io(
                 "publish snapshot cache entry",
                 destination.as_path(),
                 &source,
-            )
-        })?;
-        Ok(CachedEntry {
-            root: destination,
-            metadata,
+            )),
+        }
+    }
+
+    /// Another launch published this commit while this one was building. Its
+    /// entry carries the same key, so the staged build is discarded rather
+    /// than racing a rename over a directory another process may already have
+    /// open.
+    fn adopt_published(
+        &self,
+        staged: StagedEntry,
+        destination: PathBuf,
+    ) -> Result<CachedEntry, CacheError> {
+        self.remove_entry(staged.root.as_path())?;
+        if let Some(existing) = self.lookup(staged.commit_sha.as_str())? {
+            return Ok(existing);
+        }
+        Err(CacheError::Io {
+            operation: "publish snapshot cache entry",
+            path: destination,
+            reason: "an entry appeared and then failed its own key check".to_string(),
         })
     }
 
@@ -1056,5 +1078,59 @@ mod tests {
 
         assert!(report.removed.is_empty(), "{:?}", report.removed);
         assert_eq!(report.kept.len(), 2);
+    }
+
+    #[test]
+    fn concurrent_publishes_of_the_same_commit_both_succeed() {
+        // Two workers (a comparison whose base and head are the same commit)
+        // stage independently and race to publish; the loser must adopt the
+        // winner's entry instead of failing on the non-empty destination.
+        let dir = TempDir::new().expect("cache directory");
+        let cache = SnapshotCache::open(dir.path()).expect("open cache");
+        let commit = sha('9');
+        for _ in 0..20 {
+            let staged: Vec<StagedEntry> = (0..2)
+                .map(|_| {
+                    let staged = cache.stage(commit.as_str()).expect("stage");
+                    fs::write(staged.db(), b"index").expect("database");
+                    staged
+                })
+                .collect();
+            let barrier = std::sync::Barrier::new(2);
+            let roots: Vec<PathBuf> = std::thread::scope(|scope| {
+                let workers: Vec<_> = staged
+                    .into_iter()
+                    .map(|staged| {
+                        let (cache, barrier) = (&cache, &barrier);
+                        scope.spawn(move || {
+                            barrier.wait();
+                            cache
+                                .publish(staged, StoredBuild::default())
+                                .expect("publish must tolerate a concurrent winner")
+                                .root()
+                                .to_path_buf()
+                        })
+                    })
+                    .collect();
+                workers
+                    .into_iter()
+                    .map(|worker| worker.join().expect("worker"))
+                    .collect()
+            });
+            assert_eq!(roots[0], roots[1]);
+            assert_eq!(roots[0], cache.dir().join(commit.as_str()));
+            let leftovers: Vec<_> = fs::read_dir(cache.dir())
+                .expect("read cache dir")
+                .filter_map(Result::ok)
+                .filter(|entry| {
+                    entry
+                        .file_name()
+                        .to_string_lossy()
+                        .starts_with(STAGING_PREFIX)
+                })
+                .collect();
+            assert!(leftovers.is_empty(), "{leftovers:?}");
+            fs::remove_dir_all(cache.dir().join(commit.as_str())).expect("reset");
+        }
     }
 }
