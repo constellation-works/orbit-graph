@@ -1737,17 +1737,17 @@ fn run_in_pty(cwd: &Path, args: &[&str], columns: u16) -> (String, String) {
     let master = unsafe { OwnedFd::from_raw_fd(master) };
     // SAFETY: successful openpty returned newly owned file descriptors.
     let slave = unsafe { OwnedFd::from_raw_fd(slave) };
-    let output = Command::new(env!("CARGO_BIN_EXE_orbit-graph"))
+    let child = Command::new(env!("CARGO_BIN_EXE_orbit-graph"))
         .current_dir(cwd)
         .args(args)
         .stdout(Stdio::from(slave))
-        .output()
-        .expect("run orbit-graph in PTY");
-    assert!(
-        output.status.success(),
-        "PTY command failed: {}",
-        String::from_utf8_lossy(&output.stderr)
-    );
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("spawn orbit-graph in PTY");
+
+    // Drop the parent's slave before reading so EOF/EIO reflects the child only.
+    // Draining while the child runs avoids losing buffered macOS PTY output when
+    // the final slave descriptor closes.
     let mut reader = std::fs::File::from(master);
     let mut stdout = Vec::new();
     loop {
@@ -1759,6 +1759,14 @@ fn run_in_pty(cwd: &Path, args: &[&str], columns: u16) -> (String, String) {
             Err(error) => panic!("read PTY output: {error}"),
         }
     }
+    let output = child
+        .wait_with_output()
+        .expect("wait for orbit-graph in PTY");
+    assert!(
+        output.status.success(),
+        "PTY command failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
     (
         String::from_utf8(stdout)
             .expect("PTY output is UTF-8")

@@ -105,11 +105,8 @@ impl StatusBoard {
     /// Reset both sides to pending, for a new build attempt: the first one,
     /// or a restart after cancellation.
     ///
-    /// Neither side gets a start time here: the two sides build sequentially,
-    /// so stamping both now would make the second side's `elapsed_ms` count
-    /// from the first side's start rather than its own. `set_status` stamps
-    /// each side's own `started_at` the first time it actually leaves
-    /// `pending`.
+    /// Neither side gets a start time here: `set_status` stamps each side's
+    /// own `started_at` the first time that side actually leaves `pending`.
     pub(crate) fn reset(&self) {
         for slot in [&self.base, &self.head] {
             let mut report = slot.lock().unwrap_or_else(PoisonError::into_inner);
