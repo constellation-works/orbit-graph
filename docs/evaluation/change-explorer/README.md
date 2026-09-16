@@ -81,10 +81,10 @@ picture at `ab6e3e3`, `EXTRACTOR_VERSION` 8.
 
 **Wrong**
 
-- Two intra-file renames are reported as `removed` + `added`
-  (`ResolvedRef::qualified` → `::candidate`, `unique_candidate_qualified` →
-  `unique_candidate`). Contract-conformant — rung 4 needs Git file-rename evidence —
-  but no row states the relationship.
+- Intra-file renames with a simultaneous body edit remain `removed` + `added`.
+  A unique same-kind, same-parent normalized-body match is now reported as
+  `renamed` with `body_hash` provenance; this deliberately does not guess when
+  multiple candidates share that body.
 - All five `uncertain` rows are symbols the source proves unchanged (`from_db`,
   `line_for`, `new` in `src/query/refs.rs`; `GraphError:impl`; `TestWorktree:impl`).
 - Four fixture symbols under `tests/fixtures/change-explorer/**/src/lib.rs` are
@@ -330,13 +330,14 @@ Ordered by how much they distort an answer.
    study 1's, provably unchanged. The contract's refusal to guess is right; the
    cost is that a reader cannot tell an ambiguous-and-changed row from an
    ambiguous-and-unchanged one.
-4. **Intra-file renames are never paired.** Unaffected by either fix.
-   Re-confirmed in the re-run: study 1's `changed-symbols.json` still reports
+4. **Intra-file rename pairing is intentionally narrow.** A unique
+   same-kind, same-parent normalized-body match is now a `renamed` row with
+   `body_hash` provenance. The re-run leaves study 1's
    `ResolvedRef::qualified` → `::candidate` and
-   `unique_candidate_qualified` → `unique_candidate` as `removed` + `added`
-   pairs, not renames. Rung 4 of the ladder needs Git file-rename evidence, so
-   a rename inside an otherwise-modified file always surfaces this way. Seen in
-   studies 1 and 4.
+   `unique_candidate_qualified` → `unique_candidate` as `removed` + `added`:
+   both renames also changed their bodies. A simultaneous body edit, incomplete
+   source span, changed parent or kind, or more than one matching candidate
+   remains `removed`/`added` or `uncertain`; the implementation refuses to guess.
 5. **Runtime invocation is invisible, and it is how Python test suites drive
    CLI entry points.** Unaffected by either fix, and the re-run adds a second,
    sharper example: study 5's `checker.supporting_paths(...)` call (a

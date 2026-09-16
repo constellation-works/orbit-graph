@@ -1130,6 +1130,7 @@ fn pairing_evidence_label(evidence: PairingEvidence) -> &'static str {
         PairingEvidence::Signature => "signature",
         PairingEvidence::GitRename => "git_rename",
         PairingEvidence::GitCopy => "git_copy",
+        PairingEvidence::BodyHash => "body_hash",
         PairingEvidence::None => "none",
     }
 }

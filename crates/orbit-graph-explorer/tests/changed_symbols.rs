@@ -495,15 +495,76 @@ fn branch_divergence_is_reported_as_the_direct_reading_it_is() {
 }
 
 #[test]
-fn nested_function_rename_is_not_absent_from_changed_symbols() {
+fn pure_intra_file_rename_uses_body_hash_evidence() {
+    let changed = changed_from_sources(
+        "pub fn old_name() -> i32 { 7 }\n",
+        "pub fn new_name() -> i32 { 7 }\n",
+    );
+
+    let row = changed.single_pair("old_name", "new_name");
+    assert_eq!(row.status, ChangeStatus::Renamed);
+    assert_eq!(row.pairing, Pairing::Renamed);
+    assert_eq!(row.pairing_evidence, PairingEvidence::BodyHash);
+    assert!(
+        row.note
+            .as_deref()
+            .unwrap_or_default()
+            .contains("body hash")
+    );
+}
+
+#[test]
+fn intra_file_rename_with_a_body_edit_stays_unpaired() {
+    let changed = changed_from_sources(
+        "pub fn old_name() -> i32 { 7 }\n",
+        "pub fn new_name() -> i32 { 8 }\n",
+    );
+
+    assert_eq!(changed.single_status("old_name"), ChangeStatus::Removed);
+    assert_eq!(changed.single_status("new_name"), ChangeStatus::Added);
+}
+
+#[test]
+fn ambiguous_intra_file_body_hash_candidates_remain_uncertain() {
+    let changed = changed_from_sources(
+        "pub fn old_one() -> i32 { 7 }\npub fn old_two() -> i32 { 7 }\n",
+        "pub fn new_one() -> i32 { 7 }\npub fn new_two() -> i32 { 7 }\n",
+    );
+
+    assert_eq!(changed.symbols.len(), 1, "{:#?}", changed.symbols);
+    let row = &changed.symbols[0];
+    assert_eq!(row.status, ChangeStatus::Uncertain);
+    assert_eq!(row.pairing_evidence, PairingEvidence::None);
+    assert_eq!(row.uncertain_candidates.len(), 4);
+    assert!(
+        row.note
+            .as_deref()
+            .unwrap_or_default()
+            .contains("ambiguous same-file body-hash rename")
+    );
+}
+
+#[test]
+fn nested_function_rename_is_paired_by_body_hash() {
     let case = Case::open("nested-function-rename");
     case.assert_manifest_presence();
 
-    let removed = case.single("symbol:sample.py#snapshot:function");
-    assert_eq!(removed.status, ChangeStatus::Removed);
-
-    let added = case.single("symbol:sample.py#snap:function");
-    assert_eq!(added.status, ChangeStatus::Added);
+    let renamed = case
+        .changed
+        .symbols
+        .iter()
+        .find(|row| {
+            row.base
+                .as_ref()
+                .is_some_and(|symbol| symbol.selector == "symbol:sample.py#snapshot:function")
+                && row
+                    .head
+                    .as_ref()
+                    .is_some_and(|symbol| symbol.selector == "symbol:sample.py#snap:function")
+        })
+        .expect("paired nested-function rename");
+    assert_eq!(renamed.status, ChangeStatus::Renamed);
+    assert_eq!(renamed.pairing_evidence, PairingEvidence::BodyHash);
 }
 
 #[test]
@@ -866,6 +927,69 @@ impl Case {
                 self.case.case_id
             );
         }
+    }
+}
+
+fn changed_from_sources(base_source: &str, head_source: &str) -> ChangedSymbols {
+    let repository = tempfile::TempDir::new().expect("create repository");
+    let repo = git2::Repository::init(repository.path()).expect("init repository");
+    let base = commit_all(
+        &repo,
+        repository.path(),
+        &[("src/lib.rs", base_source)],
+        "base symbols",
+        0,
+    );
+    let head = commit_all(
+        &repo,
+        repository.path(),
+        &[("src/lib.rs", head_source)],
+        "head symbols",
+        1,
+    );
+    let comparison = Comparison::open(repository.path(), &base, &head).expect("open comparison");
+    ChangedSymbols::compute(&comparison).expect("compute changed symbols")
+}
+
+trait ChangedSymbolsTestExt {
+    fn single_pair(
+        &self,
+        base_name: &str,
+        head_name: &str,
+    ) -> &orbit_graph_explorer::changes::ChangedSymbol;
+    fn single_status(&self, name: &str) -> ChangeStatus;
+}
+
+impl ChangedSymbolsTestExt for ChangedSymbols {
+    fn single_pair(
+        &self,
+        base_name: &str,
+        head_name: &str,
+    ) -> &orbit_graph_explorer::changes::ChangedSymbol {
+        let base = format!("symbol:src/lib.rs#{base_name}:function");
+        let head = format!("symbol:src/lib.rs#{head_name}:function");
+        let rows: Vec<_> = self
+            .symbols
+            .iter()
+            .filter(|row| {
+                row.base
+                    .as_ref()
+                    .is_some_and(|symbol| symbol.selector == base)
+                    && row
+                        .head
+                        .as_ref()
+                        .is_some_and(|symbol| symbol.selector == head)
+            })
+            .collect();
+        assert_eq!(rows.len(), 1, "{:#?}", self.symbols);
+        rows[0]
+    }
+
+    fn single_status(&self, name: &str) -> ChangeStatus {
+        let selector = format!("symbol:src/lib.rs#{name}:function");
+        let rows = self.entries_for(&selector);
+        assert_eq!(rows.len(), 1, "{:#?}", self.symbols);
+        rows[0].status
     }
 }
 
