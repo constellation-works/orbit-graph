@@ -297,22 +297,28 @@ Ordered by how much they distort an answer.
    remains is the defect underneath both: the resolver has no receiver-type
    inference, so any method call on a value of unknown static type still falls
    back to a name-only match against every same-named method in the corpus.
-   Studies 2 and 3 are still dominated by that fallback — 442/470 (94.0%,
-   was 496/512) and 288/288 `call_path` candidates still 100% `heuristic_match`
-   — because a same-name method call was never what either fix targeted. Until
-   the resolver can distinguish call sites by receiver type, "affected callers"
-   on a Rust workspace this size is still mostly a name search with extra
-   steps, and the payload's `confidence` field is the only thing keeping that
-   honest. A related, narrower gap surfaced by the fix: `TaskComplexity`'s
+   The deliberately narrow `self.method()` / `Self::method()` follow-up was
+   re-measured on 2026-09-13 with `EXTRACTOR_VERSION` 9: study 2 now splits
+   528 `heuristic_match` / 12 `resolved_call` (540 `call_path` candidates),
+   versus the version-8 run's 442 / 12 (470); study 3 now has 286/286
+   `heuristic_match` / 0 `resolved_call`, versus 288/288 / 0. The raw totals
+   are not a clean before/after accuracy comparison because this remeasurement
+   uses the current explorer working tree, but the category split confirms
+   that unknown receivers still dominate after the known-`self` calls are
+   resolved exactly. Until the resolver can distinguish call sites by receiver
+   type, "affected callers" on a Rust workspace this size is still mostly a
+   name search with extra steps, and the payload's `confidence` field is the
+   only thing keeping that honest. A related, narrower gap surfaced by the fix:
+   `TaskComplexity`'s
    references now resolve at `same_module` confidence rather than `NULL`, but
    the candidate-test/entry-point *category* classifier still buckets
    `same_module` under `heuristic_match`, same as before the fix — the
    underlying data improved without the surfaced category changing (study 3's
    After section).
-2. **A weak hop is disclosed per edge but not per row.** Unaffected by either
-   fix and confirmed unchanged in the re-run: study 2's `call_path` candidates
-   still split 442 `heuristic_match` / 12 `resolved_call` behind one `source`
-   label, same shape as the original 496/12. The evidence pane groups
+2. **A weak hop is disclosed per edge but not per row.** The version-9
+   remeasurement leaves study 2 with 528 `heuristic_match` / 12
+   `resolved_call` `call_path` candidates behind one `source` label. The
+   evidence pane groups
    `heuristic_match` separately; the entry-point list does not, and a
    `call_path` candidate can carry `category: heuristic_match`. Both fields are
    in the payload and both badges render, but the strong label reads first

@@ -666,19 +666,37 @@ fn push_call_target_ref(
             "call",
             "fuzzy_name",
         ),
-        "scoped_identifier" => state.push_ref(
-            function,
-            source,
-            Some(normalize_qualified_name(&node_text(function, source))),
-            "call",
-            "import_resolved",
-        ),
+        "scoped_identifier" => {
+            let self_target = self_call_target_qualified(function, source, module);
+            let is_self_target = self_target.is_some();
+            state.push_ref(
+                function,
+                source,
+                Some(
+                    self_target
+                        .unwrap_or_else(|| normalize_qualified_name(&node_text(function, source))),
+                ),
+                "call",
+                if is_self_target {
+                    "fuzzy_name"
+                } else {
+                    "import_resolved"
+                },
+            );
+        }
         "field_expression" => {
             let receiver = function
                 .child_by_field_name("value")
                 .and_then(|value| unresolved_receiver_text(value, source));
             if let Some(field) = function.child_by_field_name("field") {
-                state.push_ref_with_receiver(field, source, None, "call", "fuzzy_name", receiver);
+                state.push_ref_with_receiver(
+                    field,
+                    source,
+                    self_call_target_qualified(function, source, module),
+                    "call",
+                    "fuzzy_name",
+                    receiver,
+                );
             }
             if let Some(value) = function.child_by_field_name("value") {
                 collect_expression_refs(value, source, module, state);
@@ -707,6 +725,46 @@ fn push_call_target_ref(
         }
         _ => collect_expression_refs(function, source, module, state),
     }
+}
+
+/// Returns the exact method qualified name for a `self.method()` or
+/// `Self::method()` call in an impl. Other receivers remain deliberately
+/// untyped: local bindings and fields are outside this extractor's scope.
+fn self_call_target_qualified(
+    function: Node,
+    source: &str,
+    module: &ModuleScope,
+) -> Option<String> {
+    let is_self_call = match function.kind() {
+        "field_expression" => function
+            .child_by_field_name("value")
+            .is_some_and(|value| node_text(value, source) == "self"),
+        "scoped_identifier" => node_text(function, source).starts_with("Self::"),
+        _ => false,
+    };
+    if !is_self_call {
+        return None;
+    }
+
+    let name = function
+        .child_by_field_name("field")
+        .map(|field| node_text(field, source))
+        .or_else(|| {
+            node_text(function, source)
+                .rsplit("::")
+                .next()
+                .map(ToOwned::to_owned)
+        })?;
+    let mut ancestor = Some(function);
+    while let Some(node) = ancestor {
+        if node.kind() == "impl_item" {
+            let type_node = node.child_by_field_name("type")?;
+            let type_name = type_qualified_name(type_node, source, module)?;
+            return Some(format!("<{type_name}>::{name}"));
+        }
+        ancestor = node.parent();
+    }
+    None
 }
 
 /// Receiver text to record on a method-call ref, or `None` when the receiver

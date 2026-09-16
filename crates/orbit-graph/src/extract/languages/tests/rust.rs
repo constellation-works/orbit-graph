@@ -293,6 +293,29 @@ impl WorkspaceCommand {
 }
 
 #[test]
+fn self_and_self_path_calls_record_the_enclosing_impl_type() {
+    let file = extract(
+        r#"
+struct Worker;
+
+impl Worker {
+    fn run(&self) { self.helper(); }
+    fn helper(&self) { Self::run(self); }
+}
+"#,
+    );
+
+    assert_eq!(
+        call_ref(&file, "helper").target_qualified.as_deref(),
+        Some("<Worker>::helper")
+    );
+    assert_eq!(
+        call_ref(&file, "run").target_qualified.as_deref(),
+        Some("<Worker>::run")
+    );
+}
+
+#[test]
 fn chained_method_call_records_the_whole_receiver_expression() {
     let file = extract(
         r#"
