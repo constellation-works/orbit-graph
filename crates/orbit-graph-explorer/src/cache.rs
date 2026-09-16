@@ -501,7 +501,7 @@ impl SnapshotCache {
                     .cmp(&left.0)
                     .then_with(|| left.1.path.cmp(&right.1.path))
             });
-            for (_, entry) in retained.drain(keep..) {
+            for (_, entry) in retained.drain(keep.min(retained.len())..) {
                 self.remove_entry(entry.path.as_path())?;
                 report.removed.push(CleanedEntry {
                     reason: CleanReason::EvictedLru,
@@ -1032,5 +1032,29 @@ mod tests {
             "the newest live entry is kept"
         );
         assert!(report.total_size_bytes() > 0, "entries report their sizes");
+    }
+
+    #[test]
+    fn keep_larger_than_the_live_entry_count_retains_everything() {
+        let dir = TempDir::new().expect("cache directory");
+        let cache = SnapshotCache::open(dir.path()).expect("open cache");
+        let first = sha('e');
+        let second = sha('f');
+        write_current_entry(&cache, first.as_str(), 100);
+        write_current_entry(&cache, second.as_str(), 200);
+
+        let report = cache
+            .clean_with_options(
+                &|commit| commit == first || commit == second,
+                &CleanOptions {
+                    older_than: None,
+                    keep: Some(10),
+                    now_seconds: Some(1_000),
+                },
+            )
+            .expect("clean must not panic when keep exceeds the entry count");
+
+        assert!(report.removed.is_empty(), "{:?}", report.removed);
+        assert_eq!(report.kept.len(), 2);
     }
 }
