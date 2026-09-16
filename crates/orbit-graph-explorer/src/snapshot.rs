@@ -436,6 +436,12 @@ impl WorkingTreeState {
 #[derive(Debug, Error)]
 #[non_exhaustive]
 pub enum SnapshotError {
+    /// A worker that prepares one side of a concurrent comparison panicked.
+    #[error("snapshot build worker for the {side} side panicked")]
+    Worker {
+        /// Side whose worker panicked.
+        side: SnapshotSide,
+    },
     /// The supplied path is not usable as a Git working tree.
     #[error("{path} is not a usable Git working tree: {reason}")]
     Repository {
@@ -1207,7 +1213,7 @@ impl Comparison {
         }
 
         let mut cache_note = None;
-        let cache = if options.no_cache {
+        let cache_dir = if options.no_cache {
             cache_note = Some("Snapshot caching was disabled for this launch.".to_string());
             None
         } else {
@@ -1216,7 +1222,7 @@ impl Comparison {
                 .clone()
                 .unwrap_or_else(|| default_cache_dir(workdir.as_path()));
             match SnapshotCache::open(dir.as_path()) {
-                Ok(cache) => Some(cache),
+                Ok(cache) => Some(cache.dir().to_path_buf()),
                 Err(error) => {
                     cache_note = Some(format!(
                         "Snapshot cache at {} is unusable ({error}); this launch indexed into \
@@ -1231,24 +1237,38 @@ impl Comparison {
         if progress.is_cancelled() {
             return Ok(ComparisonOutcome::Cancelled);
         }
-        let Some(base) = Snapshot::build(
-            &repo,
-            SnapshotSide::Base,
-            base_ref,
-            cache.as_ref(),
-            progress,
-        )?
-        else {
-            return Ok(ComparisonOutcome::Cancelled);
-        };
-        let Some(head) = Snapshot::build(
-            &repo,
-            SnapshotSide::Head,
-            head_ref,
-            cache.as_ref(),
-            progress,
-        )?
-        else {
+        // Each side has an immutable commit, its own cache entry, and its own
+        // progress slot. Open a separate read-only repository handle per
+        // worker because git2 handles are not shared across threads.
+        let (base, head) = std::thread::scope(|scope| {
+            let base_worker = scope.spawn(|| {
+                build_snapshot_side(
+                    repository,
+                    SnapshotSide::Base,
+                    base_ref,
+                    cache_dir.as_deref(),
+                    progress,
+                )
+            });
+            let head_worker = scope.spawn(|| {
+                build_snapshot_side(
+                    repository,
+                    SnapshotSide::Head,
+                    head_ref,
+                    cache_dir.as_deref(),
+                    progress,
+                )
+            });
+
+            let base = base_worker.join().map_err(|_| SnapshotError::Worker {
+                side: SnapshotSide::Base,
+            })?;
+            let head = head_worker.join().map_err(|_| SnapshotError::Worker {
+                side: SnapshotSide::Head,
+            })?;
+            Ok::<_, SnapshotError>((base?, head?))
+        })?;
+        let (Some(base), Some(head)) = (base, head) else {
             return Ok(ComparisonOutcome::Cancelled);
         };
 
@@ -1258,7 +1278,7 @@ impl Comparison {
             base,
             head,
             working_tree,
-            cache_dir: cache.map(|cache| cache.dir().to_path_buf()),
+            cache_dir,
             cache_note,
             prepared_in: started.elapsed(),
         })))
@@ -1312,6 +1332,22 @@ impl Comparison {
     pub fn working_tree(&self) -> &WorkingTreeState {
         &self.working_tree
     }
+}
+
+/// Build one comparison side on its own worker thread.
+fn build_snapshot_side(
+    repository: &Path,
+    side: SnapshotSide,
+    requested_ref: &str,
+    cache_dir: Option<&Path>,
+    progress: &dyn ComparisonProgress,
+) -> Result<Option<Snapshot>, SnapshotError> {
+    let repo = open_working_tree(repository)?;
+    let cache = cache_dir
+        .map(SnapshotCache::open)
+        .transpose()
+        .map_err(cache_error)?;
+    Snapshot::build(&repo, side, requested_ref, cache.as_ref(), progress)
 }
 
 /// Open `path` as a Git repository with a working tree.
