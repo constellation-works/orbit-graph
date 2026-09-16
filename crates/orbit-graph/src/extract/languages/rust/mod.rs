@@ -285,6 +285,7 @@ fn extract_function(
         return;
     };
 
+    let parent = method_parent.or(parent_symbol);
     let kind = if has_test_attr(attrs) {
         "test"
     } else if method_parent.is_some() {
@@ -292,18 +293,21 @@ fn extract_function(
     } else {
         "function"
     };
-    let qualified = qualify_member_or_module(module, method_parent, &name);
+    let qualified = qualify_member_or_module(module, parent, &name);
     state.push_symbol(
         node,
         source,
         name,
-        qualified,
+        qualified.clone(),
         kind,
-        method_parent.or(parent_symbol).map(ToOwned::to_owned),
+        parent.map(ToOwned::to_owned),
     );
     collect_signature_refs(node, source, module, state);
     if let Some(body) = node.child_by_field_name("body") {
-        collect_expression_refs(body, source, module, state);
+        // A block can define local functions. Extract them as children of this
+        // function so their spans own their calls instead of leaving them
+        // invisible to the graph (and attributing their calls to this body).
+        extract_items(body, source, module, Some(&qualified), None, state);
     }
 }
 

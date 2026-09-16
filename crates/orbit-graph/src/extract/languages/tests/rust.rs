@@ -32,6 +32,7 @@ trait Render {
         String::new()
     }
 }
+
 impl Render for Widget {
     fn render(&self) -> String {
         helper()
@@ -67,6 +68,42 @@ mod nested {
         file.symbols.iter().all(|symbol| {
             symbol.span_start < symbol.span_end && symbol.span_end <= source.len()
         })
+    );
+}
+
+#[test]
+fn extracts_nested_functions_with_their_own_call_spans() {
+    let file = extract(
+        r#"
+fn outer() {
+    fn inner() {
+        helper();
+    }
+
+    inner();
+}
+
+fn helper() {}
+"#,
+    );
+
+    let inner = file
+        .symbols
+        .iter()
+        .find(|symbol| symbol.qualified == "outer::inner")
+        .expect("nested function symbol");
+    assert_eq!(inner.kind, "function");
+    assert_eq!(inner.parent_symbol.as_deref(), Some("outer"));
+
+    let helper_call = file
+        .refs
+        .iter()
+        .find(|reference| reference.kind == "call" && reference.target_name == "helper")
+        .expect("call inside nested function");
+    assert!(
+        helper_call.from_span_start >= inner.span_start
+            && helper_call.from_span_end <= inner.span_end,
+        "nested call must be attributable to inner, got {helper_call:?}"
     );
 }
 

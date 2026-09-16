@@ -31,7 +31,7 @@
 
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use orbit_graph::{EXTRACTOR_VERSION, STORE_SCHEMA_VERSION};
 use serde::{Deserialize, Serialize};
@@ -42,6 +42,7 @@ pub const CACHE_SCHEMA_VERSION: u32 = 1;
 
 /// Prefix of a staging directory: a build that has not been published yet.
 const STAGING_PREFIX: &str = ".staging-";
+const LAST_USED_FILE: &str = "last_used";
 
 /// Default cache directory for `repository`.
 pub fn default_cache_dir(repository: &Path) -> PathBuf {
@@ -299,6 +300,7 @@ impl SnapshotCache {
             self.remove_entry(root.as_path())?;
             return Ok(None);
         }
+        write_last_used(root.as_path(), now_seconds())?;
         Ok(Some(entry))
     }
 
@@ -343,6 +345,7 @@ impl SnapshotCache {
             published_at: now_seconds(),
         };
         write_metadata(staged.root.as_path(), &metadata)?;
+        write_last_used(staged.root.as_path(), now_seconds())?;
 
         let destination = self.entry_root(staged.commit_sha.as_str())?;
         if destination.exists() {
@@ -381,11 +384,23 @@ impl SnapshotCache {
     /// Remove entries with a stale key and entries whose commit `is_live`
     /// rejects, leaving everything else in place.
     pub fn clean(&self, is_live: &dyn Fn(&str) -> bool) -> Result<CleanReport, CacheError> {
+        self.clean_with_options(is_live, &CleanOptions::default())
+    }
+
+    /// Remove entries according to `options`, after applying the base key and
+    /// reachability checks. Existing cleanup reasons always take precedence
+    /// over retention-policy reasons.
+    pub fn clean_with_options(
+        &self,
+        is_live: &dyn Fn(&str) -> bool,
+        options: &CleanOptions,
+    ) -> Result<CleanReport, CacheError> {
         let mut report = CleanReport {
             cache_dir: self.dir.clone(),
             removed: Vec::new(),
             kept: Vec::new(),
         };
+        let mut current = Vec::new();
         let entries = fs::read_dir(self.dir.as_path()).map_err(|source| {
             CacheError::io("read snapshot cache directory", self.dir.as_path(), &source)
         })?;
@@ -397,18 +412,22 @@ impl SnapshotCache {
             let name = entry.file_name().to_string_lossy().into_owned();
 
             if name.starts_with(STAGING_PREFIX) {
+                let size_bytes = entry_size(path.as_path())?;
                 self.remove_entry(path.as_path())?;
                 report.removed.push(CleanedEntry {
                     path,
                     reason: CleanReason::AbandonedStaging,
+                    size_bytes,
                 });
                 continue;
             }
             if !is_commit_sha(name.as_str()) {
                 // Not something this module created, so it is never removed.
+                let size_bytes = entry_size(path.as_path())?;
                 report.kept.push(CleanedEntry {
                     path,
                     reason: CleanReason::Unrecognized,
+                    size_bytes,
                 });
                 continue;
             }
@@ -417,26 +436,82 @@ impl SnapshotCache {
                 Ok(None) | Err(_) => true,
             };
             if stale_key {
+                let size_bytes = entry_size(path.as_path())?;
                 self.remove_entry(path.as_path())?;
                 report.removed.push(CleanedEntry {
                     path,
                     reason: CleanReason::StaleKey,
+                    size_bytes,
                 });
                 continue;
             }
             if !is_live(name.as_str()) {
+                let size_bytes = entry_size(path.as_path())?;
                 self.remove_entry(path.as_path())?;
                 report.removed.push(CleanedEntry {
                     path,
                     reason: CleanReason::UnreferencedCommit,
+                    size_bytes,
                 });
                 continue;
             }
-            report.kept.push(CleanedEntry {
+            let size_bytes = entry_size(path.as_path())?;
+            current.push(CleanedEntry {
                 path,
                 reason: CleanReason::Current,
+                size_bytes,
             });
         }
+
+        if options.older_than.is_none() && options.keep.is_none() {
+            report.kept.extend(current);
+            report
+                .removed
+                .sort_by(|left, right| left.path.cmp(&right.path));
+            report
+                .kept
+                .sort_by(|left, right| left.path.cmp(&right.path));
+            return Ok(report);
+        }
+
+        let now = options.now_seconds.unwrap_or_else(now_seconds);
+        let older_than = options.older_than.as_ref().map(Duration::as_secs);
+        let mut retained = Vec::new();
+        for entry in current {
+            let last_used = read_last_used(entry.path.as_path())?.unwrap_or_else(|| {
+                read_metadata(entry.path.as_path())
+                    .ok()
+                    .flatten()
+                    .map_or(0, |metadata| metadata.published_at)
+            });
+            if older_than.is_some_and(|age| now.saturating_sub(last_used) > age) {
+                self.remove_entry(entry.path.as_path())?;
+                report.removed.push(CleanedEntry {
+                    reason: CleanReason::Expired,
+                    ..entry
+                });
+            } else {
+                retained.push((last_used, entry));
+            }
+        }
+        if let Some(keep) = options.keep {
+            retained.sort_by(|left, right| {
+                right
+                    .0
+                    .cmp(&left.0)
+                    .then_with(|| left.1.path.cmp(&right.1.path))
+            });
+            for (_, entry) in retained.drain(keep.min(retained.len())..) {
+                self.remove_entry(entry.path.as_path())?;
+                report.removed.push(CleanedEntry {
+                    reason: CleanReason::EvictedLru,
+                    ..entry
+                });
+            }
+        }
+        report
+            .kept
+            .extend(retained.into_iter().map(|(_, entry)| entry));
         report
             .removed
             .sort_by(|left, right| left.path.cmp(&right.path));
@@ -472,6 +547,10 @@ pub enum CleanReason {
     UnreferencedCommit,
     /// A staging directory left behind by an interrupted build.
     AbandonedStaging,
+    /// The entry has not been used within the requested retention age.
+    Expired,
+    /// The entry falls outside the requested most-recently-used count.
+    EvictedLru,
     /// The entry is current and was kept.
     Current,
     /// The path was not created by this module and was left alone.
@@ -485,6 +564,8 @@ impl CleanReason {
             Self::StaleKey => "stale_key",
             Self::UnreferencedCommit => "unreferenced_commit",
             Self::AbandonedStaging => "abandoned_staging",
+            Self::Expired => "expired",
+            Self::EvictedLru => "evicted_lru",
             Self::Current => "current",
             Self::Unrecognized => "unrecognized",
         }
@@ -498,6 +579,19 @@ pub struct CleanedEntry {
     pub path: PathBuf,
     /// Why it was removed or kept.
     pub reason: CleanReason,
+    /// Total bytes occupied by this file or directory before clean ran.
+    pub size_bytes: u64,
+}
+
+/// Optional manual retention policy for [`SnapshotCache::clean_with_options`].
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct CleanOptions {
+    /// Remove live entries unused longer than this duration.
+    pub older_than: Option<Duration>,
+    /// Retain only this many most-recently-used live entries.
+    pub keep: Option<usize>,
+    /// Test seam for deterministic age calculations; production uses now.
+    pub now_seconds: Option<u64>,
 }
 
 /// What one `clean` run removed and kept.
@@ -509,6 +603,17 @@ pub struct CleanReport {
     pub removed: Vec<CleanedEntry>,
     /// Entries left in place, in path order.
     pub kept: Vec<CleanedEntry>,
+}
+
+impl CleanReport {
+    /// Total bytes represented by all entries considered by this clean run.
+    pub fn total_size_bytes(&self) -> u64 {
+        self.removed
+            .iter()
+            .chain(self.kept.iter())
+            .map(|entry| entry.size_bytes)
+            .sum()
+    }
 }
 
 /// Remove `path`, refusing anything that is not inside `root`.
@@ -533,6 +638,57 @@ fn remove_dir_all_within(root: &Path, path: &Path) -> Result<(), CacheError> {
 
 fn metadata_path(root: &Path) -> PathBuf {
     root.join("entry.json")
+}
+
+fn last_used_path(root: &Path) -> PathBuf {
+    root.join(LAST_USED_FILE)
+}
+
+fn read_last_used(root: &Path) -> Result<Option<u64>, CacheError> {
+    let path = last_used_path(root);
+    let contents = match fs::read_to_string(path.as_path()) {
+        Ok(contents) => contents,
+        Err(source) if source.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(source) => {
+            return Err(CacheError::io(
+                "read cache last-used time",
+                path.as_path(),
+                &source,
+            ));
+        }
+    };
+    contents
+        .trim()
+        .parse::<u64>()
+        .map(Some)
+        .map_err(|source| CacheError::Metadata {
+            operation: "parse cache last-used time",
+            path,
+            reason: source.to_string(),
+        })
+}
+
+fn write_last_used(root: &Path, seconds: u64) -> Result<(), CacheError> {
+    let path = last_used_path(root);
+    fs::write(path.as_path(), seconds.to_string())
+        .map_err(|source| CacheError::io("write cache last-used time", path.as_path(), &source))
+}
+
+fn entry_size(path: &Path) -> Result<u64, CacheError> {
+    let metadata = fs::symlink_metadata(path)
+        .map_err(|source| CacheError::io("read snapshot cache entry size", path, &source))?;
+    if !metadata.is_dir() {
+        return Ok(metadata.len());
+    }
+    let mut total = 0;
+    let entries = fs::read_dir(path)
+        .map_err(|source| CacheError::io("read snapshot cache entry size", path, &source))?;
+    for entry in entries {
+        let entry = entry
+            .map_err(|source| CacheError::io("read snapshot cache entry size", path, &source))?;
+        total += entry_size(entry.path().as_path())?;
+    }
+    Ok(total)
 }
 
 fn read_metadata(root: &Path) -> Result<Option<EntryMetadata>, CacheError> {
@@ -597,6 +753,25 @@ mod tests {
         std::iter::repeat_n(byte, 40).collect()
     }
 
+    fn write_current_entry(cache: &SnapshotCache, commit: &str, last_used: u64) {
+        let root = cache.dir().join(commit);
+        fs::create_dir_all(root.join("tree")).expect("tree");
+        fs::create_dir_all(root.join("index")).expect("index");
+        fs::write(root.join("tree").join("source.rs"), b"fn source() {}\n").expect("source");
+        write_metadata(
+            root.as_path(),
+            &EntryMetadata {
+                schema_version: CACHE_SCHEMA_VERSION,
+                commit_sha: commit.to_string(),
+                identity: IndexIdentity::current(),
+                build: StoredBuild::default(),
+                published_at: last_used,
+            },
+        )
+        .expect("metadata");
+        write_last_used(root.as_path(), last_used).expect("last used");
+    }
+
     #[test]
     fn commit_shas_are_recognized_strictly() {
         assert!(is_commit_sha(sha('a').as_str()));
@@ -654,6 +829,28 @@ mod tests {
         let cache = SnapshotCache::open(dir.path()).expect("open cache");
         assert_eq!(cache.lookup(sha('1').as_str()).expect("lookup"), None);
         assert!(cache.lookup("not-a-sha").is_err());
+    }
+
+    #[test]
+    fn a_cache_hit_refreshes_the_last_used_time() {
+        let dir = TempDir::new().expect("cache directory");
+        let cache = SnapshotCache::open(dir.path()).expect("open cache");
+        let commit = sha('2');
+        let staged = cache.stage(commit.as_str()).expect("stage");
+        fs::write(staged.db(), b"index").expect("database");
+        let entry = cache
+            .publish(staged, StoredBuild::default())
+            .expect("publish");
+        write_last_used(entry.root(), 0).expect("old last used");
+
+        assert!(cache.lookup(commit.as_str()).expect("lookup").is_some());
+        assert!(
+            read_last_used(entry.root())
+                .expect("read last used")
+                .unwrap_or_default()
+                > 0,
+            "a hit refreshes the sidecar timestamp"
+        );
     }
 
     #[test]
@@ -755,5 +952,109 @@ mod tests {
             "a current entry is kept"
         );
         assert!(foreign.exists(), "unrecognized paths are never removed");
+    }
+
+    #[test]
+    fn clean_applies_age_and_lru_after_existing_reasons() {
+        let dir = TempDir::new().expect("cache directory");
+        let cache = SnapshotCache::open(dir.path()).expect("open cache");
+        let expired = sha('a');
+        let newest = sha('b');
+        let evicted = sha('c');
+        let stale = sha('d');
+        let live = [
+            expired.as_str(),
+            newest.as_str(),
+            evicted.as_str(),
+            stale.as_str(),
+        ];
+
+        write_current_entry(&cache, expired.as_str(), 100);
+        write_current_entry(&cache, newest.as_str(), 900);
+        write_current_entry(&cache, evicted.as_str(), 800);
+        write_current_entry(&cache, stale.as_str(), 1_000);
+        let stale_root = cache.dir().join(stale.as_str());
+        let mut metadata = read_metadata(stale_root.as_path())
+            .expect("metadata")
+            .expect("present metadata");
+        metadata.identity.extractor_version += 1;
+        write_metadata(stale_root.as_path(), &metadata).expect("stale metadata");
+        let staging = cache.dir().join(format!("{STAGING_PREFIX}{}-1-2", newest));
+        fs::create_dir_all(staging.as_path()).expect("staging");
+
+        let report = cache
+            .clean_with_options(
+                &|commit| live.contains(&commit),
+                &CleanOptions {
+                    older_than: Some(Duration::from_secs(200)),
+                    keep: Some(1),
+                    now_seconds: Some(1_000),
+                },
+            )
+            .expect("clean");
+        let reasons: Vec<(String, &'static str)> = report
+            .removed
+            .iter()
+            .map(|entry| {
+                (
+                    entry
+                        .path
+                        .file_name()
+                        .unwrap()
+                        .to_string_lossy()
+                        .into_owned(),
+                    entry.reason.label(),
+                )
+            })
+            .collect();
+
+        assert!(
+            reasons.contains(&(expired.clone(), "expired")),
+            "{reasons:?}"
+        );
+        assert!(
+            reasons.contains(&(evicted.clone(), "evicted_lru")),
+            "{reasons:?}"
+        );
+        assert!(
+            reasons.contains(&(stale.clone(), "stale_key")),
+            "{reasons:?}"
+        );
+        assert!(
+            reasons
+                .iter()
+                .any(|(name, reason)| name.starts_with(STAGING_PREFIX)
+                    && *reason == "abandoned_staging"),
+            "{reasons:?}"
+        );
+        assert!(
+            cache.dir().join(newest).exists(),
+            "the newest live entry is kept"
+        );
+        assert!(report.total_size_bytes() > 0, "entries report their sizes");
+    }
+
+    #[test]
+    fn keep_larger_than_the_live_entry_count_retains_everything() {
+        let dir = TempDir::new().expect("cache directory");
+        let cache = SnapshotCache::open(dir.path()).expect("open cache");
+        let first = sha('e');
+        let second = sha('f');
+        write_current_entry(&cache, first.as_str(), 100);
+        write_current_entry(&cache, second.as_str(), 200);
+
+        let report = cache
+            .clean_with_options(
+                &|commit| commit == first || commit == second,
+                &CleanOptions {
+                    older_than: None,
+                    keep: Some(10),
+                    now_seconds: Some(1_000),
+                },
+            )
+            .expect("clean must not panic when keep exceeds the entry count");
+
+        assert!(report.removed.is_empty(), "{:?}", report.removed);
+        assert_eq!(report.kept.len(), 2);
     }
 }

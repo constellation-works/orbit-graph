@@ -75,10 +75,19 @@ mod tests;
 /// candidate lookups, so a type with any impl block resolves cross-file
 /// references instead of degrading every one of them to `fuzzy_name`.
 ///
-/// Version 9 rebuilds stored refs once more: calls on an impl's literal `self`
+/// Version 8 rebuilds stored refs once more: a method call whose receiver type
+/// the extractor cannot determine (`args.execute()`) is recorded with its
+/// receiver, and pass 2 no longer resolves such a call by short name alone, so
+/// a dispatcher no longer reports its own dispatch lines as `exact` inbound
+/// references to itself.
+///
+/// Version 9 includes nested Rust and Python function definitions, so their
+/// symbols and call ownership are present in rebuilt snapshots.
+///
+/// Version 10 rebuilds stored refs once more: calls on an impl's literal `self`
 /// receiver and `Self::method()` now retain that impl type, so they can resolve
 /// to the intended method rather than joining the name-only fallback.
-pub const EXTRACTOR_VERSION: u32 = 9;
+pub const EXTRACTOR_VERSION: u32 = 10;
 
 /// SQLite schema version used by the graph store.
 ///
