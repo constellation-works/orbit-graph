@@ -135,16 +135,21 @@ should not be committed (see the
 [root README's index-lifecycle section](../../README.md#index-lifecycle-and-location)).
 
 ```sh
-orbit-graph-explorer clean --repo /path/to/your/repo
+orbit-graph-explorer clean --repo /path/to/your/repo --older-than 14d --keep 20
 ```
 
 `clean` removes cache entries whose key this binary can no longer use and
 entries for commits the repository no longer has (for example, after a
 rebase or a force-push drops a commit this repository once compared).
-Anything else in the cache directory — a staging directory an interrupted
-build left behind is the one exception, also removed — is reported and left
-alone. `clean` touches nothing outside the cache directory; it does not
-affect the root crate's own `.orbit-graph/` index for this repository.
+`--older-than` removes otherwise-live entries unused for longer than a
+humantime-style duration (`s`, `m`, `h`, `d`, or `w`), and `--keep` retains
+only the requested number of most-recently-used live entries. Existing stale
+and abandoned-entry reasons take precedence over these retention reasons.
+Nothing runs automatically at launch. Anything else in the cache directory — a
+staging directory an interrupted build left behind is the one exception, also
+removed — is reported and left alone. `clean` prints each entry's size and a
+total, touches nothing outside the cache directory, and does not affect the
+root crate's own `.orbit-graph/` index for this repository.
 
 ## Every flag
 
@@ -163,7 +168,7 @@ Usage:
                                [--include-absolute-paths] [--depth <N>] [--confidence <LEVEL>]
                                [--node-cap <N>] [--time-budget-ms <MS>] [--language <LANG>]
                                [--change-kind <KIND,...>] [--scope <PREFIX>]
-  orbit-graph-explorer clean [--repo <PATH>] [--cache-dir <PATH>]
+  orbit-graph-explorer clean [--repo <PATH>] [--cache-dir <PATH>] [--older-than <DURATION>] [--keep <N>]
 
 Options:
   --repo <PATH>            Repository to inspect (default: current directory).
@@ -199,6 +204,10 @@ Options:
                            path starts with this prefix.
   --cache-dir <PATH>       Snapshot cache directory
                            (default: <repo>/.orbit-graph/explorer/snapshots).
+  --older-than <DURATION>  For `clean`, remove live entries unused longer than
+                           a duration such as `14d`.
+  --keep <N>               For `clean`, retain at most N most-recently-used
+                           live entries after other cleanup rules apply.
   --no-cache               Index into task-owned temporary trees; reuse nothing.
   --time-budget-ms <MS>    Per-request traversal budget for `serve` and
                            `report`; `0` answers nothing and reports the budget
@@ -214,7 +223,8 @@ refused.
 Snapshot trees and indexes are cached per commit, keyed by commit SHA, extractor
 version, and store schema version. A key that does not match this binary is
 rebuilt, never reused. `clean` removes stale-key entries and entries for commits
-the repository no longer has, and nothing outside the cache directory.
+the repository no longer has. `--older-than` and `--keep` provide manual age
+and least-recently-used retention; no retention policy runs automatically.
 
 `snapshot` output is a human diagnostic, not a stable machine contract.
 
