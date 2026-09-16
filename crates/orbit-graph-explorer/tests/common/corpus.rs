@@ -46,6 +46,7 @@ pub const CASES: &[&str] = &[
     "cycle",
     "branch-divergence",
     "import-name-collision",
+    "nested-function-rename",
 ];
 
 /// One materialized corpus case.

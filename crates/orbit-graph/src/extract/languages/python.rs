@@ -39,7 +39,7 @@ impl Extractor for PythonExtractor {
         };
 
         let mut state = ExtractionState::new(path);
-        extract_children(tree.root_node(), source, None, &mut state);
+        extract_children(tree.root_node(), source, None, false, None, &mut state);
         state.finish()
     }
 }
@@ -205,19 +205,25 @@ fn extract_children(
     node: Node,
     source: &str,
     parent_symbol: Option<&str>,
+    parent_is_class: bool,
+    reference_parent_symbol: Option<&str>,
     state: &mut ExtractionState,
 ) {
     let mut cursor = node.walk();
     for child in node.named_children(&mut cursor) {
         match child.kind() {
-            "function_definition" => extract_function(child, source, parent_symbol, state),
+            "function_definition" => {
+                extract_function(child, source, parent_symbol, parent_is_class, state)
+            }
             "class_definition" => extract_class(child, source, parent_symbol, state),
-            "decorated_definition" => extract_decorated(child, source, parent_symbol, state),
+            "decorated_definition" => {
+                extract_decorated(child, source, parent_symbol, parent_is_class, state)
+            }
             "import_statement" => extract_import(child, source, state),
             "import_from_statement" | "future_import_statement" => {
                 extract_from_import(child, source, state);
             }
-            _ => collect_expression_refs(child, source, parent_symbol, state),
+            _ => collect_expression_refs(child, source, reference_parent_symbol, state),
         }
     }
 }
@@ -226,12 +232,13 @@ fn extract_decorated(
     node: Node,
     source: &str,
     parent_symbol: Option<&str>,
+    parent_is_class: bool,
     state: &mut ExtractionState,
 ) {
     if let Some(definition) = node.child_by_field_name("definition") {
         match definition.kind() {
             "function_definition" => {
-                extract_function(definition, source, parent_symbol, state);
+                extract_function(definition, source, parent_symbol, parent_is_class, state);
                 extract_click_commands(node, definition, source, parent_symbol, state);
             }
             "class_definition" => extract_class(definition, source, parent_symbol, state),
@@ -482,6 +489,7 @@ fn extract_function(
     node: Node,
     source: &str,
     parent_symbol: Option<&str>,
+    is_method: bool,
     state: &mut ExtractionState,
 ) {
     let Some(name) = get_name(node, source) else {
@@ -489,23 +497,22 @@ fn extract_function(
     };
 
     let qualified = qualify_name(parent_symbol, &name);
-    let kind = if parent_symbol.is_some() {
-        "method"
-    } else {
-        "function"
-    };
+    let kind = if is_method { "method" } else { "function" };
     state.push_symbol(
         node,
         source,
         name,
-        qualified,
+        qualified.clone(),
         kind,
         parent_symbol.map(ToOwned::to_owned),
     );
 
     collect_function_type_refs(node, source, state);
     if let Some(body) = node.child_by_field_name("body") {
-        collect_expression_refs(body, source, parent_symbol, state);
+        // A function body can contain nested definitions (including decorated
+        // ones). Their own spans must be represented as function symbols so
+        // calls in those spans are attributed to the nested definition.
+        extract_children(body, source, Some(&qualified), false, parent_symbol, state);
     }
 }
 
@@ -531,7 +538,14 @@ fn extract_class(
     extract_superclasses(node, source, &qualified, state);
 
     if let Some(body) = node.child_by_field_name("body") {
-        extract_children(body, source, Some(&qualified), state);
+        extract_children(
+            body,
+            source,
+            Some(&qualified),
+            true,
+            Some(&qualified),
+            state,
+        );
     }
 }
 

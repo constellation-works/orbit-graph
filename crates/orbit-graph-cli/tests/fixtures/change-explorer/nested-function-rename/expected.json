@@ -1,0 +1,24 @@
+{
+  "case_id": "nested-function-rename",
+  "languages": ["python"],
+  "description": "renaming a function nested in outer() is visible as a removed and added symbol rather than disappearing from changed-symbols",
+  "topology": "linear",
+  "changed_symbols": [
+    {
+      "selector": "symbol:sample.py#snapshot:function",
+      "change": "removed",
+      "present_in": ["base"],
+      "absent_in": ["head"]
+    },
+    {
+      "selector": "symbol:sample.py#snap:function",
+      "change": "added",
+      "present_in": ["head"],
+      "absent_in": ["base"]
+    }
+  ],
+  "expected_references": [],
+  "expected_impact": [],
+  "candidate_tests": [],
+  "known_gaps": []
+}
