@@ -1,0 +1,11 @@
+schemaVersion: 2
+kind: Job
+metadata:
+  name: graph_history_sync_pipeline
+spec:
+  state: enabled
+  kind: workflow
+  max_active_runs: 1
+  steps:
+    - id: history-sync
+      target: activity:graph_history_sync

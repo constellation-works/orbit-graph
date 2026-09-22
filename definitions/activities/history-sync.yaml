@@ -1,0 +1,14 @@
+schemaVersion: 2
+kind: Activity
+metadata:
+  name: graph_history_sync
+spec:
+  type: deterministic
+  description: Synchronize bounded first-parent graph history through the graph plugin.
+  input_schema_json:
+    type: object
+  action: plugin.tool_call
+  config:
+    tool: orbit.graph.maintain
+    input:
+      operation: history_sync

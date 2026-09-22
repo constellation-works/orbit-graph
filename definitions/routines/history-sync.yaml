@@ -1,0 +1,12 @@
+schemaVersion: 1
+name: history-sync
+description: Synchronize the graph change-history index from first-parent Git history.
+enabled: false
+trigger:
+  cron: "0 3 * * *"
+  missed_run: skip
+target: job:graph_history_sync_pipeline
+policy:
+  timeout_minutes: 30
+  retries: {max: 1, backoff_minutes: 5}
+  overlap: forbid
