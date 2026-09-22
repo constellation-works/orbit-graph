@@ -231,6 +231,7 @@ pub struct RecommendationResult {
 pub struct RecommendationEngine {
     repo_root: PathBuf,
     landing_branch: String,
+    index_dir: Option<PathBuf>,
 }
 
 impl RecommendationEngine {
@@ -240,6 +241,20 @@ impl RecommendationEngine {
         Ok(Self {
             repo_root: index.repo_root().to_path_buf(),
             landing_branch: index.landing_branch().to_string(),
+            index_dir: None,
+        })
+    }
+
+    pub(crate) fn open_with_index_dir(
+        repo_root: &Path,
+        landing_branch: &str,
+        index_dir: &Path,
+    ) -> Result<Self, GraphError> {
+        let index = HistoryIndex::open_with_index_dir(repo_root, landing_branch, index_dir)?;
+        Ok(Self {
+            repo_root: index.repo_root().to_path_buf(),
+            landing_branch: index.landing_branch().to_string(),
+            index_dir: Some(index_dir.to_path_buf()),
         })
     }
 
@@ -258,7 +273,14 @@ impl RecommendationEngine {
             .clone()
             .map_or_else(current_observation_cutoff, Ok)?;
         let cutoff = parse_timestamp("recommendation cutoff", effective_cutoff.as_str())?;
-        let index = HistoryIndex::open(self.repo_root.as_path(), self.landing_branch.as_str())?;
+        let index = match self.index_dir.as_deref() {
+            Some(index_dir) => HistoryIndex::open_with_index_dir(
+                self.repo_root.as_path(),
+                self.landing_branch.as_str(),
+                index_dir,
+            )?,
+            None => HistoryIndex::open(self.repo_root.as_path(), self.landing_branch.as_str())?,
+        };
         let status = index.status()?;
         let freshness = freshness(&repo, status.cursor, target);
         let deliveries = index.deliveries()?;
@@ -318,6 +340,7 @@ impl RecommendationEngine {
             ) {
             add_current_structure(
                 self.repo_root.as_path(),
+                self.index_dir.as_deref(),
                 request.level,
                 &resolver,
                 &mut scored,
@@ -956,11 +979,21 @@ fn add_lexical_baseline(
 
 fn add_current_structure(
     repo_root: &Path,
+    index_dir: Option<&Path>,
     level: RecommendationLevel,
     resolver: &TargetTree,
     scored: &mut BTreeMap<String, Accumulator>,
 ) -> Result<StructureEvidence, GraphError> {
-    let graph = Graph::open(repo_root, SyncPolicy::Manual)?;
+    let graph = match index_dir {
+        Some(index_dir) => Graph::open_with_db_path(
+            repo_root,
+            index_dir
+                .join(format!("graph.{}.db", crate::EXTRACTOR_VERSION))
+                .as_path(),
+            SyncPolicy::Manual,
+        )?,
+        None => Graph::open(repo_root, SyncPolicy::Manual)?,
+    };
     let seeds = scored
         .iter()
         .filter(|(_, score)| score.score > 0.0)

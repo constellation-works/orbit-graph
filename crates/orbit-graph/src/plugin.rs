@@ -1,15 +1,16 @@
 //! Orbit external-tool protocol and public-authority adapter.
 
 use std::collections::BTreeSet;
+use std::env;
 use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
 use crate::{
-    DeliveryImport, GraphError, HistoryIndex, HybridTaskHit, RecommendationEngine,
-    RecommendationInput, RecommendationLevel, RecommendationRequest, RecommendationVariant,
-    TaskAssociation,
+    DeliveryImport, EXTRACTOR_VERSION, GraphError, HISTORY_INDEX_SCHEMA_VERSION, HistoryIndex,
+    HybridTaskHit, RecommendationEngine, RecommendationInput, RecommendationLevel,
+    RecommendationRequest, RecommendationVariant, STORE_SCHEMA_VERSION, TaskAssociation,
 };
 
 mod adapter;
@@ -22,28 +23,65 @@ pub const RECOMMEND_TOOL_NAME: &str = "orbit.graph.recommend";
 pub const STATUS_TOOL_NAME: &str = "orbit.graph.status";
 /// External tool name for bounded import and synchronization.
 pub const MAINTAIN_TOOL_NAME: &str = "orbit.graph.maintain";
+/// External tool name for deterministic build and schema version reporting.
+pub const VERSION_TOOL_NAME: &str = "orbit.graph.version";
 /// Version of every external-tool request and response envelope.
 pub const PLUGIN_SCHEMA_VERSION: u32 = 1;
+
+const V2_RECOMMEND_TOOL_NAME: &str = "graph.recommend";
+const V2_STATUS_TOOL_NAME: &str = "graph.status";
+const V2_MAINTAIN_TOOL_NAME: &str = "graph.maintain";
+const V2_VERSION_TOOL_NAME: &str = "graph.version";
 
 /// Whether `name` selects one of this package's no-argv external tools.
 pub fn recognizes_tool(name: &str) -> bool {
     matches!(
         name,
-        RECOMMEND_TOOL_NAME | STATUS_TOOL_NAME | MAINTAIN_TOOL_NAME
+        RECOMMEND_TOOL_NAME
+            | STATUS_TOOL_NAME
+            | MAINTAIN_TOOL_NAME
+            | VERSION_TOOL_NAME
+            | V2_RECOMMEND_TOOL_NAME
+            | V2_STATUS_TOOL_NAME
+            | V2_MAINTAIN_TOOL_NAME
+            | V2_VERSION_TOOL_NAME
     )
 }
 
 /// Execute one no-argv Orbit external-tool request from JSON stdin bytes.
 pub fn execute_external_tool(name: &str, input: &[u8]) -> Result<Value, GraphError> {
     match name {
-        RECOMMEND_TOOL_NAME => recommend(serde_json::from_slice(input).map_err(json_error)?),
-        STATUS_TOOL_NAME => status(serde_json::from_slice(input).map_err(json_error)?),
-        MAINTAIN_TOOL_NAME => maintain(serde_json::from_slice(input).map_err(json_error)?),
+        RECOMMEND_TOOL_NAME | V2_RECOMMEND_TOOL_NAME => {
+            recommend(serde_json::from_slice(input).map_err(json_error)?)
+        }
+        STATUS_TOOL_NAME | V2_STATUS_TOOL_NAME => {
+            status(serde_json::from_slice(input).map_err(json_error)?)
+        }
+        MAINTAIN_TOOL_NAME | V2_MAINTAIN_TOOL_NAME => {
+            maintain(serde_json::from_slice(input).map_err(json_error)?)
+        }
+        VERSION_TOOL_NAME | V2_VERSION_TOOL_NAME => {
+            version(serde_json::from_slice(input).map_err(json_error)?)
+        }
         _ => Err(GraphError::invalid_data(
             "dispatch Orbit external tool",
             format!("unsupported ORBIT_TOOL_NAME {name:?}"),
         )),
     }
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct VersionToolInput {}
+
+fn version(_input: VersionToolInput) -> Result<Value, GraphError> {
+    Ok(json!({
+        "crate_version": env!("CARGO_PKG_VERSION"),
+        "extractor_version": EXTRACTOR_VERSION,
+        "store_schema_version": STORE_SCHEMA_VERSION,
+        "history_schema_version": HISTORY_INDEX_SCHEMA_VERSION,
+        "plugin_schema_version": PLUGIN_SCHEMA_VERSION,
+    }))
 }
 
 #[derive(Debug, Deserialize)]
@@ -180,7 +218,15 @@ fn recommend(input: RecommendToolInput) -> Result<Value, GraphError> {
     } else {
         "supplied_ranked_hits".to_string()
     };
-    let engine = RecommendationEngine::open(repository.as_path(), input.branch.as_str())?;
+    let index_dir = plugin_index_dir(repository.as_path())?;
+    let engine = match index_dir.as_deref() {
+        Some(index_dir) => RecommendationEngine::open_with_index_dir(
+            repository.as_path(),
+            input.branch.as_str(),
+            index_dir,
+        )?,
+        None => RecommendationEngine::open(repository.as_path(), input.branch.as_str())?,
+    };
     let result = engine.recommend(&RecommendationRequest {
         input: intent,
         level: input.level.into(),
@@ -219,7 +265,7 @@ struct StatusToolInput {
 fn status(input: StatusToolInput) -> Result<Value, GraphError> {
     validate_schema(input.schema_version)?;
     let repository = canonical_repository(input.repository.as_path())?;
-    let index = HistoryIndex::open(repository.as_path(), input.branch.as_str())?;
+    let index = open_history_index(repository.as_path(), input.branch.as_str())?;
     Ok(json!({
         "schema_version": PLUGIN_SCHEMA_VERSION,
         "operation": "status",
@@ -262,7 +308,7 @@ struct MaintainToolInput {
 fn maintain(input: MaintainToolInput) -> Result<Value, GraphError> {
     validate_schema(input.schema_version)?;
     let repository = canonical_repository(input.repository.as_path())?;
-    let index = HistoryIndex::open(repository.as_path(), input.branch.as_str())?;
+    let index = open_history_index(repository.as_path(), input.branch.as_str())?;
     match input.operation {
         MaintenanceOperation::HistorySync => {
             let limit = input.limit.unwrap_or(100);
@@ -447,6 +493,32 @@ fn string_field<'a>(value: &'a Value, field: &str) -> Option<&'a str> {
 
 fn json_error(error: serde_json::Error) -> GraphError {
     GraphError::invalid_data("decode or encode JSON", error.to_string())
+}
+
+fn open_history_index(
+    repository: &std::path::Path,
+    branch: &str,
+) -> Result<HistoryIndex, GraphError> {
+    match plugin_index_dir(repository)?.as_deref() {
+        Some(index_dir) => HistoryIndex::open_with_index_dir(repository, branch, index_dir),
+        None => HistoryIndex::open(repository, branch),
+    }
+}
+
+fn plugin_index_dir(repository: &std::path::Path) -> Result<Option<PathBuf>, GraphError> {
+    let Some(state_root) = env::var_os("ORBIT_PLUGIN_STATE") else {
+        return Ok(None);
+    };
+    if state_root.is_empty() {
+        return Err(GraphError::invalid_data(
+            "resolve plugin index directory",
+            "ORBIT_PLUGIN_STATE must not be empty when set",
+        ));
+    }
+    let repository_hash = blake3::hash(repository.as_os_str().as_encoded_bytes());
+    Ok(Some(
+        PathBuf::from(state_root).join(repository_hash.to_hex().as_str()),
+    ))
 }
 
 fn default_branch() -> String {

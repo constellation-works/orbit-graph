@@ -128,7 +128,26 @@ fn decode_external_tool_request(
                 format!("unsupported envelope tool {envelope_tool:?}"),
             )));
         }
-        let input = serde_json::to_vec(&value["input"]).map_err(CliError::Json)?;
+        let mut input = value["input"].clone();
+        if !envelope_tool.ends_with(".version")
+            && let Some(input) = input.as_object_mut()
+            && !input.contains_key("repository")
+        {
+            let workspace_root = value
+                .pointer("/context/workspace_root")
+                .and_then(Value::as_str)
+                .ok_or_else(|| {
+                    CliError::Graph(orbit_graph::GraphError::invalid_data(
+                        "route Orbit plugin repository",
+                        "repository is required when context.workspace_root is unavailable",
+                    ))
+                })?;
+            input.insert(
+                "repository".to_string(),
+                Value::String(workspace_root.to_string()),
+            );
+        }
+        let input = serde_json::to_vec(&input).map_err(CliError::Json)?;
         return Ok((envelope_tool.to_string(), input));
     }
 

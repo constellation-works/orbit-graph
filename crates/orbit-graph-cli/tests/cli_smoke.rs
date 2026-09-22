@@ -704,7 +704,7 @@ fn real_binary_renders_recommendation_and_index_views_with_complete_record_bound
     let version = run(fixture.path(), ["version"]);
     assert!(version.status.success());
     let version = String::from_utf8(version.stdout).expect("version plain UTF-8");
-    assert_eq!(version.trim_end().split('\t').count(), 3);
+    assert_eq!(version.trim_end().split('\t').count(), 5);
 
     let db_path = run(fixture.path(), ["db-path"]);
     assert!(db_path.status.success());
