@@ -1,5 +1,8 @@
 [workflow]
 base_branch = "agent-main"
-default_crew = "grok"
+default_crew = "sol"
 system_crew = "luna"
+hard_complexity_crews = ["opus"]
+medium_complexity_crews = ["sol"]
+low_complexity_crews = ["terra"]
 
