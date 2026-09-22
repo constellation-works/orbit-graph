@@ -75,6 +75,20 @@ The head side's `elapsed_ms` therefore includes the base side's build; its own b
 time is the difference, given above as "head's own build". This is a reporting
 defect, filed as ORB-12412 — the figures above are derived, not read directly.
 
+After the concurrent base/head indexing change (PR #47, commit `1c3c2f3`), study 3
+was re-measured on **2026-09-22** on the same `dk-server-1` host. The cache directory
+was cleared immediately before launch, both sides reached `ready`, and the values
+below are the direct per-side status timings rather than a derived head-only time.
+
+| Date | Study | Corpus | Build mode | Cold wall (s) | Base `elapsed_ms` | Head `elapsed_ms` | Warm launch to ready (s) |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| 2026-09-22 | 3 | `orbit` | concurrent base + head | **295.69** | 295 544 | 292 497 | 1.04 |
+
+The concurrent cold launch is 103.18 s (26%) below the original study-3 sequential
+wall time of 398.87 s. This run used the managed checkout's ignored scratch directory
+rather than the reference `/tmp` scratch mount, so it is a same-host before/after
+measurement, not a replacement for the earlier storage-identical envelope.
+
 From the study runs (`scripts/service-study.sh`, which measures launch-to-ready the
 same way):
 
@@ -86,11 +100,13 @@ same way):
 | 4 | `observatory` | 6.08 | 0.13 |
 | 5 | `orrery` | 2.14 | 0.02 |
 
-Cold indexing of the `orbit` corpus (≈ 2 200 indexed files, ≈ 450 000 Rust LOC per
-side) costs **6.6 to 8.7 minutes** on this host (398.9 s, 441.1 s, 395.2 s and
-519.7 s across the four cold builds measured). That is the dominant first-use
-cost: in study 2's cold pass it was 91 % of the 573 s total. Every subsequent launch
-against the same two commits is under a second.
+Before concurrent indexing, cold indexing of the `orbit` corpus (≈ 2 200 indexed
+files, ≈ 450 000 Rust LOC per side) cost **6.6 to 8.7 minutes** on this host
+(398.9 s, 441.1 s, 395.2 s and 519.7 s across the four sequential cold builds
+measured). The 2026-09-22 concurrent study-3 launch reached ready in 295.69 s;
+because its scratch storage differed, it is evidence of a lower same-host launch
+time rather than a new storage-identical range. Every subsequent launch against the
+same two commits is about a second.
 
 ## Query latency (warm cache, 25 runs per endpoint)
 
