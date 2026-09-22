@@ -343,7 +343,12 @@ fn insert_file_row(
     conn.execute(
         "INSERT OR REPLACE INTO files (path, content_hash, mtime_ns, lang, byte_len, extracted_at)
          VALUES (?1, ?2, ?3, 'rust', ?4, 0)",
-        params![rel, hash, mtime, content_for_hash.len()],
+        params![
+            rel,
+            hash,
+            mtime,
+            i64::try_from(content_for_hash.len()).expect("content length fits")
+        ],
     )
     .expect("insert file row");
 }

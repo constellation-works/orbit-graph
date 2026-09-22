@@ -477,7 +477,10 @@ fn seed_file(conn: &Connection, worktree: &Path, file: &str, content: &str) {
     conn.execute(
         "INSERT OR IGNORE INTO files (path, content_hash, mtime_ns, lang, byte_len, extracted_at)
          VALUES (?1, x'00', 1, 'rust', ?2, 2)",
-        params![file, content.len()],
+        params![
+            file,
+            i64::try_from(content.len()).expect("content length fits")
+        ],
     )
     .expect("insert graph file");
 }
