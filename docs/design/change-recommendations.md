@@ -318,33 +318,34 @@ same executable as `orbit.graph.recommend`, `orbit.graph.status`, and
 and `ORBIT_TOOL_NAME`; the ordinary clap interface remains unchanged otherwise.
 
 Requests route the repository by an explicit absolute path. Authoritative task
-and hybrid reads additionally require an explicit Orbit workspace selector and
-explicit Orbit root. Cwd and `ORBIT_TOOL_WORKSPACE_ROOT` are never
-interpreted as authority. The adapter shells only to the installed public Orbit
-CLI: registered `orbit.task.show`/`orbit.search` tools and detailed `orbit run
-show --format json`. It never reads SQLite, task bundles, or another private
-store.
+and hybrid reads additionally require an explicit Orbit workspace selector.
+Cwd and `ORBIT_TOOL_WORKSPACE_ROOT` are never interpreted as authority. The
+adapter resolves the installed `orbit` executable from `PATH` and makes every
+Orbit read through `orbit tool run`: `orbit.workspace.list`,
+`orbit.task.show`, `orbit.search`, and `orbit.workflow.run.show`. It never reads
+SQLite, task bundles, or another private store.
 
 An Orbit delivery is marked verified only when a successful public run exposes
 a committed step with exact base, commit, and task ID, and Git verifies both
-strict ancestry and landing-branch reachability. Public `workspace list` must
-match the requested workspace, authority root, and Git common repository; each
+strict ancestry and landing-branch reachability. Public `orbit.workspace.list`
+must match the requested workspace and Git common repository; each
 run's public workspace path and task are checked even when a snapshot is
-supplied. Nested CLI calls have a hard timeout and combined output cap,
-kill/reap their process group, and clean their captures. The run's finish time is an
-uncertain landing-time proxy unless a future public feed attests exact delivery
-time. Current task text is `known_pre_execution` only when observed while the
-public lifecycle has no start and is still pending; otherwise it is explicitly
-post-execution or uncertain. Earlier versioned `TaskAssociation` observations
-can be supplied without becoming a second task authority.
+supplied. Nested CLI calls have a hard timeout and combined output cap, capture
+through pipes without filesystem scratch, and kill/reap the direct child. The
+run's finish time is an uncertain landing-time proxy unless a future public feed
+attests exact delivery time. Current task text is `known_pre_execution` only
+when observed while the public lifecycle has no start and is still pending;
+otherwise it is explicitly post-execution or uncertain. Earlier versioned
+`TaskAssociation` observations can be supplied without becoming a second task
+authority.
 
-Orbit's public task tools route through the explicit registry `orbit_root`,
-while detailed run state is workspace-local in the current Orbit release. After
-validating the workspace against that authority, the adapter runs `run show`
-from the explicitly routed repository without a root override, then rejects the
+Orbit resolves its own global root when the adapter invokes each registered
+tool; the plugin never supplies `--root`. After validating the selected
+workspace through `orbit.workspace.list`, the adapter invokes
+`orbit.workflow.run.show` from the explicitly routed repository and rejects the
 response unless its prepare workspace shares the selected workspace's Git
-common directory. Thus cwd participates only in locating the public run record;
-it never selects or substitutes the task authority.
+common directory. Thus cwd participates only in locating the workspace-local
+run record; it never selects or substitutes task authority.
 
 Bounded `orbit_sync` accepts explicit run IDs and task IDs (resolved only to
 their current public `job_run_id`). It is incrementally replayable through

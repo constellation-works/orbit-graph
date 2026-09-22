@@ -56,8 +56,6 @@ struct RecommendToolInput {
     #[serde(default)]
     workspace: Option<String>,
     #[serde(default)]
-    orbit_root: Option<PathBuf>,
-    #[serde(default)]
     query: Option<String>,
     #[serde(default)]
     task_id: Option<String>,
@@ -125,11 +123,7 @@ fn recommend(input: RecommendToolInput) -> Result<Value, GraphError> {
             ));
         }
     };
-    let adapter = OrbitAdapter::new(
-        repository.as_path(),
-        input.workspace.as_deref(),
-        input.orbit_root.as_deref(),
-    );
+    let adapter = OrbitAdapter::new(repository.as_path(), input.workspace.as_deref());
     if let RecommendationInput::TaskId(task_id) = &intent {
         if input.cutoff.is_none() {
             let observed = adapter.task_snapshot(task_id)?;
@@ -255,8 +249,6 @@ struct MaintainToolInput {
     #[serde(default)]
     workspace: Option<String>,
     #[serde(default)]
-    orbit_root: Option<PathBuf>,
-    #[serde(default)]
     task_ids: Vec<String>,
     #[serde(default)]
     run_ids: Vec<String>,
@@ -324,11 +316,7 @@ fn sync_orbit(
             "limit must be between 1 and 100",
         ));
     }
-    let adapter = OrbitAdapter::new(
-        repository.as_path(),
-        input.workspace.as_deref(),
-        input.orbit_root.as_deref(),
-    );
+    let adapter = OrbitAdapter::new(repository.as_path(), input.workspace.as_deref());
     let explicit_run_count = input.run_ids.len();
     let task_count = input.task_ids.len();
     let mut run_ids = input.run_ids;
@@ -411,8 +399,7 @@ fn sync_orbit(
         "repository": repository,
         "authority": {
             "workspace": input.workspace,
-            "orbit_root": input.orbit_root,
-            "interfaces": ["orbit.task.show", "orbit run show", "git"],
+            "interfaces": ["orbit.workspace.list", "orbit.task.show", "orbit.workflow.run.show", "git"],
         },
         "coverage": {
             "complete": false,

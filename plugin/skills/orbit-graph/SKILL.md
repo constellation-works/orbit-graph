@@ -7,8 +7,9 @@ description: Query leakage-safe file or symbol recommendations from verified del
 
 Call `orbit.graph.status` first when freshness matters. Always pass an explicit
 absolute `repository`; never treat tool cwd or `ORBIT_TOOL_WORKSPACE_ROOT` as an
-authority selector. Pass the owning Orbit `workspace` and explicit `orbit_root`
-for task-ID lookup, hybrid search, or Orbit synchronization.
+authority selector. Pass the owning Orbit `workspace` for task-ID lookup,
+hybrid search, or Orbit synchronization. The plugin lets the host's `orbit`
+executable resolve its own global root.
 
 Use `orbit.graph.recommend` with `schema_version: 1` and exactly one of `query`
 or `task_id`. Set `level` to `file` for planning a change surface or `symbol`
@@ -30,7 +31,8 @@ Maintenance is deliberate. `orbit.graph.maintain` supports:
 - `history_sync`: bounded, atomic, resumable first-parent Git-only evidence;
 - `import`: one public DeliveryImport v2 envelope;
 - `orbit_sync`: a bounded explicit list of run IDs and/or task IDs, using public
-  `orbit.task.show`, `orbit run show`, and Git reachability checks.
+  `orbit.workspace.list`, `orbit.task.show`, `orbit.workflow.run.show`, and Git
+  reachability checks.
 
 `orbit_sync` is idempotent but reports partial coverage because current Orbit
 does not expose a cursor-paginated detailed delivery feed. Resume by resubmitting
@@ -39,7 +41,8 @@ then become a no-op; the complete cursor does not advance during partial
 bootstrap. Do not call `history rebuild` casually: verified envelopes must be
 replayed afterward.
 
-The calling activity must allow `orbit.task.show` for live task lookup and
-`orbit.search` for hybrid retrieval in addition to the external tool; Orbit's
-policy still applies to the adapter's nested public calls. When those tools are
-not granted, pass an earlier public `task_snapshot` and use lexical/offline hits.
+The calling activity must allow the callback tools it uses:
+`orbit.workspace.list`, `orbit.task.show`, `orbit.search`, and
+`orbit.workflow.run.show`. Orbit's policy still applies to the adapter's nested
+public calls. When task or search tools are not granted, pass an earlier public
+`task_snapshot` and use lexical/offline hits.

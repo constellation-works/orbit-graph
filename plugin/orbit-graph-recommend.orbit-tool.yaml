@@ -14,10 +14,6 @@ parameters:
   description: Explicit Orbit workspace ID/name used for task-ID or hybrid lookup.
   param_type: string
   required: false
-- name: orbit_root
-  description: Explicit Orbit authority root; required for live task-ID or hybrid public calls.
-  param_type: string
-  required: false
 - name: query
   description: Free-text change intent; mutually exclusive with task_id.
   param_type: string
