@@ -1,0 +1,18 @@
+{
+  "type": "object",
+  "required": [
+    "crate_version",
+    "extractor_version",
+    "store_schema_version",
+    "history_schema_version",
+    "plugin_schema_version"
+  ],
+  "properties": {
+    "crate_version": {"type": "string"},
+    "extractor_version": {"type": "integer"},
+    "store_schema_version": {"type": "integer"},
+    "history_schema_version": {"type": "integer"},
+    "plugin_schema_version": {"type": "integer"}
+  },
+  "additionalProperties": false
+}

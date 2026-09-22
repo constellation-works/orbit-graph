@@ -1,0 +1,9 @@
+{
+  "type": "object",
+  "properties": {
+    "schema_version": {"type": "integer", "const": 1},
+    "repository": {"type": "string", "minLength": 1},
+    "branch": {"type": "string", "minLength": 1, "default": "main"}
+  },
+  "additionalProperties": false
+}

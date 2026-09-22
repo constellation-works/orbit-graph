@@ -1,0 +1,47 @@
+{
+  "type": "object",
+  "required": ["schema_version", "operation", "repository", "adapter", "result"],
+  "properties": {
+    "schema_version": {"type": "integer", "const": 1},
+    "operation": {"type": "string", "const": "recommend"},
+    "repository": {"type": "string"},
+    "adapter": {
+      "type": "object",
+      "required": ["workspace", "task_text", "hybrid_search", "warnings"],
+      "properties": {
+        "workspace": {"type": ["string", "null"]},
+        "task_text": {"type": "string"},
+        "hybrid_search": {"type": "string"},
+        "warnings": {"type": "array", "items": {"type": "string"}}
+      },
+      "additionalProperties": false
+    },
+    "result": {
+      "type": "object",
+      "required": [
+        "input",
+        "level",
+        "variant",
+        "resolved_target_revision",
+        "effective_cutoff",
+        "source_freshness",
+        "structure_applied",
+        "fallbacks",
+        "recommendations"
+      ],
+      "properties": {
+        "input": {"type": "object"},
+        "level": {"type": "string", "enum": ["file", "symbol"]},
+        "variant": {"type": "string"},
+        "resolved_target_revision": {"type": "string"},
+        "effective_cutoff": {"type": "string"},
+        "source_freshness": {"type": "object"},
+        "structure_applied": {"type": "boolean"},
+        "fallbacks": {"type": "array", "items": {"type": "object"}},
+        "recommendations": {"type": "array", "items": {"type": "object"}}
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}

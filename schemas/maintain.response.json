@@ -1,0 +1,15 @@
+{
+  "type": "object",
+  "required": ["schema_version", "operation", "repository"],
+  "properties": {
+    "schema_version": {"type": "integer", "const": 1},
+    "operation": {"type": "string", "enum": ["history_sync", "import", "orbit_sync"]},
+    "repository": {"type": "string"},
+    "authority": {"type": "object"},
+    "coverage": {"type": "object"},
+    "result": {"type": "object"},
+    "outcomes": {"type": "array", "items": {"type": "object"}},
+    "status": {"type": "object"}
+  },
+  "additionalProperties": false
+}

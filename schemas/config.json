@@ -1,0 +1,8 @@
+{
+  "type": "object",
+  "properties": {
+    "index_dir": {"type": "string", "minLength": 1, "default": ".orbit-graph"},
+    "branch": {"type": "string", "minLength": 1, "default": "main"}
+  },
+  "additionalProperties": false
+}

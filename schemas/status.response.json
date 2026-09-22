@@ -1,0 +1,41 @@
+{
+  "type": "object",
+  "required": ["schema_version", "operation", "repository", "status"],
+  "properties": {
+    "schema_version": {"type": "integer", "const": 1},
+    "operation": {"type": "string", "const": "status"},
+    "repository": {"type": "string"},
+    "status": {
+      "type": "object",
+      "required": [
+        "repository",
+        "landing_branch",
+        "database_path",
+        "schema_version",
+        "extractor_version",
+        "complete",
+        "deliveries",
+        "verified_deliveries",
+        "git_only_deliveries",
+        "task_associations"
+      ],
+      "properties": {
+        "repository": {"type": "string"},
+        "landing_branch": {"type": "string"},
+        "database_path": {"type": "string"},
+        "schema_version": {"type": "integer"},
+        "extractor_version": {"type": "integer"},
+        "cursor": {"type": ["string", "null"]},
+        "bootstrap_tip": {"type": ["string", "null"]},
+        "bootstrap_resume_from": {"type": ["string", "null"]},
+        "complete": {"type": "boolean"},
+        "deliveries": {"type": "integer"},
+        "verified_deliveries": {"type": "integer"},
+        "git_only_deliveries": {"type": "integer"},
+        "task_associations": {"type": "integer"}
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}
