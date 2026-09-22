@@ -1,0 +1,32 @@
+{
+  "type": "object",
+  "properties": {
+    "schema_version": {"type": "integer", "const": 1},
+    "repository": {"type": "string", "minLength": 1},
+    "branch": {"type": "string", "minLength": 1, "default": "main"},
+    "workspace": {"type": "string", "minLength": 1},
+    "query": {"type": "string", "minLength": 1},
+    "task_id": {"type": "string", "minLength": 1},
+    "task_snapshot": {"type": "object"},
+    "level": {"type": "string", "enum": ["file", "symbol"], "default": "file"},
+    "limit": {"type": "integer", "minimum": 1, "maximum": 100},
+    "revision": {"type": "string", "minLength": 1},
+    "cutoff": {"type": "string", "minLength": 1},
+    "hybrid": {"type": "boolean", "default": false},
+    "hybrid_limit": {"type": "integer", "minimum": 1, "maximum": 100, "default": 20},
+    "hybrid_hits": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["task_id", "score"],
+        "properties": {
+          "task_id": {"type": "string", "minLength": 1},
+          "score": {"type": "number", "minimum": 0}
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+  "not": {"required": ["query", "task_id"]},
+  "additionalProperties": false
+}

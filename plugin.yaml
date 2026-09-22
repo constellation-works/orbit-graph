@@ -1,0 +1,71 @@
+schemaVersion: 2
+kind: Plugin
+metadata:
+  name: graph
+  version: 0.9.2
+  description: Leakage-safe file and symbol recommendations from verified change history.
+  publisher: constellation-works
+  origin: orbit
+  homepage: https://github.com/constellation-works/orbit-graph
+spec:
+  requires:
+    orbit: ">=0.23.0 <1.0.0"
+    host_api: 1
+    platforms: [linux, macos]
+    programs: [git, orbit]
+  backend:
+    type: exec
+    command: bin/orbit-graph
+    timeout_ms: 120000
+    sandbox: default
+  permissions:
+    fs:
+      read: ["{{workspace}}"]
+      write: ["{{workspace}}/.orbit-graph", "{{plugin_state}}"]
+    network: none
+    orbit_tools:
+      - orbit.task.show
+      - orbit.search
+      - orbit.workspace.list
+      - orbit.workflow.run.show
+  tools:
+    - name: version
+      description: Report deterministic crate and index contract versions.
+      execution_kind: read_only
+      mcp_scope: workspace
+      input_schema: {$ref: schemas/version.request.json}
+      output_schema: {$ref: schemas/version.response.json}
+    - name: status
+      description: Report recommendation-history freshness and index versions.
+      execution_kind: read_only
+      mcp_scope: workspace
+      input_schema: {$ref: schemas/status.request.json}
+      output_schema: {$ref: schemas/status.response.json}
+    - name: recommend
+      description: Recommend repository files or symbols from verified change history.
+      execution_kind: read_only
+      mcp_scope: workspace
+      input_schema: {$ref: schemas/recommend.request.json}
+      output_schema: {$ref: schemas/recommend.response.json}
+      cli:
+        positional: [query]
+    - name: maintain
+      description: Import or synchronize bounded verified change history.
+      execution_kind: mutating
+      mcp_scope: workspace
+      input_schema: {$ref: schemas/maintain.request.json}
+      output_schema: {$ref: schemas/maintain.response.json}
+  skills: [skills/recommendations]
+  config:
+    schema: schemas/config.json
+    defaults:
+      index_dir: .orbit-graph
+      branch: main
+  web:
+    panels:
+      - id: version
+        title: Graph versions
+        source: tool:version
+        render: kv
+        group: diagnostics
+  tests: [tests/conformance/*.yaml]

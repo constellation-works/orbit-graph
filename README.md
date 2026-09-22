@@ -19,27 +19,31 @@ For development, build without installing:
 cargo build --workspace --locked
 ```
 
-### Install the Orbit external tools
+### Install the Orbit plugin
 
-Orbit 0.19.2 or newer can register the installed binary under three versioned
-sidecar manifests. Registration is local configuration; maintainers retain
-production registration ownership.
+The v2 Orbit plugin installs from a tagged repository release. Its committed
+launcher invokes `orbit-graph` from `PATH`, so install the executable first:
 
 ```sh
 cargo install --path crates/orbit-graph-cli --locked
-./scripts/install-orbit-plugin.sh
-orbit tool show orbit.graph.recommend
-orbit tool show orbit.graph.status
-orbit tool show orbit.graph.maintain
+orbit plugin add git+https://github.com/constellation-works/orbit-graph#<tag> --enable --grant fs,orbit_tools
+orbit plugin show graph
 ```
 
-Use `--binary /absolute/path/to/orbit-graph` to register a development build,
-and `--orbit-root /absolute/path/to/.orbit` to select a non-default Orbit
-authority. Remove only the registrations with
-`./scripts/uninstall-orbit-plugin.sh`; derived `.orbit-graph/` indexes are
-deliberately retained. The executable recognizes the three registered
-`ORBIT_TOOL_NAME` values and reads one JSON object from stdin with no argv,
-matching Orbit's external-tool execution protocol.
+Enabling the plugin provides `orbit.graph.version`, `orbit.graph.status`,
+`orbit.graph.recommend`, and `orbit.graph.maintain`, plus the derived
+`orbit graph` command group. The `fs` and `orbit_tools` grants are required for
+the requested workspace/index access and bounded callbacks; the plugin requests
+no network access.
+
+The older `orbit tool add` installation path and
+`scripts/install-orbit-plugin.sh` / `scripts/uninstall-orbit-plugin.sh` are
+deprecated and remain available for one compatibility release. They register
+only the three v1 sidecars. When using that compatibility path, pass
+`--binary /absolute/path/to/orbit-graph` for a development build and
+`--orbit-root /absolute/path/to/.orbit` for a non-default Orbit authority.
+Removing either the plugin or the legacy registrations deliberately retains
+derived `.orbit-graph/` indexes.
 
 ## Quick start
 

@@ -1,0 +1,17 @@
+{
+  "type": "object",
+  "required": ["operation"],
+  "properties": {
+    "schema_version": {"type": "integer", "const": 1},
+    "operation": {"type": "string", "enum": ["history_sync", "import", "orbit_sync"]},
+    "repository": {"type": "string", "minLength": 1},
+    "branch": {"type": "string", "minLength": 1, "default": "main"},
+    "limit": {"type": "integer", "minimum": 1, "maximum": 1000},
+    "delivery": {"type": "object"},
+    "workspace": {"type": "string", "minLength": 1},
+    "task_ids": {"type": "array", "items": {"type": "string", "minLength": 1}},
+    "run_ids": {"type": "array", "items": {"type": "string", "minLength": 1}},
+    "task_snapshots": {"type": "array", "items": {"type": "object"}}
+  },
+  "additionalProperties": false
+}
