@@ -160,7 +160,6 @@ orbit tool run orbit.graph.recommend --input '{
   "schema_version":1,
   "repository":"/work/widgets",
   "workspace":"ws_widgets",
-  "orbit_root":"/work/widgets/.orbit",
   "task_id":"TASK-123",
   "level":"symbol",
   "hybrid":true,
@@ -186,12 +185,13 @@ labels started/completed text as post-execution, and may use that current
 observation for a recommendation made afterward. An explicit `cutoff` switches
 to strict historical replay: only text attested `known_pre_execution` and
 strictly before that cutoff is eligible. A supplied snapshot on a live request
-still verifies the task, workspace, authority root, and repository through the
-public API. `hybrid: true`
+still verifies the task, workspace, and repository through the public API.
+`hybrid: true`
 uses public `orbit.search`; failure is surfaced and local lexical fallback is
 named in `adapter.warnings`.
-The calling activity must also allow `orbit.task.show` for live lookup and
-`orbit.search` for hybrid retrieval; the adapter does not bypass Orbit policy.
+The calling activity must allow `orbit.workspace.list`, `orbit.task.show`,
+`orbit.search`, and `orbit.workflow.run.show` for the callback operations it
+uses; the adapter does not bypass Orbit policy.
 With narrower grants, pass an earlier public snapshot and use lexical/offline
 hits.
 
@@ -203,16 +203,16 @@ orbit tool run orbit.graph.maintain --input '{
   "operation":"orbit_sync",
   "repository":"/work/widgets",
   "workspace":"ws_widgets",
-  "orbit_root":"/work/widgets/.orbit",
   "branch":"main",
   "run_ids":["jrun-20260907-0339-3"],
   "limit":25
 }' --full
 ```
 
-`orbit_sync` reads only public `orbit.task.show` and `orbit run show` responses,
-then verifies full commit objects, strict base ancestry, and landing-branch
-reachability in the explicitly routed Git repository. It reports partial
+`orbit_sync` reads only public `orbit.workspace.list`, `orbit.task.show`, and
+`orbit.workflow.run.show` tool responses, then verifies full commit objects,
+strict base ancestry, and landing-branch reachability in the explicitly routed
+Git repository. It reports partial
 coverage: current Orbit has no cursor-paginated detailed delivery feed, so only
 explicit run IDs and each requested task's current `job_run_id` are processed.
 Retrying or submitting omitted IDs is safe because the immutable first-observed

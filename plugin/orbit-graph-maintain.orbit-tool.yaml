@@ -30,10 +30,6 @@ parameters:
   description: Explicit Orbit workspace for operation=orbit_sync.
   param_type: string
   required: false
-- name: orbit_root
-  description: Explicit Orbit authority root required for operation=orbit_sync.
-  param_type: string
-  required: false
 - name: task_ids
   description: Bounded tasks whose current public job_run_id should be examined.
   param_type: string_list

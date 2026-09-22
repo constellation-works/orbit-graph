@@ -453,12 +453,12 @@ fn public_adapter_is_idempotent_and_supports_honest_live_task_observations() {
         .join("repo")
         .canonicalize()
         .expect("repository");
-    let orbit_root = fixture
-        .path()
-        .join("orbit-root")
-        .canonicalize()
-        .expect("orbit root");
-    let shim = fixture.path().join("orbit-shim");
+    let callback_path = executable_path_with(fixture.path());
+    let unwritable_tmp = fixture.path().join("unwritable-tmp");
+    fs::create_dir(&unwritable_tmp).expect("create unwritable TMPDIR");
+    #[cfg(unix)]
+    fs::set_permissions(&unwritable_tmp, fs::Permissions::from_mode(0o555))
+        .expect("make TMPDIR unwritable");
     let sync = || {
         plugin_output_with_env(
             repository.as_path(),
@@ -469,11 +469,13 @@ fn public_adapter_is_idempotent_and_supports_honest_live_task_observations() {
                 "repository": repository,
                 "branch": "main",
                 "workspace": "ws-test",
-                "orbit_root": orbit_root,
                 "run_ids": ["RUN-1"],
                 "task_snapshots": [task_snapshot("TASK-PRIOR", "original parser observation", 5)]
             }),
-            &[("ORBIT_GRAPH_ORBIT_BIN", shim.as_os_str())],
+            &[
+                ("PATH", callback_path.as_os_str()),
+                ("TMPDIR", unwritable_tmp.as_os_str()),
+            ],
         )
     };
     let first = sync();
@@ -508,7 +510,6 @@ fn public_adapter_is_idempotent_and_supports_honest_live_task_observations() {
             "repository": repository,
             "branch": "main",
             "workspace": "ws-test",
-            "orbit_root": orbit_root,
             "task_id": "TASK-TARGET",
             "hybrid": true,
             "level": "file"
@@ -518,7 +519,7 @@ fn public_adapter_is_idempotent_and_supports_honest_live_task_observations() {
             repository.as_path(),
             RECOMMEND_TOOL_NAME,
             input,
-            &[("ORBIT_GRAPH_ORBIT_BIN", shim.as_os_str())],
+            &[("PATH", callback_path.as_os_str())],
         );
         assert!(
             output.status.success(),
@@ -541,11 +542,10 @@ fn public_adapter_is_idempotent_and_supports_honest_live_task_observations() {
             "repository": repository,
             "branch": "main",
             "workspace": "ws-test",
-            "orbit_root": orbit_root,
             "task_id": "TASK-TARGET",
             "cutoff": "unix:9999999999"
         }),
-        &[("ORBIT_GRAPH_ORBIT_BIN", shim.as_os_str())],
+        &[("PATH", callback_path.as_os_str())],
     );
     assert!(
         !replay.status.success(),
@@ -559,28 +559,28 @@ fn public_adapter_is_idempotent_and_supports_honest_live_task_observations() {
             "schema_version": 1,
             "repository": repository,
             "workspace": "ws-wrong",
-            "orbit_root": orbit_root,
             "task_id": "TASK-TARGET"
         }),
-        &[("ORBIT_GRAPH_ORBIT_BIN", shim.as_os_str())],
+        &[("PATH", callback_path.as_os_str())],
     );
     assert!(!wrong_workspace.status.success());
 
-    let wrong_root_path = fixture.path().join("wrong-root");
-    fs::create_dir(&wrong_root_path).expect("create wrong root");
-    let wrong_root = plugin_output_with_env(
+    let obsolete_root = plugin_output_with_env(
         repository.as_path(),
         RECOMMEND_TOOL_NAME,
         json!({
             "schema_version": 1,
             "repository": repository,
             "workspace": "ws-test",
-            "orbit_root": wrong_root_path,
+            "orbit_root": fixture.path(),
             "task_id": "TASK-TARGET"
         }),
-        &[("ORBIT_GRAPH_ORBIT_BIN", shim.as_os_str())],
+        &[("PATH", callback_path.as_os_str())],
     );
-    assert!(!wrong_root.status.success());
+    assert!(
+        !obsolete_root.status.success(),
+        "orbit_root must no longer be accepted by the request contract"
+    );
 
     let other_repository = fixture.path().join("other-repo");
     run_git(
@@ -594,10 +594,9 @@ fn public_adapter_is_idempotent_and_supports_honest_live_task_observations() {
             "schema_version": 1,
             "repository": other_repository,
             "workspace": "ws-test",
-            "orbit_root": orbit_root,
             "task_id": "TASK-TARGET"
         }),
-        &[("ORBIT_GRAPH_ORBIT_BIN", shim.as_os_str())],
+        &[("PATH", callback_path.as_os_str())],
     );
     assert!(!wrong_repository.status.success());
 
@@ -610,11 +609,10 @@ fn public_adapter_is_idempotent_and_supports_honest_live_task_observations() {
             "repository": repository,
             "branch": "main",
             "workspace": "ws-wrong",
-            "orbit_root": orbit_root,
             "run_ids": ["RUN-1"],
             "task_snapshots": [task_snapshot("TASK-PRIOR", "parser", 5)]
         }),
-        &[("ORBIT_GRAPH_ORBIT_BIN", shim.as_os_str())],
+        &[("PATH", callback_path.as_os_str())],
     );
     assert!(supplied_snapshot_bypass.status.success());
     let supplied_snapshot_bypass: Value =
@@ -626,7 +624,7 @@ fn public_adapter_is_idempotent_and_supports_honest_live_task_observations() {
 }
 
 #[test]
-fn public_adapter_bounds_time_output_and_cleans_capture_files() {
+fn public_adapter_bounds_time_and_pipe_output() {
     for (body, expected) in [
         ("sleep 5", "timed out"),
         ("head -c 2097152 /dev/zero", "exceeded"),
@@ -637,13 +635,9 @@ fn public_adapter_bounds_time_output_and_cleans_capture_files() {
             .join("repo")
             .canonicalize()
             .expect("repository");
-        let orbit_root = fixture
-            .path()
-            .join("orbit-root")
-            .canonicalize()
-            .expect("orbit root");
-        let shim = fixture.path().join("bad-orbit-shim");
+        let shim = fixture.path().join("orbit");
         executable(&shim, format!("#!/bin/sh\n{body}\n"));
+        let callback_path = executable_path_with(fixture.path());
         let started = Instant::now();
         let output = plugin_output_with_env(
             repository.as_path(),
@@ -652,21 +646,16 @@ fn public_adapter_bounds_time_output_and_cleans_capture_files() {
                 "schema_version": 1,
                 "repository": repository,
                 "workspace": "ws-test",
-                "orbit_root": orbit_root,
                 "task_id": "TASK-TARGET"
             }),
             &[
-                ("ORBIT_GRAPH_ORBIT_BIN", shim.as_os_str()),
-                (
-                    "ORBIT_GRAPH_ORBIT_TIMEOUT_SECONDS",
-                    std::ffi::OsStr::new("1"),
-                ),
+                ("PATH", callback_path.as_os_str()),
+                ("GRAPH_ORBIT_TIMEOUT_SECONDS", std::ffi::OsStr::new("1")),
             ],
         );
         assert!(!output.status.success());
         assert!(started.elapsed() < Duration::from_secs(3));
         assert!(String::from_utf8_lossy(&output.stderr).contains(expected));
-        assert_no_subprocess_captures();
     }
 }
 
@@ -1120,7 +1109,6 @@ fn adapter_fixture() -> TempDir {
     let fixture = TempDir::new().expect("create adapter fixture");
     let repository = fixture.path().join("repo");
     fs::create_dir_all(&repository).expect("create repository");
-    fs::create_dir_all(fixture.path().join("orbit-root")).expect("create Orbit root");
     run_git(&repository, ["init", "-b", "main"]);
     run_git(
         &repository,
@@ -1144,14 +1132,9 @@ fn adapter_fixture() -> TempDir {
     run_git(&repository, ["commit", "-m", "delivery"]);
     let after = git_stdout(&repository, ["rev-parse", "HEAD"]);
     let canonical = repository.canonicalize().expect("canonical repository");
-    let orbit_root = fixture
-        .path()
-        .join("orbit-root")
-        .canonicalize()
-        .expect("canonical Orbit root");
-    let workspace_list = json!([{
+    let workspace_list = json!({"items": [{
         "id": "ws-test", "name": "test", "repo_root": canonical
-    }]);
+    }]});
     let run_show = json!({
         "run": {"state": "success", "finished_at": "2026-09-07T00:00:30Z"},
         "pipeline_state": {"step_outputs": {
@@ -1165,14 +1148,10 @@ fn adapter_fixture() -> TempDir {
     let prior = public_task("TASK-PRIOR", "done", "parser validation");
     let target = public_task("TASK-TARGET", "in-progress", "parser validation");
     let script = format!(
-        "#!/bin/sh\ncase \"$*\" in *\"run show RUN-1\"*|*\"--root {}\"*) ;; *) exit 9 ;; esac\ncase \"$*\" in\n  *\"workspace list\"*) printf '%s\\n' '{}' ;;\n  *\"run show RUN-1\"*) printf '%s\\n' '{}' ;;\n  *\"TASK-PRIOR\"*) printf '%s\\n' '{}' ;;\n  *\"TASK-TARGET\"*) printf '%s\\n' '{}' ;;\n  *\"orbit.search\"*) printf '%s\\n' '{{\"results\":[{{\"id\":\"TASK-PRIOR\",\"score\":1.0}}]}}' ;;\n  *) printf '%s\\n' '{{\"results\":[]}}' ;;\nesac\n",
-        orbit_root.display(),
-        workspace_list,
-        run_show,
-        prior,
-        target
+        "#!/bin/sh\ncase \"$*\" in *\"--root\"*) exit 8 ;; esac\ncase \"$*\" in\n  *\"tool run orbit.workspace.list\"*) printf '%s\\n' '{}' ;;\n  *\"tool run orbit.workflow.run.show\"*\"RUN-1\"*) printf '%s\\n' '{}' ;;\n  *\"tool run orbit.task.show\"*\"TASK-PRIOR\"*) printf '%s\\n' '{}' ;;\n  *\"tool run orbit.task.show\"*\"TASK-TARGET\"*) printf '%s\\n' '{}' ;;\n  *\"tool run orbit.search\"*) printf '%s\\n' '{{\"results\":[{{\"id\":\"TASK-PRIOR\",\"score\":1.0}}]}}' ;;\n  *) exit 9 ;;\nesac\n",
+        workspace_list, run_show, prior, target
     );
-    executable(&fixture.path().join("orbit-shim"), script);
+    executable(&fixture.path().join("orbit"), script);
     fixture
 }
 
@@ -1229,18 +1208,12 @@ fn executable(path: &Path, contents: String) {
     }
 }
 
-fn assert_no_subprocess_captures() {
-    let prefix = format!("orbit-graph-{}-", std::process::id());
-    let leftovers = fs::read_dir(std::env::temp_dir())
-        .expect("read temp directory")
-        .filter_map(Result::ok)
-        .filter_map(|entry| entry.file_name().into_string().ok())
-        .filter(|name| name.starts_with(prefix.as_str()))
-        .collect::<Vec<_>>();
-    assert!(
-        leftovers.is_empty(),
-        "leftover subprocess captures: {leftovers:?}"
-    );
+fn executable_path_with(first: &Path) -> std::ffi::OsString {
+    let mut paths = vec![first.to_path_buf()];
+    paths.extend(std::env::split_paths(
+        &std::env::var_os("PATH").unwrap_or_default(),
+    ));
+    std::env::join_paths(paths).expect("join callback PATH")
 }
 
 fn fixture_delivery(repository: &Path, kind: &str) -> Value {
