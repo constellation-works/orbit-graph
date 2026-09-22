@@ -161,6 +161,9 @@ pub enum PairingEvidence {
     GitRename,
     /// Git reported the containing file as copied.
     GitCopy,
+    /// The complete normalized source spans matched after replacing each
+    /// symbol's identifier with a placeholder.
+    BodyHash,
     /// No evidence established the correspondence.
     None,
 }
@@ -363,6 +366,7 @@ impl ChangedSymbols {
         let mut pairer = Pairer::new(comparison, &files, &base, &head);
         pairer.pair_same_selector()?;
         pairer.pair_across_renamed_files()?;
+        pairer.pair_renamed_by_body_hash()?;
         pairer.pair_uncertain_cross_path();
         pairer.emit_unpaired();
 
@@ -444,6 +448,7 @@ impl ChangedSymbols {
 struct IndexedSymbol {
     path: String,
     name: String,
+    qualified: String,
     kind: String,
     selector: String,
 }
@@ -483,6 +488,7 @@ impl SideInventory {
                 let entry = IndexedSymbol {
                     path: file.path.clone(),
                     name: symbol.name,
+                    qualified: symbol.qualified,
                     kind: symbol.kind,
                     selector: selector.clone(),
                 };
@@ -863,6 +869,95 @@ impl<'a> Pairer<'a> {
         Ok(())
     }
 
+    /// Rung 5: different names in the same modified file with matching complete
+    /// normalized bodies. This is deliberately narrower than Git-backed rename
+    /// pairing: body edits and incomplete source reads do not establish identity.
+    fn pair_renamed_by_body_hash(&mut self) -> Result<(), ChangesError> {
+        let same_file_paths: Vec<(String, FileChangeKind)> = self
+            .files
+            .deltas
+            .iter()
+            .filter_map(|delta| {
+                let base = delta.base_path.as_ref()?;
+                let head = delta.head_path.as_ref()?;
+                (base == head).then(|| (base.clone(), delta.kind))
+            })
+            .collect();
+
+        for (path, file_change) in same_file_paths {
+            let mut base_groups: BTreeMap<(String, String, u64, Vec<u8>), Vec<String>> =
+                BTreeMap::new();
+            for selector in self.unpaired_in(self.base, &path) {
+                let Some(symbol) = self.base.symbols.get(&selector) else {
+                    continue;
+                };
+                let Some(source) = self.source_of(SnapshotSide::Base, &selector)? else {
+                    continue;
+                };
+                let Some((hash, normalized)) = normalized_body_hash(&source, &symbol.name) else {
+                    continue;
+                };
+                base_groups
+                    .entry((
+                        symbol.kind.clone(),
+                        parent_qualified(&symbol.qualified),
+                        hash,
+                        normalized,
+                    ))
+                    .or_default()
+                    .push(selector);
+            }
+
+            let mut head_groups: BTreeMap<(String, String, u64, Vec<u8>), Vec<String>> =
+                BTreeMap::new();
+            for selector in self.unpaired_in(self.head, &path) {
+                let Some(symbol) = self.head.symbols.get(&selector) else {
+                    continue;
+                };
+                let Some(source) = self.source_of(SnapshotSide::Head, &selector)? else {
+                    continue;
+                };
+                let Some((hash, normalized)) = normalized_body_hash(&source, &symbol.name) else {
+                    continue;
+                };
+                head_groups
+                    .entry((
+                        symbol.kind.clone(),
+                        parent_qualified(&symbol.qualified),
+                        hash,
+                        normalized,
+                    ))
+                    .or_default()
+                    .push(selector);
+            }
+
+            for (identity, base_selectors) in base_groups {
+                let Some(head_selectors) = head_groups.get(&identity) else {
+                    continue;
+                };
+                if base_selectors.len() == 1 && head_selectors.len() == 1 {
+                    self.emit_renamed(
+                        &base_selectors[0],
+                        &head_selectors[0],
+                        file_change,
+                        PairingEvidence::BodyHash,
+                    )?;
+                } else {
+                    self.emit_uncertain_group(
+                        &base_selectors,
+                        head_selectors,
+                        file_change,
+                        format!(
+                            "ambiguous same-file body-hash rename: {} `{}` symbols share the same parent and normalized body",
+                            identity.0, identity.1
+                        ),
+                    );
+                }
+            }
+        }
+        Ok(())
+    }
+
     /// Rung 3, within one renamed or copied file pair: same name and kind.
     fn pair_moved_in_file(
         &mut self,
@@ -1112,6 +1207,15 @@ impl<'a> Pairer<'a> {
         self.unpaired_base.remove(base_selector);
         self.unpaired_head.remove(head_selector);
         let (_, base_path, head_path) = self.file_change_for_base(base_selector);
+        let note = match evidence {
+            PairingEvidence::BodyHash =>
+                "Paired by a unique same-file normalized body hash after replacing each identifier. A pairing label is evidence about identity, not about behavior.".to_string(),
+            _ => format!(
+                "Sole remaining symbol of this kind on each side of a Git {} of the containing \
+                 file. A pairing label is evidence about identity, not about behavior.",
+                kind.noun()
+            ),
+        };
         self.symbols.push(ChangedSymbol {
             status: ChangeStatus::Renamed,
             pairing: Pairing::Renamed,
@@ -1123,11 +1227,7 @@ impl<'a> Pairer<'a> {
             base_path,
             head_path,
             uncertain_candidates: Vec::new(),
-            note: Some(format!(
-                "Sole remaining symbol of this kind on each side of a Git {} of the containing \
-                 file. A pairing label is evidence about identity, not about behavior.",
-                kind.noun()
-            )),
+            note: Some(note),
         });
         Ok(())
     }
@@ -1338,6 +1438,53 @@ fn signature_line(bytes: &[u8]) -> String {
         .find(|line| !line.is_empty())
         .unwrap_or_default()
         .to_string()
+}
+
+/// The qualified prefix that must survive a same-file rename.
+fn parent_qualified(qualified: &str) -> String {
+    qualified
+        .rsplit_once("::")
+        .map(|(parent, _)| parent.to_string())
+        .unwrap_or_default()
+}
+
+/// Hash a complete symbol span after replacing its own identifier and removing
+/// whitespace. The normalized bytes accompany the hash in the pairing key, so
+/// a hash collision cannot create a correspondence.
+fn normalized_body_hash(source: &SymbolSource, identifier: &str) -> Option<(u64, Vec<u8>)> {
+    if source.truncated || identifier.is_empty() {
+        return None;
+    }
+    let identifier = identifier.as_bytes();
+    let mut normalized = Vec::with_capacity(source.bytes.len());
+    let mut at = 0;
+    while at < source.bytes.len() {
+        let replaces_identifier = source.bytes[at..].starts_with(identifier)
+            && (at == 0 || !identifier_byte(source.bytes[at - 1]))
+            && (at + identifier.len() == source.bytes.len()
+                || !identifier_byte(source.bytes[at + identifier.len()]));
+        if replaces_identifier {
+            normalized.extend_from_slice(b"<identifier>");
+            at += identifier.len();
+        } else {
+            let byte = source.bytes[at];
+            if !byte.is_ascii_whitespace() {
+                normalized.push(byte);
+            }
+            at += 1;
+        }
+    }
+
+    let hash = normalized
+        .iter()
+        .fold(0xcbf2_9ce4_8422_2325_u64, |hash, byte| {
+            (hash ^ u64::from(*byte)).wrapping_mul(0x0000_0100_0000_01b3)
+        });
+    Some((hash, normalized))
+}
+
+fn identifier_byte(byte: u8) -> bool {
+    byte.is_ascii_alphanumeric() || byte == b'_' || byte >= 0x80
 }
 
 #[cfg(test)]

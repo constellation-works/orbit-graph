@@ -206,10 +206,15 @@ Symbols are paired across base and head by **canonical selector**
 3. **Moved.** Same name and kind at a different path, where the Git change also
    shows the file being renamed or the content moving. Labelled `moved` with
    both selectors retained.
-4. **Renamed.** Same path and kind, different name, with Git rename or
-   similarity evidence for the containing file. Labelled `renamed` with both
-   selectors retained.
-5. **Uncertain correspondence.** Anything weaker — several plausible partners, a
+4. **Renamed across a Git file move.** Same kind, different name, with Git
+   rename or similarity evidence for the containing file. Labelled `renamed`
+   with both selectors retained and Git provenance.
+5. **Renamed within one file.** Unmatched symbols in the same path pair only
+   when kind and qualified parent match and their complete source spans are
+   identical after replacing each identifier with a placeholder and normalizing
+   whitespace. The row is labelled `renamed` with `body_hash` provenance. A
+   simultaneous body edit does not pair.
+6. **Uncertain correspondence.** Anything weaker — several plausible partners, a
    name that occurs multiple times in a file, or a move plus rename together —
    is recorded as `uncertain` with every candidate listed and none chosen.
 
@@ -666,7 +671,9 @@ rewriting the original examples.
   `added|removed|modified|signature_changed|moved|renamed|uncertain` so the
   pairing ladder is represented directly. One-sided entries use
   `pairing: same_selector`; Git rename or copy evidence is required for
-  `moved` and `renamed`, otherwise candidates remain `uncertain`.
+  `moved` and cross-file `renamed`; uniquely matching same-file normalized body
+  hashes establish intra-file `renamed` rows. All other candidates remain
+  `uncertain`.
 - **2026-09-12 — ORB-12373:** Milestone 2 adds the explicit service envelope,
   depth-1 query options, default `side=head`, confidence aliases, source
   encoding, host checks, and the error codes listed in Service surface.
@@ -820,7 +827,7 @@ ORB-12416/ORB-12417; read that document directly rather than a copy of it.
 - **Extractor blind spots and language coverage.** See
   [the evaluation's limitations](../evaluation/change-explorer/README.md#limitations-handoff)
   for the current, evolving list — Rust cross-file resolution degrading to
-  name-only matching, intra-file renames never paired, nested functions
+  name-only matching, intra-file renames with body edits never paired, nested functions
   invisible to the graph, runtime/subprocess invocation unseen, and the
   languages actually exercised across the five studies (Rust, Python,
   JavaScript).
