@@ -363,10 +363,12 @@ Ordered by how much they distort an answer.
    p50, up from 741, but still below the study-3 figure). The cause is
    unchanged from item 1: the same name-only fan-out, now with fewer false
    entries in it. Full tables in [performance.md](performance.md). Cold
-   indexing was not re-measured (unaffected by either fix; observed
-   incidentally at 3.5–470 s across the four re-run studies, consistent with
-   the original 1.5–441 s range) — still 6.6–8.7 minutes for `orbit`, with the
-   two sides built sequentially; warm launch 0.02–1.03 s.
+   indexing was subsequently re-measured on 2026-09-22 after concurrent base/head
+   indexing landed: study 3 reached ready in **295.69 s** (base 295 544 ms; head
+   292 497 ms; warm launch 1.04 s) on the same host, down from its 398.87 s
+   sequential launch. That repeat used different scratch storage, so it is evidence
+   of the lower concurrent launch time rather than a replacement for the original
+   6.6–8.7 minute storage-identical range.
 8. **Depth 3 plus a 200-node cap is a presentation choice, not a completeness
    claim.** Re-measured 2026-09-13: raising both changed the answer for 36/54
    (study 1, unchanged), 11/25 (study 2, was 12/25), 11/26 (study 3, was
