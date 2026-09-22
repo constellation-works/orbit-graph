@@ -1,0 +1,118 @@
+schemaVersion: 2
+kind: Plugin
+metadata:
+  name: graph
+  version: 0.9.2
+  description: Leakage-safe file and symbol recommendations from verified change history.
+  publisher: constellation-works
+  homepage: https://github.com/constellation-works/orbit-graph
+spec:
+  requires:
+    orbit: ">=0.23.0 <1.0.0"
+    host_api: 1
+    platforms: [linux, macos]
+    programs: [git, orbit]
+  backend:
+    type: exec
+    command: bin/orbit-graph
+    timeout_ms: 120000
+    sandbox: default
+  permissions:
+    fs:
+      read: ["{{workspace}}"]
+      write: ["{{workspace}}/.orbit-graph", "{{plugin_state}}"]
+    network: none
+    orbit_tools:
+      - orbit.task.show
+      - orbit.search
+      - orbit.workspace.list
+      - orbit.workflow.run.show
+  tools:
+    - name: version
+      description: Report deterministic crate and index contract versions.
+      execution_kind: read_only
+      mcp_scope: workspace
+      input_schema:
+        type: object
+        properties: {}
+        additionalProperties: false
+      output_schema:
+        type: object
+        additionalProperties: false
+        required:
+          - crate_version
+          - extractor_version
+          - store_schema_version
+          - history_schema_version
+          - plugin_schema_version
+        properties:
+          crate_version: {type: string}
+          extractor_version: {type: integer}
+          store_schema_version: {type: integer}
+          history_schema_version: {type: integer}
+          plugin_schema_version: {type: integer}
+    - name: status
+      description: Report recommendation-history freshness and index versions.
+      execution_kind: read_only
+      mcp_scope: workspace
+      input_schema:
+        type: object
+        properties:
+          schema_version: {type: integer}
+          repository: {type: string}
+          branch: {type: string}
+        additionalProperties: false
+      output_schema: {type: object}
+    - name: recommend
+      description: Recommend repository files or symbols from verified change history.
+      execution_kind: read_only
+      mcp_scope: workspace
+      input_schema:
+        type: object
+        properties:
+          schema_version: {type: integer}
+          repository: {type: string}
+          branch: {type: string}
+          workspace: {type: string}
+          query: {type: string}
+          task_id: {type: string}
+          task_snapshot: {type: object}
+          level: {type: string}
+          limit: {type: integer}
+          revision: {type: string}
+          cutoff: {type: string}
+          hybrid: {type: boolean}
+          hybrid_limit: {type: integer}
+          hybrid_hits: {type: array}
+        additionalProperties: false
+      output_schema: {type: object}
+      cli:
+        positional: [query]
+    - name: maintain
+      description: Import or synchronize bounded verified change history.
+      execution_kind: mutating
+      mcp_scope: workspace
+      input_schema:
+        type: object
+        required: [operation]
+        properties:
+          schema_version: {type: integer}
+          operation: {type: string}
+          repository: {type: string}
+          branch: {type: string}
+          limit: {type: integer}
+          delivery: {type: object}
+          workspace: {type: string}
+          task_ids: {type: array, items: {type: string}}
+          run_ids: {type: array, items: {type: string}}
+          task_snapshots: {type: array}
+        additionalProperties: false
+      output_schema: {type: object}
+  web:
+    panels:
+      - id: version
+        title: Graph versions
+        source: tool:version
+        render: kv
+        group: diagnostics
+  tests: [tests/conformance/*.yaml]

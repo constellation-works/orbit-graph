@@ -1,0 +1,13 @@
+schemaVersion: 1
+kind: PluginTest
+tests:
+  - name: version_reports_release_contracts
+    tool: version
+    input: {}
+    expect:
+      output:
+        crate_version: 0.9.2
+        extractor_version: 10
+        store_schema_version: 1
+        history_schema_version: 3
+        plugin_schema_version: 1

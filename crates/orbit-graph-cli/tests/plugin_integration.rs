@@ -17,7 +17,10 @@ use std::os::unix::fs::PermissionsExt;
 use serde_json::{Value, json};
 use tempfile::TempDir;
 
-use orbit_graph::plugin::{MAINTAIN_TOOL_NAME, RECOMMEND_TOOL_NAME, STATUS_TOOL_NAME};
+use orbit_graph::plugin::{
+    MAINTAIN_TOOL_NAME, PLUGIN_SCHEMA_VERSION, RECOMMEND_TOOL_NAME, STATUS_TOOL_NAME,
+    VERSION_TOOL_NAME,
+};
 
 #[test]
 fn no_argv_plugin_supports_status_and_query_and_task_id_both_levels() {
@@ -147,7 +150,12 @@ fn plugin_v2_envelopes_wrap_all_tools_and_errors_while_v1_is_deprecated() {
         assert!(output.stderr.is_empty(), "v2 requests are not deprecated");
     }
 
-    let invalid = plugin_output_with_env(fixture.path(), STATUS_TOOL_NAME, json!({}), &[]);
+    let invalid = plugin_output_with_env(
+        fixture.path(),
+        STATUS_TOOL_NAME,
+        json!({"schema_version": 2}),
+        &[],
+    );
     assert_plugin_error(&invalid, "invalid v2 input");
 
     let bare = plugin_raw_output(
@@ -178,6 +186,123 @@ fn plugin_v2_envelopes_wrap_all_tools_and_errors_while_v1_is_deprecated() {
         mismatch["error"]["message"]
             .as_str()
             .is_some_and(|message| message.contains("does not match"))
+    );
+}
+
+#[test]
+fn plugin_version_is_repository_independent_and_deterministic() {
+    let fixture = TempDir::new().expect("non-repository workspace");
+    let first = plugin_json(fixture.path(), VERSION_TOOL_NAME, json!({}));
+    let second = plugin_json(fixture.path(), VERSION_TOOL_NAME, json!({}));
+    assert_eq!(first, second);
+    assert_eq!(
+        first,
+        json!({
+            "crate_version": env!("CARGO_PKG_VERSION"),
+            "extractor_version": orbit_graph::EXTRACTOR_VERSION,
+            "store_schema_version": orbit_graph::STORE_SCHEMA_VERSION,
+            "history_schema_version": orbit_graph::HISTORY_INDEX_SCHEMA_VERSION,
+            "plugin_schema_version": PLUGIN_SCHEMA_VERSION,
+        })
+    );
+}
+
+#[test]
+fn v2_context_defaults_repository_and_explicit_input_wins() {
+    let fixture = evaluation_fixture();
+    let repository = fixture.path().canonicalize().expect("canonical fixture");
+
+    let maintained = plugin_json(
+        fixture.path(),
+        MAINTAIN_TOOL_NAME,
+        json!({"operation": "history_sync", "branch": "main", "limit": 100}),
+    );
+    assert_eq!(
+        maintained["repository"],
+        repository.to_string_lossy().as_ref()
+    );
+    let status = plugin_json(fixture.path(), STATUS_TOOL_NAME, json!({"branch": "main"}));
+    assert_eq!(status["repository"], repository.to_string_lossy().as_ref());
+    let recommendation = plugin_json(
+        fixture.path(),
+        RECOMMEND_TOOL_NAME,
+        json!({"branch": "main", "query": "parser validation"}),
+    );
+    assert_eq!(
+        recommendation["repository"],
+        repository.to_string_lossy().as_ref()
+    );
+
+    let other = TempDir::new().expect("other context");
+    let request = json!({
+        "schema_version": 1,
+        "tool": STATUS_TOOL_NAME,
+        "input": {"repository": repository, "branch": "main"},
+        "context": {"workspace_root": other.path(), "agent": "test", "model": "test"}
+    });
+    let explicit = plugin_success(&plugin_raw_output(
+        fixture.path(),
+        Some(STATUS_TOOL_NAME),
+        request,
+        &[],
+    ));
+    assert_eq!(
+        explicit["repository"],
+        repository.to_string_lossy().as_ref()
+    );
+}
+
+#[test]
+fn plugin_state_contains_every_index_file() {
+    let fixture = evaluation_fixture();
+    let repository = fixture.path().canonicalize().expect("canonical fixture");
+    let state = TempDir::new().expect("plugin state");
+    let state_value = state.path().as_os_str();
+
+    let maintain = plugin_output_with_env(
+        fixture.path(),
+        MAINTAIN_TOOL_NAME,
+        json!({"operation": "history_sync", "branch": "main", "limit": 100}),
+        &[("ORBIT_PLUGIN_STATE", state_value)],
+    );
+    let _ = plugin_success(&maintain);
+    let output = plugin_output_with_env(
+        fixture.path(),
+        RECOMMEND_TOOL_NAME,
+        json!({"branch": "main", "query": "parser validation"}),
+        &[("ORBIT_PLUGIN_STATE", state_value)],
+    );
+    let recommendation = plugin_success(&output);
+    assert_eq!(
+        recommendation["repository"],
+        repository.to_string_lossy().as_ref()
+    );
+    assert!(
+        !fixture.path().join(".orbit-graph").exists(),
+        "plugin state routing must not create repository-local indexes"
+    );
+    let repository_states = fs::read_dir(state.path())
+        .expect("read plugin state")
+        .collect::<Result<Vec<_>, _>>()
+        .expect("plugin state entries");
+    assert_eq!(repository_states.len(), 1);
+    let names = fs::read_dir(repository_states[0].path())
+        .expect("read repository state")
+        .map(|entry| {
+            entry
+                .expect("state file")
+                .file_name()
+                .to_string_lossy()
+                .into_owned()
+        })
+        .collect::<std::collections::BTreeSet<_>>();
+    assert!(
+        names.iter().any(|name| name.starts_with("change-history.")),
+        "history index missing from plugin state: {names:?}"
+    );
+    assert!(
+        names.iter().any(|name| name.starts_with("graph.")),
+        "graph index missing from plugin state: {names:?}"
     );
 }
 
@@ -1397,6 +1522,7 @@ fn plugin_raw_output(
     let mut command = Command::new(env!("CARGO_BIN_EXE_orbit-graph"));
     command
         .current_dir(repository)
+        .env_remove("ORBIT_PLUGIN_STATE")
         .stdin(std::process::Stdio::piped())
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped());

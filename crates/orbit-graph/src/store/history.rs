@@ -120,6 +120,23 @@ struct PendingBatch {
 impl HistoryIndex {
     /// Open or initialize the local history index for `landing_branch`.
     pub fn open(repo_root: &Path, landing_branch: &str) -> Result<Self, GraphError> {
+        Self::open_with_optional_index_dir(repo_root, landing_branch, None)
+    }
+
+    /// Open or initialize the history index beneath a caller-selected directory.
+    pub(crate) fn open_with_index_dir(
+        repo_root: &Path,
+        landing_branch: &str,
+        index_dir: &Path,
+    ) -> Result<Self, GraphError> {
+        Self::open_with_optional_index_dir(repo_root, landing_branch, Some(index_dir))
+    }
+
+    fn open_with_optional_index_dir(
+        repo_root: &Path,
+        landing_branch: &str,
+        index_dir: Option<&Path>,
+    ) -> Result<Self, GraphError> {
         let repo = Repository::discover(repo_root).map_err(|error| {
             GraphError::invalid_data("open history Git repository", error.to_string())
         })?;
@@ -140,9 +157,12 @@ impl HistoryIndex {
                 "landing branch must be non-empty",
             ));
         }
-        let db_path = repo_root.join(".orbit-graph").join(format!(
-            "change-history.{HISTORY_INDEX_SCHEMA_VERSION}.sqlite3"
-        ));
+        let db_path = index_dir
+            .map(Path::to_path_buf)
+            .unwrap_or_else(|| repo_root.join(".orbit-graph"))
+            .join(format!(
+                "change-history.{HISTORY_INDEX_SCHEMA_VERSION}.sqlite3"
+            ));
         if let Some(parent) = db_path.parent() {
             fs::create_dir_all(parent).map_err(|source| {
                 GraphError::io("create history index directory", parent, source)
