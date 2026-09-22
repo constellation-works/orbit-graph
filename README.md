@@ -213,6 +213,15 @@ orbit tool run orbit.graph.maintain --input '{
 }' --full
 ```
 
+### Scheduled history synchronization
+
+The plugin also ships a disabled `history-sync` routine. Enabling the plugin
+seeds it as `.orbit/routines/graph-history-sync.yaml`; review that file and set
+`enabled: true` to run the plugin's `history_sync` maintenance operation on its
+daily schedule. The routine invokes only the bundled
+`graph_history_sync_pipeline` job, so it never enables a schedule by default
+or reaches another plugin's jobs.
+
 `orbit_sync` reads only public `orbit.workspace.list`, `orbit.task.show`, and
 `orbit.workflow.run.show` tool responses, then verifies full commit objects,
 strict base ancestry, and landing-branch reachability in the explicitly routed

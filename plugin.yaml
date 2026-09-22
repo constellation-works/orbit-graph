@@ -55,6 +55,10 @@ spec:
       mcp_scope: workspace
       input_schema: {$ref: schemas/maintain.request.json}
       output_schema: {$ref: schemas/maintain.response.json}
+  definitions:
+    activities: [definitions/activities/*.yaml]
+    jobs: [definitions/jobs/*.yaml]
+    routines: [definitions/routines/*.yaml]
   skills: [skills/recommendations]
   config:
     schema: schemas/config.json

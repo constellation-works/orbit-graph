@@ -34,6 +34,12 @@ Maintenance is deliberate. `orbit.graph.maintain` supports:
   `orbit.workspace.list`, `orbit.task.show`, `orbit.workflow.run.show`, and Git
   reachability checks.
 
+For periodic Git-only synchronization, enable the plugin's seeded
+`.orbit/routines/graph-history-sync.yaml` after reviewing its daily cadence.
+It is disabled by default and runs the plugin-owned
+`graph_history_sync_pipeline` job, whose deterministic activity calls
+`orbit.graph.maintain` with `operation: history_sync`.
+
 `orbit_sync` is idempotent but reports partial coverage because current Orbit
 does not expose a cursor-paginated detailed delivery feed. Resume by resubmitting
 omitted IDs. Repeated Git sync calls follow `resume_from` until `complete:true`,
