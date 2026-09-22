@@ -1,8 +1,4 @@
-.orbit/*
-!.orbit/auto_tasks/
-!.orbit/resources/
-!.orbit/routines/
-!.orbit/config.toml
-.orbit/**/*.lock
 target/
 .orbit-graph/
+# Orbit per-user state — not a repository artifact.
+.orbit/
