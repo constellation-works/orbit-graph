@@ -52,8 +52,7 @@ fn no_argv_plugin_supports_status_and_query_and_task_id_both_levels() {
         ],
     );
     assert!(status_with_mode_environment.status.success());
-    let status_with_mode_environment: Value =
-        serde_json::from_slice(&status_with_mode_environment.stdout).expect("plugin JSON");
+    let status_with_mode_environment = plugin_success(&status_with_mode_environment);
     assert_eq!(status_with_mode_environment, status);
     #[cfg(unix)]
     {
@@ -109,6 +108,77 @@ fn no_argv_plugin_supports_status_and_query_and_task_id_both_levels() {
             "task recommendations missing in {level}: {task}"
         );
     }
+}
+
+#[test]
+fn plugin_v2_envelopes_wrap_all_tools_and_errors_while_v1_is_deprecated() {
+    let fixture = evaluation_fixture();
+    let repository = fixture.path().canonicalize().expect("canonical fixture");
+
+    for (tool, input, operation) in [
+        (
+            MAINTAIN_TOOL_NAME,
+            json!({
+                "operation": "history_sync",
+                "repository": repository,
+                "branch": "main",
+                "limit": 100
+            }),
+            "history_sync",
+        ),
+        (
+            STATUS_TOOL_NAME,
+            json!({"repository": repository, "branch": "main"}),
+            "status",
+        ),
+        (
+            RECOMMEND_TOOL_NAME,
+            json!({
+                "repository": repository,
+                "branch": "main",
+                "query": "parser validation"
+            }),
+            "recommend",
+        ),
+    ] {
+        let output = plugin_output_with_env(fixture.path(), tool, input, &[]);
+        let value = plugin_success(&output);
+        assert_eq!(value["operation"], operation);
+        assert!(output.stderr.is_empty(), "v2 requests are not deprecated");
+    }
+
+    let invalid = plugin_output_with_env(fixture.path(), STATUS_TOOL_NAME, json!({}), &[]);
+    assert_plugin_error(&invalid, "invalid v2 input");
+
+    let bare = plugin_raw_output(
+        fixture.path(),
+        Some(STATUS_TOOL_NAME),
+        json!({"repository": repository, "branch": "main"}),
+        &[],
+    );
+    let bare_value = plugin_success(&bare);
+    assert_eq!(bare_value["operation"], "status");
+    assert!(String::from_utf8_lossy(&bare.stderr).contains("deprecated"));
+
+    let request = json!({
+        "schema_version": 1,
+        "tool": STATUS_TOOL_NAME,
+        "input": {"repository": repository, "branch": "main"},
+        "context": {"workspace_root": repository, "agent": "test", "model": "test"}
+    });
+    let without_environment_tool = plugin_raw_output(fixture.path(), None, request.clone(), &[]);
+    assert_eq!(
+        plugin_success(&without_environment_tool)["operation"],
+        "status"
+    );
+
+    let mismatch = plugin_raw_output(fixture.path(), Some(RECOMMEND_TOOL_NAME), request, &[]);
+    let mismatch = assert_plugin_error(&mismatch, "tool selectors must agree");
+    assert!(
+        mismatch["error"]["message"]
+            .as_str()
+            .is_some_and(|message| message.contains("does not match"))
+    );
 }
 
 #[test]
@@ -479,21 +549,11 @@ fn public_adapter_is_idempotent_and_supports_honest_live_task_observations() {
         )
     };
     let first = sync();
-    assert!(
-        first.status.success(),
-        "{}",
-        String::from_utf8_lossy(&first.stderr)
-    );
-    let first: Value = serde_json::from_slice(&first.stdout).expect("first sync JSON");
+    let first = plugin_success(&first);
     assert_eq!(first["outcomes"][0]["status"], "inserted");
     std::thread::sleep(Duration::from_millis(20));
     let second = sync();
-    assert!(
-        second.status.success(),
-        "{}",
-        String::from_utf8_lossy(&second.stderr)
-    );
-    let second: Value = serde_json::from_slice(&second.stdout).expect("second sync JSON");
+    let second = plugin_success(&second);
     assert_eq!(second["outcomes"][0]["status"], "already_indexed");
     assert_eq!(second["status"]["deliveries"], 1);
 
@@ -521,12 +581,7 @@ fn public_adapter_is_idempotent_and_supports_honest_live_task_observations() {
             input,
             &[("PATH", callback_path.as_os_str())],
         );
-        assert!(
-            output.status.success(),
-            "{}",
-            String::from_utf8_lossy(&output.stderr)
-        );
-        let value: Value = serde_json::from_slice(&output.stdout).expect("recommend JSON");
+        let value = plugin_success(&output);
         assert!(
             value["result"]["recommendations"]
                 .as_array()
@@ -547,10 +602,7 @@ fn public_adapter_is_idempotent_and_supports_honest_live_task_observations() {
         }),
         &[("PATH", callback_path.as_os_str())],
     );
-    assert!(
-        !replay.status.success(),
-        "post-execution text must fail strict replay"
-    );
+    assert_plugin_error(&replay, "post-execution text must fail strict replay");
 
     let wrong_workspace = plugin_output_with_env(
         repository.as_path(),
@@ -563,7 +615,7 @@ fn public_adapter_is_idempotent_and_supports_honest_live_task_observations() {
         }),
         &[("PATH", callback_path.as_os_str())],
     );
-    assert!(!wrong_workspace.status.success());
+    assert_plugin_error(&wrong_workspace, "wrong workspace must fail");
 
     let obsolete_root = plugin_output_with_env(
         repository.as_path(),
@@ -577,9 +629,9 @@ fn public_adapter_is_idempotent_and_supports_honest_live_task_observations() {
         }),
         &[("PATH", callback_path.as_os_str())],
     );
-    assert!(
-        !obsolete_root.status.success(),
-        "orbit_root must no longer be accepted by the request contract"
+    assert_plugin_error(
+        &obsolete_root,
+        "orbit_root must no longer be accepted by the request contract",
     );
 
     let other_repository = fixture.path().join("other-repo");
@@ -598,7 +650,7 @@ fn public_adapter_is_idempotent_and_supports_honest_live_task_observations() {
         }),
         &[("PATH", callback_path.as_os_str())],
     );
-    assert!(!wrong_repository.status.success());
+    assert_plugin_error(&wrong_repository, "wrong repository must fail");
 
     let supplied_snapshot_bypass = plugin_output_with_env(
         repository.as_path(),
@@ -614,9 +666,7 @@ fn public_adapter_is_idempotent_and_supports_honest_live_task_observations() {
         }),
         &[("PATH", callback_path.as_os_str())],
     );
-    assert!(supplied_snapshot_bypass.status.success());
-    let supplied_snapshot_bypass: Value =
-        serde_json::from_slice(&supplied_snapshot_bypass.stdout).expect("sync JSON");
+    let supplied_snapshot_bypass = plugin_success(&supplied_snapshot_bypass);
     assert_eq!(
         supplied_snapshot_bypass["outcomes"][0]["status"], "excluded",
         "supplied snapshots must not bypass public workspace verification"
@@ -653,9 +703,13 @@ fn public_adapter_bounds_time_and_pipe_output() {
                 ("GRAPH_ORBIT_TIMEOUT_SECONDS", std::ffi::OsStr::new("1")),
             ],
         );
-        assert!(!output.status.success());
+        let error = assert_plugin_error(&output, "bounded adapter failure");
         assert!(started.elapsed() < Duration::from_secs(3));
-        assert!(String::from_utf8_lossy(&output.stderr).contains(expected));
+        assert!(
+            error["error"]["message"]
+                .as_str()
+                .is_some_and(|message| message.contains(expected))
+        );
     }
 }
 
@@ -748,6 +802,15 @@ fn manifests_are_versioned_and_describe_all_registered_tools() {
                 .as_array()
                 .is_some_and(|p| !p.is_empty())
         );
+        let schema_version = manifest["parameters"]
+            .as_array()
+            .and_then(|parameters| {
+                parameters
+                    .iter()
+                    .find(|parameter| parameter["name"] == "schema_version")
+            })
+            .expect("published schema_version parameter");
+        assert_eq!(schema_version["required"], false);
     }
 }
 
@@ -1268,12 +1331,42 @@ fn task_snapshot(task_id: &str, title: &str, captured: usize) -> Value {
 
 fn plugin_json(repository: &Path, tool: &str, input: Value) -> Value {
     let output = plugin_output_with_env(repository, tool, input, &[]);
+    plugin_success(&output)
+}
+
+fn plugin_success(output: &Output) -> Value {
     assert!(
         output.status.success(),
-        "plugin {tool} failed: {}",
+        "plugin process failed: {}",
         String::from_utf8_lossy(&output.stderr)
     );
-    serde_json::from_slice(&output.stdout).expect("plugin JSON")
+    let mut response: Value = serde_json::from_slice(&output.stdout).expect("plugin response JSON");
+    assert_eq!(response["ok"], true, "plugin returned an error: {response}");
+    response
+        .get_mut("output")
+        .expect("successful plugin output")
+        .take()
+}
+
+fn assert_plugin_error(output: &Output, context: &str) -> Value {
+    assert!(
+        output.status.success(),
+        "{context}: structured plugin errors must exit zero: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let response: Value =
+        serde_json::from_slice(&output.stdout).expect("structured plugin error JSON");
+    assert_eq!(response["ok"], false, "{context}: {response}");
+    assert!(
+        response["error"]["code"].is_string(),
+        "{context}: {response}"
+    );
+    assert!(
+        response["error"]["message"].is_string(),
+        "{context}: {response}"
+    );
+    assert_eq!(response["error"]["retryable"], false, "{context}");
+    response
 }
 
 fn plugin_output_with_env(
@@ -1282,13 +1375,36 @@ fn plugin_output_with_env(
     input: Value,
     environment: &[(&str, &std::ffi::OsStr)],
 ) -> Output {
+    let request = json!({
+        "schema_version": 1,
+        "tool": tool,
+        "input": input,
+        "context": {
+            "workspace_root": repository,
+            "agent": "plugin-integration-test",
+            "model": "test"
+        }
+    });
+    plugin_raw_output(repository, Some(tool), request, environment)
+}
+
+fn plugin_raw_output(
+    repository: &Path,
+    environment_tool: Option<&str>,
+    request: Value,
+    environment: &[(&str, &std::ffi::OsStr)],
+) -> Output {
     let mut command = Command::new(env!("CARGO_BIN_EXE_orbit-graph"));
     command
         .current_dir(repository)
-        .env("ORBIT_TOOL_NAME", tool)
         .stdin(std::process::Stdio::piped())
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped());
+    if let Some(tool) = environment_tool {
+        command.env("ORBIT_TOOL_NAME", tool);
+    } else {
+        command.env_remove("ORBIT_TOOL_NAME");
+    }
     for (key, value) in environment {
         command.env(key, value);
     }
@@ -1300,7 +1416,7 @@ fn plugin_output_with_env(
                 .stdin
                 .as_mut()
                 .expect("plugin stdin")
-                .write_all(input.to_string().as_bytes())?;
+                .write_all(request.to_string().as_bytes())?;
             child.wait_with_output()
         })
         .expect("run plugin")
@@ -1308,6 +1424,16 @@ fn plugin_output_with_env(
 
 #[cfg(unix)]
 fn plugin_json_with_tty_stdout(repository: &Path, tool: &str, input: Value) -> Value {
+    let request = json!({
+        "schema_version": 1,
+        "tool": tool,
+        "input": input,
+        "context": {
+            "workspace_root": repository,
+            "agent": "plugin-integration-test",
+            "model": "test"
+        }
+    });
     let mut master_fd = -1;
     let mut slave_fd = -1;
     // SAFETY: `openpty` initializes both descriptors on success; ownership is
@@ -1341,7 +1467,7 @@ fn plugin_json_with_tty_stdout(repository: &Path, tool: &str, input: Value) -> V
             .stdin
             .as_mut()
             .expect("plugin stdin")
-            .write_all(input.to_string().as_bytes())
+            .write_all(request.to_string().as_bytes())
             .expect("write plugin input");
     }
     drop(child.stdin.take());
@@ -1372,7 +1498,9 @@ fn plugin_json_with_tty_stdout(repository: &Path, tool: &str, input: Value) -> V
         .join()
         .expect("TTY stdout reader panicked")
         .expect("read plugin pseudo-terminal");
-    serde_json::from_slice(&stdout).expect("TTY plugin JSON")
+    let mut response: Value = serde_json::from_slice(&stdout).expect("TTY plugin JSON");
+    assert_eq!(response["ok"], true, "TTY plugin error: {response}");
+    response["output"].take()
 }
 
 fn run<const N: usize>(repository: &Path, args: [&str; N]) -> Output {

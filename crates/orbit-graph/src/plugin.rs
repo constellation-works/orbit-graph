@@ -49,6 +49,7 @@ pub fn execute_external_tool(name: &str, input: &[u8]) -> Result<Value, GraphErr
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct RecommendToolInput {
+    #[serde(default = "default_schema_version")]
     schema_version: u32,
     repository: PathBuf,
     #[serde(default = "default_branch")]
@@ -208,6 +209,7 @@ fn recommend(input: RecommendToolInput) -> Result<Value, GraphError> {
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct StatusToolInput {
+    #[serde(default = "default_schema_version")]
     schema_version: u32,
     repository: PathBuf,
     #[serde(default = "default_branch")]
@@ -237,6 +239,7 @@ enum MaintenanceOperation {
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct MaintainToolInput {
+    #[serde(default = "default_schema_version")]
     schema_version: u32,
     operation: MaintenanceOperation,
     repository: PathBuf,
@@ -448,6 +451,10 @@ fn json_error(error: serde_json::Error) -> GraphError {
 
 fn default_branch() -> String {
     "main".to_string()
+}
+
+const fn default_schema_version() -> u32 {
+    PLUGIN_SCHEMA_VERSION
 }
 
 fn default_hybrid_limit() -> usize {
