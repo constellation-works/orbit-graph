@@ -2,7 +2,7 @@
 
 use std::collections::BTreeMap;
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use crate::extract::Selector;
 use rusqlite::{Connection, Row, params};
@@ -465,7 +465,7 @@ impl<'a> LineCache<'a> {
             ));
         }
         if !self.files.contains_key(file) {
-            let path = source_path(self.worktree_root, file);
+            let path = super::contained_worktree_source(self.worktree_root, file)?;
             let bytes = fs::read(path.as_path()).map_err(|source| {
                 GraphError::io("read source file for graph ref line", path, source)
             })?;
@@ -481,15 +481,6 @@ impl<'a> LineCache<'a> {
             ));
         };
         Ok(index.line_for(offset))
-    }
-}
-
-fn source_path(worktree_root: &Path, file: &str) -> PathBuf {
-    let path = Path::new(file);
-    if path.is_absolute() {
-        path.to_path_buf()
-    } else {
-        worktree_root.join(path)
     }
 }
 

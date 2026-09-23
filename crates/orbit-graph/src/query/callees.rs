@@ -1,7 +1,7 @@
 //! Outbound call-edge query.
 
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use crate::extract::Selector;
 use rusqlite::{Connection, params};
@@ -98,7 +98,7 @@ fn materialize_edges(
         return Ok(Vec::new());
     }
 
-    let source_path = source_path(worktree_root, file_path);
+    let source_path = super::contained_worktree_source(worktree_root, file_path)?;
     let bytes = fs::read(source_path.as_path()).map_err(|source| {
         GraphError::io(
             "read source file for graph callee line",
@@ -121,15 +121,6 @@ fn materialize_edges(
             })
         })
         .collect()
-}
-
-fn source_path(worktree_root: &Path, file: &str) -> PathBuf {
-    let path = Path::new(file);
-    if path.is_absolute() {
-        path.to_path_buf()
-    } else {
-        worktree_root.join(path)
-    }
 }
 
 struct LineIndex {

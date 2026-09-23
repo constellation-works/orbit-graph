@@ -200,7 +200,8 @@ fn materialize_view(
     resolved: ResolvedView,
     max_bytes: usize,
 ) -> Result<NodeView, GraphError> {
-    let source_path = graph.worktree_root.join(resolved.file.as_str());
+    let source_path =
+        super::contained_worktree_source(graph.worktree_root.as_path(), resolved.file.as_str())?;
     let source = fs::read(source_path.as_path())
         .map_err(|source| GraphError::io("read source file for graph show", source_path, source))?;
     let span = validate_span(

@@ -230,6 +230,142 @@ fn real_binary_rejects_malformed_selectors_with_json_error() {
 }
 
 #[test]
+fn real_binary_show_rejects_database_path_outside_worktree() {
+    let parent = TempDir::new().expect("create confinement fixture");
+    let repo = parent.path().join("repo");
+    fs::create_dir(&repo).expect("create repository directory");
+    run_git(&repo, ["init", "-b", "main"]);
+    run_git(&repo, ["config", "user.email", "graph@example.invalid"]);
+    run_git(&repo, ["config", "user.name", "Graph Test"]);
+    fs::create_dir(repo.join("src")).expect("create source directory");
+    fs::write(repo.join("src/leak.rs"), "pub fn leak() -> i32 { 1 }\n").expect("write leak");
+    fs::write(
+        repo.join("src/abs.rs"),
+        "pub fn absolute_leak() -> i32 { 1 }\n",
+    )
+    .expect("write abs");
+    fs::write(repo.join("src/keep.rs"), "pub fn keep() -> i32 { 2 }\n").expect("write keep");
+    run_git(&repo, ["add", "."]);
+    run_git(&repo, ["commit", "-m", "seed"]);
+
+    let seeded = run_json(&repo, ["sync", "--full"]);
+    assert!(
+        seeded["files_indexed"]
+            .as_u64()
+            .is_some_and(|count| count >= 3)
+    );
+    let inside = run_json(&repo, ["show", "symbol:src/leak.rs#leak:function"]);
+    assert!(
+        inside["source"]
+            .as_str()
+            .is_some_and(|source| source.contains("pub fn leak"))
+    );
+
+    let parent_marker = "PATH_TRAVERSAL_MARKER_12899";
+    let absolute_marker = "ABSOLUTE_PATH_MARKER_12899";
+    let parent_outside = parent.path().join("outside.rs");
+    let absolute_outside = parent.path().join("absolute.rs");
+    let parent_source = format!("{parent_marker}\n");
+    let absolute_source = format!("{absolute_marker}\n");
+    fs::write(&parent_outside, &parent_source).expect("write outside file");
+    fs::write(&absolute_outside, &absolute_source).expect("write absolute file");
+    let absolute_stored = absolute_outside
+        .canonicalize()
+        .expect("canonical absolute file")
+        .to_string_lossy()
+        .into_owned();
+
+    let db_path = run_json(&repo, ["db-path"]);
+    let db_path = db_path["path"].as_str().expect("database path");
+    inject_outside_source_path(
+        db_path,
+        "src/leak.rs",
+        "../outside.rs",
+        "leak",
+        parent_source.len(),
+    );
+    inject_outside_source_path(
+        db_path,
+        "src/abs.rs",
+        &absolute_stored,
+        "absolute_leak",
+        absolute_source.len(),
+    );
+
+    let parent_selector = "symbol:../outside.rs#leak:function";
+    let absolute_selector = format!("symbol:{absolute_stored}#absolute_leak:function");
+    assert_show_hides_outside_source(&repo, parent_selector, parent_marker);
+    assert_show_hides_outside_source(&repo, parent_selector, absolute_marker);
+    assert_show_hides_outside_source(&repo, &absolute_selector, absolute_marker);
+    assert_show_hides_outside_source(&repo, &absolute_selector, parent_marker);
+
+    let kept = run_json(&repo, ["show", "symbol:src/keep.rs#keep:function"]);
+    let kept_source = kept["source"].as_str().expect("kept source");
+    assert!(kept_source.contains("pub fn keep"));
+    assert!(!kept_source.contains(parent_marker));
+    assert!(!kept_source.contains(absolute_marker));
+}
+
+fn assert_show_hides_outside_source(repo: &Path, selector: &str, marker: &str) {
+    let output = run_explicit_json(repo, ["show", selector]);
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        !output.status.success(),
+        "show accepted an outside database path: {stderr}"
+    );
+    assert!(!stdout.contains(marker), "{stdout}");
+    assert!(!stderr.contains(marker), "{stderr}");
+    let error: Value = serde_json::from_slice(&output.stderr).expect("JSON error payload");
+    assert_eq!(error["error"]["code"], "graph_error");
+    assert!(
+        error["error"]["message"]
+            .as_str()
+            .is_some_and(|message| message.contains("worktree")),
+        "{error}"
+    );
+}
+
+fn inject_outside_source_path(db_path: &str, from: &str, to: &str, symbol: &str, span_end: usize) {
+    let script = r#"
+import sqlite3, sys
+db, old, new, symbol, span_end = sys.argv[1:6]
+span_end = int(span_end)
+conn = sqlite3.connect(db)
+conn.execute("PRAGMA busy_timeout=5000")
+conn.execute("PRAGMA foreign_keys=OFF")
+symbols = conn.execute(
+    "UPDATE symbols SET file_path=?, span_start=0, span_end=? WHERE file_path=? AND name=? AND kind='function'",
+    (new, span_end, old, symbol),
+)
+files = conn.execute(
+    "UPDATE files SET path=?, byte_len=? WHERE path=?",
+    (new, span_end, old),
+)
+if symbols.rowcount != 1 or files.rowcount != 1:
+    raise SystemExit(
+        f"injection missed symbols={symbols.rowcount} files={files.rowcount} for {old}"
+    )
+conn.commit()
+"#;
+    let output = Command::new("python3")
+        .arg("-c")
+        .arg(script)
+        .arg(db_path)
+        .arg(from)
+        .arg(to)
+        .arg(symbol)
+        .arg(span_end.to_string())
+        .output()
+        .expect("run python3 sqlite injection");
+    assert!(
+        output.status.success(),
+        "sqlite injection failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+#[test]
 fn real_binary_help_succeeds() {
     let fixture = fixture_repository();
     let output = run(fixture.path(), ["--help"]);
