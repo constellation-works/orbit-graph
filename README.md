@@ -21,14 +21,25 @@ cargo build --workspace --locked
 
 ### Install the Orbit plugin
 
-The v2 Orbit plugin installs from a tagged repository release. Its committed
-launcher invokes `orbit-graph` from `PATH`, so install the executable first:
+The v2 Orbit plugin installs from a tagged repository release. The launcher
+selects `bin/orbit-graph.bin` beside itself when a release bundles one, then
+`ORBIT_GRAPH_BIN`, and finally the first `orbit-graph` on the caller's `PATH`.
+It probes the selected executable with a v2 version envelope before forwarding
+the request. A stale or incompatible binary returns an `incompatible_binary`
+JSON error that names its path. Install the executable first:
 
 ```sh
 cargo install --path crates/orbit-graph-cli --locked
 orbit plugin add git+https://github.com/constellation-works/orbit-graph#<tag> --enable --grant fs,orbit_tools
 orbit plugin show graph
 ```
+
+For a service whose `PATH` puts an older `~/.orbit/bin/orbit-graph` before
+`~/.cargo/bin`, set `ORBIT_GRAPH_BIN` to the absolute current executable path
+in that service's environment (for example, `$HOME/.cargo/bin/orbit-graph`).
+An interactive shell's environment does not configure `orbit web serve`.
+Until a release bundles `bin/orbit-graph.bin`, a service with no override uses
+its own `PATH`; an incompatible selection fails with a structured error.
 
 Enabling the plugin provides `orbit.graph.version`, `orbit.graph.status`,
 `orbit.graph.recommend`, and `orbit.graph.maintain`, plus the derived
@@ -39,7 +50,9 @@ no network access.
 The older `orbit tool add` installation path and
 `scripts/install-orbit-plugin.sh` / `scripts/uninstall-orbit-plugin.sh` are
 deprecated and remain available for one compatibility release. They register
-only the three v1 sidecars. When using that compatibility path, pass
+only the three v1 sidecars. The installer uses the bundled executable when
+present, then `--binary` (or `ORBIT_GRAPH_BIN` when `--binary` is absent), then
+`PATH`, and verifies the v2 envelope before registration. Pass
 `--binary /absolute/path/to/orbit-graph` for a development build and
 `--orbit-root /absolute/path/to/.orbit` for a non-default Orbit authority.
 Removing either the plugin or the legacy registrations deliberately retains
