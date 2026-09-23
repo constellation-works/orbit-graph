@@ -10,6 +10,7 @@ use std::time::UNIX_EPOCH;
 use crate::extract::Extractor;
 use crate::extract::languages;
 use fs2::FileExt;
+use git2::Repository;
 use ignore::gitignore::{Gitignore, GitignoreBuilder};
 use rusqlite::{Connection, params};
 
@@ -111,7 +112,7 @@ impl Scanner {
         )?;
         disk_files.sort_by(|left, right| left.path.cmp(&right.path));
 
-        let ignored = git_ignored_paths(self.worktree_root.as_path(), &disk_files);
+        let ignored = git_ignored_paths(self.worktree_root.as_path(), &disk_files)?;
         let mut diff = Diff::default();
         let mut seen = HashSet::new();
 
@@ -415,10 +416,11 @@ fn collect_orbitignore_files(
     Ok(())
 }
 
-fn git_ignored_paths(repo_path: &Path, paths: &[DiskFile]) -> HashSet<PathBuf> {
+fn git_ignored_paths(repo_path: &Path, paths: &[DiskFile]) -> Result<HashSet<PathBuf>, GraphError> {
     let mut ignored = HashSet::new();
-    if paths.is_empty() {
-        return ignored;
+    // A directory outside a Git repository has no Git ignore rules to apply.
+    if paths.is_empty() || Repository::discover(repo_path).is_err() {
+        return Ok(ignored);
     }
 
     let stdin_data = paths
@@ -427,31 +429,43 @@ fn git_ignored_paths(repo_path: &Path, paths: &[DiskFile]) -> HashSet<PathBuf> {
         .collect::<Vec<_>>()
         .join("\n");
 
-    let output = Command::new("git")
+    let mut child = Command::new("git")
         .args(["check-ignore", "--stdin"])
         .current_dir(repo_path)
         .stdin(std::process::Stdio::piped())
         .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::null())
+        .stderr(std::process::Stdio::piped())
         .spawn()
-        .and_then(|mut child| {
-            if let Some(mut stdin) = child.stdin.take() {
-                let _ = stdin.write_all(stdin_data.as_bytes());
-            }
-            child.wait_with_output()
-        });
+        .map_err(|source| GraphError::io("start git check-ignore", repo_path, source))?;
+    child
+        .stdin
+        .take()
+        .ok_or_else(|| GraphError::invalid_data("run git check-ignore", "missing stdin pipe"))?
+        .write_all(stdin_data.as_bytes())
+        .map_err(|source| GraphError::io("write git check-ignore input", repo_path, source))?;
+    let output = child
+        .wait_with_output()
+        .map_err(|source| GraphError::io("wait for git check-ignore", repo_path, source))?;
+    if !matches!(output.status.code(), Some(0 | 1)) {
+        return Err(GraphError::invalid_data(
+            "run git check-ignore",
+            format!(
+                "git check-ignore exited with {}: {}",
+                output.status,
+                String::from_utf8_lossy(&output.stderr).trim()
+            ),
+        ));
+    }
 
-    if let Ok(output) = output {
-        let stdout = String::from_utf8_lossy(&output.stdout);
-        for line in stdout.lines() {
-            let trimmed = line.trim();
-            if !trimmed.is_empty() {
-                ignored.insert(PathBuf::from(trimmed));
-            }
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    for line in stdout.lines() {
+        let trimmed = line.trim();
+        if !trimmed.is_empty() {
+            ignored.insert(PathBuf::from(trimmed));
         }
     }
 
-    ignored
+    Ok(ignored)
 }
 
 fn hash_file(

@@ -5,6 +5,8 @@ pub(crate) mod schema;
 
 use std::fs;
 use std::path::Path;
+#[cfg(unix)]
+use std::{io::ErrorKind, os::unix::fs::OpenOptionsExt};
 
 use git2::Repository;
 use rusqlite::Connection;
@@ -62,6 +64,26 @@ fn open_at_path(db_path: GraphDbPath, git: &GitContext) -> Result<OpenedGraph, G
     if let Some(parent) = db_path.path().parent() {
         fs::create_dir_all(parent)
             .map_err(|source| GraphError::io("create graph database directory", parent, source))?;
+    }
+
+    // SQLite's default creation mode can expose indexed source text. Create
+    // the database atomically with private permissions before SQLite opens it.
+    #[cfg(unix)]
+    match fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .mode(0o600)
+        .open(db_path.path())
+    {
+        Ok(_) => {}
+        Err(source) if source.kind() == ErrorKind::AlreadyExists => {}
+        Err(source) => {
+            return Err(GraphError::io(
+                "create private graph database",
+                db_path.path(),
+                source,
+            ));
+        }
     }
 
     let mut conn = Connection::open(db_path.path())

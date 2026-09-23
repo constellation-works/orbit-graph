@@ -12,6 +12,8 @@ use std::time::{SystemTime, UNIX_EPOCH};
 #[cfg(unix)]
 use std::os::fd::{FromRawFd, OwnedFd};
 #[cfg(unix)]
+use std::os::unix::fs::PermissionsExt;
+#[cfg(unix)]
 use std::os::unix::net::UnixStream;
 
 use serde_json::Value;
@@ -85,6 +87,81 @@ fn real_binary_indexes_and_queries_a_fixture() {
             .as_str()
             .is_some_and(|path| path.contains("/.orbit-graph/"))
     );
+}
+
+#[cfg(unix)]
+#[test]
+fn real_binary_does_not_index_ignored_source_when_git_probe_fails() {
+    let fixture = fixture_repository();
+    fs::write(fixture.path().join(".gitignore"), "secret.md\n").expect("write .gitignore");
+    let marker = "SENSITIVE_MARKER_4821";
+    let secret = fixture.path().join("secret.md");
+    fs::write(&secret, format!("```text\n{marker}\n```\n")).expect("write secret");
+    fs::set_permissions(&secret, fs::Permissions::from_mode(0o600))
+        .expect("restrict secret permissions");
+    run_git(fixture.path(), ["check-ignore", "secret.md"]);
+
+    let git_bin = TempDir::new().expect("create Git probe fixture");
+    let missing_path = git_bin.path().join("no-such-directory");
+    let failed_path = git_bin.path().join("bin");
+    fs::create_dir(&failed_path).expect("create fake Git directory");
+    let fake_git = failed_path.join("git");
+    fs::write(&fake_git, "#!/bin/sh\nexit 2\n").expect("write failing Git executable");
+    fs::set_permissions(&fake_git, fs::Permissions::from_mode(0o700))
+        .expect("make fake Git executable");
+
+    for path in [&missing_path, &failed_path] {
+        let output = run_with_env(
+            fixture.path(),
+            ["--format", "json", "sync", "--full"],
+            &[("PATH", path.to_str().expect("UTF-8 fixture path"))],
+        );
+        assert!(
+            !output.status.success(),
+            "Git probe failure must abort sync"
+        );
+        let error: Value = serde_json::from_slice(&output.stderr).expect("JSON sync error");
+        assert_eq!(error["error"]["code"], "graph_error");
+        assert!(
+            error["error"]["message"]
+                .as_str()
+                .is_some_and(|message| message.contains("git check-ignore")),
+            "{error}"
+        );
+
+        let db_path = run_json(fixture.path(), ["db-path"]);
+        let db_path = db_path["path"].as_str().expect("database path");
+        let db_bytes = fs::read(db_path).expect("read graph database");
+        assert!(
+            !db_bytes
+                .windows(marker.len())
+                .any(|bytes| bytes == marker.as_bytes()),
+            "failed sync leaked ignored source into graph database"
+        );
+    }
+
+    let sync = run_json(fixture.path(), ["sync", "--full"]);
+    assert!(
+        sync["files_indexed"]
+            .as_u64()
+            .is_some_and(|count| count > 0)
+    );
+    let matches = run_json(fixture.path(), ["search", marker]);
+    assert_eq!(matches["matches"], serde_json::json!([]));
+}
+
+#[cfg(unix)]
+#[test]
+fn real_binary_creates_private_graph_database() {
+    let fixture = fixture_repository();
+    let _ = run_json(fixture.path(), ["sync", "--full"]);
+    let db_path = run_json(fixture.path(), ["db-path"]);
+    let db_path = db_path["path"].as_str().expect("database path");
+    let mode = fs::metadata(db_path)
+        .expect("graph database metadata")
+        .permissions()
+        .mode();
+    assert_eq!(mode & 0o077, 0, "graph database must be private: {mode:o}");
 }
 
 #[test]
