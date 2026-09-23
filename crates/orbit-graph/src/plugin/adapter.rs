@@ -1,8 +1,9 @@
 use std::collections::BTreeMap;
 use std::env;
-use std::io::Read;
+use std::io::{BufRead, BufReader, Read, Write};
 use std::path::{Path, PathBuf};
-use std::process::{Command, Stdio};
+use std::process::{Child, ChildStdin, Command, Stdio};
+use std::sync::mpsc::{self, Receiver, RecvTimeoutError};
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -23,6 +24,10 @@ use super::{json_error, string_field};
 const DEFAULT_ORBIT_TIMEOUT_SECONDS: u64 = 10;
 const MAX_ORBIT_TIMEOUT_SECONDS: u64 = 60;
 const ORBIT_OUTPUT_LIMIT: u64 = 1_048_576;
+/// MCP protocol revision announced to `orbit mcp serve`.
+const MCP_PROTOCOL_VERSION: &str = "2025-06-18";
+const MCP_INITIALIZE_ID: u64 = 1;
+const MCP_CALL_ID: u64 = 2;
 
 pub(super) struct OrbitAdapter<'a> {
     repository: &'a Path,
@@ -48,16 +53,26 @@ impl<'a> OrbitAdapter<'a> {
             })
     }
 
+    /// Resolve the explicit workspace through Orbit's MCP-only discovery tool.
+    ///
+    /// `orbit.workspace.list` is served by `orbit mcp serve`, not the generic
+    /// `orbit tool run` registry, and its public rows carry no checkout path.
+    /// The requested repository is therefore bound to the selected workspace by
+    /// the one repository identity discovery does publish: `git_remote`, which
+    /// Orbit records from the checkout's `origin`.
     fn require_authority(&self) -> Result<AuthorityRoute, GraphError> {
         let workspace = self.require_workspace()?;
-        let value = self.tool_run("orbit.workspace.list", json!({}))?;
-        let workspaces = value
-            .as_array()
-            .or_else(|| value.get("items").and_then(Value::as_array))
-            .or_else(|| value.get("workspaces").and_then(Value::as_array));
-        let selected = workspaces
-            .into_iter()
-            .flatten()
+        let value = self.mcp_tool_call("orbit.workspace.list", json!({}))?;
+        let selected = value
+            .get("workspaces")
+            .and_then(Value::as_array)
+            .ok_or_else(|| {
+                GraphError::invalid_data(
+                    "decode Orbit workspace discovery",
+                    "orbit.workspace.list response has no workspaces array",
+                )
+            })?
+            .iter()
             .find(|item| {
                 string_field(item, "id") == Some(workspace)
                     || string_field(item, "name") == Some(workspace)
@@ -69,26 +84,23 @@ impl<'a> OrbitAdapter<'a> {
                 )
             })?;
         let actual_id = required_string(selected, "id")?;
-        let checkout = selected
-            .get("repo_root")
-            .and_then(Value::as_str)
-            .ok_or_else(|| {
-                GraphError::invalid_data(
-                    "validate Orbit workspace repository",
-                    "workspace list omitted repo_root",
-                )
-            })?;
-        let checkout = PathBuf::from(checkout).canonicalize().map_err(|source| {
-            GraphError::io(
-                "canonicalize Orbit workspace repository",
-                Path::new(checkout),
-                source,
+        if string_field(selected, "status").is_some_and(|status| status != "active") {
+            return Err(GraphError::invalid_data(
+                "validate Orbit workspace authority",
+                format!("workspace {actual_id:?} is not active"),
+            ));
+        }
+        let remote = string_field(selected, "git_remote").ok_or_else(|| {
+            GraphError::invalid_data(
+                "validate Orbit workspace repository",
+                format!(
+                    "workspace {actual_id:?} publishes no git_remote, so the requested repository cannot be bound to it"
+                ),
             )
         })?;
-        verify_same_repository(self.repository, checkout.as_path())?;
+        verify_repository_remote(self.repository, remote)?;
         Ok(AuthorityRoute {
             workspace_id: actual_id.to_string(),
-            repository_root: checkout,
         })
     }
 
@@ -180,7 +192,7 @@ impl<'a> OrbitAdapter<'a> {
         let before = required_string(commit, "base_sha")?;
         let after = required_string(commit, "commit_sha")?;
         verify_git_delivery(self.repository, branch, before, after)?;
-        verify_run_workspace(&run, &route)?;
+        verify_run_workspace(&run, self.repository)?;
         let current_task = self.task_show(task_id)?;
         if required_string(&current_task, "id")? != task_id {
             return Err(GraphError::invalid_data(
@@ -233,14 +245,16 @@ impl<'a> OrbitAdapter<'a> {
         self.orbit_json(&["tool", "run", name, "--input", encoded.as_str(), "--full"])
     }
 
-    fn orbit_json(&self, args: &[&str]) -> Result<Value, GraphError> {
+    /// Configure an `orbit` child that stays in the caller's process group,
+    /// inherits the caller's environment (including any host-issued callback
+    /// credential), and dies with its parent on Linux.
+    fn orbit_command(&self, args: &[&str]) -> Command {
         let mut command = Command::new("orbit");
         command
             .current_dir(self.repository)
             .args(args)
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
-        let timeout = orbit_timeout()?;
         #[cfg(unix)]
         unsafe {
             command.pre_exec(|| {
@@ -251,6 +265,12 @@ impl<'a> OrbitAdapter<'a> {
                 Ok(())
             });
         }
+        command
+    }
+
+    fn orbit_json(&self, args: &[&str]) -> Result<Value, GraphError> {
+        let timeout = orbit_timeout()?;
+        let mut command = self.orbit_command(args);
         let mut child = command
             .spawn()
             .map_err(|source| GraphError::io("invoke public Orbit CLI", self.repository, source))?;
@@ -298,11 +318,312 @@ impl<'a> OrbitAdapter<'a> {
         }
         serde_json::from_slice(stdout.as_slice()).map_err(json_error)
     }
+
+    /// Call one tool through a short-lived `orbit mcp serve` stdio session.
+    ///
+    /// The server is started without `--operator` or `--root`, so it serves
+    /// exactly the authority Orbit gives this caller and every `tools/call`
+    /// lands on Orbit's own policy and plugin-callback gates. The whole session
+    /// shares one timeout and one output bound with [`Self::orbit_json`].
+    fn mcp_tool_call(&self, name: &str, arguments: Value) -> Result<Value, GraphError> {
+        let timeout = orbit_timeout()?;
+        let deadline = Instant::now() + timeout;
+        let mut command = self.orbit_command(&["mcp", "serve"]);
+        command.stdin(Stdio::piped());
+        let mut child = command
+            .spawn()
+            .map_err(|source| GraphError::io("invoke Orbit MCP server", self.repository, source))?;
+        let (Some(stdin), Some(stdout), Some(stderr)) =
+            (child.stdin.take(), child.stdout.take(), child.stderr.take())
+        else {
+            terminate_child(&mut child);
+            return Err(GraphError::invalid_data(
+                "invoke Orbit MCP server",
+                "stdio pipes were not available",
+            ));
+        };
+        let messages = spawn_line_reader(stdout);
+        let stderr_reader = thread::spawn(move || read_bounded(stderr));
+        let mut session = McpSession {
+            child,
+            stdin: Some(stdin),
+            messages,
+            stderr_reader: Some(stderr_reader),
+            deadline,
+            timeout,
+        };
+        let outcome = session.call(name, arguments);
+        session.finish(outcome.is_ok());
+        let response = outcome?;
+        mcp_call_result(name, response)
+    }
+}
+
+/// One bounded `orbit mcp serve` child and its stdio.
+struct McpSession {
+    child: Child,
+    stdin: Option<ChildStdin>,
+    messages: Receiver<StdoutLine>,
+    stderr_reader: Option<thread::JoinHandle<std::io::Result<Vec<u8>>>>,
+    deadline: Instant,
+    timeout: Duration,
+}
+
+enum StdoutLine {
+    Line(Vec<u8>),
+    Exceeded,
+    Failed(std::io::Error),
+}
+
+impl McpSession {
+    fn call(&mut self, name: &str, arguments: Value) -> Result<Value, GraphError> {
+        let initialize = self.send(&json!({
+            "jsonrpc": "2.0",
+            "id": MCP_INITIALIZE_ID,
+            "method": "initialize",
+            "params": {
+                "protocolVersion": MCP_PROTOCOL_VERSION,
+                "capabilities": {},
+                "clientInfo": {"name": "orbit-graph", "version": env!("CARGO_PKG_VERSION")},
+            },
+        }));
+        self.settle(initialize, MCP_INITIALIZE_ID)?;
+        let call = self
+            .send(&json!({"jsonrpc": "2.0", "method": "notifications/initialized"}))
+            .and_then(|()| {
+                self.send(&json!({
+                    "jsonrpc": "2.0",
+                    "id": MCP_CALL_ID,
+                    "method": "tools/call",
+                    "params": {"name": name, "arguments": arguments},
+                }))
+            });
+        self.settle(call, MCP_CALL_ID)
+    }
+
+    /// Await the response to a sent request. When the write itself failed, the
+    /// server's own outcome (exit status, overflow, or timeout) is the better
+    /// explanation, so it is reported in preference to the broken pipe.
+    fn settle(&mut self, sent: Result<(), GraphError>, id: u64) -> Result<Value, GraphError> {
+        let response = self.response(id);
+        match sent {
+            Ok(()) => response,
+            Err(error) => Err(response.err().unwrap_or(error)),
+        }
+    }
+
+    fn send(&mut self, message: &Value) -> Result<(), GraphError> {
+        let mut line = serde_json::to_vec(message).map_err(json_error)?;
+        line.push(b'\n');
+        let stdin = self.stdin.as_mut().ok_or_else(|| {
+            GraphError::invalid_data("invoke Orbit MCP server", "stdin was already closed")
+        })?;
+        stdin
+            .write_all(line.as_slice())
+            .and_then(|()| stdin.flush())
+            .map_err(|source| {
+                GraphError::invalid_data(
+                    "invoke Orbit MCP server",
+                    format!("could not write request: {source}"),
+                )
+            })
+    }
+
+    /// Wait for the JSON-RPC response carrying `id`, skipping notifications.
+    fn response(&mut self, id: u64) -> Result<Value, GraphError> {
+        loop {
+            let remaining = self.deadline.saturating_duration_since(Instant::now());
+            let line = match self.messages.recv_timeout(remaining) {
+                Ok(StdoutLine::Line(line)) => line,
+                Ok(StdoutLine::Exceeded) => {
+                    return Err(GraphError::invalid_data(
+                        "invoke Orbit MCP server",
+                        format!("stdout exceeded {ORBIT_OUTPUT_LIMIT} bytes"),
+                    ));
+                }
+                Ok(StdoutLine::Failed(error)) => {
+                    return Err(GraphError::invalid_data(
+                        "read Orbit MCP server stdout",
+                        error.to_string(),
+                    ));
+                }
+                Err(RecvTimeoutError::Timeout) => {
+                    return Err(GraphError::invalid_data(
+                        "invoke Orbit MCP server",
+                        format!("timed out after {} seconds", self.timeout.as_secs()),
+                    ));
+                }
+                Err(RecvTimeoutError::Disconnected) => {
+                    return Err(GraphError::invalid_data(
+                        "invoke Orbit MCP server",
+                        format!("closed stdout before responding; {}", self.exit_detail()),
+                    ));
+                }
+            };
+            if line.iter().all(u8::is_ascii_whitespace) {
+                continue;
+            }
+            let message: Value = serde_json::from_slice(line.as_slice()).map_err(json_error)?;
+            if message.get("method").is_some() || message.get("id") != Some(&json!(id)) {
+                continue;
+            }
+            if let Some(error) = message.get("error") {
+                return Err(GraphError::invalid_data(
+                    "invoke Orbit MCP server",
+                    format!(
+                        "JSON-RPC error: {}",
+                        string_field(error, "message").unwrap_or("unspecified")
+                    ),
+                ));
+            }
+            return message.get("result").cloned().ok_or_else(|| {
+                GraphError::invalid_data(
+                    "decode Orbit MCP response",
+                    "JSON-RPC response has neither result nor error",
+                )
+            });
+        }
+    }
+
+    /// Wait briefly for the child to exit so its stderr can explain a failure.
+    fn exit_detail(&mut self) -> String {
+        self.stdin = None;
+        let status = loop {
+            match self.child.try_wait() {
+                Ok(Some(status)) => break Some(status),
+                Ok(None) if Instant::now() < self.deadline => {
+                    thread::sleep(Duration::from_millis(10));
+                }
+                _ => break None,
+            }
+        };
+        let Some(status) = status else {
+            return "server did not exit".to_string();
+        };
+        let stderr = self
+            .stderr_reader
+            .take()
+            .and_then(|reader| reader.join().ok())
+            .and_then(Result::ok)
+            .unwrap_or_default();
+        format!(
+            "exit {}: {}",
+            status.code().unwrap_or(1),
+            bounded_text(stderr.as_slice())
+        )
+    }
+
+    /// Close stdin and reap the server; a server still running at the
+    /// deadline, or after any failure, is killed rather than waited on.
+    fn finish(mut self, graceful: bool) {
+        self.stdin = None;
+        if graceful {
+            while Instant::now() < self.deadline {
+                if !matches!(self.child.try_wait(), Ok(None)) {
+                    return;
+                }
+                thread::sleep(Duration::from_millis(10));
+            }
+        }
+        terminate_child(&mut self.child);
+    }
+}
+
+/// Stream newline-delimited stdout, stopping after [`ORBIT_OUTPUT_LIMIT`] bytes.
+fn spawn_line_reader(stdout: impl Read + Send + 'static) -> Receiver<StdoutLine> {
+    let (sender, receiver) = mpsc::channel();
+    thread::spawn(move || {
+        let mut reader = BufReader::new(stdout).take(ORBIT_OUTPUT_LIMIT + 1);
+        loop {
+            let mut line = Vec::new();
+            match reader.read_until(b'\n', &mut line) {
+                Ok(0) => return,
+                Ok(_) if reader.limit() == 0 => {
+                    let _ = sender.send(StdoutLine::Exceeded);
+                    return;
+                }
+                Ok(_) => {
+                    if sender.send(StdoutLine::Line(line)).is_err() {
+                        return;
+                    }
+                }
+                Err(error) => {
+                    let _ = sender.send(StdoutLine::Failed(error));
+                    return;
+                }
+            }
+        }
+    });
+    receiver
+}
+
+/// Unwrap an MCP `CallToolResult`, surfacing Orbit's structured refusals.
+fn mcp_call_result(name: &str, result: Value) -> Result<Value, GraphError> {
+    let payload = match result.get("structuredContent") {
+        Some(structured) => structured.clone(),
+        None => result
+            .pointer("/content/0/text")
+            .and_then(Value::as_str)
+            .map(|text| serde_json::from_str(text).map_err(json_error))
+            .transpose()?
+            .ok_or_else(|| {
+                GraphError::invalid_data(
+                    "decode Orbit MCP response",
+                    format!("{name} returned no structured content"),
+                )
+            })?,
+    };
+    if result.get("isError").and_then(Value::as_bool) == Some(true) {
+        return Err(GraphError::invalid_data(
+            "invoke Orbit MCP server",
+            format!(
+                "{name} refused: {}: {}",
+                string_field(&payload, "code").unwrap_or("error"),
+                string_field(&payload, "message").unwrap_or("unspecified")
+            ),
+        ));
+    }
+    Ok(payload)
 }
 
 struct AuthorityRoute {
     workspace_id: String,
-    repository_root: PathBuf,
+}
+
+/// Bind the requested repository to a workspace by its published `git_remote`.
+///
+/// Orbit records a workspace's `git_remote` from its checkout's `origin`, so the
+/// requested repository must have an `origin` naming the same remote. URLs are
+/// compared after trimming a trailing `/` or `.git` only; they are never echoed,
+/// because a remote URL can carry credentials.
+fn verify_repository_remote(repository: &Path, workspace_remote: &str) -> Result<(), GraphError> {
+    let repo = Repository::discover(repository).map_err(|error| {
+        GraphError::invalid_data("open routed Git repository", error.to_string())
+    })?;
+    let origin = repo.find_remote("origin").map_err(|error| {
+        GraphError::invalid_data(
+            "validate Orbit workspace repository",
+            format!(
+                "requested repository has no readable origin remote: {}",
+                error.message()
+            ),
+        )
+    })?;
+    let matches = origin
+        .url()
+        .is_ok_and(|url| normalized_remote(url) == normalized_remote(workspace_remote));
+    if !matches {
+        return Err(GraphError::invalid_data(
+            "validate Orbit workspace repository",
+            "requested repository origin does not match the workspace's registered git_remote",
+        ));
+    }
+    Ok(())
+}
+
+fn normalized_remote(url: &str) -> &str {
+    let url = url.trim().trim_end_matches('/');
+    url.strip_suffix(".git").unwrap_or(url)
 }
 
 fn verify_same_repository(left: &Path, right: &Path) -> Result<(), GraphError> {
@@ -335,7 +656,7 @@ fn verify_same_repository(left: &Path, right: &Path) -> Result<(), GraphError> {
     Ok(())
 }
 
-fn verify_run_workspace(run: &Value, route: &AuthorityRoute) -> Result<(), GraphError> {
+fn verify_run_workspace(run: &Value, repository: &Path) -> Result<(), GraphError> {
     let path = run
         .pointer("/pipeline_state/step_outputs/0/workspace_path")
         .and_then(Value::as_str)
@@ -345,7 +666,7 @@ fn verify_run_workspace(run: &Value, route: &AuthorityRoute) -> Result<(), Graph
                 "run omitted public prepare workspace_path",
             )
         })?;
-    verify_same_repository(Path::new(path), route.repository_root.as_path())
+    verify_same_repository(Path::new(path), repository)
 }
 
 fn orbit_timeout() -> Result<Duration, GraphError> {
@@ -397,7 +718,7 @@ fn join_capture(
         })
 }
 
-fn terminate_child(child: &mut std::process::Child) {
+fn terminate_child(child: &mut Child) {
     let _ = child.kill();
     let _ = child.wait();
 }
