@@ -19,7 +19,7 @@
 //!   nothing outside the cache directory.
 
 use std::io::{self, Write};
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
 use std::process::ExitCode;
 use std::time::Duration;
 
@@ -58,7 +58,7 @@ Options:
                            symbol).
   --out <DIR>              Directory `report` writes `<name>.json` and
                            `<name>.html` into. Created if missing.
-  --name <NAME>            Base file name for `report`'s two output files.
+  --name <NAME>            Single file name component for `report`'s two output files.
   --force                  Let `report` overwrite existing output files.
   --excerpts <MODE>        `report` excerpt policy: `none` (references only),
                            `controlled` (default; a bounded window around each
@@ -615,8 +615,20 @@ impl Invocation {
             if out.is_none() {
                 return Err(format!("`--out` is required for `report`\n\n{USAGE}"));
             }
-            if name.is_none() {
-                return Err(format!("`--name` is required for `report`\n\n{USAGE}"));
+            let report_name = name
+                .as_deref()
+                .ok_or_else(|| format!("`--name` is required for `report`\n\n{USAGE}"))?;
+            let mut components = Path::new(report_name).components();
+            if report_name.contains('/')
+                || report_name.contains('\\')
+                || !matches!(
+                    (components.next(), components.next()),
+                    (Some(Component::Normal(_)), None)
+                )
+            {
+                return Err(format!(
+                    "`--name` must be a nonempty single file name component\n\n{USAGE}"
+                ));
             }
         }
         // `clean` inspects the cache, not a comparison, so it names no
