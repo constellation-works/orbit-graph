@@ -839,6 +839,212 @@ fn public_adapter_bounds_time_and_pipe_output() {
 }
 
 #[test]
+fn public_adapter_discovers_workspaces_over_mcp_and_syncs_requested_tasks() {
+    let fixture = adapter_fixture();
+    let repository = fixture
+        .path()
+        .join("repo")
+        .canonicalize()
+        .expect("repository");
+    let callback_path = executable_path_with(fixture.path());
+    let sync = plugin_output_with_env(
+        repository.as_path(),
+        MAINTAIN_TOOL_NAME,
+        json!({
+            "schema_version": 1,
+            "operation": "orbit_sync",
+            "repository": repository,
+            "branch": "main",
+            "workspace": "ws-test",
+            "task_ids": ["TASK-PRIOR"]
+        }),
+        &[("PATH", callback_path.as_os_str())],
+    );
+    let sync = plugin_success(&sync);
+    assert_eq!(sync["coverage"]["task_ids_examined"], 1, "{sync}");
+    assert_eq!(sync["outcomes"][0]["run_id"], "RUN-1", "{sync}");
+    assert_eq!(sync["outcomes"][0]["status"], "inserted", "{sync}");
+    assert_eq!(sync["status"]["deliveries"], 1);
+
+    let by_name = plugin_output_with_env(
+        repository.as_path(),
+        RECOMMEND_TOOL_NAME,
+        json!({
+            "schema_version": 1,
+            "repository": repository,
+            "branch": "main",
+            "workspace": "test",
+            "task_id": "TASK-TARGET",
+            "level": "file"
+        }),
+        &[("PATH", callback_path.as_os_str())],
+    );
+    plugin_success(&by_name);
+
+    let invocations =
+        fs::read_to_string(fixture.path().join("orbit-invocations.log")).expect("invocation log");
+    assert!(
+        invocations.lines().any(|line| line == "mcp serve"),
+        "{invocations}"
+    );
+    assert!(
+        !invocations.contains("tool run orbit.workspace.list"),
+        "workspace discovery is MCP-only: {invocations}"
+    );
+    assert!(!invocations.contains("--operator"), "{invocations}");
+
+    let remoteless = plugin_output_with_env(
+        repository.as_path(),
+        RECOMMEND_TOOL_NAME,
+        json!({
+            "schema_version": 1,
+            "repository": repository,
+            "workspace": "ws-remoteless",
+            "task_id": "TASK-TARGET"
+        }),
+        &[("PATH", callback_path.as_os_str())],
+    );
+    let remoteless = assert_plugin_error(&remoteless, "a workspace without git_remote");
+    assert!(
+        remoteless["error"]["message"]
+            .as_str()
+            .is_some_and(|message| message.contains("git_remote")),
+        "{remoteless}"
+    );
+
+    run_git(
+        repository.as_path(),
+        [
+            "remote",
+            "set-url",
+            "origin",
+            "https://example.invalid/constellation/other.git",
+        ],
+    );
+    let foreign_origin = plugin_output_with_env(
+        repository.as_path(),
+        RECOMMEND_TOOL_NAME,
+        json!({
+            "schema_version": 1,
+            "repository": repository,
+            "workspace": "ws-test",
+            "task_id": "TASK-TARGET"
+        }),
+        &[("PATH", callback_path.as_os_str())],
+    );
+    let foreign_origin = assert_plugin_error(&foreign_origin, "a foreign origin");
+    assert!(
+        foreign_origin["error"]["message"]
+            .as_str()
+            .is_some_and(|message| message.contains("does not match")
+                && !message.contains("example.invalid")),
+        "{foreign_origin}"
+    );
+}
+
+#[test]
+fn public_adapter_enforces_callback_denials() {
+    let fixture = adapter_fixture();
+    let repository = fixture
+        .path()
+        .join("repo")
+        .canonicalize()
+        .expect("repository");
+    let callback_path = executable_path_with(fixture.path());
+    let recommend = json!({
+        "schema_version": 1,
+        "repository": repository,
+        "workspace": "ws-test",
+        "task_id": "TASK-TARGET"
+    });
+    for (mode, expected) in [
+        ("denied", "policy_denied"),
+        ("refused", "may not start this command"),
+    ] {
+        let output = plugin_output_with_env(
+            repository.as_path(),
+            RECOMMEND_TOOL_NAME,
+            recommend.clone(),
+            &[
+                ("PATH", callback_path.as_os_str()),
+                ("GRAPH_TEST_DISCOVERY", std::ffi::OsStr::new(mode)),
+            ],
+        );
+        let error = assert_plugin_error(&output, mode);
+        assert!(
+            error["error"]["message"]
+                .as_str()
+                .is_some_and(|message| message.contains(expected)),
+            "{mode}: {error}"
+        );
+    }
+
+    let sync = plugin_output_with_env(
+        repository.as_path(),
+        MAINTAIN_TOOL_NAME,
+        json!({
+            "schema_version": 1,
+            "operation": "orbit_sync",
+            "repository": repository,
+            "branch": "main",
+            "workspace": "ws-test",
+            "task_ids": ["TASK-PRIOR"]
+        }),
+        &[
+            ("PATH", callback_path.as_os_str()),
+            ("GRAPH_TEST_RUN_SHOW", std::ffi::OsStr::new("denied")),
+        ],
+    );
+    let sync = plugin_success(&sync);
+    assert_eq!(sync["outcomes"][0]["run_id"], "RUN-1", "{sync}");
+    assert_eq!(sync["outcomes"][0]["status"], "excluded", "{sync}");
+    assert!(
+        sync["outcomes"][0]["reason"]
+            .as_str()
+            .is_some_and(|reason| reason.contains("operator")),
+        "{sync}"
+    );
+    assert_eq!(sync["status"]["deliveries"], 0);
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn public_adapter_reaps_an_mcp_server_that_outlives_its_session() {
+    let fixture = adapter_fixture();
+    let repository = fixture
+        .path()
+        .join("repo")
+        .canonicalize()
+        .expect("repository");
+    let callback_path = executable_path_with(fixture.path());
+    let started = Instant::now();
+    let output = plugin_output_with_env(
+        repository.as_path(),
+        RECOMMEND_TOOL_NAME,
+        json!({
+            "schema_version": 1,
+            "repository": repository,
+            "branch": "main",
+            "workspace": "ws-test",
+            "task_id": "TASK-TARGET",
+            "level": "file"
+        }),
+        &[
+            ("PATH", callback_path.as_os_str()),
+            ("GRAPH_TEST_DISCOVERY", std::ffi::OsStr::new("linger")),
+            ("GRAPH_ORBIT_TIMEOUT_SECONDS", std::ffi::OsStr::new("1")),
+        ],
+    );
+    plugin_success(&output);
+    assert!(started.elapsed() < Duration::from_secs(5));
+    let pid = fs::read_to_string(fixture.path().join("linger.pid")).expect("lingering pid");
+    assert!(
+        !Path::new("/proc").join(pid.trim()).exists(),
+        "lingering MCP server {pid} was not reaped"
+    );
+}
+
+#[test]
 fn evaluation_reports_added_deleted_renamed_and_unsupported_truth_coverage() {
     let fixture = mixed_truth_fixture();
     let repository = fixture.path().canonicalize().expect("repository");
@@ -1293,11 +1499,15 @@ fn many_commit_fixture() -> TempDir {
     fixture
 }
 
+/// The `origin` of the adapter fixture, published as its workspace's `git_remote`.
+const FIXTURE_REMOTE: &str = "https://example.invalid/constellation/fixture.git";
+
 fn adapter_fixture() -> TempDir {
     let fixture = TempDir::new().expect("create adapter fixture");
     let repository = fixture.path().join("repo");
     fs::create_dir_all(&repository).expect("create repository");
     run_git(&repository, ["init", "-b", "main"]);
+    run_git(&repository, ["remote", "add", "origin", FIXTURE_REMOTE]);
     run_git(
         &repository,
         ["config", "user.email", "graph@example.invalid"],
@@ -1320,9 +1530,56 @@ fn adapter_fixture() -> TempDir {
     run_git(&repository, ["commit", "-m", "delivery"]);
     let after = git_stdout(&repository, ["rev-parse", "HEAD"]);
     let canonical = repository.canonicalize().expect("canonical repository");
-    let workspace_list = json!({"items": [{
-        "id": "ws-test", "name": "test", "repo_root": canonical
-    }]});
+    // The public row shape `orbit mcp serve` returns for `orbit.workspace.list`
+    // (Orbit 0.23): workspace identity and `git_remote`, never a checkout path.
+    let discovery = json!({
+        "machine_id": "hm_fixture",
+        "workspaces": [
+            {
+                "base_branch": "main",
+                "created_at": "2026-09-07T00:00:00Z",
+                "git_remote": FIXTURE_REMOTE,
+                "id": "ws-test",
+                "name": "test",
+                "owner_machine_id": "hm_fixture",
+                "ship_mode": "pr",
+                "status": "active",
+                "updated_at": "2026-09-07T00:00:00Z"
+            },
+            {
+                "base_branch": "main",
+                "created_at": "2026-09-07T00:00:00Z",
+                "id": "ws-remoteless",
+                "name": "remoteless",
+                "owner_machine_id": "hm_fixture",
+                "status": "active",
+                "updated_at": "2026-09-07T00:00:00Z"
+            }
+        ]
+    });
+    let initialized = json!({"jsonrpc": "2.0", "id": 1, "result": {
+        "protocolVersion": "2025-06-18",
+        "capabilities": {"tools": {}},
+        "serverInfo": {"name": "orbit-mcp", "version": "0.23.0"}
+    }});
+    let notification = json!({"jsonrpc": "2.0", "method": "notifications/message",
+        "params": {"level": "info", "data": "fixture notification"}});
+    let discovered = json!({"jsonrpc": "2.0", "id": 2, "result": {
+        "content": [{"type": "text", "text": discovery.to_string()}],
+        "structuredContent": discovery,
+        "isError": false
+    }});
+    let refusal = json!({
+        "code": "policy_denied",
+        "message": "plugin graph may not call orbit.workspace.list: not in permissions.orbit_tools"
+    });
+    let denied = json!({"jsonrpc": "2.0", "id": 2, "result": {
+        "content": [{"type": "text", "text": refusal.to_string()}],
+        "structuredContent": refusal,
+        "isError": true
+    }});
+    let unknown = json!({"jsonrpc": "2.0", "id": 2,
+        "error": {"code": -32602, "message": "fixture serves only orbit.workspace.list"}});
     let run_show = json!({
         "run": {"state": "success", "finished_at": "2026-09-07T00:00:30Z"},
         "pipeline_state": {"step_outputs": {
@@ -1333,11 +1590,56 @@ fn adapter_fixture() -> TempDir {
             }
         }}
     });
-    let prior = public_task("TASK-PRIOR", "done", "parser validation");
+    let mut prior = public_task("TASK-PRIOR", "done", "parser validation");
+    prior["job_run_id"] = json!("RUN-1");
     let target = public_task("TASK-TARGET", "in-progress", "parser validation");
+    let search = json!({"results": [{"id": "TASK-PRIOR", "score": 1.0}]});
+    let log = fixture.path().join("orbit-invocations.log");
+    let linger = fixture.path().join("linger.pid");
+    // GRAPH_TEST_DISCOVERY selects the MCP server's behaviour (granted, denied
+    // by the callback allowlist, refused before serving, or lingering after
+    // EOF); GRAPH_TEST_RUN_SHOW=denied models the operator-only run read.
     let script = format!(
-        "#!/bin/sh\ncase \"$*\" in *\"--root\"*) exit 8 ;; esac\ncase \"$*\" in\n  *\"tool run orbit.workspace.list\"*) printf '%s\\n' '{}' ;;\n  *\"tool run orbit.workflow.run.show\"*\"RUN-1\"*) printf '%s\\n' '{}' ;;\n  *\"tool run orbit.task.show\"*\"TASK-PRIOR\"*) printf '%s\\n' '{}' ;;\n  *\"tool run orbit.task.show\"*\"TASK-TARGET\"*) printf '%s\\n' '{}' ;;\n  *\"tool run orbit.search\"*) printf '%s\\n' '{{\"results\":[{{\"id\":\"TASK-PRIOR\",\"score\":1.0}}]}}' ;;\n  *) exit 9 ;;\nesac\n",
-        workspace_list, run_show, prior, target
+        r#"#!/bin/sh
+printf '%s\n' "$*" >> "{log}"
+case "$*" in *"--root"*|*"--operator"*) exit 8 ;; esac
+case "$*" in
+  "mcp serve")
+    if [ "$GRAPH_TEST_DISCOVERY" = refused ]; then
+      printf '%s\n' "policy_denied: plugin graph may not start this command" >&2
+      exit 1
+    fi
+    while IFS= read -r line; do
+      case "$line" in
+        *'"method":"initialize"'*) printf '%s\n' '{initialized}' ;;
+        *'"method":"tools/call"'*'"name":"orbit.workspace.list"'*)
+          printf '%s\n' '{notification}'
+          if [ "$GRAPH_TEST_DISCOVERY" = denied ]; then
+            printf '%s\n' '{denied}'
+          else
+            printf '%s\n' '{discovered}'
+          fi ;;
+        *'"method":"tools/call"'*) printf '%s\n' '{unknown}' ;;
+      esac
+    done
+    if [ "$GRAPH_TEST_DISCOVERY" = linger ]; then
+      printf '%s' "$$" > "{linger}"
+      exec sleep 30
+    fi ;;
+  *"tool run orbit.workflow.run.show"*"RUN-1"*)
+    if [ "$GRAPH_TEST_RUN_SHOW" = denied ]; then
+      printf '%s\n' "policy_denied: orbit.workflow.run.show requires the operator capability" >&2
+      exit 1
+    fi
+    printf '%s\n' '{run_show}' ;;
+  *"tool run orbit.task.show"*"TASK-PRIOR"*) printf '%s\n' '{prior}' ;;
+  *"tool run orbit.task.show"*"TASK-TARGET"*) printf '%s\n' '{target}' ;;
+  *"tool run orbit.search"*) printf '%s\n' '{search}' ;;
+  *) exit 9 ;;
+esac
+"#,
+        log = log.display(),
+        linger = linger.display(),
     );
     executable(&fixture.path().join("orbit"), script);
     fixture

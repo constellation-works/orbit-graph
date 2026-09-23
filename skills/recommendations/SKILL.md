@@ -46,3 +46,15 @@ The calling activity must allow the callback tools it uses:
 `orbit.workflow.run.show`. Orbit's policy still applies to the adapter's nested
 public calls. When task or search tools are not granted, pass an earlier public
 `task_snapshot` and use lexical/offline hits.
+
+Workspace discovery is MCP-only: the adapter calls `orbit.workspace.list`
+through a short-lived `orbit mcp serve` stdio session (never `--operator`),
+under the same timeout and output bound as its `orbit tool run` calls. Discovery
+publishes no checkout path, so the requested `repository` is bound to the
+workspace by matching its `origin` remote to the workspace's `git_remote`; a
+workspace without `git_remote`, or a foreign `origin`, is refused.
+`orbit.workflow.run.show` is an operator-only Orbit operation. A plugin backend
+does not hold `operator`, so `orbit_sync` reports each run `excluded` with
+Orbit's `capability_denied` reason instead of importing it; an empty or
+all-excluded sync is not evidence of a verified delivery. Until Orbit exposes a
+sanctioned non-operator run read, import verified envelopes with `import`.

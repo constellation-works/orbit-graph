@@ -195,7 +195,10 @@ uses public `orbit.search`; failure is surfaced and local lexical fallback is
 named in `adapter.warnings`.
 The calling activity must allow `orbit.workspace.list`, `orbit.task.show`,
 `orbit.search`, and `orbit.workflow.run.show` for the callback operations it
-uses; the adapter does not bypass Orbit policy.
+uses; the adapter does not bypass Orbit policy. `orbit.workspace.list` is served
+only over MCP, so the adapter reaches it through a short-lived, bounded
+`orbit mcp serve` stdio session and binds the requested repository to the
+workspace by matching the repository's `origin` to the published `git_remote`.
 With narrower grants, pass an earlier public snapshot and use lexical/offline
 hits.
 
@@ -225,7 +228,10 @@ or reaches another plugin's jobs.
 `orbit_sync` reads only public `orbit.workspace.list`, `orbit.task.show`, and
 `orbit.workflow.run.show` tool responses, then verifies full commit objects,
 strict base ancestry, and landing-branch reachability in the explicitly routed
-Git repository. It reports partial
+Git repository. `orbit.workflow.run.show` requires Orbit's `operator`
+capability, which a plugin backend does not hold, so under the plugin each run
+is currently reported `excluded` with Orbit's `capability_denied` reason rather
+than imported. It reports partial
 coverage: current Orbit has no cursor-paginated detailed delivery feed, so only
 explicit run IDs and each requested task's current `job_run_id` are processed.
 Retrying or submitting omitted IDs is safe because the immutable first-observed
