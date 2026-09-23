@@ -7,7 +7,7 @@ usage() {
 }
 
 orbit_root=""
-graph_binary="${ORBIT_GRAPH_BIN:-}"
+graph_binary=""
 orbit_root_set=0
 binary_set=0
 while [ "$#" -gt 0 ]; do
@@ -31,7 +31,13 @@ if [ "$binary_set" -eq 1 ] && [ -z "$graph_binary" ]; then
     usage
 fi
 
-if [ -z "$graph_binary" ]; then
+script_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd -P)
+plugin_dir=$(dirname "$script_dir")/plugin
+if [ -e "$plugin_dir/bin/orbit-graph.bin" ]; then
+    graph_binary=$plugin_dir/bin/orbit-graph.bin
+elif [ "$binary_set" -eq 0 ] && [ -n "${ORBIT_GRAPH_BIN:-}" ]; then
+    graph_binary=$ORBIT_GRAPH_BIN
+elif [ -z "$graph_binary" ]; then
     graph_binary=$(command -v orbit-graph) || {
         echo "orbit-graph is not installed; pass --binary PATH" >&2
         exit 1
@@ -46,8 +52,17 @@ command -v orbit >/dev/null 2>&1 || {
     exit 1
 }
 graph_binary=$(cd "$(dirname "$graph_binary")" && pwd -P)/$(basename "$graph_binary")
-script_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd -P)
-plugin_dir=$(dirname "$script_dir")/plugin
+# Legacy sidecars also need the current plugin contract; refuse a stale PATH
+# binary at install time instead of registering it for every future request.
+probe=$(printf '%s\n' '{"tool":"orbit.graph.version","input":{}}' |
+    ORBIT_TOOL_NAME=orbit.graph.version "$graph_binary" 2>/dev/null) || {
+        echo "incompatible orbit-graph binary: $graph_binary (expected v2 envelope, plugin_schema_version=1, extractor_version=10)" >&2
+        exit 1
+    }
+case "$probe" in
+    *'"ok":true'*'"extractor_version":10'*'"plugin_schema_version":1'*) ;;
+    *) echo "incompatible orbit-graph binary: $graph_binary (expected v2 envelope, plugin_schema_version=1, extractor_version=10)" >&2; exit 1 ;;
+esac
 for manifest in \
     "$plugin_dir/orbit-graph-recommend.orbit-tool.yaml" \
     "$plugin_dir/orbit-graph-status.orbit-tool.yaml" \

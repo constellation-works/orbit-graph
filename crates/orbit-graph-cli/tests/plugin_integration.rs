@@ -4,7 +4,7 @@
 
 use std::fs;
 #[cfg(unix)]
-use std::io::Read;
+use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 use std::time::{Duration, Instant};
@@ -205,6 +205,104 @@ fn plugin_version_is_repository_independent_and_deterministic() {
             "plugin_schema_version": PLUGIN_SCHEMA_VERSION,
         })
     );
+}
+
+#[cfg(unix)]
+#[test]
+fn launchers_reject_stale_path_binary_and_honor_explicit_binary() {
+    let fixture = TempDir::new().expect("launcher fixture");
+    let stale_dir = fixture.path().join("stale");
+    fs::create_dir(&stale_dir).expect("stale directory");
+    let stale = stale_dir.join("orbit-graph");
+    fs::write(
+        &stale,
+        "#!/bin/sh\necho 'Usage: orbit-graph <COMMAND>' >&2\nexit 1\n",
+    )
+    .expect("stale binary");
+    fs::set_permissions(&stale, fs::Permissions::from_mode(0o755))
+        .expect("executable stale binary");
+    let path = format!("{}:/usr/bin:/bin", stale_dir.display());
+    let real = env!("CARGO_BIN_EXE_orbit-graph");
+
+    for launcher in ["bin/orbit-graph", "plugin/bin/orbit-graph"] {
+        let launcher = repository_root().join(launcher);
+        let rejected = launcher_version(&launcher, &path, None);
+        assert_eq!(rejected.status.code(), Some(0), "{launcher:?}");
+        let response: Value = serde_json::from_slice(&rejected.stdout).expect("structured error");
+        assert_eq!(response["ok"], false);
+        assert_eq!(response["error"]["code"], "incompatible_binary");
+        assert_eq!(
+            response["error"]["path"],
+            stale.to_str().expect("UTF-8 path")
+        );
+        assert!(
+            response["error"]["message"]
+                .as_str()
+                .expect("message")
+                .contains("extractor_version=10")
+        );
+        assert!(!String::from_utf8_lossy(&rejected.stderr).contains("Usage:"));
+
+        let selected = launcher_version(&launcher, &path, Some(real));
+        assert_eq!(
+            selected.status.code(),
+            Some(0),
+            "{launcher:?}: {}",
+            String::from_utf8_lossy(&selected.stderr)
+        );
+        let response: Value = serde_json::from_slice(&selected.stdout).expect("version envelope");
+        assert_eq!(response["ok"], true);
+        assert_eq!(response["output"]["plugin_schema_version"], 1);
+        assert_eq!(response["output"]["extractor_version"], 10);
+    }
+}
+
+#[cfg(unix)]
+#[test]
+fn bundled_binary_precedes_environment_and_path() {
+    let fixture = TempDir::new().expect("bundled launcher fixture");
+    let launcher_dir = fixture.path().join("bin");
+    fs::create_dir(&launcher_dir).expect("launcher directory");
+    let launcher = launcher_dir.join("orbit-graph");
+    fs::copy(repository_root().join("bin/orbit-graph"), &launcher).expect("copy launcher");
+    std::os::unix::fs::symlink(
+        env!("CARGO_BIN_EXE_orbit-graph"),
+        launcher_dir.join("orbit-graph.bin"),
+    )
+    .expect("bundled executable");
+    let stale = fixture.path().join("stale");
+    fs::write(&stale, "#!/bin/sh\nexit 1\n").expect("stale explicit binary");
+    fs::set_permissions(&stale, fs::Permissions::from_mode(0o755))
+        .expect("executable stale binary");
+
+    let selected = launcher_version(&launcher, "/usr/bin:/bin", stale.to_str());
+    assert_eq!(selected.status.code(), Some(0));
+    let response: Value = serde_json::from_slice(&selected.stdout).expect("version envelope");
+    assert_eq!(response["ok"], true);
+    assert_eq!(response["output"]["plugin_schema_version"], 1);
+}
+
+#[cfg(unix)]
+fn launcher_version(launcher: &Path, path: &str, binary: Option<&str>) -> Output {
+    let mut command = Command::new(launcher);
+    command
+        .env("PATH", path)
+        .env("ORBIT_TOOL_NAME", VERSION_TOOL_NAME)
+        .env_remove("ORBIT_GRAPH_BIN")
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped());
+    if let Some(binary) = binary {
+        command.env("ORBIT_GRAPH_BIN", binary);
+    }
+    let mut child = command.spawn().expect("spawn launcher");
+    child
+        .stdin
+        .as_mut()
+        .expect("launcher stdin")
+        .write_all(b"{\"tool\":\"orbit.graph.version\",\"input\":{}}")
+        .expect("write version envelope");
+    child.wait_with_output().expect("launcher result")
 }
 
 #[test]
