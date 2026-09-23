@@ -415,8 +415,69 @@ fn report_refuses_to_overwrite_without_force() {
     assert!(stderr.contains("already exists"), "{stderr}");
     assert!(stderr.contains("--force"), "{stderr}");
 
+    std::fs::write(out.path().join("report.json"), "old json").expect("replace json sentinel");
+    std::fs::write(out.path().join("report.html"), "old html").expect("replace html sentinel");
     let forced = run_report(&case, out.path(), "report", &["--force"]);
     assert!(forced.status.success(), "{forced:?}");
+    assert_eq!(read_json(out.path(), "report")["schema_version"], 1);
+    assert!(read_html(out.path(), "report").contains("Change report"));
+}
+
+#[test]
+fn report_rejects_names_that_are_not_single_file_components_before_writing() {
+    let case = corpus::build_case("direct-call");
+    let root = tempfile::tempdir().expect("create output root");
+    let absolute = root.path().join("absolute");
+    let absolute = absolute.to_str().expect("utf8 path");
+
+    for name in [
+        "",
+        ".",
+        "..",
+        "../escaped",
+        "nested/escaped",
+        "nested\\escaped",
+        absolute,
+    ] {
+        for extra in [&[][..], &["--force"][..]] {
+            let out = root.path().join("inside");
+            let output = run_report(&case, &out, name, extra);
+            assert!(!output.status.success(), "name {name:?}: {output:?}");
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            assert!(
+                stderr.contains("`--name` must be"),
+                "name {name:?}: {stderr}"
+            );
+            assert!(!out.exists(), "name {name:?} created --out");
+            assert!(
+                std::fs::read_dir(root.path())
+                    .expect("read output root")
+                    .next()
+                    .is_none(),
+                "name {name:?} wrote outside --out"
+            );
+        }
+    }
+}
+
+#[test]
+fn report_accepts_a_single_component_name_inside_out() {
+    let case = corpus::build_case("direct-call");
+    let root = tempfile::tempdir().expect("create output root");
+    let out = root.path().join("inside");
+    let name = "report.v1_\u{65e5}\u{672c}";
+
+    let output = run_report(&case, &out, name, &[]);
+    assert!(output.status.success(), "{output:?}");
+    assert_eq!(read_json(&out, name)["schema_version"], 1);
+    assert!(read_html(&out, name).contains("Change report"));
+    assert_eq!(
+        std::fs::read_dir(root.path())
+            .expect("read output root")
+            .count(),
+        1,
+        "report wrote outside --out"
+    );
 }
 
 #[test]
