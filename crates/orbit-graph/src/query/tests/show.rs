@@ -1,10 +1,12 @@
 use std::fs;
+use std::path::PathBuf;
 
 use crate::extract::Selector;
 use rusqlite::{Connection, params};
 use serde_json::json;
 
 use super::{DEFAULT_SHOW_MAX_BYTES, NodeMetadata, NodeView, SourceSpan};
+use crate::GraphError;
 use crate::SyncPolicy;
 use crate::query::tests::support::{
     TestWorktree, assert_json_matches_fixture, graph_db_path, insert_file, insert_symbol,
@@ -373,6 +375,131 @@ fn show_unresolved_dir_selector_returns_none() {
         .expect("show dir");
 
     assert!(view.is_none());
+}
+
+#[test]
+fn show_rejects_database_paths_outside_the_worktree_before_reading() {
+    let worktree = TestWorktree::new("show-confine");
+    let stamp = worktree
+        .path()
+        .file_name()
+        .expect("worktree name")
+        .to_string_lossy()
+        .into_owned();
+    let parent_marker = "PATH_TRAVERSAL_MARKER_12899";
+    let absolute_marker = "ABSOLUTE_PATH_MARKER_12899";
+    let parent_name = format!("outside-{stamp}.rs");
+    let parent_stored = format!("../{parent_name}");
+    let parent_path = worktree.path().join(&parent_stored);
+    let parent_source = format!("{parent_marker}\n");
+    fs::write(&parent_path, &parent_source).expect("write parent-traversal source");
+    let _remove_parent = DeleteOnDrop(parent_path);
+
+    let absolute_path = std::env::temp_dir().join(format!("absolute-{stamp}.rs"));
+    let absolute_source = format!("{absolute_marker}\n");
+    fs::write(&absolute_path, &absolute_source).expect("write absolute source");
+    let _remove_absolute = DeleteOnDrop(absolute_path.clone());
+    let absolute_stored = absolute_path.to_string_lossy().into_owned();
+
+    let inside = "pub fn ok() -> i32 { 1 }\n";
+    worktree.write("src/ok.rs", inside);
+    let graph = open_graph(&worktree, SyncPolicy::Manual);
+    let conn = open_connection(&worktree);
+    insert_file(&conn, "src/ok.rs", "rust", inside);
+    insert_symbol(
+        &conn,
+        "src/ok.rs",
+        "ok",
+        "crate::ok",
+        "function",
+        0,
+        inside.len(),
+    );
+
+    insert_file(&conn, &parent_stored, "rust", &parent_source);
+    insert_symbol(
+        &conn,
+        &parent_stored,
+        "leak",
+        "crate::leak",
+        "function",
+        0,
+        parent_source.len(),
+    );
+    insert_symbol(
+        &conn,
+        &parent_stored,
+        "leaked_mod",
+        "crate::leaked_mod",
+        "module",
+        0,
+        parent_source.len(),
+    );
+    insert_command(&conn, "leaked-cmd", &parent_stored, 0, None);
+
+    insert_file(&conn, &absolute_stored, "rust", &absolute_source);
+    insert_symbol(
+        &conn,
+        &absolute_stored,
+        "absolute_leak",
+        "crate::absolute_leak",
+        "function",
+        0,
+        absolute_source.len(),
+    );
+
+    let parent_symbol = format!("symbol:{parent_stored}#leak:function");
+    let parent_file = format!("file:{parent_stored}");
+    let absolute_symbol = format!("symbol:{absolute_stored}#absolute_leak:function");
+    for selector in [
+        parent_symbol.as_str(),
+        parent_file.as_str(),
+        "module:crate::leaked_mod",
+        "command:leaked-cmd",
+        absolute_symbol.as_str(),
+    ] {
+        assert_outside_source_rejected(&graph, selector, parent_marker);
+        assert_outside_source_rejected(&graph, selector, absolute_marker);
+    }
+
+    let inside_view = graph
+        .show(
+            &"symbol:src/ok.rs#ok:function"
+                .parse()
+                .expect("inside selector"),
+            DEFAULT_SHOW_MAX_BYTES,
+        )
+        .expect("show inside file")
+        .expect("inside file resolves");
+    let inside_source = std::str::from_utf8(&inside_view.bytes).expect("inside utf-8");
+    assert!(inside_source.contains("pub fn ok"));
+    assert!(!inside_source.contains(parent_marker));
+    assert!(!inside_source.contains(absolute_marker));
+}
+
+fn assert_outside_source_rejected(graph: &crate::Graph, selector: &str, marker: &str) {
+    let error = graph
+        .show(
+            &selector.parse().expect("outside selector"),
+            DEFAULT_SHOW_MAX_BYTES,
+        )
+        .expect_err("database path outside the worktree must be rejected");
+    match error {
+        GraphError::InvalidData { operation, reason } => {
+            assert_eq!(operation, "resolve graph source path");
+            assert!(reason.contains("worktree"), "{reason}");
+            assert!(!reason.contains(marker), "{reason}");
+        }
+        other => panic!("expected invalid source path, got {other}"),
+    }
+}
+
+struct DeleteOnDrop(PathBuf);
+
+impl Drop for DeleteOnDrop {
+    fn drop(&mut self) {
+        let _ = fs::remove_file(&self.0);
+    }
 }
 
 fn insert_command(
