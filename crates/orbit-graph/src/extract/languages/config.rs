@@ -1,7 +1,7 @@
 //! Config extractor for orbit-graph-extract (ORB-00305).
 //!
 //! Populates ExtractedFile::configs (never refs/relations).
-//! Uses workspace serde_yaml/toml/serde_json for real parsing + line scan fallback for positions.
+//! Uses workspace serde_norway/toml/serde_json for real parsing + line scan fallback for positions.
 //! Kinds: yaml|toml|json|env|serde per spec §6.2.
 
 use std::path::Path;
@@ -41,7 +41,7 @@ impl Extractor for ConfigExtractor {
                 }
             }
             "yaml" | "yml" => {
-                if let Ok(value) = serde_yaml::from_str::<serde_yaml::Value>(source) {
+                if let Ok(value) = serde_norway::from_str::<serde_norway::Value>(source) {
                     collect_yaml_keys(&value, "", 1, &mut configs, path, &kind);
                 } else {
                     scan_keys(source, &mut configs, path, &kind);
@@ -146,7 +146,7 @@ fn collect_toml_keys(
 }
 
 fn collect_yaml_keys(
-    value: &serde_yaml::Value,
+    value: &serde_norway::Value,
     prefix: &str,
     line: usize,
     out: &mut Vec<RawConfig>,
@@ -154,7 +154,7 @@ fn collect_yaml_keys(
     kind: &str,
 ) {
     let file_path = normalize_path(path);
-    if let serde_yaml::Value::Mapping(map) = value {
+    if let serde_norway::Value::Mapping(map) = value {
         for (k, v) in map {
             if let Some(kstr) = k.as_str() {
                 let full = if prefix.is_empty() {
