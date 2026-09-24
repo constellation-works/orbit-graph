@@ -5,7 +5,6 @@ metadata:
   version: 0.9.2
   description: Leakage-safe file and symbol recommendations from verified change history.
   publisher: constellation-works
-  origin: orbit
   homepage: https://github.com/constellation-works/orbit-graph
 spec:
   requires:

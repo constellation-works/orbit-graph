@@ -32,6 +32,39 @@ jobs:
         env:
           RUSTDOCFLAGS: -D warnings
 
+  plugin-conformance:
+    name: Plugin conformance (Orbit v0.24.0)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: dtolnay/rust-toolchain@02cb101ec7c40f2c49e1d9714d64511d8e1b74de # 1.89.0
+        with:
+          toolchain: 1.89.0
+      - run: cargo build -p orbit-graph-cli --locked
+      - name: Download pinned Orbit release
+        shell: bash
+        run: |
+          curl --fail --location --retry 3 --output "$RUNNER_TEMP/orbit.tar.gz" \
+            https://github.com/constellation-works/orbit/releases/download/v0.24.0/orbit-x86_64-unknown-linux-gnu.tar.gz
+          printf '%s  %s\n' \
+            '78a8ecf2dd19e61c61b7ec97ebd60206a46b7e93035b85310d152cc7cbeabace' \
+            "$RUNNER_TEMP/orbit.tar.gz" | sha256sum --check -
+          tar -xzf "$RUNNER_TEMP/orbit.tar.gz" -C "$RUNNER_TEMP" orbit
+          "$RUNNER_TEMP/orbit" --version
+      - name: Initialize isolated conformance workspace
+        shell: bash
+        run: |
+          mkdir -p "$RUNNER_TEMP/graph-conformance"
+          git -C "$RUNNER_TEMP/graph-conformance" init -b main
+          cd "$RUNNER_TEMP/graph-conformance"
+          "$RUNNER_TEMP/orbit" workspace init --name graph-conformance --root "$RUNNER_TEMP/graph-conformance/.orbit"
+      - name: Validate and test plugin
+        shell: bash
+        run: |
+          "$RUNNER_TEMP/orbit" plugin validate .
+          PATH="$PWD/target/debug:$PATH" "$RUNNER_TEMP/orbit" plugin test \
+            --root "$RUNNER_TEMP/graph-conformance/.orbit" --workspace graph-conformance .
+
   portability:
     name: Test (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
