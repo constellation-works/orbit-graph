@@ -264,7 +264,8 @@ fn bundled_binary_precedes_environment_and_path() {
     let launcher_dir = fixture.path().join("bin");
     fs::create_dir(&launcher_dir).expect("launcher directory");
     let launcher = launcher_dir.join("orbit-graph");
-    fs::copy(repository_root().join("bin/orbit-graph"), &launcher).expect("copy launcher");
+    std::os::unix::fs::symlink(repository_root().join("bin/orbit-graph"), &launcher)
+        .expect("link launcher");
     std::os::unix::fs::symlink(
         env!("CARGO_BIN_EXE_orbit-graph"),
         launcher_dir.join("orbit-graph.bin"),
