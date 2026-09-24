@@ -1221,7 +1221,7 @@ fn manifests_are_versioned_and_describe_all_registered_tools() {
         ("orbit-graph-status.orbit-tool.yaml", STATUS_TOOL_NAME),
         ("orbit-graph-maintain.orbit-tool.yaml", MAINTAIN_TOOL_NAME),
     ] {
-        let manifest: Value = serde_yaml::from_slice(
+        let manifest: Value = serde_norway::from_slice(
             &fs::read(root.join("plugin").join(file)).expect("read manifest"),
         )
         .expect("parse manifest");
