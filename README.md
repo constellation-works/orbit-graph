@@ -41,8 +41,8 @@ An interactive shell's environment does not configure `orbit web serve`.
 Until a release bundles `bin/orbit-graph.bin`, a service with no override uses
 its own `PATH`; an incompatible selection fails with a structured error.
 
-Enabling the plugin provides `orbit.graph.version`, `orbit.graph.status`,
-`orbit.graph.recommend`, and `orbit.graph.maintain`, plus the derived
+Enabling the plugin provides `graph.version`, `graph.status`,
+`graph.recommend`, and `graph.maintain`, plus the derived
 `orbit graph` command group. The `fs` and `orbit_tools` grants are required for
 the requested workspace/index access and bounded callbacks; the plugin requests
 no network access.
@@ -173,7 +173,7 @@ Every plugin request requires `schema_version: 1` and an explicit absolute
 the adapter never infers authority from cwd or `ORBIT_TOOL_WORKSPACE_ROOT`.
 
 ```sh
-orbit tool run orbit.graph.recommend --input '{
+orbit tool run graph.recommend --input '{
   "schema_version":1,
   "repository":"/work/widgets",
   "workspace":"ws_widgets",
@@ -183,14 +183,14 @@ orbit tool run orbit.graph.recommend --input '{
   "limit":10
 }' --full
 
-orbit tool run orbit.graph.recommend --input '{
+orbit tool run graph.recommend --input '{
   "schema_version":1,
   "repository":"/work/widgets",
   "query":"repair parser cache",
   "level":"file"
 }' --full
 
-orbit tool run orbit.graph.status --input '{
+orbit tool run graph.status --input '{
   "schema_version":1,
   "repository":"/work/widgets",
   "branch":"main"
@@ -218,7 +218,7 @@ hits.
 Maintenance is deliberately separate from querying:
 
 ```sh
-orbit tool run orbit.graph.maintain --input '{
+orbit tool run graph.maintain --input '{
   "schema_version":1,
   "operation":"orbit_sync",
   "repository":"/work/widgets",
