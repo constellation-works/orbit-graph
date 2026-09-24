@@ -3,7 +3,7 @@ set -eu
 
 # A release may ship the executable beside this launcher. Do not let the
 # caller's PATH silently select an older, incompatible executable.
-launcher_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd -P)
+launcher_dir=$(CDPATH= cd "$(dirname "$0")" && pwd -P)
 bundled_binary="$launcher_dir/orbit-graph.bin"
 if [ -e "$bundled_binary" ]; then
     graph_binary=$bundled_binary

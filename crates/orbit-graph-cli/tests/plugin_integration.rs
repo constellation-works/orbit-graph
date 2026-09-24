@@ -221,6 +221,17 @@ fn launchers_reject_stale_path_binary_and_honor_explicit_binary() {
     .expect("stale binary");
     fs::set_permissions(&stale, fs::Permissions::from_mode(0o755))
         .expect("executable stale binary");
+    // macOS dirname treats `--` as a pathname and accepts multiple operands,
+    // unlike GNU dirname. Keep that behavior reproducible on CI hosts with
+    // GNU coreutils too.
+    let dirname = stale_dir.join("dirname");
+    fs::write(
+        &dirname,
+        "#!/bin/sh\nfor path do\n    case \"$path\" in\n        */*) directory=${path%/*}; [ -n \"$directory\" ] || directory=/ ;;\n        *) directory=. ;;\n    esac\n    printf '%s\\n' \"$directory\"\ndone\n",
+    )
+    .expect("BSD-compatible dirname shim");
+    fs::set_permissions(&dirname, fs::Permissions::from_mode(0o755))
+        .expect("executable dirname shim");
     let path = format!("{}:/usr/bin:/bin", stale_dir.display());
     let real = env!("CARGO_BIN_EXE_orbit-graph");
 
@@ -240,6 +251,11 @@ fn launchers_reject_stale_path_binary_and_honor_explicit_binary() {
                 .as_str()
                 .expect("message")
                 .contains("extractor_version=10")
+        );
+        assert!(
+            rejected.stderr.is_empty(),
+            "{launcher:?}: {}",
+            String::from_utf8_lossy(&rejected.stderr)
         );
         assert!(!String::from_utf8_lossy(&rejected.stderr).contains("Usage:"));
 
