@@ -41,6 +41,7 @@ fn run_once(
             duration,
         });
     }
+    let before = definitions_before_pass1(db_path, mode, &diff)?;
     let pass1 = pass1::run(db_path, worktree_root, mode, &diff, None)?;
     let total_files = pass1.total_files;
     let last_touched_path = pass1.last_touched_path.clone();
@@ -48,6 +49,7 @@ fn run_once(
         db_path,
         mode,
         pass1.refs,
+        &before,
         None,
         total_files,
         last_touched_path,
@@ -87,6 +89,7 @@ pub(crate) fn run_with_observer(
             duration,
         }));
     }
+    let before = definitions_before_pass1(db_path, mode, &diff)?;
     let pass1 = pass1::run(db_path, worktree_root, mode, &diff, Some(observer))?;
     if pass1.cancelled {
         let duration = started.elapsed();
@@ -103,6 +106,7 @@ pub(crate) fn run_with_observer(
         db_path,
         mode,
         pass1.refs,
+        &before,
         Some(observer),
         total_files,
         last_touched_path,
@@ -115,6 +119,27 @@ pub(crate) fn run_with_observer(
         files_removed: pass1.files_removed,
         duration,
     }))
+}
+
+/// What the files an incremental sync is about to rewrite or remove define
+/// now. Pass 2 compares it with what they define afterwards to find the refs
+/// elsewhere that must be re-resolved; a full sync rewrites every ref, so it
+/// needs none.
+fn definitions_before_pass1(
+    db_path: &Path,
+    mode: SyncMode,
+    diff: &scanner::Diff,
+) -> Result<pass2::Definitions, GraphError> {
+    if mode == SyncMode::Full {
+        return Ok(pass2::Definitions::default());
+    }
+    let paths = diff
+        .modified
+        .iter()
+        .chain(&diff.deleted)
+        .map(|path| scanner::normalize_path(path))
+        .collect::<Vec<_>>();
+    pass2::Definitions::load(db_path, paths.iter().map(String::as_str))
 }
 
 type SyncResult = Result<SyncReport, GraphError>;

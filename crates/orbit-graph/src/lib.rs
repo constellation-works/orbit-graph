@@ -107,7 +107,12 @@ mod tests;
 /// resolves `<T>::m`, `<T as Trait>::m`, and scoped `T::m(..)` targets against
 /// that type's inherent, trait-impl, or trait-declared member instead of by
 /// short name.
-pub const EXTRACTOR_VERSION: u32 = 14;
+///
+/// Version 15 stores each ref's resolution inputs (`extracted_qualified`,
+/// `unresolved_receiver`, `spelled_path`), so an incremental sync can
+/// re-resolve refs in unchanged files whose target was defined, removed or
+/// renamed elsewhere.
+pub const EXTRACTOR_VERSION: u32 = 15;
 
 /// SQLite schema version used by the graph store.
 ///

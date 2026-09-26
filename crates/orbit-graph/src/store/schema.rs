@@ -62,7 +62,12 @@ CREATE TABLE refs (
     kind                TEXT NOT NULL,      -- "call" | "type" | "use" | "trait_bound" |
                                             -- "runtime_invocation" (target_name is an
                                             -- opaque program string, never resolved)
-    confidence          TEXT NOT NULL       -- see §11
+    confidence          TEXT NOT NULL,      -- see §11
+    -- Resolution inputs, kept so an incremental sync can re-resolve this ref
+    -- when a definition it may name changes in another file.
+    extracted_qualified TEXT,               -- the extractor's qualified path, before resolution
+    unresolved_receiver TEXT,               -- receiver of a method call of unknown type
+    spelled_path        INTEGER NOT NULL DEFAULT 0 -- 1 when extracted_qualified is the written path
 ) STRICT;
 
 CREATE INDEX refs_target_qualified ON refs(target_qualified) WHERE target_qualified IS NOT NULL;
