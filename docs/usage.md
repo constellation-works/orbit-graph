@@ -101,6 +101,28 @@ it resolves only through an import or a qualified path, and otherwise reports
 calls it dispatches. Receivers that name the enclosing definition (`self`,
 `Self`, `cls`) keep resolving within the defining file.
 
+Rust method calls resolve by type when the extractor can read the receiver's
+type: a parameter or `let` with a type annotation (`runtime: &OrbitRuntime`),
+a constructor (`T::new()`, `T::default()`, a `T { .. }` literal), or
+`self`/`Self`. `&T`, `Box`/`Arc`/`Rc<T>` and `use .. as Alias` names are seen
+through, and `dyn Trait`/`impl Trait` receivers resolve to the trait's
+declaration. A receiver typed by a type parameter (`x: T`) stays unknown. The
+type's member is found by first narrowing to the module the call names (a
+written path such as `crate::config::Config::load()`, or the import that
+brings `Config` into the file), then preferring an inherent method over a
+trait impl over a trait declaration, as Rust's method lookup does. A member
+the type gets from a trait's default body resolves to that trait's
+declaration. A type named through a path or import that the index does not
+contain (an external crate's `reqwest::Client`) reports `fuzzy`, never a local
+type of the same name.
+
+A written `Type::member(..)` path never falls back to a bare-name match: when
+no indexed type of that name has the member, it reports `fuzzy`. A free
+function call never resolves to a same-named method, and a module path outside
+the crate (`std::process::id()`) only matches a `same_module` item under that
+path; paths starting with `crate::`, `self::` or `super::` keep the plain
+same-module rule.
+
 Selectors use one of these forms:
 
 ```text

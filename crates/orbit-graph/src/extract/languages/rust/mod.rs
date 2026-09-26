@@ -44,6 +44,7 @@ impl Extractor for RustExtractor {
         let mut state = ExtractionState::new(path);
         let module = ModuleScope::root();
         let root = tree.root_node();
+        state.type_aliases = use_type_aliases(root, source);
         extract_items(root, source, &module, None, None, &mut state);
         commands::extract_commands(root, source, &mut state);
         state.finish()
@@ -59,6 +60,11 @@ struct ExtractionState {
     commands: Vec<RawCommand>,
     /// [`pattern_bindings`] per binding scope node id, computed on first use.
     local_bindings: HashMap<usize, HashSet<String>>,
+    /// [`typed_bindings`] per function node id, computed on first use.
+    binding_types: HashMap<usize, HashMap<String, Option<String>>>,
+    /// `use path::Type as Alias` renames in this file: alias to the written
+    /// path (see [`use_type_aliases`]).
+    type_aliases: HashMap<String, String>,
 }
 
 impl ExtractionState {
@@ -71,7 +77,46 @@ impl ExtractionState {
             imports: Vec::new(),
             commands: Vec::new(),
             local_bindings: HashMap::new(),
+            binding_types: HashMap::new(),
+            type_aliases: HashMap::new(),
         }
+    }
+
+    /// Type of the local binding `name` visible at `node`, when the enclosing
+    /// function binds that name exactly once and the binding spells its type
+    /// (see [`typed_bindings`]).
+    fn binding_type(
+        &mut self,
+        node: Node,
+        name: &str,
+        source: &str,
+        module: &ModuleScope,
+    ) -> Option<String> {
+        let scope = binding_scope(node);
+        let aliases = &self.type_aliases;
+        self.binding_types
+            .entry(scope.id())
+            .or_insert_with(|| typed_bindings(scope, source, module, aliases))
+            .get(name)
+            .cloned()
+            .flatten()
+    }
+
+    /// `<T>::method` for a method call whose receiver is a plain local
+    /// binding of known type `T`.
+    fn typed_receiver_target(
+        &mut self,
+        receiver: Node,
+        method: &str,
+        source: &str,
+        module: &ModuleScope,
+    ) -> Option<String> {
+        if receiver.kind() != "identifier" {
+            return None;
+        }
+        let name = node_text(receiver, source);
+        let type_name = self.binding_type(receiver, &name, source, module)?;
+        Some(format!("<{type_name}>::{method}"))
     }
 
     /// Whether a pattern in the function enclosing `node` binds `name`.
@@ -160,6 +205,10 @@ impl ExtractionState {
             kind: kind.to_string(),
             confidence: confidence.to_string(),
             unresolved_receiver,
+            // This extractor labels a target `import_resolved` exactly when
+            // it is the path written at the site (a scoped call, a qualified
+            // type, a `use` path); derived targets are `fuzzy_name`.
+            spelled_path: confidence == "import_resolved",
         });
     }
 
@@ -794,6 +843,268 @@ fn binding_scope(node: Node) -> Node {
     scope
 }
 
+/// Type parameter names in scope at a function: its own and those of the
+/// enclosing `impl`/`trait` blocks.
+fn type_parameter_names(function: Node, source: &str) -> HashSet<String> {
+    let mut names = HashSet::new();
+    let mut current = Some(function);
+    while let Some(node) = current {
+        if matches!(node.kind(), "function_item" | "impl_item" | "trait_item")
+            && let Some(parameters) = node.child_by_field_name("type_parameters")
+        {
+            let mut cursor = parameters.walk();
+            for parameter in parameters.named_children(&mut cursor) {
+                if let Some(name) = parameter.child_by_field_name("name") {
+                    names.insert(node_text(name, source));
+                }
+            }
+        }
+        current = node.parent();
+    }
+    names
+}
+
+/// `use path::Type as Alias` renames anywhere in the file, alias to the
+/// written path (`Bar` to `crate::a::Foo`). Only type-like (capitalised)
+/// aliases are kept: they are the ones a typed receiver or a `Type::m(..)`
+/// path can spell.
+fn use_type_aliases(root: Node, source: &str) -> HashMap<String, String> {
+    fn collect(node: Node, source: &str, prefix: &[String], aliases: &mut HashMap<String, String>) {
+        match node.kind() {
+            "scoped_use_list" => {
+                let mut next = prefix.to_vec();
+                if let Some(path) = node.child_by_field_name("path") {
+                    next.extend(path_segments(path, source));
+                }
+                if let Some(list) = node.child_by_field_name("list") {
+                    collect(list, source, &next, aliases);
+                }
+            }
+            "use_list" => {
+                let mut cursor = node.walk();
+                for child in node.named_children(&mut cursor) {
+                    collect(child, source, prefix, aliases);
+                }
+            }
+            "use_as_clause" => {
+                let (Some(alias), Some(path)) = (
+                    node.child_by_field_name("alias"),
+                    node.child_by_field_name("path"),
+                ) else {
+                    return;
+                };
+                let alias = node_text(alias, source);
+                let mut segments = prefix.to_vec();
+                segments.extend(path_segments(path, source));
+                if alias.starts_with(|ch: char| ch.is_ascii_uppercase())
+                    && let Some(path) = join_segments(&segments)
+                {
+                    aliases.insert(alias, path);
+                }
+            }
+            _ => {}
+        }
+    }
+
+    let mut aliases = HashMap::new();
+    let mut stack = vec![root];
+    while let Some(node) = stack.pop() {
+        match node.kind() {
+            "use_declaration" => {
+                if let Some(argument) = node.child_by_field_name("argument") {
+                    collect(argument, source, &[], &mut aliases);
+                }
+            }
+            "source_file" | "mod_item" | "declaration_list" => {
+                let mut cursor = node.walk();
+                stack.extend(node.named_children(&mut cursor));
+            }
+            _ => {}
+        }
+    }
+    aliases
+}
+
+/// `path` with a leading `use .. as Alias` name replaced by the path it
+/// renames (`Bar::new` to `crate::a::Foo::new`).
+fn dealias_path(aliases: &HashMap<String, String>, path: String) -> String {
+    let (head, rest) = match path.split_once("::") {
+        Some((head, rest)) => (head, Some(rest)),
+        None => (path.as_str(), None),
+    };
+    match (aliases.get(head), rest) {
+        (Some(real), Some(rest)) => format!("{real}::{rest}"),
+        (Some(real), None) => real.clone(),
+        (None, _) => path,
+    }
+}
+
+/// Types of the names bound in `scope` (a function, excluding nested items),
+/// for typing method-call receivers.
+///
+/// A name maps to `Some(type)` only when it is bound once (or always with the
+/// same type) and that binding spells the type: a parameter or `let` with a
+/// type annotation, or a `let` initialised by `T::new(..)`, `T::default()`, or
+/// a `T { .. }` literal. Every other binding (a `match`/`for`/`if let`
+/// pattern, an untyped closure parameter, an inferred `let`) makes the name
+/// untyped, so shadowing never attaches a stale type. See [`type_hint`].
+///
+/// A type named by a type parameter of the function or its enclosing
+/// `impl`/`trait` (`x: T` in `fn g<T: Tr>`) is unknown, so it leaves the
+/// name untyped; a `use .. as Alias` name is read as the type it renames.
+fn typed_bindings(
+    scope: Node,
+    source: &str,
+    module: &ModuleScope,
+    aliases: &HashMap<String, String>,
+) -> HashMap<String, Option<String>> {
+    fn record(types: &mut HashMap<String, Option<String>>, name: String, hint: Option<String>) {
+        types
+            .entry(name)
+            .and_modify(|existing| {
+                if *existing != hint {
+                    *existing = None;
+                }
+            })
+            .or_insert(hint);
+    }
+    fn record_untyped(types: &mut HashMap<String, Option<String>>, pattern: Node, source: &str) {
+        let mut names = HashSet::new();
+        collect_identifiers(pattern, source, &mut names);
+        for name in names {
+            record(types, name, None);
+        }
+    }
+
+    let generics = type_parameter_names(scope, source);
+    let known = |hint: String| -> Option<String> {
+        let (object, path) = match hint.strip_prefix("dyn ") {
+            Some(path) => ("dyn ", path),
+            None => ("", hint.as_str()),
+        };
+        let root = path.split("::").next().unwrap_or(path);
+        (!generics.contains(root))
+            .then(|| format!("{object}{}", dealias_path(aliases, path.to_string())))
+    };
+
+    let mut types = HashMap::new();
+    let mut stack = vec![scope];
+    while let Some(node) = stack.pop() {
+        let pattern = node.child_by_field_name("pattern");
+        match node.kind() {
+            "function_item" | "impl_item" | "mod_item" | "trait_item" if node != scope => {
+                continue;
+            }
+            "parameter" | "let_declaration" => {
+                if let Some(pattern) = pattern {
+                    if pattern.kind() == "identifier" {
+                        let hint = node
+                            .child_by_field_name("type")
+                            .and_then(|type_node| type_hint(type_node, source, module))
+                            .or_else(|| {
+                                node.child_by_field_name("value")
+                                    .and_then(|value| constructed_type(value, source, module))
+                            })
+                            .and_then(known);
+                        record(&mut types, node_text(pattern, source), hint);
+                    } else {
+                        record_untyped(&mut types, pattern, source);
+                    }
+                }
+            }
+            "closure_parameters" => {
+                let mut cursor = node.walk();
+                for parameter in node.named_children(&mut cursor) {
+                    if parameter.kind() != "parameter" {
+                        record_untyped(&mut types, parameter, source);
+                    }
+                }
+            }
+            _ => {
+                if let Some(pattern) = pattern {
+                    record_untyped(&mut types, pattern, source);
+                }
+            }
+        }
+        let mut cursor = node.walk();
+        stack.extend(node.named_children(&mut cursor));
+    }
+    types
+}
+
+/// The type a method call on a value of type `node` dispatches on: references
+/// and the `Box`/`Arc`/`Rc` smart pointers are looked through (auto-deref),
+/// `dyn Trait`/`impl Trait` give `dyn Trait` (the trait's members, never a
+/// same-named struct's), `Self` the enclosing impl type,
+/// and any other generic type its base (`Vec<T>` → `Vec`). Tuples, slices,
+/// primitives, and function types give `None`.
+fn type_hint(node: Node, source: &str, module: &ModuleScope) -> Option<String> {
+    match node.kind() {
+        "reference_type" => type_hint(node.child_by_field_name("type")?, source, module),
+        "dynamic_type" | "abstract_type" => {
+            let trait_name = type_hint(node.child_by_field_name("trait")?, source, module)?;
+            (!trait_name.starts_with("dyn ")).then(|| format!("dyn {trait_name}"))
+        }
+        "generic_type" => {
+            let base = node.child_by_field_name("type")?;
+            let base_text = normalize_qualified_name(&node_text(base, source));
+            let base_name = base_text.rsplit("::").next().unwrap_or(&base_text);
+            if matches!(base_name, "Box" | "Arc" | "Rc") {
+                let arguments = node.child_by_field_name("type_arguments")?;
+                let mut cursor = arguments.walk();
+                let inner = arguments
+                    .named_children(&mut cursor)
+                    .find(|argument| argument.kind() != "lifetime")?;
+                type_hint(inner, source, module)
+            } else {
+                type_hint(base, source, module)
+            }
+        }
+        "type_identifier" if node_text(node, source) == "Self" => {
+            enclosing_impl_type(node, source, module)
+        }
+        "type_identifier" | "scoped_type_identifier" => {
+            let text = normalize_qualified_name(&node_text(node, source));
+            let name = text.rsplit("::").next().unwrap_or(&text);
+            (name.starts_with(|ch: char| ch.is_ascii_uppercase()) && !is_ignored_type_name(name))
+                .then_some(text)
+        }
+        _ => None,
+    }
+}
+
+/// The type a `let` initialiser evidently constructs: `T::new(..)`,
+/// `T::default()`, or a `T { .. }` literal.
+fn constructed_type(value: Node, source: &str, module: &ModuleScope) -> Option<String> {
+    match value.kind() {
+        "call_expression" => {
+            let function = value.child_by_field_name("function")?;
+            if function.kind() != "scoped_identifier" {
+                return None;
+            }
+            let constructor = function.child_by_field_name("name")?;
+            if !matches!(node_text(constructor, source).as_str(), "new" | "default") {
+                return None;
+            }
+            let path = function.child_by_field_name("path")?;
+            if path.kind() == "identifier" && node_text(path, source) == "Self" {
+                return enclosing_impl_type(value, source, module);
+            }
+            type_hint(path, source, module).or_else(|| {
+                // A value path (`scoped_identifier`/`identifier`) spelled
+                // like a type.
+                let text = normalize_qualified_name(&node_text(path, source));
+                let name = text.rsplit("::").next().unwrap_or(&text);
+                (name.starts_with(|ch: char| ch.is_ascii_uppercase())
+                    && !is_ignored_type_name(name))
+                .then_some(text)
+            })
+        }
+        "struct_expression" => type_hint(value.child_by_field_name("name")?, source, module),
+        _ => None,
+    }
+}
+
 /// Recovers call refs from a macro invocation's token tree, which tree-sitter
 /// leaves unparsed: an identifier or path immediately followed by a
 /// parenthesised token tree (`f(..)`, `a::b(..)`, `x.m(..)`, `f::<T>(..)`) is
@@ -901,9 +1212,14 @@ fn push_macro_call_ref(
                     .map(|type_name| format!("<{type_name}>::{name}"));
                 (name_node.start_byte(), target, "fuzzy_name", None)
             } else {
+                let target = (receiver_start + 1 == receiver_end)
+                    .then(|| {
+                        state.typed_receiver_target(tokens[receiver_start], &name, source, module)
+                    })
+                    .flatten();
                 (
                     name_node.start_byte(),
-                    None,
+                    target,
                     "fuzzy_name",
                     Some(receiver_text),
                 )
@@ -932,7 +1248,7 @@ fn push_macro_call_ref(
             } else if fully_spelled && path.contains("::") {
                 (
                     tokens[start].start_byte(),
-                    Some(path),
+                    Some(dealias_path(&state.type_aliases, path)),
                     "import_resolved",
                     None,
                 )
@@ -959,6 +1275,7 @@ fn push_macro_call_ref(
         kind: "call".to_string(),
         confidence: confidence.to_string(),
         unresolved_receiver: receiver,
+        spelled_path: confidence == "import_resolved",
     });
 }
 
@@ -1047,6 +1364,7 @@ fn collect_runtime_invocation(
         kind: "runtime_invocation".to_string(),
         confidence: "fuzzy_name".to_string(),
         unresolved_receiver: None,
+        spelled_path: false,
     });
 }
 
@@ -1095,13 +1413,16 @@ fn push_call_target_ref(
         "scoped_identifier" => {
             let self_target = self_call_target_qualified(function, source, module);
             let is_self_target = self_target.is_some();
+            let target = self_target.unwrap_or_else(|| {
+                dealias_path(
+                    &state.type_aliases,
+                    normalize_qualified_name(&node_text(function, source)),
+                )
+            });
             state.push_ref(
                 function,
                 source,
-                Some(
-                    self_target
-                        .unwrap_or_else(|| normalize_qualified_name(&node_text(function, source))),
-                ),
+                Some(target),
                 "call",
                 if is_self_target {
                     "fuzzy_name"
@@ -1111,18 +1432,14 @@ fn push_call_target_ref(
             );
         }
         "field_expression" => {
-            let receiver = function
-                .child_by_field_name("value")
-                .and_then(|value| unresolved_receiver_text(value, source));
+            let value = function.child_by_field_name("value");
+            let receiver = value.and_then(|value| unresolved_receiver_text(value, source));
             if let Some(field) = function.child_by_field_name("field") {
-                state.push_ref_with_receiver(
-                    field,
-                    source,
-                    self_call_target_qualified(function, source, module),
-                    "call",
-                    "fuzzy_name",
-                    receiver,
-                );
+                let target = self_call_target_qualified(function, source, module).or_else(|| {
+                    let method = node_text(field, source);
+                    state.typed_receiver_target(value?, &method, source, module)
+                });
+                state.push_ref_with_receiver(field, source, target, "call", "fuzzy_name", receiver);
             }
             if let Some(value) = function.child_by_field_name("value") {
                 collect_expression_refs(value, source, module, state);

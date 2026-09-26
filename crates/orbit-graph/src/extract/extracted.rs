@@ -73,6 +73,13 @@ pub struct RawRef {
     /// nothing about which type's method is being called. Not stored: it is
     /// an extraction-time hint consumed by pass 2.
     pub unresolved_receiver: Option<String>,
+    /// Whether `target_qualified` is the path written at the reference site
+    /// (`a::b::f(..)`, `crate::x::T`), as opposed to one the extractor
+    /// derived (the enclosing inline module's qualification of a plain `f()`,
+    /// or a receiver's type). Pass 2 reads a written module path as a
+    /// constraint on which module the target lives in. Only the Rust
+    /// extractor sets it.
+    pub spelled_path: bool,
 }
 
 /// Raw row for a structural relationship between two symbols.

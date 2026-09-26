@@ -100,7 +100,14 @@ mod tests;
 /// invocation arguments (`assert!(f(x))`, `vec![g(y)]`, `format!("{}", h())`)
 /// are recovered from the macro's token tree, and a function passed by name
 /// as a call argument (`.map(skill_link_roots)`) is recorded as a call.
-pub const EXTRACTOR_VERSION: u32 = 13;
+///
+/// Version 14 rebuilds stored refs once more: a Rust method call on a local
+/// binding whose type is spelled (a typed parameter or `let`, or a
+/// `T::new(..)`/`T { .. }` initialiser) records `<T>::method`, and pass 2
+/// resolves `<T>::m`, `<T as Trait>::m`, and scoped `T::m(..)` targets against
+/// that type's inherent, trait-impl, or trait-declared member instead of by
+/// short name.
+pub const EXTRACTOR_VERSION: u32 = 14;
 
 /// SQLite schema version used by the graph store.
 ///
