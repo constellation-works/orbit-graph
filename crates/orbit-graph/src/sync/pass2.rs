@@ -153,12 +153,18 @@ fn insert_ref(
 
 /// Everything a ref's resolution depends on besides the file it sits in.
 ///
-/// [`Resolver::resolve_ref`] is a pure function of the calling file, these
-/// fields, and the symbol and import rows Pass 1 wrote, which Pass 2 never
-/// changes. Two refs in one file with equal keys therefore resolve
-/// identically, so a file's refs are resolved once per distinct key.
+/// [`Resolver::resolve_ref`] is a pure function of the calling file, the
+/// symbol and import rows Pass 1 wrote (which Pass 2 never changes), and these
+/// facts about the ref, which are all the ladder reads from a [`RawRef`]:
+/// whether its kind is `runtime_invocation` (never resolved) or `use` (skips
+/// the qualified rung), whether [`resolves_by_name_only`] holds (the same-file
+/// and same-module rungs), and its `target_name` and `target_qualified` (every
+/// rung, and [`import_module_for_ref`]). Two refs in one file with equal keys
+/// therefore resolve identically, so a file's refs are resolved once per
+/// distinct key. A new ladder input must be added here.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 struct RefKey {
+    is_runtime_invocation: bool,
     is_use: bool,
     name_only: bool,
     target_name: String,
@@ -168,6 +174,7 @@ struct RefKey {
 impl RefKey {
     fn of(raw_ref: &RawRef) -> Self {
         Self {
+            is_runtime_invocation: raw_ref.kind == RUNTIME_INVOCATION_KIND,
             is_use: raw_ref.kind == "use",
             name_only: resolves_by_name_only(raw_ref),
             target_name: raw_ref.target_name.clone(),
