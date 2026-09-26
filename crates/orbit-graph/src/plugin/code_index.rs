@@ -4,9 +4,12 @@
 //! database (`graph.<extractor>.<n>.db`) that no reader references, and a
 //! finished build publishes it by atomically replacing the pointer file
 //! `graph.current.json`. A build that runs out of time, fails, or is killed
-//! leaves the published generation untouched; its unreferenced files are
-//! removed by the next build. Builds of one index directory are serialized by
-//! an advisory lock that the kernel releases if the process dies.
+//! leaves the published generation untouched. Every generation a build
+//! creates is first recorded in `graph.owned.json`, and a later build deletes
+//! only recorded generations that are no longer published (STD-03 R29); graph
+//! databases it did not record are kept and reported. Builds of one index
+//! directory are serialized by an advisory lock that the kernel releases if
+//! the process dies.
 
 use std::fs::{self, File, OpenOptions};
 use std::io::{ErrorKind, Write};
@@ -33,6 +36,8 @@ use crate::{
 const POINTER_FILE: &str = "graph.current.json";
 /// Advisory lock serializing builds of one index directory.
 const LOCK_FILE: &str = "graph.maintain.lock";
+/// Provenance record: the generation databases builds created here.
+const OWNED_FILE: &str = "graph.owned.json";
 /// Share of the budget pass 1 may use before it stops starting new files, so
 /// reference resolution can still finish inside the budget.
 const EXTRACTION_SHARE_PERCENT: u32 = 60;
@@ -182,6 +187,9 @@ pub(crate) struct SyncResult {
     pub(crate) files_indexed: usize,
     /// Milliseconds spent per phase.
     pub(crate) timings: Timings,
+    /// Graph databases in the index directory that no build recorded
+    /// creating; they are kept, never deleted.
+    pub(crate) unowned: Vec<String>,
 }
 
 /// Wall-clock milliseconds per build phase.
@@ -210,10 +218,19 @@ pub(crate) fn sync(
         .map_err(|source| GraphError::io("create code-graph index directory", index_dir, source))?;
     let lock = acquire_lock(index_dir)?;
     let previous = IndexState::read(index_dir)?;
-    remove_unpublished_generations(index_dir, &previous)?;
+    let published_database = match &previous {
+        IndexState::Ready(published) => Some(published.database.clone()),
+        IndexState::Missing | IndexState::Incompatible(_) => None,
+    };
+    let owned = remove_superseded_generations(index_dir, published_database.as_deref())?;
 
     let checkout = CheckoutState::read(repository)?;
-    let generation = index_dir.join(next_generation_name(&previous));
+    let generation_name = next_generation_name(index_dir, &previous);
+    let mut recorded = owned;
+    recorded.insert(generation_name.clone());
+    write_owned(index_dir, &recorded)?;
+    let unowned = unowned_databases(index_dir, &recorded)?;
+    let generation = index_dir.join(generation_name);
     let seed = match (&previous, request.full) {
         (IndexState::Ready(published), false) => Some(index_dir.join(&published.database)),
         _ => None,
@@ -269,6 +286,7 @@ pub(crate) fn sync(
                 files_removed: build.files_removed,
                 files_indexed: build.files_indexed,
                 timings,
+                unowned,
             })
         }
         Some(Err(error)) => Err(error),
@@ -285,6 +303,7 @@ pub(crate) fn sync(
                 files_removed: 0,
                 files_indexed: progress.files_indexed,
                 timings,
+                unowned,
             })
         }
     }
@@ -349,12 +368,35 @@ fn acquire_lock(index_dir: &Path) -> Result<File, GraphError> {
         .open(&path)
         .map_err(|source| GraphError::io("open code-graph build lock", &path, source))?;
     match file.try_lock_exclusive() {
-        Ok(()) => Ok(file),
+        Ok(()) => {
+            // Diagnostic holder record (STD-03 R7); ownership is the flock.
+            let holder = serde_json::json!({
+                "pid": std::process::id(),
+                "acquired_at": crate::recommend::current_observation_cutoff()?,
+                "label": "graph_sync",
+            });
+            let mut writer = &file;
+            file.set_len(0)
+                .and_then(|()| writer.write_all(holder.to_string().as_bytes()))
+                .map_err(|source| {
+                    GraphError::io("record code-graph build lock holder", &path, source)
+                })?;
+            Ok(file)
+        }
         Err(source) if source.kind() == fs2::lock_contended_error().kind() => {
+            let holder = fs::read_to_string(&path).unwrap_or_default();
+            let holder = if holder.trim().is_empty() {
+                "an unrecorded holder".to_string()
+            } else {
+                holder.trim().to_string()
+            };
+            // Acquisition never waits, so its deadline is immediate.
             Err(GraphError::invalid_data(
                 "lock code-graph index",
-                "another graph_sync is building this repository's index; retry after it finishes \
-                 (the published index stays readable meanwhile)",
+                format!(
+                    "another graph_sync is building this repository's index (holder {holder}); \
+                     retry after it finishes (the published index stays readable meanwhile)"
+                ),
             ))
         }
         Err(source) => Err(GraphError::io("lock code-graph index", path, source)),
@@ -370,26 +412,93 @@ fn is_generation_name(name: &str) -> bool {
     generation_number(name).is_some()
 }
 
-fn next_generation_name(previous: &IndexState) -> String {
-    let current = match previous {
+/// The next generation after the published one whose database and sidecars
+/// are all absent, so a build never writes into a file it did not create.
+fn next_generation_name(index_dir: &Path, previous: &IndexState) -> String {
+    let mut number = match previous {
         IndexState::Ready(published) => generation_number(published.database.as_str()),
         IndexState::Missing | IndexState::Incompatible(_) => None,
-    };
-    format!(
-        "graph.{EXTRACTOR_VERSION}.{}.db",
-        current.map_or(1, |number| number + 1)
-    )
+    }
+    .map_or(1, |number| number + 1);
+    loop {
+        let name = format!("graph.{EXTRACTOR_VERSION}.{number}.db");
+        let taken = ["", "-wal", "-shm", "-journal", ".lock"]
+            .iter()
+            .any(|suffix| index_dir.join(format!("{name}{suffix}")).exists());
+        if !taken {
+            return name;
+        }
+        number += 1;
+    }
 }
 
-/// Remove every graph database file that the published pointer does not
-/// name: interrupted builds, superseded generations, older extractor
-/// versions, and the pre-generation `graph.<extractor>.db` layout. Other
-/// state in the directory (the change-history index) is left alone.
-fn remove_unpublished_generations(index_dir: &Path, keep: &IndexState) -> Result<(), GraphError> {
-    let kept = match keep {
-        IndexState::Ready(published) => Some(published.database.as_str()),
-        IndexState::Missing | IndexState::Incompatible(_) => None,
-    };
+/// Delete the generations earlier builds recorded creating, except the
+/// published one, and return what stays recorded. Only recorded generations
+/// are deleted: ownership comes from `graph.owned.json`, never from a file
+/// name (STD-03 R29). An unreadable record deletes nothing.
+fn remove_superseded_generations(
+    index_dir: &Path,
+    published: Option<&str>,
+) -> Result<std::collections::BTreeSet<String>, GraphError> {
+    let owned = read_owned(index_dir);
+    let mut kept = std::collections::BTreeSet::new();
+    for database in owned {
+        if Some(database.as_str()) == published {
+            kept.insert(database);
+            continue;
+        }
+        if generation_of_any_extractor(&database).is_none() {
+            // Not a name a build creates; never delete it on the record's word.
+            continue;
+        }
+        for suffix in ["", "-wal", "-shm", "-journal", ".lock"] {
+            let path = index_dir.join(format!("{database}{suffix}"));
+            match fs::remove_file(&path) {
+                Ok(()) => {}
+                Err(source) if source.kind() == ErrorKind::NotFound => {}
+                Err(source) => {
+                    return Err(GraphError::io(
+                        "remove superseded code-graph generation",
+                        path,
+                        source,
+                    ));
+                }
+            }
+        }
+    }
+    Ok(kept)
+}
+
+/// The recorded generations; empty when the record is absent or unreadable.
+fn read_owned(index_dir: &Path) -> std::collections::BTreeSet<String> {
+    #[derive(Deserialize)]
+    struct Owned {
+        generations: std::collections::BTreeSet<String>,
+    }
+    fs::read(index_dir.join(OWNED_FILE))
+        .ok()
+        .and_then(|bytes| serde_json::from_slice::<Owned>(&bytes).ok())
+        .map(|owned| owned.generations)
+        .unwrap_or_default()
+}
+
+fn write_owned(
+    index_dir: &Path,
+    generations: &std::collections::BTreeSet<String>,
+) -> Result<(), GraphError> {
+    let bytes = serde_json::to_vec_pretty(&serde_json::json!({"generations": generations}))
+        .map_err(|error| {
+            GraphError::invalid_data("encode code-graph generation record", error.to_string())
+        })?;
+    write_durably(index_dir, OWNED_FILE, &bytes)
+}
+
+/// Graph databases in `index_dir` that no build recorded creating.
+fn unowned_databases(
+    index_dir: &Path,
+    recorded: &std::collections::BTreeSet<String>,
+) -> Result<Vec<String>, GraphError> {
+    let mut unowned = std::collections::BTreeSet::new();
     let entries = fs::read_dir(index_dir)
         .map_err(|source| GraphError::io("list code-graph index directory", index_dir, source))?;
     for entry in entries {
@@ -397,34 +506,27 @@ fn remove_unpublished_generations(index_dir: &Path, keep: &IndexState) -> Result
             GraphError::io("list code-graph index directory", index_dir, source)
         })?;
         let name = entry.file_name();
-        let Some(name) = name.to_str() else {
-            continue;
-        };
-        let Some(database) = graph_database_of(name) else {
-            continue;
-        };
-        if Some(database) == kept {
-            continue;
-        }
-        match fs::remove_file(entry.path()) {
-            Ok(()) => {}
-            Err(source) if source.kind() == ErrorKind::NotFound => {}
-            Err(source) => {
-                return Err(GraphError::io(
-                    "remove unpublished code-graph database",
-                    entry.path(),
-                    source,
-                ));
-            }
+        if let Some(database) = name.to_str().and_then(graph_database_of)
+            && !recorded.contains(database)
+        {
+            unowned.insert(database.to_string());
         }
     }
-    Ok(())
+    Ok(unowned.into_iter().collect())
+}
+
+/// The generation number of `graph.<any extractor>.<n>.db`.
+fn generation_of_any_extractor(name: &str) -> Option<u64> {
+    let rest = name.strip_prefix("graph.")?.strip_suffix(".db")?;
+    let (extractor, generation) = rest.split_once('.')?;
+    extractor.parse::<u32>().ok()?;
+    generation.parse().ok()
 }
 
 /// The database a graph store file belongs to: `graph.<n...>.db` itself or
 /// one of its SQLite/lock sidecars.
 fn graph_database_of(name: &str) -> Option<&str> {
-    if !name.starts_with("graph.") || name == POINTER_FILE || name == LOCK_FILE {
+    if !name.starts_with("graph.") || [POINTER_FILE, LOCK_FILE, OWNED_FILE].contains(&name) {
         return None;
     }
     for suffix in ["-wal", "-shm", "-journal", ".lock"] {
@@ -719,31 +821,38 @@ impl BuildJob {
 
 /// Replace the pointer file atomically and durably.
 fn write_pointer(index_dir: &Path, published: &PublishedIndex) -> Result<(), GraphError> {
-    let pointer = index_dir.join(POINTER_FILE);
-    let staging = index_dir.join(format!("{POINTER_FILE}.{}.tmp", std::process::id()));
     let bytes = serde_json::to_vec_pretty(published).map_err(|error| {
         GraphError::invalid_data("encode code-graph index pointer", error.to_string())
     })?;
+    write_durably(index_dir, POINTER_FILE, &bytes)
+}
+
+/// The one durable-write path of this module (STD-03 R5): write a private
+/// temp file beside `name`, flush it, rename it over `name`, and flush the
+/// directory, so readers see the old or the new file, never a partial one.
+fn write_durably(index_dir: &Path, name: &str, bytes: &[u8]) -> Result<(), GraphError> {
+    let target = index_dir.join(name);
+    let staging = index_dir.join(format!("{name}.{}.tmp", std::process::id()));
     let written = (|| {
         let mut options = OpenOptions::new();
         options.write(true).create(true).truncate(true);
         #[cfg(unix)]
         options.mode(0o600);
         let mut file = options.open(&staging)?;
-        file.write_all(&bytes)?;
+        file.write_all(bytes)?;
         file.write_all(b"\n")?;
         file.sync_all()?;
-        fs::rename(&staging, &pointer)?;
+        fs::rename(&staging, &target)?;
         File::open(index_dir)?.sync_all()
     })();
     written.map_err(|source| {
         let _ = fs::remove_file(&staging);
-        GraphError::io("publish code-graph index pointer", pointer, source)
+        GraphError::io("write code-graph index file", target, source)
     })
 }
 
-/// Best-effort removal of an unpublished generation; the next build removes
-/// anything left behind.
+/// Best-effort removal of the generation this attempt created; the next build
+/// removes anything left behind, because the generation is recorded as owned.
 fn discard(generation: &Path) {
     let Some(name) = generation.file_name().and_then(|name| name.to_str()) else {
         return;

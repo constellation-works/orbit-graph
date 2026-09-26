@@ -178,8 +178,12 @@ out, the response reports `coverage.complete: false` and
 `resume` hint, and the build is discarded. The previously published index is
 unchanged, and so are recommendations. A killed process, a failed build, or a
 second concurrent `graph_sync` (refused with `graph_error` while the first
-holds the build lock) also leaves the published index as it was. The next
-build removes unpublished and superseded generations.
+holds the build lock, and named in the refusal) also leaves the published
+index as it was. Each build records the generation it creates in
+`graph.owned.json` before writing it, and the next build deletes only recorded
+generations that are no longer published. It never deletes a graph database it
+did not record, such as the empty `graph.<extractor>.db` older plugin versions
+left in plugin state. It reports those files in `result.unowned_files` instead.
 
 The response's `code_index` names the plugin state `directory` it wrote, and
 `orbit.graph.status` reports the same object: `state` is `missing`,

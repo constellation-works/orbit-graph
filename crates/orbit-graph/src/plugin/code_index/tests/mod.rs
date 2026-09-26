@@ -143,28 +143,61 @@ fn an_exhausted_budget_publishes_nothing_and_keeps_the_previous_index() {
 }
 
 #[test]
-fn stale_and_legacy_databases_are_removed_but_history_is_kept() {
+fn only_recorded_generations_are_removed_and_unrecorded_databases_are_reported() {
     let repo = fixture();
     let state = tempfile::tempdir().expect("state");
-    for name in [
+    let unrecorded = [
         format!("graph.{EXTRACTOR_VERSION}.db"),
         "graph.10.db".to_string(),
-        format!("graph.{EXTRACTOR_VERSION}.7.db-wal"),
-        "change-history.3.sqlite3".to_string(),
-    ] {
-        fs::write(state.path().join(name), b"x").expect("seed file");
+        format!("graph.{EXTRACTOR_VERSION}.2.db"),
+    ];
+    for name in &unrecorded {
+        fs::write(state.path().join(name), b"x").expect("seed database");
     }
-    sync(repo.path(), state.path(), request(false)).expect("build");
-    let mut names = fs::read_dir(state.path())
-        .expect("list")
-        .filter_map(|entry| entry.ok())
-        .filter_map(|entry| entry.file_name().to_str().map(str::to_string))
-        .collect::<Vec<_>>();
-    names.sort();
-    assert!(names.contains(&"change-history.3.sqlite3".to_string()));
-    assert!(!names.iter().any(|name| name == "graph.10.db"));
-    assert!(!names.iter().any(|name| name.ends_with(".7.db-wal")));
-    assert!(!names.contains(&format!("graph.{EXTRACTOR_VERSION}.db")));
+    fs::write(state.path().join("change-history.3.sqlite3"), b"x").expect("seed history");
+
+    let first = sync(repo.path(), state.path(), request(false)).expect("first build");
+    let mut expected = unrecorded.to_vec();
+    expected.sort();
+    assert_eq!(first.unowned, expected);
+    let one = published(state.path()).database;
+    assert_eq!(one, format!("graph.{EXTRACTOR_VERSION}.1.db"));
+    sync(repo.path(), state.path(), request(true)).expect("second build");
+    let third = sync(repo.path(), state.path(), request(true)).expect("third build");
+    assert_eq!(third.unowned, expected);
+    // The builds skipped the unrecorded generation 2 instead of writing into it.
+    assert_eq!(
+        fs::read(state.path().join(format!("graph.{EXTRACTOR_VERSION}.2.db"))).expect("read"),
+        b"x"
+    );
+    assert_eq!(
+        published(state.path()).database,
+        format!("graph.{EXTRACTOR_VERSION}.4.db")
+    );
+    for name in unrecorded
+        .iter()
+        .chain(["change-history.3.sqlite3".to_string()].iter())
+    {
+        assert!(state.path().join(name).exists(), "{name} was deleted");
+    }
+    // The first generation was recorded and superseded twice, so it is gone.
+    assert!(!state.path().join(&one).exists());
+}
+
+#[test]
+fn an_unreadable_record_deletes_nothing() {
+    let repo = fixture();
+    let state = tempfile::tempdir().expect("state");
+    sync(repo.path(), state.path(), request(false)).expect("first build");
+    let one = published(state.path()).database;
+    sync(repo.path(), state.path(), request(false)).expect("second build");
+    fs::write(state.path().join(OWNED_FILE), b"{not json").expect("corrupt record");
+    let third = sync(repo.path(), state.path(), request(false)).expect("third build");
+    assert!(
+        state.path().join(&one).exists(),
+        "unrecorded generation deleted"
+    );
+    assert!(third.unowned.contains(&one), "{:?}", third.unowned);
 }
 
 #[test]
@@ -173,9 +206,30 @@ fn a_concurrent_build_is_refused_while_the_lock_is_held() {
     let state = tempfile::tempdir().expect("state");
     let held = acquire_lock(state.path()).expect("first lock");
     let error = sync(repo.path(), state.path(), request(false)).expect_err("second build");
-    assert!(error.to_string().contains("another graph_sync"), "{error}");
+    let message = error.to_string();
+    assert!(message.contains("another graph_sync"), "{message}");
+    // The refusal names the holder (STD-03 R7).
+    assert!(
+        message.contains(&format!("\"pid\":{}", std::process::id())),
+        "{message}"
+    );
     drop(held);
-    sync(repo.path(), state.path(), request(false)).expect("build after release");
+    // A git child that another test forked while the lock file was open
+    // shares its flock until it execs (close-on-exec), so allow a short wait.
+    wait_for_idle_builder(state.path());
+    let deadline = std::time::Instant::now() + Duration::from_secs(60);
+    loop {
+        match sync(repo.path(), state.path(), request(false)) {
+            Ok(_) => break,
+            Err(error)
+                if error.to_string().contains("another graph_sync")
+                    && std::time::Instant::now() < deadline =>
+            {
+                std::thread::sleep(Duration::from_millis(20));
+            }
+            Err(error) => panic!("build after release: {error}"),
+        }
+    }
 }
 
 #[test]
@@ -219,6 +273,10 @@ fn generation_names_are_parsed_strictly() {
     );
     assert_eq!(graph_database_of(POINTER_FILE), None);
     assert_eq!(graph_database_of(LOCK_FILE), None);
+    assert_eq!(graph_database_of(OWNED_FILE), None);
+    assert_eq!(generation_of_any_extractor("graph.10.4.db"), Some(4));
+    assert_eq!(generation_of_any_extractor("graph.10.db"), None);
+    assert_eq!(generation_of_any_extractor("graph.x.4.db"), None);
     assert_eq!(graph_database_of("change-history.3.sqlite3"), None);
 }
 

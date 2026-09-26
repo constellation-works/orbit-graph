@@ -502,6 +502,7 @@ fn graph_sync(repository: PathBuf, full: bool, budget_ms: u64) -> Result<Value, 
             "files_changed": result.files_changed,
             "files_removed": result.files_removed,
             "timings": result.timings,
+            "unowned_files": result.unowned,
         },
         "code_index": code_index_status(repository.as_path(), index_dir.as_path())?,
     }))
