@@ -222,6 +222,37 @@ impl Graph {
         Self::from_opened(worktree_root, policy, opened)
     }
 
+    /// Open a complete graph database strictly for reading.
+    ///
+    /// Nothing is created, initialized, migrated, locked for writing, or
+    /// synchronized, so this works against a read-only directory. The
+    /// database must already hold the current schema and must not use WAL
+    /// journaling (a WAL reader needs a writable shared-memory file); the
+    /// plugin's published code-graph generations satisfy both.
+    pub(crate) fn open_read_only(worktree_root: &Path, db_path: &Path) -> Result<Self, GraphError> {
+        let db_path = store::existing_db_path(worktree_root, db_path)?;
+        let read_conn = Connection::open_with_flags(
+            db_path.path(),
+            OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_NO_MUTEX,
+        )
+        .map_err(|source| GraphError::sqlite("open graph database read-only", source))?;
+        read_conn
+            .pragma_update(None, "busy_timeout", 5_000)
+            .map_err(|source| GraphError::sqlite("set busy_timeout for graph read", source))?;
+        let last_auto_sync_at = read_last_incremental_at(
+            &read_conn,
+            "read graph last incremental sync metadata at open",
+        )?;
+        Ok(Self {
+            db_path,
+            worktree_root: worktree_root.to_path_buf(),
+            policy: SyncPolicy::Manual,
+            read_conn: Mutex::new(read_conn),
+            last_auto_sync_at: Mutex::new(last_auto_sync_at),
+            _watcher: None,
+        })
+    }
+
     fn from_opened(
         worktree_root: &Path,
         policy: SyncPolicy,

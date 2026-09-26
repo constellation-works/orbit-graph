@@ -1,0 +1,14 @@
+schemaVersion: 2
+kind: Activity
+metadata:
+  name: graph_code_sync
+spec:
+  type: deterministic
+  description: Refresh the graph plugin's code-graph index within the plugin timeout, publishing it only when complete.
+  input_schema_json:
+    type: object
+  action: plugin.tool_call
+  config:
+    tool: orbit.graph.maintain
+    input:
+      operation: graph_sync
