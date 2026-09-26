@@ -233,6 +233,30 @@ pub struct RecommendationEngine {
     repo_root: PathBuf,
     landing_branch: String,
     index_dir: Option<PathBuf>,
+    structure_index: StructureIndex,
+}
+
+/// Where combined and graph-only ranking read current code structure from.
+#[derive(Debug, Clone)]
+pub(crate) enum StructureIndex {
+    /// The repository-local database selected by branch and commit, as the
+    /// command-line interface maintains it with `orbit-graph sync`.
+    RepositoryLocal,
+    /// A complete published database whose files were indexed while the
+    /// checkout was at `revision`.
+    Published {
+        /// Database file to read.
+        db_path: PathBuf,
+        /// Checkout commit when the index was built, if the branch was born.
+        revision: Option<String>,
+    },
+    /// No usable index; structure is skipped with this explicit fallback.
+    Unavailable {
+        /// Fallback kind reported to the caller.
+        kind: &'static str,
+        /// Actionable explanation.
+        reason: String,
+    },
 }
 
 impl RecommendationEngine {
@@ -243,19 +267,24 @@ impl RecommendationEngine {
             repo_root: index.repo_root().to_path_buf(),
             landing_branch: index.landing_branch().to_string(),
             index_dir: None,
+            structure_index: StructureIndex::RepositoryLocal,
         })
     }
 
+    /// Open an engine whose history index lives in `index_dir` and whose
+    /// structural evidence comes from `structure_index`.
     pub(crate) fn open_with_index_dir(
         repo_root: &Path,
         landing_branch: &str,
         index_dir: &Path,
+        structure_index: StructureIndex,
     ) -> Result<Self, GraphError> {
         let index = HistoryIndex::open_with_index_dir(repo_root, landing_branch, index_dir)?;
         Ok(Self {
             repo_root: index.repo_root().to_path_buf(),
             landing_branch: index.landing_branch().to_string(),
             index_dir: Some(index_dir.to_path_buf()),
+            structure_index,
         })
     }
 
@@ -364,26 +393,56 @@ impl RecommendationEngine {
             .ok()
             .and_then(|head| head.peel_to_commit().ok())
             .map(|c| c.id());
-        let structure = if checkout_head == Some(target)
-            && matches!(
-                request.variant,
-                RecommendationVariant::Combined | RecommendationVariant::GraphOnly
-            ) {
-            add_current_structure(
-                self.repo_root.as_path(),
-                self.index_dir.as_deref(),
-                request.level,
-                &resolver,
-                &mut scored,
-            )?
+        let uses_structure = matches!(
+            request.variant,
+            RecommendationVariant::Combined | RecommendationVariant::GraphOnly
+        );
+        let mut structure_fallback = None;
+        let structure = if checkout_head == Some(target) && uses_structure {
+            match &self.structure_index {
+                StructureIndex::RepositoryLocal => add_current_structure(
+                    self.repo_root.as_path(),
+                    None,
+                    request.level,
+                    &resolver,
+                    &mut scored,
+                )?,
+                StructureIndex::Published { db_path, revision }
+                    if revision.as_deref() == Some(target.to_string().as_str()) =>
+                {
+                    add_current_structure(
+                        self.repo_root.as_path(),
+                        Some(db_path.as_path()),
+                        request.level,
+                        &resolver,
+                        &mut scored,
+                    )?
+                }
+                StructureIndex::Published { revision, .. } => {
+                    structure_fallback = Some(RecommendationFallback {
+                        kind: "structure_index_stale".to_string(),
+                        reason: format!(
+                            "the code-graph index was built at {} but the target is {target}; run the graph_sync maintenance operation to refresh it",
+                            revision.as_deref().unwrap_or("an unborn branch")
+                        ),
+                    });
+                    StructureEvidence::default()
+                }
+                StructureIndex::Unavailable { kind, reason } => {
+                    structure_fallback = Some(RecommendationFallback {
+                        kind: (*kind).to_string(),
+                        reason: reason.clone(),
+                    });
+                    StructureEvidence::default()
+                }
+            }
         } else {
             StructureEvidence::default()
         };
-        if matches!(
-            request.variant,
-            RecommendationVariant::Combined | RecommendationVariant::GraphOnly
-        ) {
-            if checkout_head != Some(target) {
+        if uses_structure {
+            if let Some(fallback) = structure_fallback {
+                fallbacks.push(fallback);
+            } else if checkout_head != Some(target) {
                 fallbacks.push(RecommendationFallback {
                     kind: "structure_unavailable_for_revision".to_string(),
                     reason: "bounded structural expansion was skipped because the target is not the current checkout; HEAD structure was not reused".to_string(),
@@ -1159,19 +1218,14 @@ fn add_lexical_baseline(
 
 fn add_current_structure(
     repo_root: &Path,
-    index_dir: Option<&Path>,
+    db_path: Option<&Path>,
     level: RecommendationLevel,
     resolver: &TargetTree,
     scored: &mut BTreeMap<String, Accumulator>,
 ) -> Result<StructureEvidence, GraphError> {
-    let graph = match index_dir {
-        Some(index_dir) => Graph::open_in_plugin_state(
-            repo_root,
-            index_dir
-                .join(format!("graph.{}.db", crate::EXTRACTOR_VERSION))
-                .as_path(),
-            SyncPolicy::Manual,
-        )?,
+    let graph = match db_path {
+        // A published plugin index is only ever read (STD-01 R31).
+        Some(db_path) => Graph::open_read_only(repo_root, db_path)?,
         None => Graph::open(repo_root, SyncPolicy::Manual)?,
     };
     let seeds = scored

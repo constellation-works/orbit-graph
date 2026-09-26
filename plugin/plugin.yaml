@@ -90,7 +90,7 @@ spec:
       cli:
         positional: [query]
     - name: maintain
-      description: Import or synchronize bounded verified change history.
+      description: Import or synchronize bounded verified change history, or refresh the code-graph index.
       execution_kind: mutating
       mcp_scope: workspace
       input_schema:
@@ -107,6 +107,8 @@ spec:
           task_ids: {type: array, items: {type: string}}
           run_ids: {type: array, items: {type: string}}
           task_snapshots: {type: array}
+          full: {type: boolean}
+          budget_ms: {type: integer}
         additionalProperties: false
       output_schema: {type: object}
   web:

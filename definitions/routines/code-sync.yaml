@@ -1,0 +1,12 @@
+schemaVersion: 1
+name: code-sync
+description: Refresh the graph plugin's code-graph index so recommendations can apply structural evidence.
+enabled: false
+trigger:
+  cron: "30 3 * * *"
+  missed_run: skip
+target: job:graph_code_sync_pipeline
+policy:
+  timeout_minutes: 10
+  retries: {max: 1, backoff_minutes: 5}
+  overlap: forbid

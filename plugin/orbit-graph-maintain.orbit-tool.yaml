@@ -7,7 +7,7 @@ parameters:
   param_type: integer
   required: false
 - name: operation
-  description: history_sync, import, or orbit_sync.
+  description: history_sync, import, orbit_sync, or graph_sync.
   param_type: string
   required: true
 - name: repository
@@ -41,4 +41,12 @@ parameters:
 - name: task_snapshots
   description: Optional attested pre-execution TaskAssociation objects keyed by task_id.
   param_type: array
+  required: false
+- name: full
+  description: graph_sync only; re-extract every file instead of starting from the published index.
+  param_type: boolean
+  required: false
+- name: budget_ms
+  description: graph_sync only; wall-clock budget in milliseconds (1000-110000, default 90000).
+  param_type: integer
   required: false

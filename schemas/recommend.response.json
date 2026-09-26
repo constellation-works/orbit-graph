@@ -105,7 +105,7 @@
           "type": "boolean"
         },
         "fallbacks": {
-          "description": "Evidence limitations and fallbacks applied to this response, such as structure_unavailable.",
+          "description": "Evidence limitations and fallbacks applied to this response, each with a kind and an actionable reason. Structure kinds under Orbit: structure_index_missing (run graph_sync), structure_index_incompatible (run graph_sync with full: true), structure_index_stale (index built at another revision; run graph_sync), structure_unavailable_for_revision (target is not the checkout), structure_unavailable (no usable structural neighbors).",
           "type": "array",
           "items": {
             "type": "object"

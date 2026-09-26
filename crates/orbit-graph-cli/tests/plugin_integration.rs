@@ -17,6 +17,7 @@ use std::os::unix::fs::PermissionsExt;
 use serde_json::{Value, json};
 use tempfile::TempDir;
 
+use orbit_graph::EXTRACTOR_VERSION;
 use orbit_graph::plugin::{
     MAINTAIN_TOOL_NAME, PLUGIN_SCHEMA_VERSION, RECOMMEND_TOOL_NAME, STATUS_TOOL_NAME,
     VERSION_TOOL_NAME,
@@ -243,6 +244,32 @@ fn plugin_errors_carry_stable_codes_and_validate_before_routing() {
         ),
         (MAINTAIN_TOOL_NAME, json!({"operation": "import"})),
         (MAINTAIN_TOOL_NAME, json!({"operation": "rebuild"})),
+        (
+            MAINTAIN_TOOL_NAME,
+            json!({"operation": "graph_sync", "budget_ms": 999}),
+        ),
+        (
+            MAINTAIN_TOOL_NAME,
+            json!({"operation": "graph_sync", "budget_ms": 110_001}),
+        ),
+        // graph_sync maintains the plugin state and refuses to run without it.
+        (MAINTAIN_TOOL_NAME, json!({"operation": "graph_sync"})),
+        (
+            MAINTAIN_TOOL_NAME,
+            json!({"operation": "history_sync", "full": true}),
+        ),
+        (
+            MAINTAIN_TOOL_NAME,
+            json!({"operation": "graph_sync", "branch": "main"}),
+        ),
+        (
+            MAINTAIN_TOOL_NAME,
+            json!({"operation": "graph_sync", "limit": 10}),
+        ),
+        (
+            MAINTAIN_TOOL_NAME,
+            json!({"operation": "orbit_sync", "budget_ms": 5000}),
+        ),
         ("graph.unknown", json!({})),
     ] {
         assert_eq!(
@@ -496,13 +523,18 @@ fn plugin_state_contains_every_index_file() {
     let state = TempDir::new().expect("plugin state");
     let state_value = state.path().as_os_str();
 
-    let maintain = plugin_output_with_env(
-        fixture.path(),
-        MAINTAIN_TOOL_NAME,
+    for input in [
         json!({"operation": "history_sync", "branch": "main", "limit": 100}),
-        &[("ORBIT_PLUGIN_STATE", state_value)],
-    );
-    let _ = plugin_success(&maintain);
+        json!({"operation": "graph_sync"}),
+    ] {
+        let maintain = plugin_output_with_env(
+            fixture.path(),
+            MAINTAIN_TOOL_NAME,
+            input,
+            &[("ORBIT_PLUGIN_STATE", state_value)],
+        );
+        let _ = plugin_success(&maintain);
+    }
     let output = plugin_output_with_env(
         fixture.path(),
         RECOMMEND_TOOL_NAME,
@@ -537,10 +569,155 @@ fn plugin_state_contains_every_index_file() {
         names.iter().any(|name| name.starts_with("change-history.")),
         "history index missing from plugin state: {names:?}"
     );
-    assert!(
-        names.iter().any(|name| name.starts_with("graph.")),
-        "graph index missing from plugin state: {names:?}"
+    for published in [
+        "graph.current.json".to_string(),
+        format!("graph.{EXTRACTOR_VERSION}.1.db"),
+    ] {
+        assert!(
+            names.contains(&published),
+            "code-graph index file {published} missing from plugin state: {names:?}"
+        );
+    }
+}
+
+#[test]
+fn graph_sync_publishes_structure_that_recommend_applies_at_its_revision() {
+    let fixture = evaluation_fixture();
+    let state = TempDir::new().expect("plugin state");
+    let environment = [("ORBIT_PLUGIN_STATE", state.path().as_os_str())];
+    let call = |tool: &str, input: Value| {
+        plugin_success(&plugin_output_with_env(
+            fixture.path(),
+            tool,
+            input,
+            &environment,
+        ))
+    };
+    let recommend = || {
+        call(
+            RECOMMEND_TOOL_NAME,
+            json!({"branch": "main", "query": "parser future secret"}),
+        )
+    };
+    let structure_fallbacks = |recommendation: &Value| {
+        recommendation["result"]["fallbacks"]
+            .as_array()
+            .expect("fallbacks")
+            .iter()
+            .filter_map(|fallback| fallback["kind"].as_str())
+            .filter(|kind| kind.starts_with("structure_"))
+            .map(str::to_string)
+            .collect::<Vec<_>>()
+    };
+    // Give the checkout a call edge for structure to expand along.
+    fs::write(
+        fixture.path().join("tests/parser.rs"),
+        "pub fn parser_test() -> bool { parse() && true }\n",
+    )
+    .expect("write test with an edge");
+    run_git(fixture.path(), ["add", "."]);
+    run_git(fixture.path(), ["commit", "-m", "edge"]);
+    let _ = call(
+        MAINTAIN_TOOL_NAME,
+        json!({"operation": "history_sync", "branch": "main", "limit": 100}),
     );
+
+    // Before any build: no structure, and the fallback names the fix.
+    let before = recommend();
+    assert_eq!(before["result"]["structure_applied"], false, "{before}");
+    assert_eq!(structure_fallbacks(&before), ["structure_index_missing"]);
+    let status = call(STATUS_TOOL_NAME, json!({}));
+    assert_eq!(status["code_index"]["state"], "missing", "{status}");
+    assert_eq!(status["code_index"]["fresh"], false);
+
+    let head = git_stdout(fixture.path(), ["rev-parse", "HEAD"]);
+    let synced = call(MAINTAIN_TOOL_NAME, json!({"operation": "graph_sync"}));
+    assert_eq!(synced["operation"], "graph_sync");
+    assert_eq!(synced["coverage"]["complete"], true, "{synced}");
+    assert_eq!(synced["coverage"]["state"], "published");
+    assert_eq!(synced["result"]["seeded_from_published"], false);
+    assert_eq!(synced["result"]["budget_ms"], 90_000);
+    assert_eq!(synced["result"]["files_indexed"], 2);
+    assert_eq!(synced["code_index"]["state"], "ready");
+    assert_eq!(synced["code_index"]["fresh"], true);
+    assert_eq!(synced["code_index"]["published"]["revision"], head.as_str());
+    assert_eq!(synced["code_index"]["published"]["files"], 2);
+    assert_eq!(synced["code_index"]["published"]["mode"], "full");
+    // The response names the directory it wrote (STD-01 R30).
+    let index_dir = PathBuf::from(
+        synced["code_index"]["directory"]
+            .as_str()
+            .expect("index directory"),
+    );
+    assert!(index_dir.starts_with(state.path()), "{synced}");
+    let state_files = || {
+        fs::read_dir(&index_dir)
+            .expect("list index directory")
+            .map(|entry| {
+                entry
+                    .expect("index entry")
+                    .file_name()
+                    .to_string_lossy()
+                    .into_owned()
+            })
+            .collect::<std::collections::BTreeSet<_>>()
+    };
+    let published_files = state_files();
+
+    let after = recommend();
+    assert_eq!(after["result"]["structure_applied"], true, "{after}");
+    assert!(
+        structure_fallbacks(&after).is_empty(),
+        "structure fallbacks after graph_sync: {after}"
+    );
+    let status = call(STATUS_TOOL_NAME, json!({}));
+    assert_eq!(status["code_index"]["fresh"], true, "{status}");
+    // Recommend and status only read the published index (STD-01 R31).
+    assert_eq!(state_files(), published_files);
+    assert_eq!(status["code_index"]["checkout_revision"], head.as_str());
+
+    // A new commit makes the published index stale; recommend says so and
+    // skips structure rather than reusing it for another revision.
+    fs::write(
+        fixture.path().join("src/lexer.rs"),
+        "pub fn lex() -> bool { crate::parse() }\n",
+    )
+    .expect("write lexer");
+    run_git(fixture.path(), ["add", "."]);
+    run_git(fixture.path(), ["commit", "-m", "lexer"]);
+    let stale = recommend();
+    assert_eq!(stale["result"]["structure_applied"], false, "{stale}");
+    assert_eq!(structure_fallbacks(&stale), ["structure_index_stale"]);
+    assert_eq!(
+        call(STATUS_TOOL_NAME, json!({}))["code_index"]["fresh"],
+        false
+    );
+
+    // An incremental build starts from the published index and refreshes it.
+    let resynced = call(
+        MAINTAIN_TOOL_NAME,
+        json!({"operation": "graph_sync", "budget_ms": 60_000}),
+    );
+    assert_eq!(resynced["coverage"]["complete"], true, "{resynced}");
+    assert_eq!(resynced["result"]["seeded_from_published"], true);
+    assert_eq!(resynced["result"]["files_changed"], 1);
+    assert_eq!(resynced["code_index"]["published"]["mode"], "incremental");
+    assert_eq!(resynced["code_index"]["published"]["files"], 3);
+    let refreshed = recommend();
+    assert_eq!(
+        refreshed["result"]["structure_applied"], true,
+        "{refreshed}"
+    );
+    assert!(structure_fallbacks(&refreshed).is_empty(), "{refreshed}");
+
+    // A full rebuild ignores the published index.
+    let rebuilt = call(
+        MAINTAIN_TOOL_NAME,
+        json!({"operation": "graph_sync", "full": true}),
+    );
+    assert_eq!(rebuilt["result"]["seeded_from_published"], false);
+    assert_eq!(rebuilt["code_index"]["published"]["mode"], "full");
+    assert_eq!(rebuilt["code_index"]["published"]["files"], 3);
 }
 
 #[test]
