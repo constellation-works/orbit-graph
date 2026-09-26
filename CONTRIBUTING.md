@@ -9,6 +9,7 @@ Orbit checkout, Orbit runtime configuration, or private crates.
 Before opening a pull request, run:
 
 ```sh
+sh docs/standards/check.sh
 cargo fmt --all --check
 cargo clippy --workspace --all-targets --locked -- -D warnings
 cargo test --workspace --locked
@@ -16,6 +17,10 @@ RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps --locked
 cargo build --workspace --locked
 git diff --check
 ```
+
+Changes must follow the constellation standards vendored in
+[`docs/standards/`](docs/standards/README.md); cite a rule as `STD-nn §Rn`.
+Those files are read-only: never edit them, re-sync instead.
 
 Changes to extraction or storage compatibility may require incrementing
 `EXTRACTOR_VERSION`, which intentionally selects a fresh database. Add focused

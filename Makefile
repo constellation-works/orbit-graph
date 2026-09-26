@@ -1,5 +1,5 @@
 .DEFAULT_GOAL := help
-.PHONY: help build release run dev check test fmt fmt-check clippy doc tree ci ci-fast ci-lint install uninstall clean watch plugin-bundle plugin-check
+.PHONY: help build release run dev check test fmt fmt-check clippy doc tree ci ci-fast ci-lint standards-check install uninstall clean watch plugin-bundle plugin-check
 
 CARGO ?= cargo
 BINARY := orbit-graph
@@ -40,6 +40,7 @@ help:
 	@echo "  make ci           Run complete CONTRIBUTING.md validation"
 	@echo "  make ci-fast      Check formatting and diff whitespace"
 	@echo "  make ci-lint      Run clippy gate"
+	@echo "  make standards-check Verify vendored docs/standards"
 	@echo "  make install      Install binary (INSTALL_PROFILE=debug optional)"
 	@echo "  make uninstall    Remove binary from INSTALL_BIN_DIR"
 	@echo "  make clean        Clean build artifacts"
@@ -82,6 +83,7 @@ tree:
 
 # Keep the full gate sequential, including when invoked with make -j.
 ci:
+	$(MAKE) standards-check
 	$(MAKE) fmt-check
 	$(MAKE) clippy
 	$(MAKE) test
@@ -89,10 +91,13 @@ ci:
 	$(MAKE) build
 	git diff --check
 
-ci-fast: fmt-check
+ci-fast: fmt-check standards-check
 	git diff --check
 
 ci-lint: clippy
+
+standards-check:
+	sh docs/standards/check.sh
 
 install:
 	$(CARGO) build -p $(BINARY_PACKAGE) --bin $(BINARY) --locked $(INSTALL_CARGO_PROFILE) --target-dir "$(CARGO_TARGET_DIR)"

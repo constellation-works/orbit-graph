@@ -5,6 +5,7 @@ summary: Standalone Rust library and JSON CLI for indexing and querying source-c
 status: active
 stack: Rust
 gate: direct
+standards: STD-01,STD-02,STD-03,STD-04,STD-05
 agents: "—"
 ---
 
