@@ -100,6 +100,14 @@ fresh_copy; printf '\n[dependencies.clap]\nversion = "4"\n' >>"$case_dir/crates/
 expect fail $G "a [dependencies.<name>] table header" 'table-form dependency header \[dependencies\.clap\]'
 fresh_copy; printf '\n[target.'"'"'cfg(unix)'"'"'.dependencies.clap]\nversion = "4"\n' >>"$case_dir/crates/orbit-graph/Cargo.toml"
 expect fail $G "a target-specific table-form dependency header" 'table-form dependency header'
+fresh_copy; printf '\n[ dependencies ]\norbit-graph-explorer = { path = "../orbit-graph-explorer" }\n' >>"$case_dir/crates/orbit-graph/Cargo.toml"
+expect fail $G "whitespace inside the header brackets ([ dependencies ])" 'orbit-graph must not depend on internal crate orbit-graph-explorer'
+fresh_copy; printf '\n[ dependencies . clap ]\nversion = "4"\n' >>"$case_dir/crates/orbit-graph/Cargo.toml"
+expect fail $G "whitespace around the dots of a table-form header" 'table-form dependency header \[dependencies\.clap\]'
+fresh_copy; printf '\n["dependencies"]\nclap = "4"\n' >>"$case_dir/crates/orbit-graph/Cargo.toml"
+expect fail $G "a quoted dependency header" 'unrecognized dependency header'
+fresh_copy; prepend crates/orbit-graph/Cargo.toml 'dependencies . clap = "4"'
+expect fail $G "whitespace around the dot of a dotted dependencies key" 'dotted-key dependency dependencies.clap'
 fresh_copy; add_dep orbit-graph 'cli = { package = "clap", version = "4" }'
 expect fail $G "a banned crate under another name (package =)" 'renamed dependency cli'
 fresh_copy; add_dep orbit-graph-cli 'graph-explorer = { package = "orbit-graph-explorer", path = "../orbit-graph-explorer" }'

@@ -58,6 +58,13 @@ parse_manifest() {
   awk '
     function trim(text) { sub(/^[[:space:]]+/, "", text); sub(/[[:space:]]+$/, "", text); return text }
     function refuse(reason) { print "unsupported", NR, reason }
+    # TOML allows whitespace inside header brackets and around the dots of a
+    # dotted key or header: `[ dependencies ]`, `[ target . x . dependencies ]`.
+    function squeeze(text) {
+      gsub(/\[[[:space:]]+/, "[", text); gsub(/[[:space:]]+\]/, "]", text)
+      gsub(/[[:space:]]*\.[[:space:]]*/, ".", text)
+      return text
+    }
     {
       line = trim($0)
       if (line == "" || line ~ /^#/) next
@@ -66,18 +73,21 @@ parse_manifest() {
     line ~ /^\[/ {
       header = line
       sub(/\][[:space:]]*#.*$/, "]", header)
-      header = trim(header)
+      header = squeeze(trim(header))
       in_deps = 0
       if (header ~ /^\[(target\..*\.)?(build-|dev-)?dependencies\]$/) {
         in_deps = 1
         kind = (header ~ /dev-dependencies\]$/) ? "dev" : "normal"
       } else if (header ~ /^\[(target\..*\.)?(build-|dev-)?dependencies\./) {
         refuse("table-form dependency header " header "; declare it as one line in [dependencies]")
+      } else if (header ~ /dependencies/ && header != "[workspace.dependencies]") {
+        # Fail closed: a header that names dependencies in a form not read above.
+        refuse("unrecognized dependency header " header)
       }
       next
     }
     {
-      key = line; sub(/=.*/, "", key); key = trim(key)
+      key = line; sub(/=.*/, "", key); key = squeeze(trim(key))
       # A dotted key that reaches into a dependency table from anywhere else.
       if (line ~ /=/ && key ~ /(^|\.)(build-|dev-)?dependencies\./) {
         refuse("dotted-key dependency " key "; declare it as one line in [dependencies]")
