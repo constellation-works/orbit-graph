@@ -122,7 +122,13 @@ fn every_read_succeeds_on_a_read_only_index_and_changes_nothing() {
 #[test]
 fn reads_on_a_never_synced_repository_report_index_missing_and_create_nothing() {
     let repo = fixture_repository();
-    let index = repo.path().join(".orbit-graph");
+    // db-path reports a canonical path (on macOS the tempdir is under the
+    // /var -> /private/var symlink), so compare against the canonical root.
+    let index = repo
+        .path()
+        .canonicalize()
+        .expect("canonical repository")
+        .join(".orbit-graph");
     for args in CLI_READS {
         if args[0] == "db-path" {
             let report = run_json(repo.path(), args);
