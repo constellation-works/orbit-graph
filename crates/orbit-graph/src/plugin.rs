@@ -16,10 +16,12 @@ use crate::{
 mod adapter;
 mod code_index;
 mod error;
+mod query;
 
 use adapter::{OrbitAdapter, canonical_repository};
 use code_index::{Incomplete, IndexState};
 pub use error::{ToolError, ToolErrorCode};
+use query::QueryTool;
 
 /// External tool name for recommendations and authoritative task lookup.
 pub const RECOMMEND_TOOL_NAME: &str = "orbit.graph.recommend";
@@ -37,19 +39,26 @@ const V2_STATUS_TOOL_NAME: &str = "graph.status";
 const V2_MAINTAIN_TOOL_NAME: &str = "graph.maintain";
 const V2_VERSION_TOOL_NAME: &str = "graph.version";
 
+/// Read-only code-graph query tool verbs, registered as `orbit.graph.<verb>`
+/// (verified first-party install) or `graph.<verb>`.
+pub const QUERY_TOOL_VERBS: [&str; 8] = [
+    "search", "show", "refs", "callees", "impact", "trace", "deps", "overview",
+];
+
 /// Whether `name` selects one of this package's no-argv external tools.
 pub fn recognizes_tool(name: &str) -> bool {
-    matches!(
-        name,
-        RECOMMEND_TOOL_NAME
-            | STATUS_TOOL_NAME
-            | MAINTAIN_TOOL_NAME
-            | VERSION_TOOL_NAME
-            | V2_RECOMMEND_TOOL_NAME
-            | V2_STATUS_TOOL_NAME
-            | V2_MAINTAIN_TOOL_NAME
-            | V2_VERSION_TOOL_NAME
-    )
+    QueryTool::from_tool_name(name).is_some()
+        || matches!(
+            name,
+            RECOMMEND_TOOL_NAME
+                | STATUS_TOOL_NAME
+                | MAINTAIN_TOOL_NAME
+                | VERSION_TOOL_NAME
+                | V2_RECOMMEND_TOOL_NAME
+                | V2_STATUS_TOOL_NAME
+                | V2_MAINTAIN_TOOL_NAME
+                | V2_VERSION_TOOL_NAME
+        )
 }
 
 /// Execute one no-argv Orbit external-tool request from JSON stdin bytes.
@@ -57,9 +66,14 @@ pub fn recognizes_tool(name: &str) -> bool {
 /// Failures carry a stable [`ToolErrorCode`]: a request the tool refuses
 /// before touching any repository is [`ToolErrorCode::InvalidRequest`], a
 /// routed repository that cannot be opened is
-/// [`ToolErrorCode::RepositoryUnavailable`], and every other failure is
+/// [`ToolErrorCode::RepositoryUnavailable`], a query tool without a usable
+/// code-graph index is [`ToolErrorCode::IndexMissing`] or
+/// [`ToolErrorCode::IndexIncompatible`], and every other failure is
 /// [`ToolErrorCode::GraphError`].
 pub fn execute_external_tool(name: &str, input: &[u8]) -> Result<Value, ToolError> {
+    if let Some(tool) = QueryTool::from_tool_name(name) {
+        return query::execute(tool, name, input);
+    }
     match name {
         RECOMMEND_TOOL_NAME | V2_RECOMMEND_TOOL_NAME => recommend(decode_input(input)?),
         STATUS_TOOL_NAME | V2_STATUS_TOOL_NAME => status(decode_input(input)?),
@@ -677,6 +691,12 @@ fn open_history_index(
     }
 }
 
+/// The index directory for `repository` under the plugin state root.
+fn index_dir_in(state_root: &std::path::Path, repository: &std::path::Path) -> PathBuf {
+    let repository_hash = blake3::hash(repository.as_os_str().as_encoded_bytes());
+    state_root.join(repository_hash.to_hex().as_str())
+}
+
 fn plugin_index_dir(repository: &std::path::Path) -> Result<Option<PathBuf>, GraphError> {
     let Some(state_root) = env::var_os("ORBIT_PLUGIN_STATE") else {
         return Ok(None);
@@ -687,10 +707,10 @@ fn plugin_index_dir(repository: &std::path::Path) -> Result<Option<PathBuf>, Gra
             "ORBIT_PLUGIN_STATE must not be empty when set",
         ));
     }
-    let repository_hash = blake3::hash(repository.as_os_str().as_encoded_bytes());
-    Ok(Some(
-        PathBuf::from(state_root).join(repository_hash.to_hex().as_str()),
-    ))
+    Ok(Some(index_dir_in(
+        std::path::Path::new(&state_root),
+        repository,
+    )))
 }
 
 fn default_branch() -> String {

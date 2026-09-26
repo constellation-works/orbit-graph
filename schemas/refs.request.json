@@ -1,0 +1,55 @@
+{
+  "type": "object",
+  "required": [
+    "selector"
+  ],
+  "properties": {
+    "schema_version": {
+      "description": "Request contract version; must be 1 when present.",
+      "type": "integer",
+      "const": 1
+    },
+    "repository": {
+      "description": "Absolute path of the Git repository to query. Defaults to the caller's workspace root; never inferred from the tool cwd.",
+      "type": "string",
+      "minLength": 1
+    },
+    "selector": {
+      "description": "Selector of the node to query, as search and other results print it: symbol:<path>#<qualified>:<kind>, file:<path>, or dir:<path>.",
+      "type": "string",
+      "minLength": 1
+    },
+    "confidence": {
+      "description": "Minimum resolution confidence: exact, import_resolved, same_module, or fuzzy_name (name-only matches, which include cross-crate callers through re-exports). Default same_module; when nothing meets it, fuzzy_name matches are returned under fallback.",
+      "type": "string",
+      "enum": [
+        "exact",
+        "import_resolved",
+        "same_module",
+        "fuzzy_name"
+      ],
+      "default": "same_module"
+    },
+    "kind": {
+      "description": "Restrict to one reference or relation kind.",
+      "type": "string",
+      "enum": [
+        "call",
+        "type",
+        "use",
+        "trait_bound",
+        "impl",
+        "extends",
+        "implements"
+      ]
+    },
+    "limit": {
+      "description": "Cap on each result array, nested ones included (refs, relations and the lists inside their entries); 1-500, default 50. Cut arrays are reported in truncation.",
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 500,
+      "default": 50
+    }
+  },
+  "additionalProperties": false
+}

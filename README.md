@@ -13,7 +13,10 @@ Requires Rust 1.89+ and Git.
 cargo install --path crates/orbit-graph-cli --locked
 ```
 
-To use it as an Orbit plugin, see [docs/plugin.md](docs/plugin.md).
+As an Orbit plugin, the same queries (search, show, refs, callees, impact,
+trace, deps, overview) are read-only `orbit.graph.*` tools that answer from an
+index the plugin's `graph_sync` maintenance builds; see
+[docs/plugin.md](docs/plugin.md).
 
 ## Quick start
 
@@ -38,7 +41,7 @@ and should not be committed; `orbit-graph db-path` prints its location and
 ## Documentation
 
 - [Usage](docs/usage.md) — commands, selectors, confidence levels, languages, library API
-- [Orbit plugin](docs/plugin.md) — install, tools, history maintenance
+- [Orbit plugin](docs/plugin.md) — install, query and recommendation tools, index maintenance
 - [Change explorer](crates/orbit-graph-explorer/README.md) — `orbit-graph-explorer`
 - Design: [terminal interface](docs/design/terminal-interface.md),
   [change recommendations](docs/design/change-recommendations.md),

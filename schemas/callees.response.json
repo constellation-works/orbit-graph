@@ -1,0 +1,136 @@
+{
+  "type": "object",
+  "required": [
+    "schema_version",
+    "operation",
+    "repository",
+    "index",
+    "result",
+    "truncated"
+  ],
+  "properties": {
+    "schema_version": {
+      "description": "Response contract version.",
+      "type": "integer",
+      "const": 1
+    },
+    "operation": {
+      "description": "Always \"callees\".",
+      "type": "string",
+      "const": "callees"
+    },
+    "repository": {
+      "description": "Canonical path of the routed repository.",
+      "type": "string"
+    },
+    "index": {
+      "description": "The published code-graph index that answered.",
+      "type": "object",
+      "required": [
+        "revision",
+        "checkout_revision",
+        "fresh",
+        "worktree_dirty",
+        "synced_at",
+        "files"
+      ],
+      "properties": {
+        "revision": {
+          "description": "Commit the index was built at; null on an unborn branch.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "checkout_revision": {
+          "description": "Current checkout commit; null when HEAD is unborn or unreadable.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "fresh": {
+          "description": "True when the index was built at checkout_revision. When false, results describe older code and stale names the fix.",
+          "type": "boolean"
+        },
+        "worktree_dirty": {
+          "description": "Whether uncommitted changes were indexed along with revision.",
+          "type": "boolean"
+        },
+        "synced_at": {
+          "description": "When the index was published (RFC 3339, UTC).",
+          "type": "string"
+        },
+        "files": {
+          "description": "Files in the index.",
+          "type": "integer"
+        },
+        "stale": {
+          "description": "Present when fresh is false: why, and the call that refreshes the index.",
+          "type": "object",
+          "required": [
+            "reason",
+            "fix"
+          ],
+          "properties": {
+            "reason": {
+              "description": "Which revisions differ.",
+              "type": "string"
+            },
+            "fix": {
+              "description": "The maintenance call to run, then retry the query.",
+              "type": "object",
+              "required": [
+                "tool",
+                "input"
+              ],
+              "properties": {
+                "tool": {
+                  "description": "Tool to call: orbit.graph.maintain, or graph.maintain for a non-first-party install.",
+                  "type": "string"
+                },
+                "input": {
+                  "description": "Its input: {\"operation\":\"graph_sync\"}.",
+                  "type": "object"
+                }
+              },
+              "additionalProperties": false
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "result": {
+      "description": "The orbit-graph library result, passed through unshaped (it may gain fields): CalleeReport: callees (outbound call edges with target, confidence, and line) and hidden_unresolved (unresolved edges omitted unless include_unresolved is true).",
+      "type": "object"
+    },
+    "truncated": {
+      "description": "True when any result array, at any depth, was cut to limit or to fit the 256 KiB response ceiling (limit is halved until the result fits).",
+      "type": "boolean"
+    },
+    "truncation": {
+      "description": "Present only when truncated is true. Keyed by field path, with [] for each entry of an array (files[].symbols, fallback.touched): {returned, total}, where a nested path sums over the returned parent entries.",
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "properties": {
+          "returned": {
+            "description": "Entries returned.",
+            "type": "integer"
+          },
+          "total": {
+            "description": "Entries before the cut.",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "returned"
+        ],
+        "additionalProperties": false
+      }
+    }
+  },
+  "additionalProperties": false
+}
