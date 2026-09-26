@@ -110,7 +110,14 @@ latency is the per-call target-tree symbol extraction that every recommend
 call pays even with no history. It dominates both "after" rows, and 200
 commits of history add about 0.5 s of CPU on top of it. The ranked output of
 the combined query (selectors, scores, reasons) is identical to the
-pre-change output. Upgrading the
+pre-change output. The `--variant frequency --limit 100` ranking, which
+resolves every indexed delivery's paths, keeps 98 of 100 selectors with
+identical scores (947 s before, 27 s after, under the same load). The two
+dropped rows come from ORB-12958, which split `tests/callback.rs` and
+`tests/loader.rs` into several files. That delivery's own diff classified the
+old files as deleted rather than renamed, and lineage records what the
+delivery's diff classified. The old whole-tree diff against the target had
+paired each old file with one of its split parts. Upgrading the
 existing v3 index copied its 200 deliveries and derived lineage in 2.1 s on
 first open. The box was shared with concurrent builds during these runs, so
 compare CPU times, or re-measure on an idle host, before quoting wall times.
