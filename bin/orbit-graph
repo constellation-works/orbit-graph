@@ -20,7 +20,7 @@ json_escape() {
 
 incompatible() {
     path=$(json_escape "$graph_binary")
-    printf '{"ok":false,"error":{"code":"incompatible_binary","message":"orbit-graph at %s must support the v2 envelope (plugin_schema_version=1, extractor_version=11)","path":"%s"}}\n' "$path" "$path"
+    printf '{"ok":false,"error":{"code":"incompatible_binary","message":"orbit-graph at %s must support the v2 envelope (plugin_schema_version=1, extractor_version=13)","path":"%s"}}\n' "$path" "$path"
     exit 0
 }
 
@@ -36,7 +36,7 @@ case "$probe" in
     *) incompatible ;;
 esac
 case "$probe" in
-    *'"extractor_version":11'*) ;;
+    *'"extractor_version":13'*) ;;
     *) incompatible ;;
 esac
 case "$probe" in

@@ -1,7 +1,7 @@
 {
   "case_id": "changed-test",
   "languages": ["rust"],
-  "description": "Only the test file changes (the asserted values in test_add); src/lib.rs#add is byte-identical on both snapshots and must not appear as a changed symbol.",
+  "description": "Only the test file changes (the asserted values in test_add); src/lib.rs#add is byte-identical on both snapshots and must not appear as a changed symbol. test_add calls add only inside assert_eq!, whose arguments the Rust extractor recovers from the macro token tree (EXTRACTOR_VERSION 13).",
   "topology": "linear",
   "changed_symbols": [
     {
@@ -18,33 +18,45 @@
       "note": "add is byte-identical on both snapshots and must not be reported as added/removed/modified by anything in this fixture."
     }
   ],
-  "expected_references": [],
-  "expected_impact": [],
+  "expected_references": [
+    {
+      "target": "symbol:src/lib.rs#add:function",
+      "snapshot": "base",
+      "confidence": "same_module",
+      "kind": "call",
+      "file": "tests/add_test.rs",
+      "line": 2
+    },
+    {
+      "target": "symbol:src/lib.rs#add:function",
+      "snapshot": "head",
+      "confidence": "same_module",
+      "kind": "call",
+      "file": "tests/add_test.rs",
+      "line": 2
+    }
+  ],
+  "expected_impact": [
+    {
+      "origin": "symbol:src/lib.rs#add:function",
+      "snapshot": "head",
+      "confidence": "same_module",
+      "qualified_name": "test_add",
+      "edge_kind": "call",
+      "distance": 1
+    }
+  ],
   "candidate_tests": [
     {
       "test_selector": "symbol:tests/add_test.rs#test_add:function",
       "target": "symbol:src/lib.rs#add:function",
-      "category": "naming-heuristic",
+      "category": "call-path",
       "snapshot": "head",
-      "rationale": "test_add exercises add(...) only as an argument inside the assert_eq! macro; the call extractor does not record call references for arguments of macro invocations, so no call-path edge exists. See known_gaps."
+      "confidence": "same_module",
+      "kind": "call",
+      "file": "tests/add_test.rs",
+      "line": 2
     }
   ],
-  "known_gaps": [
-    {
-      "description": "A function call written as an argument to a macro invocation (assert_eq!(add(1, 2), 3)) produces zero call references for the callee: refs for add returns an empty refs array even though add is clearly invoked from the test.",
-      "snapshot": "base",
-      "check": {
-        "type": "absent_reference",
-        "target": "symbol:src/lib.rs#add:function",
-        "file": "tests/add_test.rs"
-      },
-      "observed_command": ["refs", "symbol:src/lib.rs#add:function", "--confidence", "fuzzy_name"],
-      "observed_output": {
-        "refs": [],
-        "relations": [],
-        "skipped_low_confidence": 0,
-        "target": {"name": "add", "qualified": "add"}
-      }
-    }
-  ]
+  "known_gaps": []
 }

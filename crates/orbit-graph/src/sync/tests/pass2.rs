@@ -415,6 +415,183 @@ fn pass2_failure_rolls_back_ref_rewrites_and_meta_update() {
     assert_eq!(meta_value(&conn, "last_full_build_at"), 0);
 }
 
+#[test]
+fn refs_sharing_a_name_in_one_file_resolve_by_their_own_receiver() {
+    // Pass 2 resolves a file's refs once per distinct resolution key. The
+    // receiver-bearing call and the plain call share a file and a name, so
+    // the key must still keep them apart, and repeated plain calls must all
+    // receive the same result.
+    let worktree = TestWorktree::new("memo-receiver");
+    let graph = Graph::open(worktree.path(), SyncPolicy::Manual).expect("open graph");
+    worktree.write(
+        "scripts/fixture.py",
+        r#"
+def append(value):
+    return value
+"#,
+    );
+    worktree.write(
+        "sims/mixed.py",
+        r#"
+def run():
+    rows = []
+    rows.append(1)
+    append(1)
+    append(2)
+    return rows
+"#,
+    );
+
+    graph.sync(SyncMode::Full).expect("sync graph");
+
+    let conn = open_test_connection(worktree.path());
+    let appends = refs_for_file(&conn, "sims/mixed.py")
+        .into_iter()
+        .filter(|row| row.target_name == "append" && row.kind == "call")
+        .collect::<Vec<_>>();
+    assert_eq!(appends.len(), 3, "{appends:?}");
+    let expected_hint = symbol_id(&conn, "scripts/fixture.py", "append");
+    let (method, plain) = appends.split_first().expect("method call first");
+    assert_eq!(method.target_qualified, None, "{method:?}");
+    assert_eq!(method.target_symbol_hint, None, "{method:?}");
+    assert_eq!(method.confidence, super::CONFIDENCE_FUZZY_NAME);
+    for row in plain {
+        assert_eq!(row.target_qualified.as_deref(), Some("append"), "{row:?}");
+        assert_eq!(row.target_symbol_hint, Some(expected_hint), "{row:?}");
+        assert_eq!(row.confidence, super::CONFIDENCE_SAME_MODULE, "{row:?}");
+    }
+}
+
+#[test]
+fn runtime_invocation_beside_a_same_named_python_call_stays_unresolved() {
+    // Through the sync entry point, in both source orders: a program named
+    // like a function is never resolved, and the call of that function still
+    // resolves, in the same file (`exact`) and from another file of the same
+    // module (`same_module`).
+    let invocation = "    subprocess.run([\"git\", \"status\"])\n";
+    let call = "    git()\n";
+    let definition = "def git(*args):\n    return args\n\n\n";
+    for (case, local_definition, confidence) in [
+        ("same-file", definition, super::CONFIDENCE_EXACT),
+        ("same-module", "", super::CONFIDENCE_SAME_MODULE),
+    ] {
+        let worktree = TestWorktree::new(&format!("runtime-invocation-{case}"));
+        let graph = Graph::open(worktree.path(), SyncPolicy::Manual).expect("open graph");
+        let files = [
+            ("tools/invocation_first.py", invocation, call),
+            ("tools/call_first.py", call, invocation),
+        ];
+        for (file, first, second) in files {
+            worktree.write(
+                file,
+                &format!("import subprocess\n\n\n{local_definition}def run():\n{first}{second}"),
+            );
+        }
+        if local_definition.is_empty() {
+            worktree.write("tools/helpers.py", definition);
+        }
+
+        graph.sync(SyncMode::Full).expect("sync graph");
+
+        let conn = open_test_connection(worktree.path());
+        for (file, _, _) in files {
+            let definition_file = if local_definition.is_empty() {
+                "tools/helpers.py"
+            } else {
+                file
+            };
+            assert_runtime_invocation_and_call(&conn, file, definition_file, confidence);
+        }
+    }
+}
+
+#[test]
+fn runtime_invocation_and_call_sharing_every_other_key_field_resolve_independently() {
+    // Pass 2 resolves a file's refs once per distinct resolution key. Java,
+    // Kotlin and C# calls carry no extracted qualified name, so such a call
+    // and a runtime invocation of the same program agree on every key field
+    // but the kind. Whichever comes first must not decide the other.
+    let worktree = TestWorktree::new("runtime-invocation-key");
+    let graph = Graph::open(worktree.path(), SyncPolicy::Manual).expect("open graph");
+    drop(graph);
+    let files = ["src/InvocationFirst.java", "src/CallFirst.java"];
+    let conn = open_test_connection(worktree.path());
+    for file in files {
+        insert_file(&conn, file);
+        insert_symbol(&conn, file, "git", "git");
+    }
+    drop(conn);
+
+    let invocation = RawRef {
+        kind: super::RUNTIME_INVOCATION_KIND.to_string(),
+        ..raw_ref(files[0], "git")
+    };
+    let call = raw_ref(files[0], "git");
+    super::run(
+        graph_db_path(worktree.path()).as_path(),
+        SyncMode::Full,
+        vec![
+            ExtractedFileRefs {
+                file_path: files[0].to_string(),
+                refs: vec![invocation.clone(), call.clone()],
+            },
+            ExtractedFileRefs {
+                file_path: files[1].to_string(),
+                refs: vec![
+                    RawRef {
+                        from_file: files[1].to_string(),
+                        ..call
+                    },
+                    RawRef {
+                        from_file: files[1].to_string(),
+                        ..invocation
+                    },
+                ],
+            },
+        ],
+        None,
+        0,
+        None,
+    )
+    .expect("run pass2");
+
+    let conn = open_test_connection(worktree.path());
+    for file in files {
+        assert_runtime_invocation_and_call(&conn, file, file, super::CONFIDENCE_EXACT);
+    }
+}
+
+fn assert_runtime_invocation_and_call(
+    conn: &Connection,
+    file: &str,
+    definition_file: &str,
+    confidence: &str,
+) {
+    let invocation = ref_by_kind(conn, file, "git", super::RUNTIME_INVOCATION_KIND);
+    assert_eq!(invocation.target_qualified, None, "{file}: {invocation:?}");
+    assert_eq!(
+        invocation.target_symbol_hint, None,
+        "{file}: {invocation:?}"
+    );
+    assert_eq!(
+        invocation.confidence,
+        super::CONFIDENCE_FUZZY_NAME,
+        "{file}: {invocation:?}"
+    );
+
+    let call = ref_by_kind(conn, file, "git", "call");
+    assert!(
+        call.target_qualified.is_some(),
+        "{file}: call should resolve: {call:?}"
+    );
+    assert_eq!(
+        call.target_symbol_hint,
+        Some(symbol_id(conn, definition_file, "git")),
+        "{file}: {call:?}"
+    );
+    assert_eq!(call.confidence, confidence, "{file}: {call:?}");
+}
+
 fn assert_ref(row: &StoredRef, target_qualified: Option<&str>, confidence: &str) {
     assert_eq!(row.target_qualified.as_deref(), target_qualified);
     assert_eq!(row.confidence, confidence);

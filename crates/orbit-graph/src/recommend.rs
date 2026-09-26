@@ -9,7 +9,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use git2::{
     Delta, DiffFindOptions, DiffOptions, ObjectType, Oid, Repository, TreeWalkMode, TreeWalkResult,
@@ -1698,8 +1698,16 @@ fn gap_renames(repo: &Repository, from: Oid, to: Oid) -> Result<GapRenames, Grap
 /// Layout version of the on-disk target symbol cache.
 const TARGET_SYMBOL_CACHE_FORMAT: u32 = 1;
 
-/// Current-extractor cache files kept per index directory (most recent first).
+/// Current-extractor cache files kept per index directory (most recently used
+/// first).
 const TARGET_SYMBOL_CACHE_KEEP: usize = 4;
+
+/// A temp file whose writer process is gone is removed once it is this old.
+const TARGET_SYMBOL_CACHE_DEAD_TEMP_AGE: Duration = Duration::from_secs(60);
+
+/// A temp file is removed once it is this old, whatever its pid says (the pid
+/// may have been reused, or belong to another PID namespace).
+const TARGET_SYMBOL_CACHE_STALE_TEMP_AGE: Duration = Duration::from_secs(60 * 60);
 
 const TARGET_SYMBOL_CACHE_PREFIX: &str = "recommend-target.";
 
@@ -1763,10 +1771,10 @@ impl TargetTree {
             return Ok(());
         }
         let cache_path = cache_dir.map(|dir| target_symbol_cache_path(dir, self.tree));
-        if let Some(symbols) = cache_path
-            .as_deref()
-            .and_then(|path| read_target_symbol_cache(path, self.tree))
-        {
+        if let Some((path, symbols)) = cache_path.as_deref().and_then(|path| {
+            read_target_symbol_cache(path, self.tree).map(|symbols| (path, symbols))
+        }) {
+            touch_target_symbol_cache(path);
             self.symbols = Some(symbols);
             return Ok(());
         }
@@ -2091,32 +2099,112 @@ fn write_private_file(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
     file.sync_all()
 }
 
-/// Remove cache entries from other extractor versions and all but the most
-/// recently written current-version entries.
+/// Record a warm hit as the entry's last use, so pruning keeps the entries
+/// that are actually read. Best effort.
+fn touch_target_symbol_cache(path: &Path) {
+    if let Ok(file) = std::fs::OpenOptions::new().write(true).open(path) {
+        let _ = file.set_modified(SystemTime::now());
+    }
+}
+
+/// A file name this cache owns, parsed from its exact grammar:
+/// `recommend-target.<extractor u32>.<40 hex tree OID>.json`, or the same name
+/// plus `.tmp-<pid>` while it is being written. Anything else in the
+/// directory is not ours and is never deleted (STD-03 §R29).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum TargetSymbolCacheName {
+    Entry { extractor_version: u32 },
+    Temp { extractor_version: u32, pid: u32 },
+}
+
+fn parse_target_symbol_cache_name(name: &str) -> Option<TargetSymbolCacheName> {
+    fn decimal<T: std::str::FromStr>(value: &str) -> Option<T> {
+        (!value.is_empty()
+            && value.bytes().all(|byte| byte.is_ascii_digit())
+            && (value == "0" || !value.starts_with('0')))
+        .then(|| value.parse().ok())
+        .flatten()
+    }
+    let rest = name.strip_prefix(TARGET_SYMBOL_CACHE_PREFIX)?;
+    let (version, rest) = rest.split_once('.')?;
+    let extractor_version = decimal::<u32>(version)?;
+    let (tree, suffix) = rest.split_once('.')?;
+    if tree.len() != 40
+        || !tree
+            .bytes()
+            .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+    {
+        return None;
+    }
+    if suffix == "json" {
+        return Some(TargetSymbolCacheName::Entry { extractor_version });
+    }
+    let pid = decimal::<u32>(suffix.strip_prefix("json.tmp-")?)?;
+    Some(TargetSymbolCacheName::Temp {
+        extractor_version,
+        pid,
+    })
+}
+
+/// Whether `pid` is known not to be a running process. Unknown (no `/proc`)
+/// is never "gone"; such temp files age out instead.
+fn process_is_gone(pid: u32) -> bool {
+    let proc_root = Path::new("/proc");
+    proc_root.join("self").exists() && !proc_root.join(pid.to_string()).exists()
+}
+
+/// Prune the cache directory after a write:
+///
+/// - only names matching the cache grammar are considered;
+/// - entries for *older* extractor versions are removed, while newer ones
+///   belong to a newer binary sharing the directory and are left alone
+///   (STD-03 §R10);
+/// - temp files left by a crashed writer are removed when their pid is gone
+///   (after a short grace) or once they are an hour old;
+/// - of the current version's entries, `keep` and the most recently used
+///   others are retained, up to [`TARGET_SYMBOL_CACHE_KEEP`].
 fn prune_target_symbol_caches(dir: &Path, keep: &Path) {
     let Ok(entries) = std::fs::read_dir(dir) else {
         return;
     };
-    let current = format!("{TARGET_SYMBOL_CACHE_PREFIX}{}.", crate::EXTRACTOR_VERSION);
+    let now = SystemTime::now();
     let mut retained = Vec::new();
     for entry in entries.flatten() {
         let path = entry.path();
-        let Some(name) = path.file_name().and_then(|name| name.to_str()) else {
+        let Some(name) = path
+            .file_name()
+            .and_then(|name| name.to_str())
+            .and_then(parse_target_symbol_cache_name)
+        else {
             continue;
         };
-        if !name.starts_with(TARGET_SYMBOL_CACHE_PREFIX) || !name.ends_with(".json") {
+        let Ok(metadata) = entry.metadata() else {
+            continue;
+        };
+        if !metadata.is_file() {
             continue;
         }
-        if !name.starts_with(current.as_str()) {
-            let _ = std::fs::remove_file(path.as_path());
-            continue;
-        }
-        if path != keep {
-            let modified = entry
-                .metadata()
-                .and_then(|metadata| metadata.modified())
-                .unwrap_or(UNIX_EPOCH);
-            retained.push((modified, path));
+        let modified = metadata.modified().unwrap_or(UNIX_EPOCH);
+        let age = now.duration_since(modified).unwrap_or_default();
+        match name {
+            TargetSymbolCacheName::Temp { pid, .. } => {
+                let stale = age >= TARGET_SYMBOL_CACHE_STALE_TEMP_AGE
+                    || (age >= TARGET_SYMBOL_CACHE_DEAD_TEMP_AGE && process_is_gone(pid));
+                if stale {
+                    let _ = std::fs::remove_file(path.as_path());
+                }
+            }
+            TargetSymbolCacheName::Entry { extractor_version }
+                if extractor_version < crate::EXTRACTOR_VERSION =>
+            {
+                let _ = std::fs::remove_file(path.as_path());
+            }
+            TargetSymbolCacheName::Entry { extractor_version }
+                if extractor_version == crate::EXTRACTOR_VERSION && path != keep =>
+            {
+                retained.push((modified, path));
+            }
+            TargetSymbolCacheName::Entry { .. } => {}
         }
     }
     retained.sort_by_key(|(modified, _)| std::cmp::Reverse(*modified));
@@ -2932,16 +3020,169 @@ mod tests {
         assert_eq!(target_symbol_extractions(), populated + 3);
         assert_eq!(comparable(&recovered), comparable(&reference));
 
-        // Entries named for another extractor version are pruned on the next write.
-        let stale = root.join(".orbit-graph").join(format!(
-            "{TARGET_SYMBOL_CACHE_PREFIX}{}.{}.json",
-            crate::EXTRACTOR_VERSION - 1,
-            "0".repeat(40)
-        ));
-        fs::write(&stale, b"{}").expect("stale entry");
+        // Entries named for an older extractor version are pruned on the next
+        // write; a newer binary's entries are left alone.
+        let entry_name = |version: u32| {
+            format!(
+                "{TARGET_SYMBOL_CACHE_PREFIX}{version}.{}.json",
+                "0".repeat(40)
+            )
+        };
+        let older = root
+            .join(".orbit-graph")
+            .join(entry_name(crate::EXTRACTOR_VERSION - 1));
+        let newer = root
+            .join(".orbit-graph")
+            .join(entry_name(crate::EXTRACTOR_VERSION + 1));
+        fs::write(&older, b"{}").expect("older entry");
+        fs::write(&newer, b"{}").expect("newer entry");
         fs::remove_file(&cache_path).expect("drop entry");
         engine.recommend(&request).expect("rewrite");
-        assert!(!stale.exists(), "other extractor versions are pruned");
+        assert!(!older.exists(), "older extractor versions are pruned");
+        assert!(
+            newer.exists(),
+            "a newer binary's entries are not ours to prune"
+        );
+
+        // A warm hit records the entry's last use.
+        let long_ago = SystemTime::now() - Duration::from_secs(24 * 60 * 60);
+        set_mtime(&cache_path, long_ago);
+        engine.recommend(&request).expect("warm hit");
+        assert_eq!(target_symbol_extractions(), populated + 4);
+        let used = fs::metadata(&cache_path)
+            .and_then(|metadata| metadata.modified())
+            .expect("mtime");
+        assert!(used > long_ago + Duration::from_secs(60 * 60));
+    }
+
+    fn set_mtime(path: &Path, when: SystemTime) {
+        fs::OpenOptions::new()
+            .write(true)
+            .open(path)
+            .and_then(|file| file.set_modified(when))
+            .expect("set mtime");
+    }
+
+    #[test]
+    fn target_symbol_cache_names_follow_an_exact_grammar() {
+        let tree = "0123456789abcdef0123456789abcdef01234567";
+        let version = crate::EXTRACTOR_VERSION;
+        assert_eq!(
+            parse_target_symbol_cache_name(&format!("recommend-target.{version}.{tree}.json")),
+            Some(TargetSymbolCacheName::Entry {
+                extractor_version: version
+            })
+        );
+        assert_eq!(
+            parse_target_symbol_cache_name(&format!("recommend-target.7.{tree}.json.tmp-4242")),
+            Some(TargetSymbolCacheName::Temp {
+                extractor_version: 7,
+                pid: 4242
+            })
+        );
+        for foreign in [
+            "recommend-target.notes.json".to_string(),
+            format!("recommend-target.{version}.{}.json", &tree[..39]),
+            format!("recommend-target.{version}.{}.json", tree.to_uppercase()),
+            format!("recommend-target.0{version}.{tree}.json"),
+            format!("recommend-target.+{version}.{tree}.json"),
+            format!("recommend-target.{version}.{tree}.json.bak"),
+            format!("recommend-target.{version}.{tree}.json.tmp-"),
+            format!("recommend-target.{version}.{tree}.json.tmp-12x"),
+            format!("recommend-target.99999999999.{tree}.json"),
+            format!("Recommend-target.{version}.{tree}.json"),
+            format!("recommend-target.{version}.{tree}.jsonl"),
+        ] {
+            assert_eq!(parse_target_symbol_cache_name(&foreign), None, "{foreign}");
+        }
+    }
+
+    #[test]
+    fn target_symbol_cache_pruning_is_scoped_by_ownership_version_and_last_use() {
+        let dir = TempDir::new().expect("dir");
+        let dir = dir.path();
+        let version = crate::EXTRACTOR_VERSION;
+        let tree = |n: usize| format!("{n:040x}");
+        let now = SystemTime::now();
+        let make = |name: String, age_secs: u64| {
+            let path = dir.join(name);
+            fs::write(&path, b"{}").expect("write");
+            set_mtime(&path, now - Duration::from_secs(age_secs));
+            path
+        };
+        // Current-version entries: the kept (just written) one plus four others
+        // whose last use differs from their names' order.
+        let kept = make(format!("recommend-target.{version}.{}.json", tree(0)), 0);
+        let used_recently = make(format!("recommend-target.{version}.{}.json", tree(1)), 10);
+        let used_second = make(format!("recommend-target.{version}.{}.json", tree(4)), 20);
+        let used_third = make(format!("recommend-target.{version}.{}.json", tree(2)), 30);
+        let least_recent = make(format!("recommend-target.{version}.{}.json", tree(3)), 40);
+        let older_version = make(
+            format!("recommend-target.{}.{}.json", version - 1, tree(5)),
+            0,
+        );
+        let newer_version = make(
+            format!("recommend-target.{}.{}.json", version + 1, tree(6)),
+            4_000,
+        );
+        // Temp files: an own-pid writer in progress, a crashed writer, and an
+        // hour-old one whose pid cannot be trusted.
+        let own_pid = std::process::id();
+        let in_flight = make(
+            format!("recommend-target.{version}.{}.json.tmp-{own_pid}", tree(7)),
+            120,
+        );
+        let mut child = std::process::Command::new("true").spawn().expect("spawn");
+        let dead_pid = child.id();
+        child.wait().expect("reap");
+        let crashed = make(
+            format!("recommend-target.{version}.{}.json.tmp-{dead_pid}", tree(8)),
+            120,
+        );
+        let fresh_crash = make(
+            format!("recommend-target.{version}.{}.json.tmp-{dead_pid}", tree(9)),
+            1,
+        );
+        let hour_old = make(
+            format!("recommend-target.{version}.{}.json.tmp-{own_pid}", tree(10)),
+            2 * 60 * 60,
+        );
+        // Names outside the grammar are never touched, however old.
+        let foreign = [
+            make("recommend-target.notes.json".to_string(), 99_999),
+            make(
+                format!("recommend-target.{}.{}.json.bak", version - 1, tree(11)),
+                99_999,
+            ),
+            make("graph.owned.json".to_string(), 99_999),
+        ];
+
+        prune_target_symbol_caches(dir, &kept);
+
+        for path in [
+            &kept,
+            &used_recently,
+            &used_second,
+            &used_third,
+            &newer_version,
+            &in_flight,
+            &fresh_crash,
+        ] {
+            assert!(path.exists(), "kept {}", path.display());
+        }
+        for path in [&least_recent, &older_version, &hour_old] {
+            assert!(!path.exists(), "pruned {}", path.display());
+        }
+        for path in &foreign {
+            assert!(path.exists(), "foreign {}", path.display());
+        }
+        // Without /proc a pid's liveness is unknown, so the crashed writer's
+        // file ages out instead of being removed early.
+        assert_eq!(
+            crashed.exists(),
+            !Path::new("/proc/self").exists(),
+            "dead-pid temp file"
+        );
     }
 
     #[test]

@@ -242,9 +242,7 @@ impl Service {
     /// for [`STALL_TIMEOUT`], if the build fails, if it is left `cancelled`
     /// (nothing restarted it), or past [`PROGRESS_CEILING`].
     pub fn wait_until_ready_while_progressing(&self) {
-        let started = Instant::now();
-        let mut last_change = started;
-        let mut last_signature = String::new();
+        let mut watchdog = ProgressWatchdog::new();
         loop {
             let status = self.authorized("GET", "/api/status", &[]).json();
             match status["indexing_status"].as_str() {
@@ -255,21 +253,48 @@ impl Service {
                 }
                 _ => {}
             }
-            let signature = progress_signature(&status["indexing"]);
-            if signature != last_signature {
-                last_signature = signature;
-                last_change = Instant::now();
-            }
-            assert!(
-                last_change.elapsed() < STALL_TIMEOUT,
-                "indexing made no progress for {STALL_TIMEOUT:?}: {status}"
-            );
-            assert!(
-                started.elapsed() < PROGRESS_CEILING,
-                "indexing did not finish within {PROGRESS_CEILING:?}: {status}"
-            );
+            watchdog.observe(&status);
             std::thread::sleep(Duration::from_millis(100));
         }
+    }
+}
+
+/// Fails a wait on a large build when it stops making progress, rather than
+/// after a fixed wall-clock budget sized for a fast host.
+///
+/// Feed it every `/api/status` document polled; it panics once the
+/// [`progress_signature`] has not changed for [`STALL_TIMEOUT`] or the wait
+/// has passed [`PROGRESS_CEILING`].
+pub struct ProgressWatchdog {
+    started: Instant,
+    last_change: Instant,
+    last_signature: String,
+}
+
+impl ProgressWatchdog {
+    pub fn new() -> Self {
+        let now = Instant::now();
+        Self {
+            started: now,
+            last_change: now,
+            last_signature: String::new(),
+        }
+    }
+
+    pub fn observe(&mut self, status: &Value) {
+        let signature = progress_signature(&status["indexing"]);
+        if signature != self.last_signature {
+            self.last_signature = signature;
+            self.last_change = Instant::now();
+        }
+        assert!(
+            self.last_change.elapsed() < STALL_TIMEOUT,
+            "indexing made no progress for {STALL_TIMEOUT:?}: {status}"
+        );
+        assert!(
+            self.started.elapsed() < PROGRESS_CEILING,
+            "indexing did not finish within {PROGRESS_CEILING:?}: {status}"
+        );
     }
 }
 
