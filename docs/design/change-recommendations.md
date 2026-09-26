@@ -363,6 +363,26 @@ Git trees up to the target revision and so reveals nothing the target
 revision does not already contain; in every mode the target tree must contain
 the resolved path.
 
+### Target-tree symbols and their cache
+
+Destinations are resolved against the immutable target tree, never the
+worktree. Walking the tree's blob paths is cheap; parsing every blob is the
+dominant fixed cost of a request, so symbols are loaded only when the request
+reads them (combined and graph-only lexical and structural evidence, or symbol
+level). File-level task-search-only and frequency requests, and file-selector
+liveness checks, never parse. The extracted symbol table is cached in the
+history index directory as
+`recommend-target.<EXTRACTOR_VERSION>.<target-tree-oid>.json`. The key is the
+tree, not the commit, so a commit that doesn't change the tree reuses the
+entry. The entry records its format, extractor version and tree, and a
+mismatch, parse failure or unreadable file is treated as a miss and
+re-extracted. It is published atomically (owner-only temp file, then rename),
+and each write prunes entries for other extractor versions and keeps the four
+most recent. Because the entry is exactly the extractor output for those Git
+objects, cached and uncached requests return identical results. The graph
+index is deliberately not used as a symbol source: it reflects the worktree,
+including uncommitted and ignored files, rather than the target tree.
+
 ## Stage 3 Orbit adapter and plugin
 
 The shipped integration is an Orbit external tool, not a private control-plane
