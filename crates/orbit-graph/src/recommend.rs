@@ -23,7 +23,7 @@ use crate::extract::history::{
 };
 use crate::extract::languages;
 use crate::store::history::PathLineageStep;
-use crate::{Graph, GraphError, HistoryIndex, SyncPolicy};
+use crate::{Graph, GraphError, HistoryIndex};
 
 /// Default number of ranked destinations returned by recommendation queries.
 pub const DEFAULT_RECOMMENDATION_LIMIT: usize = 10;
@@ -261,8 +261,13 @@ pub(crate) enum StructureIndex {
 
 impl RecommendationEngine {
     /// Open a standalone engine over one landing-branch history scope.
+    ///
+    /// Recommending only reads: the history index and the graph index are
+    /// opened read-only and nothing is created (STD-01 §R31). A history index
+    /// that `orbit-graph history sync` has not built is
+    /// [`GraphError::IndexMissing`].
     pub fn open(repo_root: &Path, landing_branch: &str) -> Result<Self, GraphError> {
-        let index = HistoryIndex::open(repo_root, landing_branch)?;
+        let index = HistoryIndex::open_read_only(repo_root, landing_branch)?;
         Ok(Self {
             repo_root: index.repo_root().to_path_buf(),
             landing_branch: index.landing_branch().to_string(),
@@ -279,7 +284,8 @@ impl RecommendationEngine {
         index_dir: &Path,
         structure_index: StructureIndex,
     ) -> Result<Self, GraphError> {
-        let index = HistoryIndex::open_with_index_dir(repo_root, landing_branch, index_dir)?;
+        let index =
+            HistoryIndex::open_read_only_with_index_dir(repo_root, landing_branch, index_dir)?;
         Ok(Self {
             repo_root: index.repo_root().to_path_buf(),
             landing_branch: index.landing_branch().to_string(),
@@ -304,12 +310,15 @@ impl RecommendationEngine {
             .map_or_else(current_observation_cutoff, Ok)?;
         let cutoff = parse_timestamp("recommendation cutoff", effective_cutoff.as_str())?;
         let index = match self.index_dir.as_deref() {
-            Some(index_dir) => HistoryIndex::open_with_index_dir(
+            Some(index_dir) => HistoryIndex::open_read_only_with_index_dir(
                 self.repo_root.as_path(),
                 self.landing_branch.as_str(),
                 index_dir,
             )?,
-            None => HistoryIndex::open(self.repo_root.as_path(), self.landing_branch.as_str())?,
+            None => HistoryIndex::open_read_only(
+                self.repo_root.as_path(),
+                self.landing_branch.as_str(),
+            )?,
         };
         let status = index.status()?;
         let freshness = freshness(&repo, status.cursor, target);
@@ -400,23 +409,29 @@ impl RecommendationEngine {
         let mut structure_fallback = None;
         let structure = if checkout_head == Some(target) && uses_structure {
             match &self.structure_index {
-                StructureIndex::RepositoryLocal => add_current_structure(
-                    self.repo_root.as_path(),
-                    None,
-                    request.level,
-                    &resolver,
-                    &mut scored,
-                )?,
+                StructureIndex::RepositoryLocal => {
+                    match Graph::open_existing_read_only(self.repo_root.as_path()) {
+                        Ok(graph) => {
+                            add_current_structure(&graph, request.level, &resolver, &mut scored)?
+                        }
+                        // An unsynced graph index is reported, never read as an
+                        // index with no neighbors (STD-02 §R29).
+                        Err(GraphError::IndexMissing { reason, .. }) => {
+                            structure_fallback = Some(RecommendationFallback {
+                                kind: "structure_index_missing".to_string(),
+                                reason,
+                            });
+                            StructureEvidence::default()
+                        }
+                        Err(error) => return Err(error),
+                    }
+                }
                 StructureIndex::Published { db_path, revision }
                     if revision.as_deref() == Some(target.to_string().as_str()) =>
                 {
-                    add_current_structure(
-                        self.repo_root.as_path(),
-                        Some(db_path.as_path()),
-                        request.level,
-                        &resolver,
-                        &mut scored,
-                    )?
+                    // A published plugin index is only ever read (STD-01 R31).
+                    let graph = Graph::open_read_only(self.repo_root.as_path(), db_path)?;
+                    add_current_structure(&graph, request.level, &resolver, &mut scored)?
                 }
                 StructureIndex::Published { revision, .. } => {
                     structure_fallback = Some(RecommendationFallback {
@@ -1217,17 +1232,11 @@ fn add_lexical_baseline(
 }
 
 fn add_current_structure(
-    repo_root: &Path,
-    db_path: Option<&Path>,
+    graph: &Graph,
     level: RecommendationLevel,
     resolver: &TargetTree,
     scored: &mut BTreeMap<String, Accumulator>,
 ) -> Result<StructureEvidence, GraphError> {
-    let graph = match db_path {
-        // A published plugin index is only ever read (STD-01 R31).
-        Some(db_path) => Graph::open_read_only(repo_root, db_path)?,
-        None => Graph::open(repo_root, SyncPolicy::Manual)?,
-    };
     let seeds = scored
         .iter()
         .filter(|(_, score)| score.score > 0.0)

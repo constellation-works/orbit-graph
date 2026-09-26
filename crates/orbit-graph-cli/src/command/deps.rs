@@ -48,8 +48,9 @@ pub(crate) fn output(document: Value) -> CommandOutput {
 
 impl DepsCommand {
     pub(crate) fn run(&self, context: &CommandContext) -> Result<serde_json::Value, CliError> {
-        let graph = context.open_graph()?;
+        // Input is validated before the index is opened.
         let selector = self.selector.parse::<Selector>()?;
+        let graph = context.open_graph()?;
         json_value(graph.deps(&selector)?)
     }
 }

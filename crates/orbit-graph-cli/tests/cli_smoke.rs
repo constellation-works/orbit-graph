@@ -1409,6 +1409,7 @@ fn real_binary_treats_a_closed_stdout_pipe_as_success() {
 fn real_binary_recommends_in_file_and_symbol_modes_and_validates_top_k() {
     let fixture = fixture_repository();
     let _ = run_json(fixture.path(), ["sync", "--full"]);
+    init_empty_history(fixture.path());
 
     let files = run_json(
         fixture.path(),
@@ -1472,6 +1473,7 @@ fn real_binary_renders_recommendation_and_index_views_with_complete_record_bound
     let fixture = fixture_repository();
     let sync = run(fixture.path(), ["sync", "--full"]);
     assert!(sync.status.success());
+    init_empty_history(fixture.path());
     let sync_fields = String::from_utf8(sync.stdout)
         .expect("sync plain UTF-8")
         .trim_end()
@@ -1581,7 +1583,9 @@ fn real_binary_renders_recommendation_and_index_views_with_complete_record_bound
     let db_path = run(fixture.path(), ["db-path"]);
     assert!(db_path.status.success());
     let db_path = String::from_utf8(db_path.stdout).expect("db-path plain UTF-8");
-    assert_eq!(db_path.trim_end().split('\t').count(), 3);
+    let db_path = db_path.trim_end().split('\t').collect::<Vec<_>>();
+    assert_eq!(db_path.len(), 4, "{db_path:?}");
+    assert_eq!(db_path[3], "true", "the synced database exists");
     let db_path_ndjson = run(fixture.path(), ["db-path", "--format", "ndjson"]);
     let db_path_ndjson = parse_ndjson(&db_path_ndjson.stdout);
     assert_eq!(db_path_ndjson.len(), 1);
@@ -1936,6 +1940,7 @@ fn real_binary_filters_deleted_destinations_from_stale_structure() {
     run_git(fixture.path(), ["add", "."]);
     run_git(fixture.path(), ["commit", "-m", "base"]);
     let _ = run_json(fixture.path(), ["sync", "--full"]);
+    init_empty_history(fixture.path());
 
     fs::write(
         fixture.path().join("caller.rs"),
@@ -2199,7 +2204,9 @@ fn real_binary_imports_syncs_reports_and_rebuilds_history() {
 #[test]
 fn real_binary_creates_and_restricts_history_database_without_losing_deliveries() {
     let fixture = fixture_repository();
-    let status = run_history_status_with_umask_022(fixture.path());
+    // The writing command creates the index; `history status` only reads it.
+    run_history_with_umask_022(fixture.path(), "sync");
+    let status = run_history_with_umask_022(fixture.path(), "status");
     let db_path = Path::new(
         status["database_path"]
             .as_str()
@@ -2230,7 +2237,8 @@ fn real_binary_creates_and_restricts_history_database_without_losing_deliveries(
 
     fs::set_permissions(db_path, fs::Permissions::from_mode(0o644))
         .expect("simulate existing permissive database");
-    let reopened = run_history_status_with_umask_022(fixture.path());
+    run_history_with_umask_022(fixture.path(), "sync");
+    let reopened = run_history_with_umask_022(fixture.path(), "status");
     assert_eq!(reopened["verified_deliveries"], 1);
     assert_eq!(reopened["task_associations"], 1);
     let mode = fs::metadata(db_path)
@@ -2246,13 +2254,16 @@ fn real_binary_creates_and_restricts_history_database_without_losing_deliveries(
         .expect("open restricted history")
         .deliveries()
         .expect("read preserved delivery");
-    assert_eq!(stored.len(), 1);
-    assert_eq!(stored[0].delivery.delivery_id, "private-history-delivery");
-    assert_eq!(stored[0].delivery.tasks[0].task_id, "ORB-PRIVATE");
+    // `history sync` also indexed the fixture's first commit as Git-only.
+    let verified = stored
+        .iter()
+        .find(|change| change.delivery.delivery_id == "private-history-delivery")
+        .expect("the verified delivery is preserved");
+    assert_eq!(verified.delivery.tasks[0].task_id, "ORB-PRIVATE");
 }
 
 #[cfg(unix)]
-fn run_history_status_with_umask_022(root: &Path) -> Value {
+fn run_history_with_umask_022(root: &Path, subcommand: &str) -> Value {
     let output = Command::new("sh")
         .current_dir(root)
         .args([
@@ -2263,15 +2274,15 @@ fn run_history_status_with_umask_022(root: &Path) -> Value {
             "--format",
             "json",
             "history",
-            "status",
+            subcommand,
             "--branch",
             "main",
         ])
         .output()
-        .expect("run history status under umask 022");
+        .expect("run history under umask 022");
     assert!(
         output.status.success(),
-        "history status failed: {}",
+        "history {subcommand} failed: {}",
         String::from_utf8_lossy(&output.stderr)
     );
     serde_json::from_slice(&output.stdout).expect("JSON history status")
@@ -2435,6 +2446,13 @@ fn real_binary_rejects_signed_rfc3339_components_without_changing_history_state(
     let status = run_json(fixture.path(), ["history", "status", "--branch", "main"]);
     assert_eq!(status["deliveries"], 1);
     assert_eq!(status["cursor"], Value::Null);
+}
+
+/// Creates the history index with no deliveries, as `history sync` would
+/// before indexing any commit, for tests of cold-start recommendations:
+/// `recommend` only reads and reports a missing index.
+fn init_empty_history(root: &Path) {
+    HistoryIndex::open(root, "main").expect("initialize an empty history index");
 }
 
 fn run_json<const N: usize>(cwd: &Path, args: [&str; N]) -> Value {

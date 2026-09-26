@@ -178,7 +178,8 @@ struct HistoryStatusCommand {
 
 impl HistoryStatusCommand {
     fn run(&self, context: &CommandContext) -> Result<serde_json::Value, CliError> {
-        let index = HistoryIndex::open(context.worktree_root(), self.branch.as_str())?;
+        // A report only reads: an unsynced index is `index_missing`.
+        let index = HistoryIndex::open_read_only(context.worktree_root(), self.branch.as_str())?;
         json_value(index.status()?)
     }
 }

@@ -219,7 +219,15 @@ impl CommandContext {
         Self { worktree_root }
     }
 
+    /// Open the worktree's existing graph index for a query: nothing is
+    /// created, initialized or deleted (STD-01 §R31), and an unsynced
+    /// worktree fails with `index_missing`.
     pub(crate) fn open_graph(&self) -> Result<Graph, CliError> {
+        Graph::open_existing_read_only(self.worktree_root.as_path()).map_err(CliError::Graph)
+    }
+
+    /// Open, creating when needed, the worktree's graph index for `sync`.
+    pub(crate) fn open_graph_for_sync(&self) -> Result<Graph, CliError> {
         Graph::open(self.worktree_root.as_path(), SyncPolicy::Manual).map_err(CliError::Graph)
     }
 
@@ -282,6 +290,8 @@ impl CliError {
             Self::Clap(_) => "argument_error",
             Self::CurrentDir(_) => "current_dir_error",
             Self::Stdin(_) => "stdin_error",
+            Self::Graph(GraphError::IndexMissing { .. }) => "index_missing",
+            Self::Graph(GraphError::IndexIncompatible { .. }) => "index_incompatible",
             Self::Graph(_) => "graph_error",
             Self::Tool(error) => error.code().as_str(),
             Self::Selector(_) => "selector_parse_error",
@@ -298,6 +308,9 @@ impl CliError {
             Self::Graph(GraphError::InvalidData { reason, .. }) => Some(reason.as_str()),
             Self::Graph(GraphError::Io { reason, .. }) => Some(reason.as_str()),
             Self::Graph(GraphError::Sqlite { reason, .. }) => Some(reason.as_str()),
+            Self::Graph(GraphError::IndexMissing { .. } | GraphError::IndexIncompatible { .. }) => {
+                None
+            }
             Self::Graph(GraphError::Unimplemented) => None,
             _ => None,
         }

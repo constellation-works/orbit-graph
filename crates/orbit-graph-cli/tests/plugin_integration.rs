@@ -292,6 +292,41 @@ fn plugin_errors_carry_stable_codes_and_validate_before_routing() {
             "{tool} {input}"
         );
     }
+    // A read-only tool against a repository whose history was never synced
+    // fails with `index_missing` naming the maintenance call, in the caller's
+    // own tool spelling, and creates nothing (STD-01 §R31).
+    for (tool, maintain, input) in [
+        (STATUS_TOOL_NAME, "orbit.graph.maintain", json!({})),
+        ("graph.status", "graph.maintain", json!({})),
+        (
+            RECOMMEND_TOOL_NAME,
+            "orbit.graph.maintain",
+            json!({"query": "parser"}),
+        ),
+        (
+            "graph.recommend",
+            "graph.maintain",
+            json!({"query": "parser"}),
+        ),
+    ] {
+        let output = plugin_output_with_env(fixture.path(), tool, input, &[]);
+        let response: Value = serde_json::from_slice(&output.stdout).expect("plugin response");
+        assert_eq!(
+            response["error"]["code"], "index_missing",
+            "{tool}: {response}"
+        );
+        let message = response["error"]["message"].as_str().unwrap_or_default();
+        assert!(
+            message.contains(maintain) && message.contains("history_sync"),
+            "{tool}: {message}"
+        );
+    }
+    assert!(!fixture.path().join(".orbit-graph").exists());
+    plugin_json(
+        fixture.path(),
+        MAINTAIN_TOOL_NAME,
+        json!({"operation": "history_sync", "limit": 10}),
+    );
     // A well-formed request naming an unknown revision of a real repository
     // fails inside the graph layer.
     assert_eq!(
@@ -1853,6 +1888,11 @@ fn public_adapter_reaps_an_mcp_server_that_outlives_its_session() {
         .canonicalize()
         .expect("repository");
     let callback_path = executable_path_with(fixture.path());
+    plugin_json(
+        repository.as_path(),
+        MAINTAIN_TOOL_NAME,
+        json!({"operation": "history_sync", "limit": 10}),
+    );
     let started = Instant::now();
     let output = plugin_output_with_env(
         repository.as_path(),

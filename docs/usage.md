@@ -36,7 +36,7 @@ boundaries are documented in [the terminal-interface design](design/terminal-int
 
 ## Index lifecycle and location
 
-Synchronization is explicit. Query commands never refresh the index; run
+Synchronization is explicit. Query commands never write the index; run
 `orbit-graph sync` after source changes. Incremental sync compares metadata and
 content hashes, re-extracts the changed files, and re-resolves references in
 other files that name a definition the changed or removed files added, removed
@@ -76,8 +76,35 @@ elsewhere), and orbit-graph's per-repository directory under
 `$ORBIT_PLUGIN_STATE`. A database directory passed by a library caller is
 never marked, and neither is any parent created on the way. An existing
 `.gitignore` is left as it is. `orbit-graph db-path` prints
-the exact path, and `orbit-graph clean` removes obsolete extractor versions and
-unreachable detached-commit indexes.
+the exact path and whether a database `exists` there, without creating one.
+
+Only `sync` builds an index. Every other command (`search`, `show`, `refs`,
+`callees`, `impact`, `trace`, `overview`, `implementors`, `deps`, `db-path`,
+`recommend` and `history status`) only reads: it creates, initializes and
+deletes nothing, so it also works when `.orbit-graph/` is read-only. A WAL
+database without its `-shm` sidecar, as a finished sync leaves it, is then
+read from the main file alone (SQLite `immutable=1`); a `-wal` holding
+frames without its `-shm` is refused rather than read stale. On a worktree
+that was never synced, a read exits 1 with code `index_missing` and names the
+command that builds the missing index:
+
+```text
+no graph index for /work/widgets at /work/widgets/.orbit-graph/main.18.db; run `orbit-graph sync`
+```
+
+`recommend` and `history status` name `orbit-graph history sync --branch
+<branch>` for a missing history index instead. A database whose stored
+`schema_version` differs from the one this orbit-graph writes is never used:
+reads and `sync` fail with code `index_incompatible`, naming the database. For
+an older one, delete it and sync; a newer one belongs to a newer orbit-graph
+and is never modified. When `HEAD` cannot be read for any reason other than an
+unborn branch, commands fail instead of guessing which database to use.
+
+Only `sync` and `orbit-graph clean` remove databases. They remove a database
+from an older extractor version, with its WAL, shared-memory and lock
+sidecars, only when no other process holds its lock; a locked one is kept
+until a later run. A database from a newer extractor version is never
+removed. `clean` also removes unreachable detached-commit indexes.
 
 The scanner respects Git ignore rules and optional `.orbitignore` files. The
 latter is a source-scanning ignore format retained for compatibility; it is not
@@ -122,7 +149,9 @@ snapshot availability times remain distinct and carry explicit
 certainty/provenance. See [the design and v2 contract](design/change-recommendations.md).
 `recommend` also caches the symbols it extracts from a target revision beside
 that index, as `recommend-target.<extractor-version>.<tree-id>.json` (owner-only,
-a few recent entries kept). Deleting these files is always safe.
+a few recent entries kept). The cache is best effort, not index state: it is
+skipped when the directory is read-only, and deleting these files is always
+safe.
 
 ## Commands
 
@@ -144,7 +173,7 @@ a few recent entries kept). Deleting these files is always safe.
 | `overview [<file-or-dir-selector>] [--format summary|full]` | Summarize indexed files and symbols. |
 | `implementors <trait-selector>` | Find concrete implementations of a trait-like symbol. |
 | `deps <file-or-dir-selector>` | List source-level module/import edges. |
-| `db-path` | Show the current database path and extractor version. |
+| `db-path` | Show the current database path, extractor version, and whether it exists. |
 | `clean` | Delete obsolete graph databases. |
 | `version` | Show crate, extractor, and store schema versions. |
 

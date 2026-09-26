@@ -44,6 +44,9 @@ pub struct HistoryIndex {
     db_path: PathBuf,
     repository: String,
     landing_branch: String,
+    /// Opened by a read-only constructor: connections are read-only and
+    /// every write is refused.
+    read_only: bool,
 }
 
 /// Outcome of an idempotent delivery import.
@@ -150,8 +153,58 @@ struct PendingBatch {
 
 impl HistoryIndex {
     /// Open or initialize the local history index for `landing_branch`.
+    ///
+    /// This is the writer's open, for `import`, `sync` and `rebuild`. A
+    /// reader that must not create anything uses
+    /// [`HistoryIndex::open_read_only`].
     pub fn open(repo_root: &Path, landing_branch: &str) -> Result<Self, GraphError> {
         Self::open_with_optional_index_dir(repo_root, landing_branch, None)
+    }
+
+    /// Open the existing local history index strictly for reading.
+    ///
+    /// Nothing is created, initialized, locked, copied or chmodded, so this
+    /// works against a read-only `.orbit-graph/` directory (STD-01 §R31). An
+    /// index that `orbit-graph history sync` has not built is
+    /// [`GraphError::IndexMissing`], and one with other stored versions is an
+    /// error naming `history rebuild`. Writes through the handle are refused.
+    pub fn open_read_only(repo_root: &Path, landing_branch: &str) -> Result<Self, GraphError> {
+        Self::open_read_only_with_optional_index_dir(repo_root, landing_branch, None)
+    }
+
+    /// Open the existing history index in orbit-graph's per-repository
+    /// directory under `$ORBIT_PLUGIN_STATE` strictly for reading.
+    pub(crate) fn open_read_only_with_index_dir(
+        repo_root: &Path,
+        landing_branch: &str,
+        index_dir: &Path,
+    ) -> Result<Self, GraphError> {
+        Self::open_read_only_with_optional_index_dir(repo_root, landing_branch, Some(index_dir))
+    }
+
+    fn open_read_only_with_optional_index_dir(
+        repo_root: &Path,
+        landing_branch: &str,
+        index_dir: Option<&Path>,
+    ) -> Result<Self, GraphError> {
+        let mut index = Self::resolve(repo_root, landing_branch, index_dir)?;
+        index.read_only = true;
+        if !index.db_path.is_file() {
+            return Err(GraphError::IndexMissing {
+                path: index.db_path.clone(),
+                reason: format!(
+                    "no history index for branch {} of {} at {}; run \
+                     `orbit-graph history sync --branch {}`",
+                    index.landing_branch,
+                    index.repo_root.display(),
+                    index.db_path.display(),
+                    index.landing_branch
+                ),
+            });
+        }
+        let conn = index.open_connection()?;
+        index.validate_versions(&conn)?;
+        Ok(index)
     }
 
     /// Open or initialize the history index in orbit-graph's per-repository
@@ -165,6 +218,34 @@ impl HistoryIndex {
     }
 
     fn open_with_optional_index_dir(
+        repo_root: &Path,
+        landing_branch: &str,
+        index_dir: Option<&Path>,
+    ) -> Result<Self, GraphError> {
+        let index = Self::resolve(repo_root, landing_branch, index_dir)?;
+        // An explicit index directory is orbit-graph's own per-repository
+        // directory under `$ORBIT_PLUGIN_STATE`; otherwise the index lives in
+        // the worktree's scratch directory.
+        let owner = match index_dir {
+            Some(_) => super::IndexDirOwner::PluginState,
+            None => super::IndexDirOwner::Scratch {
+                worktree_root: index.repo_root.as_path(),
+            },
+        };
+        if let Some(parent) = index.db_path.parent() {
+            super::create_index_dir(parent, owner, "create history index directory")?;
+        }
+        let _lock = HistoryLock::acquire(index.db_path.as_path())?;
+        let mut conn = index.open_connection()?;
+        initialize_schema(&conn)?;
+        index.validate_versions(&conn)?;
+        index.copy_previous_schema_once(&mut conn)?;
+        Ok(index)
+    }
+
+    /// Resolves the repository, branch scope and database path, touching
+    /// nothing on disk.
+    fn resolve(
         repo_root: &Path,
         landing_branch: &str,
         index_dir: Option<&Path>,
@@ -189,19 +270,7 @@ impl HistoryIndex {
                 "landing branch must be non-empty",
             ));
         }
-        // An explicit index directory is orbit-graph's own per-repository
-        // directory under `$ORBIT_PLUGIN_STATE`; otherwise the index lives in
-        // the worktree's scratch directory.
-        let (index_dir, owner) = match index_dir {
-            Some(index_dir) => (index_dir.to_path_buf(), super::IndexDirOwner::PluginState),
-            None => (
-                repo_root.join(".orbit-graph"),
-                super::IndexDirOwner::Scratch {
-                    worktree_root: repo_root.as_path(),
-                },
-            ),
-        };
-        super::create_index_dir(&index_dir, owner, "create history index directory")?;
+        let index_dir = index_dir.map_or_else(|| repo_root.join(".orbit-graph"), Path::to_path_buf);
         let db_path = index_dir.join(format!(
             "change-history.{HISTORY_INDEX_SCHEMA_VERSION}.sqlite3"
         ));
@@ -210,13 +279,23 @@ impl HistoryIndex {
             db_path,
             repository,
             landing_branch,
+            read_only: false,
         };
-        let _lock = HistoryLock::acquire(index.db_path.as_path())?;
-        let mut conn = index.open_connection()?;
-        initialize_schema(&conn)?;
-        index.validate_versions(&conn)?;
-        index.copy_previous_schema_once(&mut conn)?;
         Ok(index)
+    }
+
+    fn refuse_read_only(&self, operation: &'static str) -> Result<(), GraphError> {
+        if self.read_only {
+            return Err(GraphError::invalid_data(
+                operation,
+                format!(
+                    "{} was opened read-only; write it with `orbit-graph history sync`, \
+                     `import` or `rebuild`",
+                    self.db_path.display()
+                ),
+            ));
+        }
+        Ok(())
     }
 
     /// Populate a fresh index from a compatible previous-schema database once.
@@ -308,6 +387,7 @@ impl HistoryIndex {
 
     /// Atomically validate, extract, and import one versioned delivery envelope.
     pub fn import(&self, mut delivery: DeliveryImport) -> Result<HistoryImportReport, GraphError> {
+        self.refuse_read_only("import history delivery")?;
         normalize_tasks(&mut delivery.tasks)?;
         delivery.landing_branch = normalize_branch(delivery.landing_branch.as_str());
         self.ensure_scope(&delivery)?;
@@ -342,12 +422,14 @@ impl HistoryIndex {
 
     /// Incrementally index first-parent commits, bounded by `limit`.
     pub fn sync(&self, limit: Option<usize>) -> Result<HistorySyncReport, GraphError> {
+        self.refuse_read_only("sync history")?;
         self.sync_impl(limit.unwrap_or(DEFAULT_HISTORY_SYNC_LIMIT))
     }
 
     /// Atomically clear this branch scope and rebuild it from first-parent Git history.
     /// Verified delivery envelopes are external source records and must be re-imported.
     pub fn rebuild(&self, limit: Option<usize>) -> Result<HistoryRebuildReport, GraphError> {
+        self.refuse_read_only("rebuild history")?;
         let limit = limit.unwrap_or(DEFAULT_HISTORY_SYNC_LIMIT);
         if limit == 0 {
             return Err(GraphError::invalid_data(
@@ -911,6 +993,9 @@ impl HistoryIndex {
     }
 
     fn open_connection(&self) -> Result<Connection, GraphError> {
+        if self.read_only {
+            return super::open_observational(self.db_path.as_path(), "open history index");
+        }
         // Create privately before SQLite opens the path, and tighten older
         // databases that SQLite may have created with the process umask.
         let _file = open_private_history_file(self.db_path.as_path())?;
