@@ -84,7 +84,7 @@ the executable bit, so no snapshot path is invocable even by accident.
 ## Verified API inventory
 
 Every row below was verified against the current implementation
-(`crates/orbit-graph/src/lib.rs`, `crates/orbit-graph/src/query/*`,
+(`crates/orbit-graph/src/graph/mod.rs`, `crates/orbit-graph/src/query/*`,
 `crates/orbit-graph-cli/src/command/*`), not against the README. Confidence
 labels are `exact`, `import_resolved`, `same_module`, `fuzzy_name` (CLI
 spellings `exact`,

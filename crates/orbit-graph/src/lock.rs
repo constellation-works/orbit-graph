@@ -204,5 +204,5 @@ pub(crate) fn read_holder(lock_path: &Path) -> Option<LockHolder> {
 }
 
 #[cfg(test)]
-#[path = "tests/lock.rs"]
+#[path = "lock/tests/mod.rs"]
 mod tests;
