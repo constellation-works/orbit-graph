@@ -32,19 +32,29 @@ fn fixture() -> tempfile::TempDir {
     dir
 }
 
-/// Block until no build holds the index directory's lock.
-fn wait_for_idle_builder(index_dir: &Path) {
-    let deadline = std::time::Instant::now() + Duration::from_secs(60);
-    loop {
-        if acquire_lock(index_dir).is_ok() {
-            return;
-        }
-        assert!(
-            std::time::Instant::now() < deadline,
-            "build never released its lock"
-        );
-        std::thread::sleep(Duration::from_millis(20));
-    }
+/// Block until the build a timed-out `sync` left running releases the lock.
+/// Only an abandoned build outlives its `sync`; this waits on the lock itself
+/// (no polling), bounded so a lock that is never released fails the test.
+fn wait_for_abandoned_build(index_dir: &Path) {
+    let lock = File::open(index_dir.join(LOCK_FILE)).expect("open lock");
+    let (sender, receiver) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        let _ = sender.send(lock.lock_exclusive().map(|()| lock));
+    });
+    receiver
+        .recv_timeout(Duration::from_secs(60))
+        .expect("abandoned build never released its lock")
+        .expect("lock");
+}
+
+#[cfg(unix)]
+fn mode(path: &Path) -> u32 {
+    use std::os::unix::fs::PermissionsExt;
+    fs::symlink_metadata(path)
+        .expect("metadata")
+        .permissions()
+        .mode()
+        & 0o777
 }
 
 fn request(full: bool) -> SyncRequest {
@@ -128,7 +138,7 @@ fn an_exhausted_budget_publishes_nothing_and_keeps_the_previous_index() {
     assert_eq!(result.incomplete, Some(Incomplete::ExtractionBudget));
     assert_eq!(published(state.path()), before);
     // The abandoned build discards its generation before it releases the lock.
-    wait_for_idle_builder(state.path());
+    wait_for_abandoned_build(state.path());
     assert_eq!(published(state.path()), before);
     let leftovers = fs::read_dir(state.path())
         .expect("list")
@@ -192,12 +202,19 @@ fn an_unreadable_record_deletes_nothing() {
     let one = published(state.path()).database;
     sync(repo.path(), state.path(), request(false)).expect("second build");
     fs::write(state.path().join(OWNED_FILE), b"{not json").expect("corrupt record");
+    let two = published(state.path()).database;
     let third = sync(repo.path(), state.path(), request(false)).expect("third build");
     assert!(
         state.path().join(&one).exists(),
         "unrecorded generation deleted"
     );
     assert!(third.unowned.contains(&one), "{:?}", third.unowned);
+    // The generation the pointer published stays recorded, so it is retired
+    // normally once superseded instead of becoming unowned forever.
+    assert!(!third.unowned.contains(&two), "{:?}", third.unowned);
+    let fourth = sync(repo.path(), state.path(), request(false)).expect("fourth build");
+    assert!(!state.path().join(&two).exists(), "{two} was not retired");
+    assert_eq!(fourth.unowned, vec![one]);
 }
 
 #[test]
@@ -213,23 +230,87 @@ fn a_concurrent_build_is_refused_while_the_lock_is_held() {
         message.contains(&format!("\"pid\":{}", std::process::id())),
         "{message}"
     );
-    drop(held);
-    // A git child that another test forked while the lock file was open
-    // shares its flock until it execs (close-on-exec), so allow a short wait.
-    wait_for_idle_builder(state.path());
-    let deadline = std::time::Instant::now() + Duration::from_secs(60);
-    loop {
-        match sync(repo.path(), state.path(), request(false)) {
-            Ok(_) => break,
-            Err(error)
-                if error.to_string().contains("another graph_sync")
-                    && std::time::Instant::now() < deadline =>
-            {
-                std::thread::sleep(Duration::from_millis(20));
-            }
-            Err(error) => panic!("build after release: {error}"),
+    FileExt::unlock(&held).expect("release");
+    sync(repo.path(), state.path(), request(false)).expect("build after release");
+}
+
+#[test]
+fn a_finished_sync_has_released_its_lock() {
+    // Regression: the build published its result before dropping the lock, so
+    // the next sync in the same process could be refused by its predecessor.
+    let repo = fixture();
+    let state = tempfile::tempdir().expect("state");
+    for round in 0..30 {
+        if round % 3 == 0 {
+            fs::write(
+                repo.path().join("src/extra.rs"),
+                format!("pub fn extra_{round}() {{}}\n"),
+            )
+            .expect("change");
         }
+        sync(repo.path(), state.path(), request(round % 5 == 0))
+            .unwrap_or_else(|error| panic!("round {round}: {error}"));
+        let lock = File::open(state.path().join(LOCK_FILE)).expect("open lock");
+        lock.try_lock_exclusive()
+            .unwrap_or_else(|error| panic!("round {round}: lock still held: {error}"));
     }
+}
+
+#[cfg(unix)]
+#[test]
+fn index_files_are_owner_only_whatever_the_umask() {
+    let repo = fixture();
+    let root = tempfile::tempdir().expect("state");
+    let state = root.path().join("nested/index");
+    sync(repo.path(), &state, request(false)).expect("first build");
+    sync(repo.path(), &state, request(true)).expect("second build");
+    assert_eq!(mode(&root.path().join("nested")), 0o700);
+    assert_eq!(mode(&state), 0o700);
+    for entry in fs::read_dir(&state).expect("list") {
+        let path = entry.expect("entry").path();
+        assert_eq!(mode(&path), 0o600, "{}", path.display());
+    }
+}
+
+#[cfg(unix)]
+#[test]
+fn a_symlinked_lock_or_directory_is_refused() {
+    let repo = fixture();
+    let state = tempfile::tempdir().expect("state");
+    let elsewhere = state.path().join("elsewhere");
+    fs::write(&elsewhere, b"keep").expect("target");
+    let index = state.path().join("index");
+    fs::create_dir(&index).expect("index");
+    std::os::unix::fs::symlink(&elsewhere, index.join(LOCK_FILE)).expect("link lock");
+    sync(repo.path(), &index, request(false)).expect_err("symlinked lock");
+    assert_eq!(fs::read(&elsewhere).expect("read"), b"keep");
+
+    let linked = state.path().join("linked");
+    std::os::unix::fs::symlink(&index, &linked).expect("link dir");
+    sync(repo.path(), &linked, request(false)).expect_err("symlinked directory");
+}
+
+#[test]
+fn orphaned_staging_files_are_reclaimed_and_others_kept() {
+    let repo = fixture();
+    let state = tempfile::tempdir().expect("state");
+    fs::create_dir_all(state.path()).expect("state");
+    for name in [
+        "graph.current.json.4242.tmp",
+        "graph.owned.json.99.tmp",
+        "graph.current.json.x.tmp",
+        "other.json.1.tmp",
+    ] {
+        fs::write(state.path().join(name), b"stale").expect("seed staging");
+    }
+    sync(repo.path(), state.path(), request(false)).expect("build");
+    assert!(!state.path().join("graph.current.json.4242.tmp").exists());
+    assert!(!state.path().join("graph.owned.json.99.tmp").exists());
+    assert!(state.path().join("graph.current.json.x.tmp").exists());
+    assert!(state.path().join("other.json.1.tmp").exists());
+    assert!(is_staging_name("graph.owned.json.1.tmp"));
+    assert!(!is_staging_name("graph.owned.json..tmp"));
+    assert!(!is_staging_name("graph.owned.json.tmp"));
 }
 
 #[test]

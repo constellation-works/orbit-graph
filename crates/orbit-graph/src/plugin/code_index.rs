@@ -38,6 +38,8 @@ const POINTER_FILE: &str = "graph.current.json";
 const LOCK_FILE: &str = "graph.maintain.lock";
 /// Provenance record: the generation databases builds created here.
 const OWNED_FILE: &str = "graph.owned.json";
+/// Suffix of a staging file `write_durably` renames into place.
+const STAGING_SUFFIX: &str = ".tmp";
 /// Share of the budget pass 1 may use before it stops starting new files, so
 /// reference resolution can still finish inside the budget.
 const EXTRACTION_SHARE_PERCENT: u32 = 60;
@@ -214,15 +216,23 @@ pub(crate) fn sync(
     request: SyncRequest,
 ) -> Result<SyncResult, GraphError> {
     let started = Instant::now();
-    fs::create_dir_all(index_dir)
-        .map_err(|source| GraphError::io("create code-graph index directory", index_dir, source))?;
+    create_private_dir(index_dir)?;
     let lock = acquire_lock(index_dir)?;
+    reclaim_staging_files(index_dir)?;
     let previous = IndexState::read(index_dir)?;
     let published_database = match &previous {
         IndexState::Ready(published) => Some(published.database.clone()),
         IndexState::Missing | IndexState::Incompatible(_) => None,
     };
-    let owned = remove_superseded_generations(index_dir, published_database.as_deref())?;
+    let mut owned = remove_superseded_generations(index_dir, published_database.as_deref())?;
+    // The pointer is this module's own record too: a build wrote it, so the
+    // published generation stays recorded even when `graph.owned.json` was
+    // unreadable, and a later build can still retire it.
+    if let Some(database) =
+        published_database.filter(|database| generation_of_any_extractor(database).is_some())
+    {
+        owned.insert(database);
+    }
 
     let checkout = CheckoutState::read(repository)?;
     let generation_name = next_generation_name(index_dir, &previous);
@@ -235,9 +245,13 @@ pub(crate) fn sync(
         (IndexState::Ready(published), false) => Some(index_dir.join(&published.database)),
         _ => None,
     };
-    if let Some(seed) = seed.as_deref() {
-        copy_database(seed, generation.as_path())?;
+    // Every file of the generation is created owner-only before the graph
+    // opens it (STD-05 R8); SQLite gives its journal files the database's mode.
+    match seed.as_deref() {
+        Some(seed) => copy_database(seed, generation.as_path())?,
+        None => create_private_file(generation.as_path())?,
     }
+    create_private_file(&sidecar(generation.as_path(), ".lock"))?;
     let prepare_ms = elapsed_ms(started);
 
     let shared = Arc::new(Shared::default());
@@ -362,11 +376,23 @@ fn acquire_lock(index_dir: &Path) -> Result<File, GraphError> {
     let path = index_dir.join(LOCK_FILE);
     let mut options = OpenOptions::new();
     options.create(true).truncate(false).read(true).write(true);
+    // Owner-only, and never through a symlink planted at the lock path
+    // (STD-05 R7/R8).
     #[cfg(unix)]
-    options.mode(0o600);
+    options.mode(0o600).custom_flags(libc::O_NOFOLLOW);
     let file = options
         .open(&path)
         .map_err(|source| GraphError::io("open code-graph build lock", &path, source))?;
+    let is_file = file
+        .metadata()
+        .map_err(|source| GraphError::io("inspect code-graph build lock", &path, source))?
+        .is_file();
+    if !is_file {
+        return Err(GraphError::invalid_data(
+            "open code-graph build lock",
+            format!("{} is not a regular file", path.display()),
+        ));
+    }
     match file.try_lock_exclusive() {
         Ok(()) => {
             // Diagnostic holder record (STD-03 R7); ownership is the flock.
@@ -709,7 +735,9 @@ impl BuildJob {
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         let result = match (&*slot, outcome) {
             (Slot::Abandoned, _) => {
+                // The caller already answered; discard, then release the lock.
                 discard(self.generation.as_path());
+                let _ = FileExt::unlock(&self.lock);
                 return;
             }
             (_, Ok((SyncOutcome::Completed(report), extract_ms, resolve_ms))) => {
@@ -741,10 +769,14 @@ impl BuildJob {
         if result.is_err() {
             discard(self.generation.as_path());
         }
+        // Release the build lock before the caller can observe the result,
+        // so a `sync` that has returned never still holds it. `unlock`
+        // releases the open file description even if a child forked
+        // elsewhere in the process shares it until its exec closes it.
+        let _ = FileExt::unlock(&self.lock);
+        drop(self.lock);
         *slot = Slot::Finished(result);
         self.shared.changed.notify_all();
-        drop(slot);
-        drop(self.lock);
     }
 
     fn build(&self) -> Result<(SyncOutcome, u64, u64), GraphError> {
@@ -832,10 +864,13 @@ fn write_pointer(index_dir: &Path, published: &PublishedIndex) -> Result<(), Gra
 /// directory, so readers see the old or the new file, never a partial one.
 fn write_durably(index_dir: &Path, name: &str, bytes: &[u8]) -> Result<(), GraphError> {
     let target = index_dir.join(name);
-    let staging = index_dir.join(format!("{name}.{}.tmp", std::process::id()));
+    let staging = index_dir.join(format!("{name}.{}{STAGING_SUFFIX}", std::process::id()));
     let written = (|| {
+        // A fresh file only: `create_new` never follows or reuses whatever is
+        // at the staging path (STD-05 R7). Callers hold the build lock, and
+        // `sync` reclaims staging files a dead build left behind.
         let mut options = OpenOptions::new();
-        options.write(true).create(true).truncate(true);
+        options.write(true).create_new(true);
         #[cfg(unix)]
         options.mode(0o600);
         let mut file = options.open(&staging)?;
@@ -854,12 +889,82 @@ fn write_durably(index_dir: &Path, name: &str, bytes: &[u8]) -> Result<(), Graph
 /// Best-effort removal of the generation this attempt created; the next build
 /// removes anything left behind, because the generation is recorded as owned.
 fn discard(generation: &Path) {
-    let Some(name) = generation.file_name().and_then(|name| name.to_str()) else {
-        return;
-    };
     for suffix in ["", "-wal", "-shm", "-journal", ".lock"] {
-        let _ = fs::remove_file(generation.with_file_name(format!("{name}{suffix}")));
+        let _ = fs::remove_file(sidecar(generation, suffix));
     }
+}
+
+/// `<generation><suffix>` beside the generation database.
+fn sidecar(generation: &Path, suffix: &str) -> PathBuf {
+    let mut name = generation.as_os_str().to_os_string();
+    name.push(suffix);
+    PathBuf::from(name)
+}
+
+/// Create `index_dir` (and missing parents) owner-only, and refuse a final
+/// component that is not a real directory (STD-05 R7/R8).
+fn create_private_dir(index_dir: &Path) -> Result<(), GraphError> {
+    let mut builder = fs::DirBuilder::new();
+    builder.recursive(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::DirBuilderExt;
+        builder.mode(0o700);
+    }
+    builder
+        .create(index_dir)
+        .map_err(|source| GraphError::io("create code-graph index directory", index_dir, source))?;
+    let is_dir = fs::symlink_metadata(index_dir)
+        .map_err(|source| GraphError::io("inspect code-graph index directory", index_dir, source))?
+        .is_dir();
+    if is_dir {
+        Ok(())
+    } else {
+        Err(GraphError::invalid_data(
+            "create code-graph index directory",
+            format!("{} is not a directory", index_dir.display()),
+        ))
+    }
+}
+
+/// Remove staging files of the pointer and provenance record. Only a build
+/// holding the lock writes them, so any present when the lock is acquired
+/// belong to a build that died before renaming them.
+fn reclaim_staging_files(index_dir: &Path) -> Result<(), GraphError> {
+    let entries = fs::read_dir(index_dir)
+        .map_err(|source| GraphError::io("list code-graph index directory", index_dir, source))?;
+    for entry in entries {
+        let entry = entry.map_err(|source| {
+            GraphError::io("list code-graph index directory", index_dir, source)
+        })?;
+        let name = entry.file_name();
+        if !name.to_str().is_some_and(is_staging_name) {
+            continue;
+        }
+        let path = entry.path();
+        match fs::remove_file(&path) {
+            Ok(()) => {}
+            Err(source) if source.kind() == ErrorKind::NotFound => {}
+            Err(source) => {
+                return Err(GraphError::io(
+                    "remove orphaned code-graph staging file",
+                    path,
+                    source,
+                ));
+            }
+        }
+    }
+    Ok(())
+}
+
+/// `graph.current.json.<pid>.tmp` or `graph.owned.json.<pid>.tmp`.
+fn is_staging_name(name: &str) -> bool {
+    [POINTER_FILE, OWNED_FILE].iter().any(|file| {
+        name.strip_prefix(file)
+            .and_then(|rest| rest.strip_prefix('.'))
+            .and_then(|rest| rest.strip_suffix(STAGING_SUFFIX))
+            .is_some_and(|pid| !pid.is_empty() && pid.bytes().all(|byte| byte.is_ascii_digit()))
+    })
 }
 
 #[cfg(test)]

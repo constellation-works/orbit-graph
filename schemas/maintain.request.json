@@ -25,10 +25,9 @@
       "minLength": 1
     },
     "branch": {
-      "description": "Landing branch whose history scope is maintained (history_sync, import, orbit_sync; default main). Rejected for graph_sync.",
+      "description": "Landing branch whose history scope is maintained (history_sync, import, orbit_sync; main when omitted). Omit it for graph_sync, which rejects it.",
       "type": "string",
-      "minLength": 1,
-      "default": "main"
+      "minLength": 1
     },
     "limit": {
       "description": "Per-call bound: commits for history_sync (1-1000, default 100) or runs for orbit_sync (1-100, default 25). Rejected for graph_sync.",
@@ -74,11 +73,10 @@
       "default": false
     },
     "budget_ms": {
-      "description": "graph_sync only: wall-clock budget in milliseconds (1000-110000, default 90000), kept under the plugin's 120 s backend timeout. A build that does not finish is discarded and reported as budget_exhausted.",
+      "description": "graph_sync only: wall-clock budget in milliseconds (1000-110000; 90000 when omitted), kept under the plugin's 120 s backend timeout. A build that does not finish is discarded and reported as budget_exhausted.",
       "type": "integer",
       "minimum": 1000,
-      "maximum": 110000,
-      "default": 90000
+      "maximum": 110000
     }
   },
   "additionalProperties": false

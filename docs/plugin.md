@@ -166,7 +166,9 @@ re-extracts only changed files. `"full": true` re-extracts every file, which an
 index from another extractor version requires. `budget_ms` (1000 to 110000,
 default 90000) bounds the whole call below the plugin's 120 s backend timeout.
 Reference extraction stops starting new files at 60% of the budget so that
-resolution can finish in the rest. `graph_sync` indexes the checkout as it is
+resolution can finish in the rest. Resolution itself is not interrupted, so if
+it runs past the budget the call still answers at the budget with
+`budget_exhausted` and the unfinished build is discarded. `graph_sync` indexes the checkout as it is
 and rejects the history fields (`branch`, `limit`, `delivery`, `workspace`,
 `task_ids`, `run_ids`, `task_snapshots`) rather than ignoring them.
 
@@ -184,6 +186,9 @@ index as it was. Each build records the generation it creates in
 generations that are no longer published. It never deletes a graph database it
 did not record, such as the empty `graph.<extractor>.db` older plugin versions
 left in plugin state. It reports those files in `result.unowned_files` instead.
+The index directory is created owner-only (`0700`) and every file in it
+`0600`, whatever the process umask, and a symbolic link in place of the
+directory or its lock file is refused.
 
 The response's `code_index` names the plugin state `directory` it wrote, and
 `orbit.graph.status` reports the same object: `state` is `missing`,
