@@ -1,10 +1,17 @@
 //! Pass 2 resolves raw refs after Pass 1 has written files, symbols, and imports.
 //!
-//! Resolution deliberately follows the documented confidence ladder in strict
-//! order: same-file exact matches, explicit imports, qualified cross-file
-//! matches, same-module matches, then fuzzy name-only refs. All refs for the
-//! files refreshed by the current sync are rewritten in one SQLite transaction;
-//! unchanged files' refs are not touched during incremental syncs.
+//! Resolution follows the documented confidence ladder in strict order:
+//! same-file exact matches, explicit imports, qualified cross-file matches,
+//! same-module matches, then fuzzy name-only refs. One rung comes first and
+//! short-circuits the rest: a Rust ref whose target names a member of a type
+//! (`<T>::m`, `<T as Trait>::m`, `path::T::m`) is resolved by the type-member
+//! rung in [`type_member`], which narrows to the type's module before picking
+//! the inherent, trait-impl, or trait-declaration member. Its answer, fuzzy
+//! included, is final, except that a receiver or `self` call whose type has
+//! no indexed member and no written path continues down the ladder. All refs
+//! for the files refreshed by the current sync are rewritten in one SQLite
+//! transaction; unchanged files' refs are not touched during incremental
+//! syncs.
 //!
 //! Two rungs match on the bare short name alone: the same-file rung and the
 //! same-module rung. A method call whose receiver type the extractor could not
@@ -27,6 +34,7 @@ use rusqlite::{Connection, Transaction, TransactionBehavior, params};
 
 use super::pass1::ExtractedFileRefs;
 use crate::{GraphError, SyncMode, SyncObserver, SyncPhase, SyncProgress};
+use type_member::{MemberTarget, call_module_qualifier, is_member_symbol, names_free_item};
 
 const CONFIDENCE_EXACT: &str = "exact";
 const CONFIDENCE_IMPORT_RESOLVED: &str = "import_resolved";
@@ -158,8 +166,10 @@ fn insert_ref(
 /// facts about the ref, which are all the ladder reads from a [`RawRef`]:
 /// whether its kind is `runtime_invocation` (never resolved) or `use` (skips
 /// the qualified rung), whether [`resolves_by_name_only`] holds (the same-file
-/// and same-module rungs), and its `target_name` and `target_qualified` (every
-/// rung, and [`import_module_for_ref`]). Two refs in one file with equal keys
+/// and same-module rungs), whether the extractor spelled its path
+/// ([`RawRef::spelled_path`], the same-module rung's module-path
+/// check), and its `target_name` and `target_qualified` (every rung, the
+/// type-member rung, and [`import_module_for_ref`]). Two refs in one file with equal keys
 /// therefore resolve identically, so a file's refs are resolved once per
 /// distinct key. A new ladder input must be added here.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -167,6 +177,7 @@ struct RefKey {
     is_runtime_invocation: bool,
     is_use: bool,
     name_only: bool,
+    spelled_path: bool,
     target_name: String,
     target_qualified: Option<String>,
 }
@@ -177,11 +188,15 @@ impl RefKey {
             is_runtime_invocation: raw_ref.kind == RUNTIME_INVOCATION_KIND,
             is_use: raw_ref.kind == "use",
             name_only: resolves_by_name_only(raw_ref),
+            spelled_path: raw_ref.spelled_path,
             target_name: raw_ref.target_name.clone(),
             target_qualified: raw_ref.target_qualified.clone(),
         }
     }
 }
+
+/// A type's trait impl blocks, each with its trait's last path segment.
+type TraitImpls = Rc<[(String, NamedCandidate)]>;
 
 /// Resolves refs against the symbols and imports Pass 1 wrote.
 ///
@@ -194,6 +209,8 @@ struct Resolver<'a, 'conn> {
     tx: &'a Transaction<'conn>,
     file_prefixes: HashMap<String, Rc<BTreeSet<String>>>,
     candidates_by_name: HashMap<String, Rc<[NamedCandidate]>>,
+    /// Trait impl blocks by Self type name, loaded on first use.
+    trait_impls: Option<HashMap<String, TraitImpls>>,
 }
 
 impl<'a, 'conn> Resolver<'a, 'conn> {
@@ -202,6 +219,7 @@ impl<'a, 'conn> Resolver<'a, 'conn> {
             tx,
             file_prefixes: HashMap::new(),
             candidates_by_name: HashMap::new(),
+            trait_impls: None,
         }
     }
 
@@ -239,6 +257,11 @@ impl<'a, 'conn> Resolver<'a, 'conn> {
         // mistaken for a call to it.
         if raw_ref.kind == RUNTIME_INVOCATION_KIND {
             return Ok(ResolvedRef::fuzzy());
+        }
+        if let Some(target) = MemberTarget::of_ref(from_file, raw_ref)
+            && let Some(resolved) = self.resolve_type_member(from_file, imports, &target)?
+        {
+            return Ok(resolved);
         }
         if let Some(candidate) = resolve_exact(self.tx, from_file, raw_ref)? {
             return Ok(ResolvedRef::candidate(candidate, CONFIDENCE_EXACT));
@@ -294,6 +317,7 @@ impl<'a, 'conn> Resolver<'a, 'conn> {
         imports: &[ImportCandidate],
         raw_ref: &RawRef,
     ) -> Result<ImportResolution, GraphError> {
+        let free_item = names_free_item(from_file, raw_ref);
         for explicit in [true, false] {
             let mut matches = BTreeMap::new();
             for import in imports.iter().filter(|import| {
@@ -304,6 +328,9 @@ impl<'a, 'conn> Resolver<'a, 'conn> {
                 };
                 let module = normalize_module_path(&module_path);
                 for candidate in self.symbols_by_name(&raw_ref.target_name)?.iter() {
+                    if free_item && is_member_symbol(&candidate.symbol.qualified) {
+                        continue;
+                    }
                     if self.candidate_matches_module(candidate, &module)? {
                         matches.insert(candidate.symbol.id, candidate.symbol.clone());
                     }
@@ -332,9 +359,18 @@ impl<'a, 'conn> Resolver<'a, 'conn> {
             return Ok(None);
         }
 
+        let free_item = names_free_item(from_file, raw_ref);
+        let qualifier = call_module_qualifier(from_file, raw_ref);
         let mut matched = None;
         for candidate in self.symbols_by_name(&raw_ref.target_name)?.iter() {
-            if candidate.symbol.file_path == from_file {
+            if candidate.symbol.file_path == from_file
+                || (free_item && is_member_symbol(&candidate.symbol.qualified))
+            {
+                continue;
+            }
+            if let Some(qualifier) = qualifier.as_deref()
+                && !self.candidate_within_module(candidate, qualifier)?
+            {
                 continue;
             }
             if self.candidate_shares_module(candidate, &prefixes)? {
@@ -442,7 +478,10 @@ fn resolve_exact(
     from_file: &str,
     raw_ref: &RawRef,
 ) -> Result<Option<SymbolCandidate>, GraphError> {
-    let candidates = symbols_in_file_by_name(tx, from_file, &raw_ref.target_name)?;
+    let mut candidates = symbols_in_file_by_name(tx, from_file, &raw_ref.target_name)?;
+    if names_free_item(from_file, raw_ref) {
+        candidates.retain(|candidate| !is_member_symbol(&candidate.qualified));
+    }
     if candidates.is_empty() {
         return Ok(None);
     }
@@ -792,6 +831,8 @@ enum ImportResolution {
     Ambiguous,
     None,
 }
+
+mod type_member;
 
 #[cfg(test)]
 #[path = "tests/pass2.rs"]

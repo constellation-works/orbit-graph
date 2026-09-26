@@ -253,7 +253,8 @@ mod outer {
 fn ambiguous_method_call_lowers_to_fuzzy_name() {
     let file = extract(
         r#"
-fn drive(runner: Runner) {
+fn drive() {
+    let runner = build();
     runner.run();
 }
 "#,
@@ -755,7 +756,11 @@ fn checks(store: &Store, root: &Path) {
 
     let delete = macro_call_ref(&file, source, "delete_bundle", 2);
     assert_eq!(delete.unresolved_receiver.as_deref(), Some("store"));
-    assert_eq!(delete.target_qualified, None);
+    // The receiver is a typed parameter, so the call names its type's member.
+    assert_eq!(
+        delete.target_qualified.as_deref(),
+        Some("<Store>::delete_bundle")
+    );
     assert_eq!(
         macro_call_ref(&file, source, "expect", 2)
             .unresolved_receiver
@@ -934,4 +939,201 @@ fn drive(input: Option<Handler>, handlers: Vec<Handler>) {
             "missing call {present}: {names:?}"
         );
     }
+}
+
+#[test]
+fn method_calls_on_typed_bindings_record_the_receiver_type() {
+    let source = r#"
+fn handle(runtime: &OrbitRuntime, store: Arc<dyn TaskStore>, mut boxed: Box<Loader>, items: &[Item]) {
+    runtime.enable_plugin("demo");
+    store.save_task(1);
+    boxed.load();
+    items.len();
+    let config: &ResolvedConfig = runtime.config();
+    config.crew();
+    let built = Builder::new();
+    built.finish();
+    let literal = Options { force: true };
+    literal.validate();
+    let inferred = runtime.clone();
+    inferred.enable_plugin("x");
+    let shadowed: Parser = Parser::new();
+    let shadowed = shadowed.parse();
+    shadowed.render();
+    assert!(runtime.is_ready());
+}
+"#;
+    let file = extract(source);
+
+    let typed = [
+        ("enable_plugin", 2, Some("<OrbitRuntime>::enable_plugin")),
+        ("save_task", 3, Some("<dyn TaskStore>::save_task")),
+        ("load", 4, Some("<Loader>::load")),
+        ("len", 5, None),
+        ("crew", 7, Some("<ResolvedConfig>::crew")),
+        ("finish", 9, Some("<Builder>::finish")),
+        ("validate", 11, Some("<Options>::validate")),
+        ("enable_plugin", 13, None),
+        ("render", 16, None),
+        ("is_ready", 17, Some("<OrbitRuntime>::is_ready")),
+    ];
+    for (method, line, expected) in typed {
+        let reference = macro_call_ref(&file, source, method, line);
+        assert_eq!(
+            reference.target_qualified.as_deref(),
+            expected,
+            "{method} on line {line}"
+        );
+        // The receiver is still recorded: a typed receiver narrows the
+        // target, it never licenses a bare-name match (ORB-12416).
+        assert!(reference.unresolved_receiver.is_some(), "{method}");
+    }
+}
+
+#[test]
+fn self_typed_parameters_and_constructors_name_the_impl_type() {
+    let source = r#"
+struct Worker;
+impl Worker {
+    fn merge(&self, other: &Self) {
+        other.flush();
+        let fresh = Self::new();
+        fresh.flush();
+    }
+}
+"#;
+    let file = extract(source);
+
+    for line in [4, 6] {
+        assert_eq!(
+            macro_call_ref(&file, source, "flush", line)
+                .target_qualified
+                .as_deref(),
+            Some("<Worker>::flush")
+        );
+    }
+}
+
+#[test]
+fn type_parameters_are_unknown_and_use_aliases_name_the_renamed_type() {
+    let source = r#"
+use crate::a::Foo as Bar;
+fn g<T: Tr>(x: T, y: Bar, z: impl Tr) {
+    x.m();
+    y.m();
+    z.m();
+    let w = Bar::new();
+    w.m();
+    Bar::build();
+}
+impl<U> Wrapper<U> {
+    fn h(&self, u: U) { u.m(); }
+}
+"#;
+    let file = extract(source);
+
+    for (line, expected) in [
+        (3, None),
+        (4, Some("<crate::a::Foo>::m")),
+        (5, Some("<dyn Tr>::m")),
+        (7, Some("<crate::a::Foo>::m")),
+        (11, None),
+    ] {
+        assert_eq!(
+            macro_call_ref(&file, source, "m", line)
+                .target_qualified
+                .as_deref(),
+            expected,
+            "m on line {line}"
+        );
+    }
+    let build = macro_call_ref(&file, source, "build", 8);
+    assert_eq!(
+        build.target_qualified.as_deref(),
+        Some("crate::a::Foo::build")
+    );
+    assert!(build.spelled_path, "{build:?}");
+}
+
+#[test]
+fn only_paths_written_at_the_call_site_are_marked_spelled() {
+    let source = r#"
+mod tests {
+    fn run(store: &Store) {
+        helper();
+        crate::util::helper();
+        store.save();
+        assert!(crate::util::check());
+    }
+}
+"#;
+    let file = extract(source);
+
+    for (name, line, spelled) in [
+        ("helper", 3, false),
+        ("helper", 4, true),
+        ("save", 5, false),
+        ("check", 6, true),
+    ] {
+        let call = macro_call_ref(&file, source, name, line);
+        assert_eq!(
+            call.spelled_path, spelled,
+            "{name} on line {line}: {call:?}"
+        );
+    }
+}
+
+#[test]
+fn scoped_type_calls_and_trait_impl_methods_keep_their_type_path() {
+    let source = r#"
+struct Config;
+impl Default for Config {
+    fn default() -> Self { Config::load() }
+}
+impl Config {
+    fn load() -> Self { Config }
+}
+fn read() {
+    let _ = ResolvedConfig::load();
+    let _ = crate::config::ResolvedConfig::load();
+    let _ = <Config as Default>::default();
+}
+"#;
+    let file = extract(source);
+
+    let symbols = file
+        .symbols
+        .iter()
+        .map(|symbol| symbol.qualified.as_str())
+        .collect::<Vec<_>>();
+    assert!(
+        symbols.contains(&"<Config as Default>::default"),
+        "{symbols:?}"
+    );
+    assert!(symbols.contains(&"<Config>::load"), "{symbols:?}");
+
+    assert_eq!(
+        macro_call_ref(&file, source, "load", 3)
+            .target_qualified
+            .as_deref(),
+        Some("Config::load")
+    );
+    assert_eq!(
+        macro_call_ref(&file, source, "load", 9)
+            .target_qualified
+            .as_deref(),
+        Some("ResolvedConfig::load")
+    );
+    assert_eq!(
+        macro_call_ref(&file, source, "load", 10)
+            .target_qualified
+            .as_deref(),
+        Some("crate::config::ResolvedConfig::load")
+    );
+    assert_eq!(
+        macro_call_ref(&file, source, "default", 11)
+            .target_qualified
+            .as_deref(),
+        Some("<Config as Default>::default")
+    );
 }

@@ -612,6 +612,7 @@ fn raw_ref(from_file: &str, target_name: &str) -> RawRef {
         kind: "call".to_string(),
         confidence: super::CONFIDENCE_FUZZY_NAME.to_string(),
         unresolved_receiver: None,
+        spelled_path: false,
     }
 }
 
@@ -1140,4 +1141,576 @@ def run():
         Some(symbol_id(&conn, "scripts/fixture.py", "append"))
     );
     assert_eq!(plain.confidence, super::CONFIDENCE_SAME_MODULE);
+}
+
+fn assert_resolves_to(
+    row: &StoredRef,
+    conn: &Connection,
+    file: &str,
+    qualified: &str,
+    confidence: &str,
+) {
+    assert_eq!(row.target_qualified.as_deref(), Some(qualified), "{row:?}");
+    assert_eq!(
+        row.target_symbol_hint,
+        Some(symbol_id(conn, file, qualified)),
+        "{row:?}"
+    );
+    assert_eq!(row.confidence, confidence, "{row:?}");
+}
+
+#[test]
+fn typed_receiver_and_scoped_type_calls_resolve_to_that_types_member() {
+    let worktree = TestWorktree::new("typed-members");
+    let graph = Graph::open(worktree.path(), SyncPolicy::Manual).expect("open graph");
+    worktree.write(
+        "src/runtime.rs",
+        r#"
+pub struct OrbitRuntime;
+
+impl OrbitRuntime {
+    pub fn enable_plugin(&self) {}
+}
+"#,
+    );
+    // Same member names on other types: a name-only rung would have to guess.
+    worktree.write(
+        "src/registry.rs",
+        r#"
+pub struct Registry;
+
+impl Registry {
+    pub fn enable_plugin(&self) {}
+    pub fn load() -> Self { Registry }
+}
+"#,
+    );
+    worktree.write(
+        "src/config.rs",
+        r#"
+pub struct ResolvedConfig;
+
+impl ResolvedConfig {
+    pub fn load() -> Self { ResolvedConfig }
+}
+"#,
+    );
+    worktree.write(
+        "src/cli.rs",
+        r#"
+use crate::config::ResolvedConfig;
+use crate::runtime::OrbitRuntime;
+
+fn load() {}
+
+fn run(runtime: &OrbitRuntime) {
+    runtime.enable_plugin();
+    let _ = ResolvedConfig::load();
+    let _ = std::sync::Mutex::new(());
+    let _ = Unknown::load();
+}
+"#,
+    );
+    worktree.write(
+        "src/lib.rs",
+        "mod cli;\nmod config;\nmod registry;\nmod runtime;\n",
+    );
+
+    graph.sync(SyncMode::Full).expect("sync graph");
+
+    let conn = open_test_connection(worktree.path());
+    assert_resolves_to(
+        &call_ref(&conn, "src/cli.rs", "enable_plugin"),
+        &conn,
+        "src/runtime.rs",
+        "<OrbitRuntime>::enable_plugin",
+        super::CONFIDENCE_EXACT,
+    );
+
+    let loads = refs_for_file(&conn, "src/cli.rs")
+        .into_iter()
+        .filter(|row| row.kind == "call" && row.target_name == "load")
+        .collect::<Vec<_>>();
+    assert_eq!(loads.len(), 2, "{loads:?}");
+    assert_resolves_to(
+        &loads[0],
+        &conn,
+        "src/config.rs",
+        "<ResolvedConfig>::load",
+        super::CONFIDENCE_EXACT,
+    );
+    // `Unknown::load()` can only name `Unknown`'s member, which is not
+    // indexed: it must not fall back to the same-file `load` function.
+    assert_ref(&loads[1], None, super::CONFIDENCE_FUZZY_NAME);
+}
+
+#[test]
+fn trait_impl_and_dyn_trait_receivers_resolve_by_type() {
+    let worktree = TestWorktree::new("trait-members");
+    let graph = Graph::open(worktree.path(), SyncPolicy::Manual).expect("open graph");
+    worktree.write(
+        "src/exec.rs",
+        r#"
+pub trait Execute {
+    fn execute(self);
+}
+
+pub trait Store {
+    fn save(&self);
+}
+"#,
+    );
+    worktree.write(
+        "src/list.rs",
+        r#"
+use crate::exec::{Execute, Store};
+
+pub struct ListArgs;
+
+impl Execute for ListArgs {
+    fn execute(self) {}
+}
+
+pub struct Disk;
+
+impl Store for Disk {
+    fn save(&self) {}
+}
+"#,
+    );
+    worktree.write(
+        "src/teardown.rs",
+        r#"
+use crate::exec::Execute;
+
+pub struct TeardownArgs;
+
+impl Execute for TeardownArgs {
+    fn execute(self) {}
+}
+"#,
+    );
+    worktree.write(
+        "src/command.rs",
+        r#"
+use crate::exec::{Execute, Store};
+use crate::list::ListArgs;
+
+fn dispatch(args: ListArgs, store: &dyn Store, other: Box<dyn Execute>) {
+    args.execute();
+    store.save();
+}
+"#,
+    );
+    worktree.write(
+        "src/main.rs",
+        "mod command;\nmod exec;\nmod list;\nmod teardown;\n\nfn main() {}\n",
+    );
+
+    graph.sync(SyncMode::Full).expect("sync graph");
+
+    let conn = open_test_connection(worktree.path());
+    assert_resolves_to(
+        &call_ref(&conn, "src/command.rs", "execute"),
+        &conn,
+        "src/list.rs",
+        "<ListArgs as Execute>::execute",
+        super::CONFIDENCE_EXACT,
+    );
+    // A `dyn Trait` receiver dispatches through the trait: the declaration is
+    // the only honest target.
+    assert_resolves_to(
+        &call_ref(&conn, "src/command.rs", "save"),
+        &conn,
+        "src/exec.rs",
+        "Store::save",
+        super::CONFIDENCE_EXACT,
+    );
+}
+
+#[test]
+fn same_named_types_narrow_by_import_then_stay_fuzzy() {
+    let worktree = TestWorktree::new("ambiguous-types");
+    let graph = Graph::open(worktree.path(), SyncPolicy::Manual).expect("open graph");
+    for module in ["alpha", "beta"] {
+        worktree.write(
+            &format!("src/{module}.rs"),
+            r#"
+pub struct Config;
+
+impl Config {
+    pub fn load() -> Self { Config }
+}
+"#,
+        );
+    }
+    worktree.write(
+        "src/imported.rs",
+        r#"
+use crate::beta::Config;
+
+fn read() {
+    let _ = Config::load();
+}
+"#,
+    );
+    worktree.write(
+        "src/unimported.rs",
+        r#"
+fn load() {}
+
+fn read(config: Config) {
+    let _ = Config::load();
+}
+"#,
+    );
+    worktree.write(
+        "src/lib.rs",
+        "mod alpha;\nmod beta;\nmod imported;\nmod unimported;\n",
+    );
+
+    graph.sync(SyncMode::Full).expect("sync graph");
+
+    let conn = open_test_connection(worktree.path());
+    assert_resolves_to(
+        &call_ref(&conn, "src/imported.rs", "load"),
+        &conn,
+        "src/beta.rs",
+        "<Config>::load",
+        super::CONFIDENCE_IMPORT_RESOLVED,
+    );
+    // Two `Config::load` candidates and no import to choose: neither is
+    // picked, and the same-file `load` function is not a fallback.
+    assert_ref(
+        &call_ref(&conn, "src/unimported.rs", "load"),
+        None,
+        super::CONFIDENCE_FUZZY_NAME,
+    );
+}
+
+#[test]
+fn free_function_paths_never_resolve_to_a_same_named_method() {
+    let worktree = TestWorktree::new("free-vs-member");
+    let graph = Graph::open(worktree.path(), SyncPolicy::Manual).expect("open graph");
+    worktree.write(
+        "src/adapter.rs",
+        r#"
+use crate::application::plugin;
+
+pub struct OrbitRuntime;
+
+impl OrbitRuntime {
+    pub fn enable_plugin(&self) {
+        plugin::enable_plugin(self);
+    }
+
+    pub fn helper(&self) {}
+
+    pub fn run(&self) {
+        helper();
+    }
+}
+
+pub trait Store {
+    fn get_task(&self);
+    fn load(&self) {
+        self.get_task();
+    }
+}
+
+fn get_task() {}
+"#,
+    );
+    worktree.write(
+        "src/lib.rs",
+        "mod adapter;\nmod application;\n\nfn helper() {}\n",
+    );
+    worktree.write("src/application/mod.rs", "pub mod plugin;\n");
+    worktree.write(
+        "src/application/plugin.rs",
+        "pub fn enable_plugin(runtime: &crate::adapter::OrbitRuntime) {}\n",
+    );
+
+    graph.sync(SyncMode::Full).expect("sync graph");
+
+    let conn = open_test_connection(worktree.path());
+    // `plugin::enable_plugin(self)` is the lifecycle function, never the
+    // method it is written in.
+    assert_resolves_to(
+        &call_ref(&conn, "src/adapter.rs", "enable_plugin"),
+        &conn,
+        "src/application/plugin.rs",
+        "enable_plugin",
+        super::CONFIDENCE_IMPORT_RESOLVED,
+    );
+    // A bare `helper()` call cannot name the same-file `<OrbitRuntime>::helper`
+    // method either.
+    let helper = call_ref(&conn, "src/adapter.rs", "helper");
+    assert_ne!(
+        helper.target_symbol_hint,
+        Some(symbol_id(&conn, "src/adapter.rs", "<OrbitRuntime>::helper")),
+        "{helper:?}"
+    );
+    // `self.get_task()` in a trait's default body is a method call, so the
+    // free-item rule must not narrow it to the free `get_task` function.
+    let method = call_ref(&conn, "src/adapter.rs", "get_task");
+    assert_ne!(
+        method.target_symbol_hint,
+        Some(symbol_id(&conn, "src/adapter.rs", "get_task")),
+        "{method:?}"
+    );
+}
+
+#[test]
+fn module_path_calls_only_match_same_module_items_under_that_path() {
+    let worktree = TestWorktree::new("module-path-calls");
+    let graph = Graph::open(worktree.path(), SyncPolicy::Manual).expect("open graph");
+    worktree.write("src/process/mod.rs", "pub mod ids;\n");
+    // Both files hold a `tests` module, so they share a module prefix and the
+    // name-only same-module rung would otherwise pair them.
+    worktree.write(
+        "src/process/ids.rs",
+        "mod tests {\n    pub fn id() -> u32 { 7 }\n}\n",
+    );
+    worktree.write(
+        "src/process/lock.rs",
+        "pub fn label() -> u32 { 1 }\npub fn tally() -> u32 { 2 }\n",
+    );
+    worktree.write(
+        "src/process/owner.rs",
+        r#"
+mod tests {
+    fn owner() -> u32 {
+        std::process::id() + crate::process::lock::label()
+    }
+
+    fn total() -> u32 {
+        crate::counts::tally()
+    }
+}
+"#,
+    );
+    worktree.write(
+        "src/lib.rs",
+        "mod process;\npub use process::lock as counts;\n",
+    );
+
+    graph.sync(SyncMode::Full).expect("sync graph");
+
+    let conn = open_test_connection(worktree.path());
+    // `std::process::id()` shares the `process` module name with the local
+    // `id`, but the spelled path is `std::process`: not a same-module match.
+    assert_ref(
+        &call_ref(&conn, "src/process/owner.rs", "id"),
+        None,
+        super::CONFIDENCE_FUZZY_NAME,
+    );
+    let label = call_ref(&conn, "src/process/owner.rs", "label");
+    assert_eq!(
+        label.target_symbol_hint,
+        Some(symbol_id(&conn, "src/process/lock.rs", "label")),
+        "{label:?}"
+    );
+    // A crate-rooted path through a `use m as alias` re-export names no
+    // module the symbol table knows; the plain same-module rule still pairs it.
+    let tally = call_ref(&conn, "src/process/owner.rs", "tally");
+    assert_eq!(
+        tally.target_symbol_hint,
+        Some(symbol_id(&conn, "src/process/lock.rs", "tally")),
+        "{tally:?}"
+    );
+}
+
+/// Syncs `files` into a fresh worktree and returns its connection.
+fn sync_rust_files(name: &str, files: &[(&str, &str)]) -> (TestWorktree, Connection) {
+    let worktree = TestWorktree::new(name);
+    let graph = Graph::open(worktree.path(), SyncPolicy::Manual).expect("open graph");
+    for (path, body) in files {
+        worktree.write(path, body);
+    }
+    graph.sync(SyncMode::Full).expect("sync graph");
+    let conn = open_test_connection(worktree.path());
+    (worktree, conn)
+}
+
+fn calls_named(conn: &Connection, from_file: &str, target_name: &str) -> Vec<StoredRef> {
+    let calls = refs_for_file(conn, from_file)
+        .into_iter()
+        .filter(|row| row.kind == "call" && row.target_name == target_name)
+        .collect::<Vec<_>>();
+    assert!(!calls.is_empty(), "no call ref for {target_name}");
+    calls
+}
+
+#[test]
+fn member_calls_narrow_to_the_named_types_module_before_picking_a_tier() {
+    // a::Foo has an inherent `m`, b::Foo only a trait impl `m`; the caller
+    // names b::Foo by import and by a written path. The inherent tier must
+    // not be picked across types before the module narrows.
+    let (_worktree, conn) = sync_rust_files(
+        "member-scope-tier",
+        &[
+            (
+                "src/a.rs",
+                "pub struct Foo;\nimpl Foo { pub fn m(&self) {} }\n",
+            ),
+            (
+                "src/b.rs",
+                "pub trait Tr { fn m(&self); }\npub struct Foo;\nimpl Tr for Foo { fn m(&self) {} }\n",
+            ),
+            (
+                "src/caller.rs",
+                "use crate::b::{Foo, Tr};\nfn f(x: Foo) { x.m(); }\nfn g(y: crate::b::Foo) { y.m(); }\n",
+            ),
+            (
+                "src/written.rs",
+                "mod inner { pub struct Foo; impl Foo { pub fn m(&self) {} } }\nfn f(x: &crate::a::Foo) { x.m(); }\n",
+            ),
+            ("src/lib.rs", "mod a;\nmod b;\nmod caller;\nmod written;\n"),
+        ],
+    );
+    for row in calls_named(&conn, "src/caller.rs", "m") {
+        assert_resolves_to(
+            &row,
+            &conn,
+            "src/b.rs",
+            "<Foo as Tr>::m",
+            super::CONFIDENCE_IMPORT_RESOLVED,
+        );
+    }
+    // The written path beats a same-file look-alike in an inline module.
+    for row in calls_named(&conn, "src/written.rs", "m") {
+        assert_resolves_to(
+            &row,
+            &conn,
+            "src/a.rs",
+            "<Foo>::m",
+            super::CONFIDENCE_IMPORT_RESOLVED,
+        );
+    }
+}
+
+#[test]
+fn external_types_never_resolve_to_a_local_look_alike() {
+    let (_worktree, conn) = sync_rust_files(
+        "member-external-type",
+        &[
+            (
+                "src/net.rs",
+                "pub struct Client;\nimpl Client { pub fn new() -> Self { Client } pub fn get(&self) {} }\n",
+            ),
+            (
+                "src/caller.rs",
+                "use reqwest::Client;\nfn f(c: &reqwest::Client) { c.get(); }\nfn g() { let c = Client::new(); c.get(); }\n",
+            ),
+            ("src/lib.rs", "mod net;\nmod caller;\n"),
+        ],
+    );
+    for name in ["new", "get"] {
+        for row in calls_named(&conn, "src/caller.rs", name) {
+            assert_ref(&row, None, super::CONFIDENCE_FUZZY_NAME);
+        }
+    }
+}
+
+#[test]
+fn use_as_aliases_resolve_to_the_renamed_type() {
+    let (_worktree, conn) = sync_rust_files(
+        "member-use-alias",
+        &[
+            (
+                "src/a.rs",
+                "pub struct Foo;\nimpl Foo { pub fn new() -> Self { Foo } pub fn m(&self) {} }\n",
+            ),
+            (
+                "src/c.rs",
+                "pub struct Bar;\nimpl Bar { pub fn new() -> Self { Bar } pub fn m(&self) {} }\n",
+            ),
+            (
+                "src/caller.rs",
+                "use crate::a::Foo as Bar;\nfn f(x: Bar) { x.m(); }\nfn g() { let y = Bar::new(); y.m(); }\n",
+            ),
+            ("src/lib.rs", "mod a;\nmod c;\nmod caller;\n"),
+        ],
+    );
+    for name in ["new", "m"] {
+        for row in calls_named(&conn, "src/caller.rs", name) {
+            assert_eq!(
+                row.target_symbol_hint,
+                Some(symbol_id(&conn, "src/a.rs", &format!("<Foo>::{name}"))),
+                "{row:?}"
+            );
+        }
+    }
+}
+
+#[test]
+fn trait_object_receivers_target_the_trait_not_a_same_named_struct() {
+    let (_worktree, conn) = sync_rust_files(
+        "member-dyn-trait",
+        &[
+            ("src/api.rs", "pub trait Store { fn save(&self); }\n"),
+            (
+                "src/mem.rs",
+                "pub struct Store;\nimpl Store { pub fn save(&self) {} }\n",
+            ),
+            (
+                "src/caller.rs",
+                "use crate::api::Store;\nfn f(s: &dyn Store) { s.save(); }\nfn g(s: impl Store) { s.save(); }\n",
+            ),
+            ("src/lib.rs", "mod api;\nmod mem;\nmod caller;\n"),
+        ],
+    );
+    for row in calls_named(&conn, "src/caller.rs", "save") {
+        assert_eq!(
+            row.target_symbol_hint,
+            Some(symbol_id(&conn, "src/api.rs", "Store::save")),
+            "{row:?}"
+        );
+    }
+}
+
+#[test]
+fn type_parameter_receivers_stay_unresolved() {
+    let (_worktree, conn) = sync_rust_files(
+        "member-type-parameter",
+        &[
+            (
+                "src/ext.rs",
+                "pub trait Ext { fn m(&self); }\nimpl<T: std::fmt::Debug> Ext for T { fn m(&self) {} }\n",
+            ),
+            (
+                "src/caller.rs",
+                "pub trait Tr { fn m(&self); }\nfn g<T: Tr>(x: T) { x.m(); }\npub struct W<U>(U);\nimpl<U: Tr> W<U> { fn h(&self, u: U) { u.m(); } }\n",
+            ),
+            ("src/lib.rs", "mod ext;\nmod caller;\n"),
+        ],
+    );
+    for row in calls_named(&conn, "src/caller.rs", "m") {
+        assert_ref(&row, None, super::CONFIDENCE_FUZZY_NAME);
+    }
+}
+
+#[test]
+fn trait_default_members_resolve_to_the_trait_declaration() {
+    let (_worktree, conn) = sync_rust_files(
+        "member-trait-default",
+        &[
+            (
+                "src/caller.rs",
+                "pub trait Greet { fn hi() {} fn hey(&self) {} }\npub struct Foo;\nimpl Greet for Foo {}\nfn f(x: Foo) { Foo::hi(); x.hey(); }\n",
+            ),
+            ("src/lib.rs", "mod caller;\n"),
+        ],
+    );
+    for name in ["hi", "hey"] {
+        let row = call_ref(&conn, "src/caller.rs", name);
+        assert_resolves_to(
+            &row,
+            &conn,
+            "src/caller.rs",
+            &format!("Greet::{name}"),
+            super::CONFIDENCE_EXACT,
+        );
+    }
 }
