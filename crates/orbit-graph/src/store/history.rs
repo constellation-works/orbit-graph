@@ -2,6 +2,8 @@
 
 use std::collections::BTreeSet;
 use std::fs::{self, File, OpenOptions};
+#[cfg(unix)]
+use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -785,6 +787,9 @@ impl HistoryIndex {
     }
 
     fn open_connection(&self) -> Result<Connection, GraphError> {
+        // Create privately before SQLite opens the path, and tighten older
+        // databases that SQLite may have created with the process umask.
+        let _file = open_private_history_file(self.db_path.as_path())?;
         let conn = Connection::open(self.db_path.as_path())
             .map_err(|source| GraphError::sqlite("open history index", source))?;
         conn.pragma_update(None, "busy_timeout", 5_000)
@@ -1198,17 +1203,25 @@ struct HistoryLock {
 impl HistoryLock {
     fn acquire(db_path: &Path) -> Result<Self, GraphError> {
         let path = db_path.with_extension("sqlite3.lock");
-        let file = OpenOptions::new()
-            .create(true)
-            .truncate(false)
-            .read(true)
-            .write(true)
-            .open(path.as_path())
-            .map_err(|source| GraphError::io("open history index lock", path.as_path(), source))?;
+        let file = open_private_history_file(path.as_path())?;
         file.lock_exclusive()
             .map_err(|source| GraphError::io("lock history index", path, source))?;
         Ok(Self { _file: file })
     }
+}
+
+fn open_private_history_file(path: &Path) -> Result<File, GraphError> {
+    let mut options = OpenOptions::new();
+    options.create(true).read(true).write(true);
+    #[cfg(unix)]
+    options.mode(0o600);
+    let file = options
+        .open(path)
+        .map_err(|source| GraphError::io("open private history file", path, source))?;
+    #[cfg(unix)]
+    file.set_permissions(fs::Permissions::from_mode(0o600))
+        .map_err(|source| GraphError::io("restrict history file permissions", path, source))?;
+    Ok(file)
 }
 
 #[cfg(test)]

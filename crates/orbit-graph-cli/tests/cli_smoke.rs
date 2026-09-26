@@ -1536,6 +1536,88 @@ fn real_binary_imports_syncs_reports_and_rebuilds_history() {
     assert!(rebuilt_ndjson[0]["sync"].is_object());
 }
 
+#[cfg(unix)]
+#[test]
+fn real_binary_creates_and_restricts_history_database_without_losing_deliveries() {
+    let fixture = fixture_repository();
+    let status = run_history_status_with_umask_022(fixture.path());
+    let db_path = Path::new(
+        status["database_path"]
+            .as_str()
+            .expect("history database path"),
+    );
+    let mode = fs::metadata(db_path)
+        .expect("new history database metadata")
+        .permissions()
+        .mode();
+    assert_eq!(mode & 0o777, 0o600, "new history database mode: {mode:o}");
+
+    let before = git_stdout(fixture.path(), ["rev-parse", "HEAD"]);
+    fs::write(fixture.path().join("src/added.rs"), "pub fn added() {}\n")
+        .expect("write delivered source");
+    run_git(fixture.path(), ["add", "src/added.rs"]);
+    run_git(fixture.path(), ["commit", "-m", "add delivered source"]);
+    let after = git_stdout(fixture.path(), ["rev-parse", "HEAD"]);
+    import_cli_delivery(
+        fixture.path(),
+        &before,
+        &after,
+        "private-history-delivery",
+        "ORB-PRIVATE",
+        "Private history task",
+        "2000-01-01T00:00:00Z",
+        "1999-01-01T00:00:00Z",
+    );
+
+    fs::set_permissions(db_path, fs::Permissions::from_mode(0o644))
+        .expect("simulate existing permissive database");
+    let reopened = run_history_status_with_umask_022(fixture.path());
+    assert_eq!(reopened["verified_deliveries"], 1);
+    assert_eq!(reopened["task_associations"], 1);
+    let mode = fs::metadata(db_path)
+        .expect("reopened history database metadata")
+        .permissions()
+        .mode();
+    assert_eq!(
+        mode & 0o777,
+        0o600,
+        "reopened history database mode: {mode:o}"
+    );
+    let stored = HistoryIndex::open(fixture.path(), "main")
+        .expect("open restricted history")
+        .deliveries()
+        .expect("read preserved delivery");
+    assert_eq!(stored.len(), 1);
+    assert_eq!(stored[0].delivery.delivery_id, "private-history-delivery");
+    assert_eq!(stored[0].delivery.tasks[0].task_id, "ORB-PRIVATE");
+}
+
+#[cfg(unix)]
+fn run_history_status_with_umask_022(root: &Path) -> Value {
+    let output = Command::new("sh")
+        .current_dir(root)
+        .args([
+            "-c",
+            "umask 022; exec \"$@\"",
+            "sh",
+            env!("CARGO_BIN_EXE_orbit-graph"),
+            "--format",
+            "json",
+            "history",
+            "status",
+            "--branch",
+            "main",
+        ])
+        .output()
+        .expect("run history status under umask 022");
+    assert!(
+        output.status.success(),
+        "history status failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    serde_json::from_slice(&output.stdout).expect("JSON history status")
+}
+
 #[test]
 fn real_binary_rejects_history_repository_mismatch_with_json_error() {
     let fixture = fixture_repository();
