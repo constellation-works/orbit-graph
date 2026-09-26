@@ -2,6 +2,7 @@
 
 pub(crate) mod pass1;
 pub(crate) mod pass2;
+pub(crate) mod report;
 pub(crate) mod scanner;
 pub(crate) mod watcher;
 

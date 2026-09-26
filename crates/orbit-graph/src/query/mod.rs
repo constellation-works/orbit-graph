@@ -14,6 +14,7 @@ pub(crate) mod runtime;
 pub(crate) mod search;
 pub(crate) mod show;
 pub(crate) mod trace;
+pub(crate) mod types;
 
 pub use search::{DEFAULT_SEARCH_LIMIT, Match, SearchKind, SearchQuery, SearchResult};
 pub use show::{DEFAULT_SHOW_MAX_BYTES, NodeMetadata, NodeView, SourceSpan};
