@@ -17,7 +17,8 @@
       "enum": [
         "history_sync",
         "import",
-        "orbit_sync"
+        "orbit_sync",
+        "graph_sync"
       ]
     },
     "repository": {
@@ -29,11 +30,11 @@
       "type": "object"
     },
     "coverage": {
-      "description": "What this call covered and how to resume a partial result.",
+      "description": "What this call covered and how to resume a partial result. graph_sync: complete, state (published or budget_exhausted), phase reached when the budget ran out, and a resume hint.",
       "type": "object"
     },
     "result": {
-      "description": "Operation report: the history sync or import outcome.",
+      "description": "Operation report: the history sync or import outcome, or for graph_sync the requested mode, budget, file counts, and per-phase timings.",
       "type": "object"
     },
     "outcomes": {
@@ -46,6 +47,99 @@
     "status": {
       "description": "orbit_sync: change-history status after the call.",
       "type": "object"
+    },
+    "code_index": {
+      "description": "The plugin-owned code-graph index that combined and graph-only recommendations read structure from. Maintained by graph_sync.",
+      "type": "object",
+      "required": [
+        "state",
+        "directory",
+        "checkout_revision",
+        "fresh"
+      ],
+      "properties": {
+        "state": {
+          "description": "missing: nothing published yet (run graph_sync); incompatible: built by another extractor or schema (run graph_sync with full: true); ready: a complete index is published.",
+          "type": "string",
+          "enum": [
+            "missing",
+            "incompatible",
+            "ready"
+          ]
+        },
+        "directory": {
+          "description": "Plugin state directory that holds this repository's code-graph index.",
+          "type": "string"
+        },
+        "published": {
+          "description": "Metadata of the published generation (present unless state is missing).",
+          "type": "object",
+          "required": [
+            "database",
+            "extractor_version",
+            "store_schema_version",
+            "revision",
+            "worktree_dirty",
+            "synced_at",
+            "mode",
+            "files"
+          ],
+          "properties": {
+            "database": {
+              "description": "Generation database file name inside the plugin state directory.",
+              "type": "string"
+            },
+            "extractor_version": {
+              "description": "Extractor version that built the index.",
+              "type": "integer"
+            },
+            "store_schema_version": {
+              "description": "Graph store schema version that built the index.",
+              "type": "integer"
+            },
+            "revision": {
+              "description": "Checkout commit when the build started; null on an unborn branch.",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "worktree_dirty": {
+              "description": "Whether tracked or untracked (non-ignored) files differed from revision when the build started; the index reflects the working tree.",
+              "type": "boolean"
+            },
+            "synced_at": {
+              "description": "Build completion time (RFC 3339, UTC).",
+              "type": "string"
+            },
+            "mode": {
+              "description": "full when every file was extracted, incremental when the build started from the previous published index.",
+              "type": "string",
+              "enum": [
+                "full",
+                "incremental"
+              ]
+            },
+            "files": {
+              "description": "Files in the index.",
+              "type": "integer"
+            }
+          },
+          "additionalProperties": false
+        },
+        "checkout_revision": {
+          "description": "Current checkout commit, or null when HEAD is unborn or unreadable.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "fresh": {
+          "description": "True when a ready index was built at checkout_revision, so recommendations for the checkout apply structure; false means graph_sync should run.",
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": false
     }
   },
   "additionalProperties": false

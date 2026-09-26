@@ -118,6 +118,11 @@ observation for a recommendation made afterward. An explicit `cutoff` switches
 to strict historical replay: only text attested `known_pre_execution` and
 strictly before that cutoff is eligible. A supplied snapshot on a live request
 still verifies the task, workspace, and repository through the public API.
+Over Git-only history, a live free-text `query` request may also rank from
+commit messages: those contributions use the reason kind
+`historical_change_commit_text`, are labelled post-execution, are down-weighted
+against task text, and add the `git_commit_text_used` fallback; strict replay
+and task-ID requests never use them.
 `hybrid: true`
 uses public `orbit.search`; failure is surfaced and local lexical fallback is
 named in `adapter.warnings`.
@@ -145,6 +150,69 @@ orbit tool run orbit.graph.maintain --input '{
 ```
 
 
+## Code-graph index
+
+Combined and graph-only recommendations add structural evidence (callers,
+callees, and references of the matched symbols) only from the plugin's own
+code-graph index, which lives in the plugin state directory, never in the
+repository's `.orbit-graph/`. Only the mutating `graph_sync` maintenance
+operation builds it:
+
+```sh
+orbit tool run orbit.graph.maintain --input '{
+  "schema_version":1,
+  "operation":"graph_sync",
+  "repository":"/work/widgets"
+}' --full
+```
+
+`graph_sync` is incremental by default: it copies the published index and
+re-extracts only changed files. `"full": true` re-extracts every file, which an
+index from another extractor version requires. `budget_ms` (1000 to 110000,
+default 90000) bounds the whole call below the plugin's 120 s backend timeout.
+Reference extraction stops starting new files at 60% of the budget so that
+resolution can finish in the rest. Resolution itself is not interrupted, so if
+it runs past the budget the call still answers at the budget with
+`budget_exhausted` and the unfinished build is discarded. `graph_sync` indexes the checkout as it is
+and rejects the history fields (`branch`, `limit`, `delivery`, `workspace`,
+`task_ids`, `run_ids`, `task_snapshots`) rather than ignoring them.
+
+Readers only ever see a complete index. Each build writes a new generation
+database that nothing references yet, and a finished build publishes it by
+atomically replacing the pointer file `graph.current.json`. If the budget runs
+out, the response reports `coverage.complete: false` and
+`coverage.state: "budget_exhausted"` with the `phase` it reached and a
+`resume` hint, and the build is discarded. The previously published index is
+unchanged, and so are recommendations. A killed process, a failed build, or a
+second concurrent `graph_sync` (refused with `graph_error` while the first
+holds the build lock, and named in the refusal) also leaves the published
+index as it was. Each build records the generation it creates in
+`graph.owned.json` before writing it, and the next build deletes only recorded
+generations that are no longer published. It never deletes a graph database it
+did not record, such as the empty `graph.<extractor>.db` older plugin versions
+left in plugin state. It reports those files in `result.unowned_files` instead.
+The index directory is created owner-only (`0700`) and every file in it
+`0600`, whatever the process umask, and a symbolic link in place of the
+directory or its lock file is refused.
+
+The response's `code_index` names the plugin state `directory` it wrote, and
+`orbit.graph.status` reports the same object: `state` is `missing`,
+`incompatible`, or `ready`, and `fresh` is true when a ready index was built at
+the checkout's `HEAD`. A published generation uses a rollback journal rather
+than WAL, so `status` and `recommend` open it read-only and create no files
+next to it. A recommendation applies structure only when the target
+revision is the checkout `HEAD` and the published index was built at it; the
+index also covers uncommitted changes present when it was built
+(`published.worktree_dirty`). Otherwise the response keeps lexical and history
+evidence, sets `structure_applied: false`, and names the fix in `fallbacks`:
+
+| `fallbacks[].kind` | Meaning | Fix |
+|---|---|---|
+| `structure_index_missing` | Nothing published yet | Run `graph_sync` |
+| `structure_index_stale` | Built at another commit | Run `graph_sync` |
+| `structure_index_incompatible` | Built by another extractor or schema version | Run `graph_sync` with `"full": true` |
+| `structure_unavailable_for_revision` | Target is not the checkout `HEAD` | Recommend for `HEAD`, or accept no structure |
+
 ## Scheduled history synchronization
 
 The plugin also ships a disabled `history-sync` routine. Enabling the plugin
@@ -153,6 +221,14 @@ seeds it as `.orbit/routines/graph-history-sync.yaml`; review that file and set
 daily schedule. The routine invokes only the bundled
 `graph_history_sync_pipeline` job, so it never enables a schedule by default
 or reaches another plugin's jobs.
+
+A second disabled routine, `code-sync`, seeds as
+`.orbit/routines/graph-code-sync.yaml` and runs the bundled
+`graph_code_sync_pipeline` job at 03:30, after history synchronization. Its
+activity calls `graph_sync` with the default budget. A run that reports
+`budget_exhausted` has changed nothing, so enable it only for a repository
+whose incremental build fits the budget (see the timing note in the
+`graph_sync` response's `result.timings`).
 
 `orbit_sync` reads only public `orbit.workspace.list`, `orbit.task.show`, and
 `orbit.workflow.run.show` tool responses, then verifies full commit objects,

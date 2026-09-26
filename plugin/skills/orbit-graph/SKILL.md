@@ -26,6 +26,13 @@ workspace, task, and repository verification. `hybrid: true` asks the configured
 `orbit.search` surface for ranked task hits. If it is unavailable, the response
 labels the deterministic lexical fallback.
 
+For live free-text `query` requests over Git-only history, a delivery's commit
+message can stand in for missing task text. Such contributions have the reason
+kind `historical_change_commit_text`, are labelled post-execution, are
+down-weighted, and the response lists the `git_commit_text_used` fallback. Task
+IDs cited in a message are hints, not `supporting_task_ids`. Strict replay
+(`cutoff`) and task-ID requests never use commit text.
+
 Maintenance is deliberate. `orbit.graph.maintain` supports:
 
 - `history_sync`: bounded, atomic, resumable first-parent Git-only evidence;
@@ -33,6 +40,9 @@ Maintenance is deliberate. `orbit.graph.maintain` supports:
 - `orbit_sync`: a bounded explicit list of run IDs and/or task IDs, using public
   `orbit.workspace.list`, `orbit.task.show`, `orbit.workflow.run.show`, and Git
   reachability checks.
+- `graph_sync`: build the code-graph index recommendations read structure from,
+  within `budget_ms` (1000-110000, default 90000), publishing it only when
+  complete; `full: true` re-extracts every file.
 
 For periodic Git-only synchronization, enable the plugin's seeded
 `.orbit/routines/graph-history-sync.yaml` after reviewing its daily cadence.

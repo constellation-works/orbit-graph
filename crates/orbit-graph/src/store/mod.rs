@@ -61,6 +61,26 @@ pub(crate) fn open_with_db_path(
     open_at_path(db_path, &git, owner)
 }
 
+/// Describe an existing database for a read-only open: nothing is created,
+/// initialized, or migrated.
+pub(crate) fn existing_db_path(
+    worktree_root: &Path,
+    db_path: &Path,
+) -> Result<GraphDbPath, GraphError> {
+    if !db_path.is_file() {
+        return Err(GraphError::invalid_data(
+            "open graph database read-only",
+            format!("no graph database at {}", db_path.display()),
+        ));
+    }
+    let git = GitContext::for_worktree(worktree_root);
+    Ok(GraphDbPath::new(
+        db_path.to_path_buf(),
+        git.branch,
+        EXTRACTOR_VERSION,
+    ))
+}
+
 fn open_at_path(
     db_path: GraphDbPath,
     git: &GitContext,
@@ -198,12 +218,24 @@ pub(crate) enum IndexDirOwner<'a> {
 /// symlink in the directory's own name and never replaces an existing
 /// `.gitignore` (STD-05 §R7; see [`write_new_gitignore`]). Failing to mark
 /// the directory is logged, not fatal: the index works without it.
+///
+/// The directories orbit-graph owns are created owner-only (`0700`, with any
+/// missing parents) whatever the umask (STD-05 §R8); an existing directory
+/// keeps its mode. A caller-chosen directory gets the default mode.
 pub(crate) fn create_index_dir(
     dir: &Path,
     owner: IndexDirOwner<'_>,
     operation: &'static str,
 ) -> Result<(), GraphError> {
-    fs::create_dir_all(dir).map_err(|source| GraphError::io(operation, dir, source))?;
+    let mut builder = fs::DirBuilder::new();
+    builder.recursive(true);
+    #[cfg(unix)]
+    if !matches!(owner, IndexDirOwner::Caller) {
+        std::os::unix::fs::DirBuilderExt::mode(&mut builder, 0o700);
+    }
+    builder
+        .create(dir)
+        .map_err(|source| GraphError::io(operation, dir, source))?;
     let owned = match owner {
         IndexDirOwner::Scratch { worktree_root } => is_canonical_scratch_dir(dir, worktree_root),
         IndexDirOwner::PluginState => true,
@@ -279,7 +311,7 @@ pub(crate) fn write_new_gitignore(dir: &Path, contents: &[u8]) -> std::io::Resul
             dir_fd,
             temp_name.as_ptr(),
             libc::O_WRONLY | libc::O_CREAT | libc::O_EXCL | libc::O_NOFOLLOW | libc::O_CLOEXEC,
-            0o644 as libc::c_uint,
+            0o600 as libc::c_uint,
         )
     };
     if temp_fd < 0 {

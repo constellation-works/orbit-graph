@@ -40,3 +40,36 @@ tests:
     expect:
       error:
         code: invalid_request
+  # graph_sync success is not expressible here for the same reason: it needs a
+  # Git checkout to index. The real-binary integration test
+  # graph_sync_publishes_structure_that_recommend_applies_at_its_revision
+  # covers the published path.
+  - name: maintain_graph_sync_requires_a_git_repository
+    tool: maintain
+    input:
+      schema_version: 1
+      operation: graph_sync
+      repository: "{{workspace}}"
+    expect:
+      error:
+        code: repository_unavailable
+  - name: maintain_graph_sync_bounds_its_budget
+    tool: maintain
+    input:
+      schema_version: 1
+      operation: graph_sync
+      repository: "{{workspace}}"
+      budget_ms: 999
+    expect:
+      error:
+        code: invalid_request
+  - name: maintain_full_applies_only_to_graph_sync
+    tool: maintain
+    input:
+      schema_version: 1
+      operation: history_sync
+      repository: "{{workspace}}"
+      full: true
+    expect:
+      error:
+        code: invalid_request
