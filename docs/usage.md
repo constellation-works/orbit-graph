@@ -73,8 +73,10 @@ control-plane state and should not be committed: orbit-graph writes a
 Only two directories are marked this way: a real `.orbit-graph/` directory
 directly in the worktree root (not a symlink, and not one that resolves
 elsewhere), and orbit-graph's per-repository directory under
-`$ORBIT_PLUGIN_STATE`. A database directory passed by a library caller is
-never marked, and neither is any parent created on the way. An existing
+`$ORBIT_PLUGIN_STATE`, which only the `orbit-graph` executable reads when it
+serves Orbit plugin tools. The library reads no plugin environment: a library
+caller passes a database path instead. A database directory passed by a
+library caller is never marked, and neither is any parent created on the way. An existing
 `.gitignore` is left as it is. `orbit-graph db-path` prints
 the exact path and whether a database `exists` there, without creating one.
 

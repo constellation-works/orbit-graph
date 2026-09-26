@@ -137,9 +137,13 @@ impl Graph {
     }
 
     /// Open a graph whose database lives in orbit-graph's own per-repository
-    /// directory under `$ORBIT_PLUGIN_STATE`, which is marked with a
+    /// state directory, which is created owner-only and marked with a
     /// `.gitignore` like the default scratch directory.
-    pub(crate) fn open_in_plugin_state(
+    ///
+    /// Public only for the `orbit-graph` CLI's plugin protocol, which chooses
+    /// that directory; library callers use [`Graph::open_with_db_path`].
+    #[doc(hidden)]
+    pub fn open_in_plugin_state(
         worktree_root: &Path,
         db_path: &Path,
         policy: SyncPolicy,
@@ -153,7 +157,15 @@ impl Graph {
     /// [`Graph::open_existing_read_only`] does for the worktree's own
     /// database. The plugin's published code-graph generations use a
     /// rollback journal, so they open as ordinary read-only connections.
-    pub(crate) fn open_read_only(worktree_root: &Path, db_path: &Path) -> Result<Self, GraphError> {
+    ///
+    /// Nothing is created, migrated or locked (STD-01 §R31).
+    ///
+    /// # Errors
+    ///
+    /// [`GraphError::InvalidData`] when `db_path` is not a file or `worktree_root`
+    /// is not a Git worktree, and an error when the database's stored schema
+    /// identity is not the one this build reads.
+    pub fn open_read_only(worktree_root: &Path, db_path: &Path) -> Result<Self, GraphError> {
         let db_path = store::existing_db_path(worktree_root, db_path)?;
         Self::open_observed(worktree_root, db_path)
     }

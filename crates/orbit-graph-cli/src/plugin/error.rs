@@ -2,7 +2,7 @@
 
 use std::fmt::{Display, Formatter};
 
-use crate::GraphError;
+use orbit_graph::GraphError;
 
 /// Machine-readable class of a plugin tool failure.
 ///
@@ -108,11 +108,6 @@ impl ToolError {
     /// The stable envelope code.
     pub const fn code(&self) -> ToolErrorCode {
         self.code
-    }
-
-    /// The underlying graph error.
-    pub const fn source_error(&self) -> &GraphError {
-        &self.source
     }
 }
 

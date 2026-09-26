@@ -378,10 +378,9 @@ fn a_published_index_opens_read_only_in_a_read_only_directory() {
     fs::set_permissions(state.path(), fs::Permissions::from_mode(0o555)).expect("freeze");
     let read = (|| {
         let graph = Graph::open_read_only(repo.path(), db_path.as_path())?;
-        graph.with_read_connection(|conn| {
-            conn.query_row("SELECT COUNT(*) FROM files", [], |row| row.get::<_, i64>(0))
-                .map_err(|source| GraphError::sqlite("count files", source))
-        })
+        graph
+            .overview(None, orbit_graph::OverviewFormat::Summary)
+            .map(|overview| overview.total_files)
     })();
     fs::set_permissions(state.path(), fs::Permissions::from_mode(0o700)).expect("thaw");
 

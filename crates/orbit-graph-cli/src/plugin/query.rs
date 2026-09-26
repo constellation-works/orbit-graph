@@ -15,7 +15,7 @@ use serde_json::{Map, Value, json};
 
 use super::code_index::{self, IndexState, PublishedIndex};
 use super::{PLUGIN_SCHEMA_VERSION, ToolError, decode_input, routed_repository, validate_schema};
-use crate::{
+use orbit_graph::{
     CalleeOpts, DEFAULT_IMPACT_DEPTH, DEFAULT_SEARCH_LIMIT, DEFAULT_TRACE_DEPTH, Graph,
     ImpactDirection, OverviewFormat, RefConfidence, RefKind, RefOpts, SearchKind, SearchQuery,
     Selector,
@@ -136,7 +136,7 @@ pub(crate) fn execute(tool: QueryTool, name: &str, input: &[u8]) -> Result<Value
                  and retry",
                 repository.display(),
                 published.extractor_version,
-                crate::EXTRACTOR_VERSION
+                orbit_graph::EXTRACTOR_VERSION
             )));
         }
     };
@@ -228,7 +228,7 @@ fn bound(result: Value, limit: usize) -> Result<(Value, Map<String, Value>), Too
             return Ok((bounded, truncation));
         }
         if cap == 0 {
-            return Err(ToolError::graph(crate::GraphError::invalid_data(
+            return Err(ToolError::graph(orbit_graph::GraphError::invalid_data(
                 "bound code-graph query result",
                 format!(
                     "the result exceeds the {MAX_RESULT_BYTES}-byte response ceiling even with \
@@ -359,7 +359,7 @@ impl Query {
 
 fn to_value(value: impl serde::Serialize) -> Result<Value, ToolError> {
     serde_json::to_value(value).map_err(|error| {
-        ToolError::graph(crate::GraphError::invalid_data(
+        ToolError::graph(orbit_graph::GraphError::invalid_data(
             "encode code-graph query result",
             error.to_string(),
         ))
@@ -737,7 +737,7 @@ mod tests {
     use std::path::PathBuf;
 
     use super::{MAX_RESULT_BYTES, Query, QueryRequest, QueryTool, bound, validate};
-    use crate::{
+    use orbit_graph::{
         ImpactDirection, OverviewFormat, RefConfidence, RefKind, RefOpts, SearchKind, SearchQuery,
         Selector,
     };

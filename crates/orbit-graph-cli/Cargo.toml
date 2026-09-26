@@ -20,10 +20,13 @@ doc = false
 workspace = true
 
 [dependencies]
+blake3.workspace = true
 clap = { version = "4.5", features = ["derive"] }
+fs2.workspace = true
 git2.workspace = true
 libc.workspace = true
 orbit-graph.workspace = true
+rusqlite.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true

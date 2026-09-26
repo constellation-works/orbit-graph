@@ -26,10 +26,9 @@ use git2::{Repository, StatusOptions};
 use rusqlite::{Connection, OpenFlags};
 use serde::{Deserialize, Serialize};
 
-use crate::recommend::StructureIndex;
-use crate::{
-    EXTRACTOR_VERSION, Graph, GraphError, STORE_SCHEMA_VERSION, SyncFailure, SyncMode,
-    SyncObserver, SyncOutcome, SyncPhase, SyncPolicy, SyncProgress, SyncSkip,
+use orbit_graph::{
+    EXTRACTOR_VERSION, Graph, GraphError, STORE_SCHEMA_VERSION, StructureIndex, SyncFailure,
+    SyncMode, SyncObserver, SyncOutcome, SyncPhase, SyncPolicy, SyncProgress, SyncSkip,
 };
 
 /// Pointer naming the published generation.
@@ -408,7 +407,7 @@ fn acquire_lock(index_dir: &Path) -> Result<File, GraphError> {
             // Diagnostic holder record (STD-03 R7); ownership is the flock.
             let holder = serde_json::json!({
                 "pid": std::process::id(),
-                "acquired_at": crate::recommend::current_observation_cutoff()?,
+                "acquired_at": orbit_graph::current_observation_cutoff()?,
                 "label": "graph_sync",
             });
             let mut writer = &file;
@@ -580,7 +579,9 @@ fn copy_database(source: &Path, target: &Path) -> Result<(), GraphError> {
         source,
         OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_NO_MUTEX,
     )
-    .map_err(|source| GraphError::sqlite("open published code-graph index", source))?;
+    .map_err(|source| {
+        GraphError::sqlite_message("open published code-graph index", source.to_string())
+    })?;
     let target_text = target.to_str().ok_or_else(|| {
         GraphError::invalid_data(
             "copy published code-graph index",
@@ -588,7 +589,9 @@ fn copy_database(source: &Path, target: &Path) -> Result<(), GraphError> {
         )
     })?;
     conn.execute("VACUUM INTO ?1", [target_text])
-        .map_err(|source| GraphError::sqlite("copy published code-graph index", source))?;
+        .map_err(|source| {
+            GraphError::sqlite_message("copy published code-graph index", source.to_string())
+        })?;
     Ok(())
 }
 
@@ -821,15 +824,24 @@ impl BuildJob {
     /// readers can open it read-only without creating files, and publish it.
     fn publish(&self, files: usize) -> Result<PublishedIndex, GraphError> {
         {
-            let conn = Connection::open(self.generation.as_path())
-                .map_err(|source| GraphError::sqlite("open built code-graph index", source))?;
+            let conn = Connection::open(self.generation.as_path()).map_err(|source| {
+                GraphError::sqlite_message("open built code-graph index", source.to_string())
+            })?;
             conn.query_row("PRAGMA wal_checkpoint(TRUNCATE)", [], |_| Ok(()))
                 .map_err(|source| {
-                    GraphError::sqlite("checkpoint built code-graph index", source)
+                    GraphError::sqlite_message(
+                        "checkpoint built code-graph index",
+                        source.to_string(),
+                    )
                 })?;
             let mode: String = conn
                 .query_row("PRAGMA journal_mode=DELETE", [], |row| row.get(0))
-                .map_err(|source| GraphError::sqlite("finalize built code-graph index", source))?;
+                .map_err(|source| {
+                    GraphError::sqlite_message(
+                        "finalize built code-graph index",
+                        source.to_string(),
+                    )
+                })?;
             if !mode.eq_ignore_ascii_case("delete") {
                 return Err(GraphError::invalid_data(
                     "finalize built code-graph index",
@@ -854,7 +866,7 @@ impl BuildJob {
             store_schema_version: STORE_SCHEMA_VERSION,
             revision: self.checkout.revision.clone(),
             worktree_dirty: self.checkout.dirty,
-            synced_at: crate::recommend::current_observation_cutoff()?,
+            synced_at: orbit_graph::current_observation_cutoff()?,
             mode: match self.mode {
                 SyncMode::Full => "full",
                 SyncMode::Auto => "incremental",
@@ -921,11 +933,7 @@ fn sidecar(generation: &Path, suffix: &str) -> PathBuf {
 /// owner-only (`0700`) and marked with its self-ignoring `.gitignore`, and
 /// refuse a final component that is not a real directory (STD-05 R7/R8).
 fn create_private_dir(index_dir: &Path) -> Result<(), GraphError> {
-    crate::store::create_index_dir(
-        index_dir,
-        crate::store::IndexDirOwner::PluginState,
-        "create code-graph index directory",
-    )?;
+    orbit_graph::create_plugin_state_dir(index_dir, "create code-graph index directory")?;
     let is_dir = fs::symlink_metadata(index_dir)
         .map_err(|source| GraphError::io("inspect code-graph index directory", index_dir, source))?
         .is_dir();

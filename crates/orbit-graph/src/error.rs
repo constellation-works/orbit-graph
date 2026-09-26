@@ -65,7 +65,13 @@ impl GraphError {
         Self::sqlite_message(operation, source.to_string())
     }
 
-    pub(crate) fn sqlite_message(operation: &'static str, reason: impl Into<String>) -> Self {
+    /// Build a [`GraphError::Sqlite`] failure for `operation` from a rendered
+    /// SQLite error.
+    ///
+    /// Public for the same reason as [`GraphError::io`]; it takes the message
+    /// rather than a `rusqlite` error so the library's API names no SQLite
+    /// binding types.
+    pub fn sqlite_message(operation: &'static str, reason: impl Into<String>) -> Self {
         Self::Sqlite {
             operation,
             reason: reason.into(),

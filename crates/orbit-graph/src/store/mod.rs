@@ -377,7 +377,8 @@ pub(crate) enum IndexDirOwner<'a> {
         /// The worktree whose scratch directory this is.
         worktree_root: &'a Path,
     },
-    /// orbit-graph's own per-repository directory under `$ORBIT_PLUGIN_STATE`.
+    /// orbit-graph's own per-repository state directory, which the CLI's
+    /// plugin protocol places under the plugin state root it is given.
     PluginState,
     /// A directory the caller chose, such as the parent of a library caller's
     /// database path. orbit-graph creates it when missing but never writes
@@ -390,7 +391,7 @@ pub(crate) enum IndexDirOwner<'a> {
 ///
 /// orbit-graph owns exactly two kinds of directory: the canonical
 /// `<worktree>/.orbit-graph` scratch directory and its own per-repository
-/// directory under `$ORBIT_PLUGIN_STATE`. A caller-chosen directory
+/// state directory ([`IndexDirOwner::PluginState`]). A caller-chosen directory
 /// ([`IndexDirOwner::Caller`]) and the parents created on the way to any
 /// directory are never marked, so a `.gitignore` cannot land in a directory
 /// that holds the user's files.
@@ -432,6 +433,18 @@ pub(crate) fn create_index_dir(
         );
     }
     Ok(())
+}
+
+/// Create `dir`, orbit-graph's own per-repository state directory, owner-only
+/// (`0700`, with any missing parents) and mark it with a self-ignoring
+/// `.gitignore`, as [`create_index_dir`] does for
+/// [`IndexDirOwner::PluginState`]. `operation` names the step in any error.
+///
+/// Public only for the `orbit-graph` CLI's plugin protocol, which creates its
+/// code-graph index directory with it; the store module itself stays private.
+#[doc(hidden)]
+pub fn create_plugin_state_dir(dir: &Path, operation: &'static str) -> Result<(), GraphError> {
+    create_index_dir(dir, IndexDirOwner::PluginState, operation)
 }
 
 /// Whether `dir` is, physically, the `.orbit-graph` directory directly under

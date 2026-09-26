@@ -7,7 +7,6 @@ use std::io::{self, IsTerminal, Read, Write};
 use std::process::ExitCode;
 
 use clap::{CommandFactory, FromArgMatches};
-use orbit_graph::plugin::ToolError;
 use serde::Serialize;
 use serde_json::{Value, json};
 use tracing_subscriber::EnvFilter;
@@ -17,9 +16,11 @@ use crate::output::{
     CommandOutput, OutputSink, emit, emit_error, install_format_argument, requested_format,
     requested_format_from_args,
 };
+use crate::plugin::ToolError;
 
 mod command;
 mod output;
+mod plugin;
 
 #[cfg(test)]
 mod tests;
@@ -86,7 +87,7 @@ fn run_external_tool(environment_tool: Option<&str>, supplied_input: Option<Vec<
     }
     match decode_external_tool_request(environment_tool, input.as_slice())
         .and_then(|(tool_name, input)| {
-            orbit_graph::plugin::execute_external_tool(tool_name.as_str(), input.as_slice())
+            crate::plugin::execute_external_tool(tool_name.as_str(), input.as_slice())
                 .map_err(CliError::Tool)
         })
         .and_then(|output| write_json_to_stdout(&json!({"ok": true, "output": output})))
@@ -123,7 +124,7 @@ fn decode_external_tool_request(
                 ),
             )));
         }
-        if !orbit_graph::plugin::recognizes_tool(envelope_tool) {
+        if !crate::plugin::recognizes_tool(envelope_tool) {
             return Err(CliError::Tool(ToolError::invalid_request(
                 "select Orbit external tool",
                 format!("unsupported envelope tool {envelope_tool:?}"),
@@ -158,7 +159,7 @@ fn decode_external_tool_request(
             "request must provide a top-level tool and input",
         ))
     })?;
-    if !orbit_graph::plugin::recognizes_tool(tool_name) {
+    if !crate::plugin::recognizes_tool(tool_name) {
         return Err(CliError::Tool(ToolError::invalid_request(
             "select Orbit external tool",
             format!("unsupported ORBIT_TOOL_NAME {tool_name:?}"),

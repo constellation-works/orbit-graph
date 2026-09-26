@@ -15,7 +15,6 @@ mod evaluation;
 mod graph;
 mod live_evaluation;
 mod lock;
-pub mod plugin;
 mod query;
 mod recommend;
 mod store;
@@ -82,8 +81,14 @@ pub use recommend::{
     DEFAULT_RECOMMENDATION_LIMIT, HybridTaskHit, Recommendation, RecommendationAssociation,
     RecommendationCounts, RecommendationEngine, RecommendationFallback, RecommendationFreshness,
     RecommendationFreshnessStatus, RecommendationInput, RecommendationLevel, RecommendationReason,
-    RecommendationRequest, RecommendationResult, RecommendationVariant,
+    RecommendationRequest, RecommendationResult, RecommendationVariant, current_observation_cutoff,
 };
+// Hidden helpers the `orbit-graph` CLI's plugin protocol needs for its own
+// per-repository state directory; see each item's documentation.
+#[doc(hidden)]
+pub use recommend::StructureIndex;
+#[doc(hidden)]
+pub use store::create_plugin_state_dir;
 
 /// Extractor/storage compatibility version embedded in graph database names.
 ///

@@ -172,9 +172,13 @@ impl HistoryIndex {
         Self::open_read_only_with_optional_index_dir(repo_root, landing_branch, None)
     }
 
-    /// Open the existing history index in orbit-graph's per-repository
-    /// directory under `$ORBIT_PLUGIN_STATE` strictly for reading.
-    pub(crate) fn open_read_only_with_index_dir(
+    /// Open the existing history index in orbit-graph's own per-repository
+    /// state directory `index_dir` strictly for reading.
+    ///
+    /// Public only for the `orbit-graph` CLI's plugin protocol, which chooses
+    /// that directory; library callers use [`HistoryIndex::open_read_only`].
+    #[doc(hidden)]
+    pub fn open_read_only_with_index_dir(
         repo_root: &Path,
         landing_branch: &str,
         index_dir: &Path,
@@ -207,9 +211,13 @@ impl HistoryIndex {
         Ok(index)
     }
 
-    /// Open or initialize the history index in orbit-graph's per-repository
-    /// directory under `$ORBIT_PLUGIN_STATE`.
-    pub(crate) fn open_with_index_dir(
+    /// Open or initialize the history index in orbit-graph's own
+    /// per-repository state directory `index_dir`.
+    ///
+    /// Public only for the `orbit-graph` CLI's plugin protocol, which chooses
+    /// that directory; library callers use [`HistoryIndex::open`].
+    #[doc(hidden)]
+    pub fn open_with_index_dir(
         repo_root: &Path,
         landing_branch: &str,
         index_dir: &Path,
@@ -224,7 +232,7 @@ impl HistoryIndex {
     ) -> Result<Self, GraphError> {
         let index = Self::resolve(repo_root, landing_branch, index_dir)?;
         // An explicit index directory is orbit-graph's own per-repository
-        // directory under `$ORBIT_PLUGIN_STATE`; otherwise the index lives in
+        // state directory; otherwise the index lives in
         // the worktree's scratch directory.
         let owner = match index_dir {
             Some(_) => super::IndexDirOwner::PluginState,
