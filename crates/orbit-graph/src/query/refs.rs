@@ -615,11 +615,31 @@ impl LineIndex {
         let end = self
             .line_starts
             .get(line)
-            .map_or(self.bytes.len(), |next| next.saturating_sub(1));
-        let text = String::from_utf8_lossy(&self.bytes[start..end.max(start)]);
-        let text = text.trim();
-        let mut snippet: String = text.chars().take(max_chars).collect();
-        if text.chars().nth(max_chars).is_some() {
+            .map_or(self.bytes.len(), |next| next.saturating_sub(1))
+            .max(start);
+        // Decode only a bounded window of the line: `max_chars` characters
+        // take at most 4 bytes each, plus one more character to tell whether
+        // the line was cut. A minified or generated file can hold megabytes on
+        // one line, and every ref row on it asks for a snippet.
+        let line_bytes = &self.bytes[start..end];
+        let indent = line_bytes
+            .iter()
+            .take_while(|byte| byte.is_ascii_whitespace())
+            .count();
+        let body = &line_bytes[indent..];
+        let window_len = body
+            .len()
+            .min(max_chars.saturating_add(1).saturating_mul(4));
+        let window_cut = window_len < body.len();
+        let text = String::from_utf8_lossy(&body[..window_len]);
+        let text = if window_cut {
+            text.trim_start()
+        } else {
+            text.trim()
+        };
+        let mut chars = text.chars();
+        let mut snippet: String = chars.by_ref().take(max_chars).collect();
+        if window_cut || chars.next().is_some() {
             snippet.push('…');
         }
         snippet

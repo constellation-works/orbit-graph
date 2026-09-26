@@ -379,12 +379,18 @@ impl Graph {
         query::refs::run(self, sel, opts)
     }
 
-    /// Return outbound call edges from `sel`.
+    /// Return every outbound call edge from `sel`, unresolved ones included
+    /// (nothing is hidden, so there is no count to report).
     pub fn callees(&self, sel: &Selector) -> Result<Vec<CalleeEdge>, GraphError> {
         self.callees_with_options(sel, &CalleeOpts::all())
     }
 
     /// Return outbound call edges from `sel` filtered by `opts`.
+    ///
+    /// This drops [`CalleeReport::hidden_unresolved`]. A caller that sets
+    /// [`CalleeOpts::hide_unresolved`] and shows the result to anyone should
+    /// call [`Graph::callees_report`] instead and report what it hid; that
+    /// method is the one place the filter is applied.
     pub fn callees_with_options(
         &self,
         sel: &Selector,
@@ -648,6 +654,9 @@ pub(crate) fn resolve_symbol_span(
 
     // Match on either short name or qualified; apply kind filter when provided.
     // Paths in DB are normalized (slash-separated, relative to worktree).
+    // An exact qualified match wins over a short-name match, so a printed
+    // selector such as `#helper` names the top-level `helper`, not a nested
+    // `inner::helper` that happens to have a lower id (STD-01 §R32).
     let mut sql = String::from(
         "SELECT file_path, span_start, span_end FROM symbols
          WHERE file_path = ?1 AND (name = ?2 OR qualified = ?2)",
@@ -656,7 +665,7 @@ pub(crate) fn resolve_symbol_span(
     if has_kind {
         sql.push_str(" AND kind = ?3");
     }
-    sql.push_str(" ORDER BY id LIMIT 1");
+    sql.push_str(" ORDER BY CASE WHEN qualified = ?2 THEN 0 ELSE 1 END, id LIMIT 1");
 
     let mut stmt = conn
         .prepare(&sql)

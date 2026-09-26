@@ -141,7 +141,9 @@ were added without removing or renaming any existing field:
 - `impact`: every `touched[]` (and `fallback.touched[]`) entry has `selector`,
   `file`, and `line`. For an indexed symbol the selector is
   `symbol:<file>#<qualified>:<kind>`, which `show`, `refs`, `callees`, and
-  `impact` accept, and `line` is its definition line; the row chosen is the
+  `impact` accept and resolve to that same symbol (an exact qualified match
+  wins over a same-named nested symbol such as `inner::helper`), and `line` is
+  its definition line; the row chosen is the
   symbol with that qualified name, preferring the file the edge was observed
   in. A file-attributed node (`origin: "file"`) has `file:<file>` and the line
   of the first call site that reached it. A node with no indexed definition,
@@ -150,7 +152,9 @@ were added without removing or renaming any existing field:
   `from_selector`, the selector of the innermost indexed symbol enclosing the
   site (the caller, for a call) or `null` outside every symbol, and `snippet`,
   the trimmed source line cut to 160 characters with a trailing `…`. Snippets
-  are read from the worktree at query time.
+  are read from the worktree at query time, and only a bounded prefix of a long
+  (for example minified) line is decoded. `from_selector` is accepted by the
+  same commands as an `impact` selector.
 - `refs` and `impact` always carry a top-level `fallback_used` boolean. The
   existing `fallback` object keeps its name and shape and is still present only
   when used; the boolean exists so an agent that sees an empty `refs` or
@@ -276,7 +280,7 @@ JSON stdin.
 | `show` | Resolved source/detail output, malformed-selector failure, JSON, and one detail record. |
 | `refs` | Filtered references, missing-argument failure, table, JSON, and context/reference NDJSON output; `from_selector` (including a top-level `null`), `snippet`, and `fallback_used` on precise and fallback results. |
 | `callees` | Returned calls and empty-state behavior in all three output formats; default hiding of unresolved calls with the `hidden_unresolved` count, its stderr notice, and `--include-unresolved`. |
-| `impact` | Bounded traversal in table, JSON, and context/impact NDJSON output; `selector`/`file`/`line` on touched entries, with the selector accepted by `show`. |
+| `impact` | Bounded traversal in table, JSON, and context/impact NDJSON output; `selector`/`file`/`line` on touched entries; selectors printed by `impact` and `refs` round-trip through `show`, `callees`, `refs`, and `impact` past a nested same-name decoy. |
 | `trace` | Discovered command traversal, missing-argument failure, and lossless root record. |
 | `overview` | Summary/full views and the root output-format versus local detail-format compatibility rule. |
 | `implementors` | Implementations and empty-state behavior in table, JSON, and NDJSON output. |

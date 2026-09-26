@@ -264,6 +264,102 @@ fn real_binary_query_output_carries_locations_context_and_callee_filtering() {
     );
 }
 
+#[test]
+fn real_binary_printed_selectors_round_trip_past_a_nested_same_name_decoy() {
+    // A nested `inner::helper` is indexed before the top-level `helper`. A
+    // selector printed for the top-level one must name it again as input to
+    // every query command, not the decoy with the lower id (STD-01 §R32).
+    let fixture = TempDir::new().expect("create round-trip fixture");
+    run_git(fixture.path(), ["init", "-b", "main"]);
+    run_git(
+        fixture.path(),
+        ["config", "user.email", "graph@example.invalid"],
+    );
+    run_git(fixture.path(), ["config", "user.name", "Graph Test"]);
+    fs::create_dir_all(fixture.path().join("src")).expect("create src");
+    fs::write(
+        fixture.path().join("src/lib.rs"),
+        "mod inner {\n    pub fn helper() -> i32 {\n        decoy_only()\n    }\n\n    fn decoy_only() -> i32 {\n        0\n    }\n}\n\npub fn helper() -> i32 {\n    caller2()\n}\n\npub fn caller2() -> i32 {\n    2\n}\n\npub fn entry() -> i32 {\n    helper()\n}\n",
+    )
+    .expect("write fixture source");
+    run_git(fixture.path(), ["add", "."]);
+    run_git(fixture.path(), ["commit", "-m", "fixture"]);
+    let _ = run_json(fixture.path(), ["sync", "--full"]);
+
+    // Selectors as printed by impact and by refs.
+    let impact = run_json(
+        fixture.path(),
+        [
+            "impact",
+            "symbol:src/lib.rs#caller2:function",
+            "--direction",
+            "inbound",
+        ],
+    );
+    let printed_by_impact = impact["touched"]
+        .as_array()
+        .expect("impact touched")
+        .iter()
+        .find(|node| node["distance"] == 1)
+        .and_then(|node| node["selector"].as_str())
+        .expect("helper is a direct caller of caller2")
+        .to_string();
+    assert_eq!(printed_by_impact, "symbol:src/lib.rs#helper:function");
+    let refs = run_json(
+        fixture.path(),
+        ["refs", "symbol:src/lib.rs#caller2:function"],
+    );
+    let printed_by_refs = refs["refs"][0]["from_selector"]
+        .as_str()
+        .expect("the call names its enclosing symbol")
+        .to_string();
+    assert_eq!(printed_by_refs, printed_by_impact);
+
+    let selector = printed_by_impact.as_str();
+    let shown = run_json(fixture.path(), ["show", selector]);
+    assert_eq!(shown["metadata"]["qualified"], "helper", "{shown}");
+    assert!(
+        shown["source"]
+            .as_str()
+            .is_some_and(|source| source.contains("caller2()")),
+        "{shown}"
+    );
+    let callees = run_json(
+        fixture.path(),
+        ["callees", selector, "--include-unresolved"],
+    );
+    let names = callees["callees"]
+        .as_array()
+        .expect("callees")
+        .iter()
+        .filter_map(|edge| edge["target_name"].as_str())
+        .collect::<Vec<_>>();
+    assert_eq!(names, ["caller2"], "callees resolved the decoy: {callees}");
+    let helper_refs = run_json(fixture.path(), ["refs", selector]);
+    let from = helper_refs["refs"]
+        .as_array()
+        .expect("helper refs")
+        .iter()
+        .filter_map(|row| row["from_selector"].as_str())
+        .collect::<Vec<_>>();
+    assert_eq!(from, ["symbol:src/lib.rs#entry:function"], "{helper_refs}");
+    let helper_impact = run_json(
+        fixture.path(),
+        ["impact", selector, "--direction", "inbound"],
+    );
+    let impacted = helper_impact["touched"]
+        .as_array()
+        .expect("helper impact")
+        .iter()
+        .filter_map(|node| node["selector"].as_str())
+        .collect::<Vec<_>>();
+    assert_eq!(
+        impacted,
+        ["symbol:src/lib.rs#entry:function"],
+        "{helper_impact}"
+    );
+}
+
 fn agent_query_fixture() -> TempDir {
     let fixture = TempDir::new().expect("create agent query fixture");
     run_git(fixture.path(), ["init", "-b", "main"]);

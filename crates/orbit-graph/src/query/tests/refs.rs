@@ -243,6 +243,110 @@ fn refs_name_the_innermost_enclosing_symbol_and_carry_a_bounded_snippet() {
 }
 
 #[test]
+fn snippets_on_a_very_long_line_cut_at_a_character_boundary() {
+    // A generated or minified file can hold megabytes on one line, and every
+    // ref on it asks for a snippet: each must still be the first
+    // REF_SNIPPET_MAX_CHARS characters of the trimmed line, cut on a
+    // character boundary even where a multibyte character straddles the
+    // decoded window.
+    let worktree = TestWorktree::new("refs-long-line");
+    let graph = Graph::open(worktree.path(), SyncPolicy::Manual).expect("open graph");
+    let conn = open_test_connection(worktree.path());
+    seed_target(
+        &conn,
+        worktree.path(),
+        "src/target.rs",
+        "Target",
+        "crate::Target",
+    );
+    let call = "Target::build(); ";
+    let long_line = format!("\t  x{}{}", "界".repeat(300_000), call.repeat(2_000));
+    let source = format!("fn caller() {{\n{long_line}\n}}\nfn tail() {{ Target::build(); }}\n");
+    seed_file(&conn, worktree.path(), "src/caller.rs", source.as_str());
+    let first_call = source.find(call).expect("first call");
+    let mut offsets: Vec<usize> = (0..2_000).map(|i| first_call + i * call.len()).collect();
+    offsets.push(source.rfind("Target::build").expect("tail call"));
+    // One transaction, not one fsync per seeded row.
+    conn.execute_batch("BEGIN").expect("begin seeding");
+    for offset in &offsets {
+        insert_ref(
+            &conn,
+            "src/caller.rs",
+            "Target",
+            Some("crate::Target"),
+            "call",
+            "exact",
+            i64::try_from(*offset).expect("offset fits"),
+        );
+    }
+    conn.execute_batch("COMMIT").expect("commit seeding");
+
+    let result = graph
+        .refs(&target_selector(), &RefOpts::default())
+        .expect("query refs");
+
+    assert_eq!(result.refs.len(), offsets.len());
+    let expected: String = std::iter::once('x')
+        .chain(std::iter::repeat_n('界', 159))
+        .chain(std::iter::once('…'))
+        .collect();
+    let (tail, on_long_line) = result.refs.split_last().expect("refs present");
+    for entry in on_long_line {
+        assert_eq!(entry.line, 2);
+        assert_eq!(entry.snippet, expected);
+    }
+    assert_eq!(tail.line, 4);
+    assert_eq!(tail.snippet, "fn tail() { Target::build(); }");
+}
+
+#[test]
+fn snippets_keep_a_short_multibyte_line_whole_and_cut_a_long_one_by_characters() {
+    let worktree = TestWorktree::new("refs-multibyte");
+    let graph = Graph::open(worktree.path(), SyncPolicy::Manual).expect("open graph");
+    let conn = open_test_connection(worktree.path());
+    seed_target(
+        &conn,
+        worktree.path(),
+        "src/target.rs",
+        "Target",
+        "crate::Target",
+    );
+    // 160 characters exactly after trimming (the limit, so no ellipsis), then
+    // a line of 4-byte characters well past the limit.
+    let exact = format!("Target::build(\"{}\");", "é".repeat(160 - 18));
+    let over = format!("Target::build(\"{}\");", "🦀".repeat(160));
+    let source = format!("    {exact}   \n  {over}\n");
+    seed_file(&conn, worktree.path(), "src/caller.rs", source.as_str());
+    for needle in [exact.as_str(), over.as_str()] {
+        insert_ref(
+            &conn,
+            "src/caller.rs",
+            "Target",
+            Some("crate::Target"),
+            "call",
+            "exact",
+            i64::try_from(source.find(needle).expect("call site")).expect("offset fits"),
+        );
+    }
+
+    let result = graph
+        .refs(&target_selector(), &RefOpts::default())
+        .expect("query refs");
+
+    assert_eq!(result.refs.len(), 2);
+    assert_eq!(exact.chars().count(), 160);
+    assert_eq!(
+        result.refs[0].snippet, exact,
+        "a line at the limit is kept whole"
+    );
+    let cut = &result.refs[1].snippet;
+    assert_eq!(cut.chars().count(), 161, "{cut}");
+    assert!(cut.starts_with("Target::build(\"🦀"), "{cut}");
+    assert!(cut.ends_with("🦀…"), "{cut}");
+    assert!(!cut.contains('\u{FFFD}'), "{cut}");
+}
+
+#[test]
 fn precise_floor_empty_falls_back_to_name_only_fuzzy_refs() {
     // Repro for ORB-00383: a public symbol whose only callers resolve at
     // `fuzzy_name` confidence (target_qualified = NULL) looks unreferenced at the
