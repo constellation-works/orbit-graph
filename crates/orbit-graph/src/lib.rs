@@ -185,6 +185,8 @@ impl Graph {
     /// Open a graph that indexes `worktree_root` at a caller-supplied database path.
     ///
     /// Missing parent directories are created. The path must name a file.
+    /// orbit-graph writes nothing else into a caller-supplied directory: it
+    /// is not marked with a `.gitignore`.
     ///
     /// # Examples
     ///
@@ -202,7 +204,21 @@ impl Graph {
         db_path: &Path,
         policy: SyncPolicy,
     ) -> Result<Self, GraphError> {
-        let opened = store::open_with_db_path(worktree_root, db_path)?;
+        let opened =
+            store::open_with_db_path(worktree_root, db_path, store::IndexDirOwner::Caller)?;
+        Self::from_opened(worktree_root, policy, opened)
+    }
+
+    /// Open a graph whose database lives in orbit-graph's own per-repository
+    /// directory under `$ORBIT_PLUGIN_STATE`, which is marked with a
+    /// `.gitignore` like the default scratch directory.
+    pub(crate) fn open_in_plugin_state(
+        worktree_root: &Path,
+        db_path: &Path,
+        policy: SyncPolicy,
+    ) -> Result<Self, GraphError> {
+        let opened =
+            store::open_with_db_path(worktree_root, db_path, store::IndexDirOwner::PluginState)?;
         Self::from_opened(worktree_root, policy, opened)
     }
 

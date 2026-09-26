@@ -1015,7 +1015,7 @@ fn add_current_structure(
     scored: &mut BTreeMap<String, Accumulator>,
 ) -> Result<StructureEvidence, GraphError> {
     let graph = match index_dir {
-        Some(index_dir) => Graph::open_with_db_path(
+        Some(index_dir) => Graph::open_in_plugin_state(
             repo_root,
             index_dir
                 .join(format!("graph.{}.db", crate::EXTRACTOR_VERSION))

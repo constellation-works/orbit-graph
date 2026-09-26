@@ -154,7 +154,8 @@ impl HistoryIndex {
         Self::open_with_optional_index_dir(repo_root, landing_branch, None)
     }
 
-    /// Open or initialize the history index beneath a caller-selected directory.
+    /// Open or initialize the history index in orbit-graph's per-repository
+    /// directory under `$ORBIT_PLUGIN_STATE`.
     pub(crate) fn open_with_index_dir(
         repo_root: &Path,
         landing_branch: &str,
@@ -188,17 +189,22 @@ impl HistoryIndex {
                 "landing branch must be non-empty",
             ));
         }
-        let db_path = index_dir
-            .map(Path::to_path_buf)
-            .unwrap_or_else(|| repo_root.join(".orbit-graph"))
-            .join(format!(
-                "change-history.{HISTORY_INDEX_SCHEMA_VERSION}.sqlite3"
-            ));
-        if let Some(parent) = db_path.parent() {
-            fs::create_dir_all(parent).map_err(|source| {
-                GraphError::io("create history index directory", parent, source)
-            })?;
-        }
+        // An explicit index directory is orbit-graph's own per-repository
+        // directory under `$ORBIT_PLUGIN_STATE`; otherwise the index lives in
+        // the worktree's scratch directory.
+        let (index_dir, owner) = match index_dir {
+            Some(index_dir) => (index_dir.to_path_buf(), super::IndexDirOwner::PluginState),
+            None => (
+                repo_root.join(".orbit-graph"),
+                super::IndexDirOwner::Scratch {
+                    worktree_root: repo_root.as_path(),
+                },
+            ),
+        };
+        super::create_index_dir(&index_dir, owner, "create history index directory")?;
+        let db_path = index_dir.join(format!(
+            "change-history.{HISTORY_INDEX_SCHEMA_VERSION}.sqlite3"
+        ));
         let index = Self {
             repo_root,
             db_path,
