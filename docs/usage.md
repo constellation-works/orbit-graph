@@ -45,7 +45,14 @@ Each worktree stores scratch state under `.orbit-graph/` in its root. Attached
 branches use `.orbit-graph/<sanitized-branch>.<extractor-version>.db`; detached
 worktrees use a commit-prefixed database name. SQLite WAL and lock sidecars
 live beside the database. This directory is independent of Orbit's `.orbit/`
-control-plane state and should not be committed. `orbit-graph db-path` prints
+control-plane state and should not be committed: orbit-graph writes a
+`.gitignore` containing `*` into it, so it never shows up in `git status`.
+Only two directories are marked this way: a real `.orbit-graph/` directory
+directly in the worktree root (not a symlink, and not one that resolves
+elsewhere), and orbit-graph's per-repository directory under
+`$ORBIT_PLUGIN_STATE`. A database directory passed by a library caller is
+never marked, and neither is any parent created on the way. An existing
+`.gitignore` is left as it is. `orbit-graph db-path` prints
 the exact path, and `orbit-graph clean` removes obsolete extractor versions and
 unreachable detached-commit indexes.
 
@@ -60,6 +67,9 @@ explicitly weaker first-parent Git sync evidence. It never reads task
 `context_files` or Orbit private state. Delivery, ingestion, task creation, and
 snapshot availability times remain distinct and carry explicit
 certainty/provenance. See [the design and v2 contract](design/change-recommendations.md).
+`recommend` also caches the symbols it extracts from a target revision beside
+that index, as `recommend-target.<extractor-version>.<tree-id>.json` (owner-only,
+a few recent entries kept). Deleting these files is always safe.
 
 ## Commands
 
