@@ -1,0 +1,42 @@
+# See status.yaml: the conformance workspace is an empty non-Git directory.
+schemaVersion: 1
+kind: PluginTest
+tests:
+  - name: maintain_history_sync_requires_a_git_repository
+    tool: maintain
+    input:
+      schema_version: 1
+      operation: history_sync
+      repository: "{{workspace}}"
+      limit: 10
+    expect:
+      error:
+        code: repository_unavailable
+  - name: maintain_history_sync_bounds_its_limit
+    tool: maintain
+    input:
+      schema_version: 1
+      operation: history_sync
+      repository: "{{workspace}}"
+      limit: 1001
+    expect:
+      error:
+        code: invalid_request
+  - name: maintain_import_requires_a_delivery
+    tool: maintain
+    input:
+      schema_version: 1
+      operation: import
+      repository: "{{workspace}}"
+    expect:
+      error:
+        code: invalid_request
+  - name: maintain_rejects_an_unknown_operation
+    tool: maintain
+    input:
+      schema_version: 1
+      operation: rebuild
+      repository: "{{workspace}}"
+    expect:
+      error:
+        code: invalid_request

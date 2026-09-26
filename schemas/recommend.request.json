@@ -1,32 +1,108 @@
 {
   "type": "object",
   "properties": {
-    "schema_version": {"type": "integer", "const": 1},
-    "repository": {"type": "string", "minLength": 1},
-    "branch": {"type": "string", "minLength": 1, "default": "main"},
-    "workspace": {"type": "string", "minLength": 1},
-    "query": {"type": "string", "minLength": 1},
-    "task_id": {"type": "string", "minLength": 1},
-    "task_snapshot": {"type": "object"},
-    "level": {"type": "string", "enum": ["file", "symbol"], "default": "file"},
-    "limit": {"type": "integer", "minimum": 1, "maximum": 100},
-    "revision": {"type": "string", "minLength": 1},
-    "cutoff": {"type": "string", "minLength": 1},
-    "hybrid": {"type": "boolean", "default": false},
-    "hybrid_limit": {"type": "integer", "minimum": 1, "maximum": 100, "default": 20},
+    "schema_version": {
+      "description": "Request contract version; must be 1 when present.",
+      "type": "integer",
+      "const": 1
+    },
+    "repository": {
+      "description": "Absolute path of the Git repository to rank. Defaults to the caller's workspace root; never inferred from the tool cwd.",
+      "type": "string",
+      "minLength": 1
+    },
+    "branch": {
+      "description": "Landing branch whose verified history supplies evidence.",
+      "type": "string",
+      "minLength": 1,
+      "default": "main"
+    },
+    "workspace": {
+      "description": "Owning Orbit workspace (ws_* id or name). Required for task_id lookup and hybrid search.",
+      "type": "string",
+      "minLength": 1
+    },
+    "query": {
+      "description": "Free-text change description. Send exactly one of query or task_id.",
+      "type": "string",
+      "minLength": 1
+    },
+    "task_id": {
+      "description": "Orbit task id whose public text is the query. Send exactly one of query or task_id.",
+      "type": "string",
+      "minLength": 1
+    },
+    "task_snapshot": {
+      "description": "Earlier public task snapshot to use instead of a live orbit.task.show observation; required for strict replay without task callbacks.",
+      "type": "object"
+    },
+    "level": {
+      "description": "Result granularity: file for a change surface, symbol for implementation navigation.",
+      "type": "string",
+      "enum": [
+        "file",
+        "symbol"
+      ],
+      "default": "file"
+    },
+    "limit": {
+      "description": "Maximum recommendations returned.",
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 100
+    },
+    "revision": {
+      "description": "Target commit or ref to rank against; defaults to the checkout HEAD.",
+      "type": "string",
+      "minLength": 1
+    },
+    "cutoff": {
+      "description": "Timestamp (RFC 3339 with an offset, or unix:<seconds>) for strict historical replay: only evidence and task text attested before it are used.",
+      "type": "string",
+      "minLength": 1
+    },
+    "hybrid": {
+      "description": "Also rank similar tasks through the public orbit.search tool; failures fall back to local lexical ranking and are named in adapter.warnings.",
+      "type": "boolean",
+      "default": false
+    },
+    "hybrid_limit": {
+      "description": "Maximum orbit.search hits requested when hybrid is true.",
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 100,
+      "default": 20
+    },
     "hybrid_hits": {
+      "description": "Pre-ranked task hits to merge instead of, or in addition to, a live orbit.search call.",
       "type": "array",
       "items": {
         "type": "object",
-        "required": ["task_id", "score"],
+        "required": [
+          "task_id",
+          "score"
+        ],
         "properties": {
-          "task_id": {"type": "string", "minLength": 1},
-          "score": {"type": "number", "minimum": 0}
+          "task_id": {
+            "description": "Task id of one ranked hit.",
+            "type": "string",
+            "minLength": 1
+          },
+          "score": {
+            "description": "Non-negative relevance score of the hit.",
+            "type": "number",
+            "minimum": 0
+          }
         },
         "additionalProperties": false
       }
     }
   },
-  "not": {"required": ["query", "task_id"]},
+  "not": {
+    "required": [
+      "query",
+      "task_id"
+    ]
+  },
   "additionalProperties": false
 }

@@ -207,9 +207,79 @@ fn plugin_version_is_repository_independent_and_deterministic() {
     );
 }
 
+#[test]
+fn plugin_errors_carry_stable_codes_and_validate_before_routing() {
+    let not_a_repository = TempDir::new().expect("non-repository workspace");
+    let fixture = evaluation_fixture();
+    let code = |repository: &Path, tool: &str, input: Value| {
+        let output = plugin_output_with_env(repository, tool, input, &[]);
+        assert_plugin_error(&output, tool)["error"]["code"]
+            .as_str()
+            .expect("error code")
+            .to_string()
+    };
+
+    // Request validation precedes repository routing, so a malformed request
+    // is reported as such even when the repository is also unusable.
+    for (tool, input) in [
+        (STATUS_TOOL_NAME, json!({"schema_version": 2})),
+        (STATUS_TOOL_NAME, json!({"unknown": true})),
+        (
+            RECOMMEND_TOOL_NAME,
+            json!({"query": "parser", "task_id": "ORB-1"}),
+        ),
+        (RECOMMEND_TOOL_NAME, json!({"query": "  "})),
+        (
+            RECOMMEND_TOOL_NAME,
+            json!({"query": "parser", "hybrid": true, "hybrid_limit": 0}),
+        ),
+        (
+            MAINTAIN_TOOL_NAME,
+            json!({"operation": "history_sync", "limit": 1001}),
+        ),
+        (
+            MAINTAIN_TOOL_NAME,
+            json!({"operation": "orbit_sync", "limit": 101}),
+        ),
+        (MAINTAIN_TOOL_NAME, json!({"operation": "import"})),
+        (MAINTAIN_TOOL_NAME, json!({"operation": "rebuild"})),
+        ("graph.unknown", json!({})),
+    ] {
+        assert_eq!(
+            code(not_a_repository.path(), tool, input.clone()),
+            "invalid_request",
+            "{tool} {input}"
+        );
+    }
+    for (tool, input) in [
+        (STATUS_TOOL_NAME, json!({})),
+        (RECOMMEND_TOOL_NAME, json!({"query": "parser"})),
+        (
+            MAINTAIN_TOOL_NAME,
+            json!({"operation": "history_sync", "limit": 10}),
+        ),
+    ] {
+        assert_eq!(
+            code(not_a_repository.path(), tool, input.clone()),
+            "repository_unavailable",
+            "{tool} {input}"
+        );
+    }
+    // A well-formed request naming an unknown revision of a real repository
+    // fails inside the graph layer.
+    assert_eq!(
+        code(
+            fixture.path(),
+            RECOMMEND_TOOL_NAME,
+            json!({"query": "parser", "revision": "no-such-revision"})
+        ),
+        "graph_error"
+    );
+}
+
 #[cfg(unix)]
 #[test]
-fn launchers_reject_stale_path_binary_and_honor_explicit_binary() {
+fn launchers_reject_a_stale_path_binary_and_ignore_the_environment() {
     let fixture = TempDir::new().expect("launcher fixture");
     let stale_dir = fixture.path().join("stale");
     fs::create_dir(&stale_dir).expect("stale directory");
@@ -232,12 +302,20 @@ fn launchers_reject_stale_path_binary_and_honor_explicit_binary() {
     .expect("BSD-compatible dirname shim");
     fs::set_permissions(&dirname, fs::Permissions::from_mode(0o755))
         .expect("executable dirname shim");
-    let path = format!("{}:/usr/bin:/bin", stale_dir.display());
-    let real = env!("CARGO_BIN_EXE_orbit-graph");
+    let stale_path = format!("{}:/usr/bin:/bin", stale_dir.display());
+    let real = Path::new(env!("CARGO_BIN_EXE_orbit-graph"));
+    let current_path = format!(
+        "{}:{}",
+        real.parent().expect("binary directory").display(),
+        stale_path
+    );
 
     for launcher in ["bin/orbit-graph", "plugin/bin/orbit-graph"] {
         let launcher = repository_root().join(launcher);
-        let rejected = launcher_version(&launcher, &path, None);
+        // Orbit clears a backend's environment, so an override variable can
+        // never select the executable: only the bundled binary and PATH do.
+        let real_str = real.to_str().expect("UTF-8 binary path");
+        let rejected = launcher_version(&launcher, &stale_path, Some(real_str));
         assert_eq!(rejected.status.code(), Some(0), "{launcher:?}");
         let response: Value = serde_json::from_slice(&rejected.stdout).expect("structured error");
         assert_eq!(response["ok"], false);
@@ -250,16 +328,18 @@ fn launchers_reject_stale_path_binary_and_honor_explicit_binary() {
             response["error"]["message"]
                 .as_str()
                 .expect("message")
-                .contains("extractor_version=11")
+                .contains(&format!(
+                    "extractor_version={}",
+                    orbit_graph::EXTRACTOR_VERSION
+                ))
         );
         assert!(
             rejected.stderr.is_empty(),
             "{launcher:?}: {}",
             String::from_utf8_lossy(&rejected.stderr)
         );
-        assert!(!String::from_utf8_lossy(&rejected.stderr).contains("Usage:"));
 
-        let selected = launcher_version(&launcher, &path, Some(real));
+        let selected = launcher_version(&launcher, &current_path, None);
         assert_eq!(
             selected.status.code(),
             Some(0),
@@ -267,40 +347,82 @@ fn launchers_reject_stale_path_binary_and_honor_explicit_binary() {
             String::from_utf8_lossy(&selected.stderr)
         );
         let response: Value = serde_json::from_slice(&selected.stdout).expect("version envelope");
-        assert_eq!(response["ok"], true);
-        assert_eq!(response["output"]["plugin_schema_version"], 1);
-        assert_eq!(response["output"]["extractor_version"], 11);
+        assert_eq!(response["ok"], true, "{launcher:?}: {response}");
+        assert_eq!(
+            response["output"]["plugin_schema_version"],
+            PLUGIN_SCHEMA_VERSION
+        );
+        assert_eq!(
+            response["output"]["extractor_version"],
+            orbit_graph::EXTRACTOR_VERSION
+        );
     }
 }
 
 #[cfg(unix)]
 #[test]
-fn bundled_binary_precedes_environment_and_path() {
+fn bundled_binary_precedes_path() {
     let fixture = TempDir::new().expect("bundled launcher fixture");
     let launcher_dir = fixture.path().join("bin");
     fs::create_dir(&launcher_dir).expect("launcher directory");
     let launcher = launcher_dir.join("orbit-graph");
-    std::os::unix::fs::symlink(repository_root().join("bin/orbit-graph"), &launcher)
-        .expect("link launcher");
-    std::os::unix::fs::symlink(
-        env!("CARGO_BIN_EXE_orbit-graph"),
-        launcher_dir.join("orbit-graph.bin"),
+    fs::copy(repository_root().join("bin/orbit-graph"), &launcher).expect("copy launcher");
+    let stale_dir = fixture.path().join("stale");
+    fs::create_dir(&stale_dir).expect("stale directory");
+    fs::write(stale_dir.join("orbit-graph"), "#!/bin/sh\nexit 1\n").expect("stale PATH binary");
+    fs::set_permissions(
+        stale_dir.join("orbit-graph"),
+        fs::Permissions::from_mode(0o755),
     )
-    .expect("bundled executable");
-    let stale = fixture.path().join("stale");
-    fs::write(&stale, "#!/bin/sh\nexit 1\n").expect("stale explicit binary");
-    fs::set_permissions(&stale, fs::Permissions::from_mode(0o755))
-        .expect("executable stale binary");
+    .expect("executable stale binary");
+    let path = format!("{}:/usr/bin:/bin", stale_dir.display());
 
-    let selected = launcher_version(&launcher, "/usr/bin:/bin", stale.to_str());
+    // scripts/bundle-plugin-binary.sh refuses an incompatible candidate and
+    // copies a compatible one beside the launcher.
+    let bundle = repository_root().join("scripts/bundle-plugin-binary.sh");
+    let refused = Command::new("sh")
+        .env("PATH", &path)
+        .arg(&bundle)
+        .arg("--binary")
+        .arg(stale_dir.join("orbit-graph"))
+        .arg(fixture.path())
+        .output()
+        .expect("run bundler with a stale binary");
+    assert_eq!(refused.status.code(), Some(1));
+    assert!(!launcher_dir.join("orbit-graph.bin").exists());
+    let bundled = Command::new("sh")
+        .env("PATH", &path)
+        .arg(&bundle)
+        .args(["--binary", env!("CARGO_BIN_EXE_orbit-graph")])
+        .arg(fixture.path())
+        .output()
+        .expect("run bundler");
+    assert!(
+        bundled.status.success(),
+        "{}",
+        String::from_utf8_lossy(&bundled.stderr)
+    );
+    let bundled_binary = launcher_dir.join("orbit-graph.bin");
+    assert!(
+        !fs::symlink_metadata(&bundled_binary)
+            .expect("bundled binary")
+            .file_type()
+            .is_symlink(),
+        "Orbit refuses plugin trees containing symbolic links"
+    );
+
+    let selected = launcher_version(&launcher, &path, None);
     assert_eq!(selected.status.code(), Some(0));
     let response: Value = serde_json::from_slice(&selected.stdout).expect("version envelope");
-    assert_eq!(response["ok"], true);
-    assert_eq!(response["output"]["plugin_schema_version"], 1);
+    assert_eq!(response["ok"], true, "{response}");
+    assert_eq!(
+        response["output"]["plugin_schema_version"],
+        PLUGIN_SCHEMA_VERSION
+    );
 }
 
 #[cfg(unix)]
-fn launcher_version(launcher: &Path, path: &str, binary: Option<&str>) -> Output {
+fn launcher_version(launcher: &Path, path: &str, environment_binary: Option<&str>) -> Output {
     let mut command = Command::new(launcher);
     command
         .env("PATH", path)
@@ -309,7 +431,7 @@ fn launcher_version(launcher: &Path, path: &str, binary: Option<&str>) -> Output
         .stdin(std::process::Stdio::piped())
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped());
-    if let Some(binary) = binary {
+    if let Some(binary) = environment_binary {
         command.env("ORBIT_GRAPH_BIN", binary);
     }
     let mut child = command.spawn().expect("spawn launcher");

@@ -1,8 +1,18 @@
 {
   "type": "object",
   "properties": {
-    "index_dir": {"type": "string", "minLength": 1, "default": ".orbit-graph"},
-    "branch": {"type": "string", "minLength": 1, "default": "main"}
+    "index_dir": {
+      "description": "Directory, relative to the workspace root, for repository-local graph and history indexes when the plugin runs outside Orbit's plugin state.",
+      "type": "string",
+      "minLength": 1,
+      "default": ".orbit-graph"
+    },
+    "branch": {
+      "description": "Default landing branch whose first-parent history scopes recommendations.",
+      "type": "string",
+      "minLength": 1,
+      "default": "main"
+    }
   },
   "additionalProperties": false
 }

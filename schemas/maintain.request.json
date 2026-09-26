@@ -1,17 +1,72 @@
 {
   "type": "object",
-  "required": ["operation"],
+  "required": [
+    "operation"
+  ],
   "properties": {
-    "schema_version": {"type": "integer", "const": 1},
-    "operation": {"type": "string", "enum": ["history_sync", "import", "orbit_sync"]},
-    "repository": {"type": "string", "minLength": 1},
-    "branch": {"type": "string", "minLength": 1, "default": "main"},
-    "limit": {"type": "integer", "minimum": 1, "maximum": 1000},
-    "delivery": {"type": "object"},
-    "workspace": {"type": "string", "minLength": 1},
-    "task_ids": {"type": "array", "items": {"type": "string", "minLength": 1}},
-    "run_ids": {"type": "array", "items": {"type": "string", "minLength": 1}},
-    "task_snapshots": {"type": "array", "items": {"type": "object"}}
+    "schema_version": {
+      "description": "Request contract version; must be 1 when present.",
+      "type": "integer",
+      "const": 1
+    },
+    "operation": {
+      "description": "history_sync indexes bounded first-parent Git history; import stores one DeliveryImport v2 envelope; orbit_sync imports deliveries for explicit run or task ids through public Orbit tools.",
+      "type": "string",
+      "enum": [
+        "history_sync",
+        "import",
+        "orbit_sync"
+      ]
+    },
+    "repository": {
+      "description": "Absolute path of the Git repository to maintain. Defaults to the caller's workspace root; never inferred from the tool cwd.",
+      "type": "string",
+      "minLength": 1
+    },
+    "branch": {
+      "description": "Landing branch whose history scope is maintained.",
+      "type": "string",
+      "minLength": 1,
+      "default": "main"
+    },
+    "limit": {
+      "description": "Per-call bound: commits for history_sync (1-1000, default 100) or runs for orbit_sync (1-100, default 25).",
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 1000
+    },
+    "delivery": {
+      "description": "DeliveryImport v2 envelope; required for operation=import.",
+      "type": "object"
+    },
+    "workspace": {
+      "description": "Owning Orbit workspace (ws_* id or name); required for orbit_sync.",
+      "type": "string",
+      "minLength": 1
+    },
+    "task_ids": {
+      "description": "orbit_sync: tasks whose current job_run_id is examined.",
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "run_ids": {
+      "description": "orbit_sync: explicit workflow run ids to import.",
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "task_snapshots": {
+      "description": "orbit_sync: earlier public task snapshots used instead of live task text.",
+      "type": "array",
+      "items": {
+        "type": "object"
+      }
+    }
   },
   "additionalProperties": false
 }

@@ -1,0 +1,22 @@
+# `orbit plugin test` runs each case in an empty, non-Git temporary workspace,
+# and Git refuses to track a nested repository, so these goldens pin the
+# request-validation and routing contract rather than index contents. The
+# real-repository paths are covered by crates/orbit-graph-cli/tests.
+schemaVersion: 1
+kind: PluginTest
+tests:
+  - name: status_defaults_repository_to_the_workspace_and_requires_git
+    tool: status
+    input:
+      schema_version: 1
+    expect:
+      error:
+        code: repository_unavailable
+  - name: status_rejects_an_unsupported_schema_version
+    tool: status
+    input:
+      schema_version: 2
+      repository: "{{workspace}}"
+    expect:
+      error:
+        code: invalid_request

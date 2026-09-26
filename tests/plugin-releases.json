@@ -1,0 +1,12 @@
+{
+  "description": "Contracts of released plugin versions. Append an entry when a version is tagged or installed on a host; never edit one. crates/orbit-graph-cli/tests/plugin_contract.rs fails when HEAD reuses a released version with a different contract.",
+  "releases": [
+    {
+      "version": "0.9.2",
+      "extractor_version": 10,
+      "plugin_schema_version": 1,
+      "store_schema_version": 1,
+      "history_schema_version": 3
+    }
+  ]
+}
