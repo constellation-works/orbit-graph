@@ -95,7 +95,12 @@ mod tests;
 /// Version 12 adds indexes on the store's foreign-key child columns and on
 /// `imports(from_file)`, which reference resolution and per-file rewrites
 /// look up; the stored rows are unchanged.
-pub const EXTRACTOR_VERSION: u32 = 12;
+///
+/// Version 13 rebuilds stored refs once more: Rust calls written inside macro
+/// invocation arguments (`assert!(f(x))`, `vec![g(y)]`, `format!("{}", h())`)
+/// are recovered from the macro's token tree, and a function passed by name
+/// as a call argument (`.map(skill_link_roots)`) is recorded as a call.
+pub const EXTRACTOR_VERSION: u32 = 13;
 
 /// SQLite schema version used by the graph store.
 ///
