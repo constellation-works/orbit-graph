@@ -1,359 +1,50 @@
 # orbit-graph
 
-`orbit-graph` builds a local SQLite index of a source tree and exposes graph
-queries through a Rust library and a terminal command-line interface. It is a
-standalone recovery of Orbit's historical graph implementation: it does not
-need an Orbit checkout, runtime, configuration, or private dependency.
+`orbit-graph` builds a local SQLite index of a source tree and answers graph
+queries — search, references, callees, impact, command traces — from a Rust
+library and a CLI. It is standalone: no Orbit checkout, runtime, or
+configuration is required.
 
 ## Install
 
-Rust 1.89 or newer and Git are required. From a checkout:
+Requires Rust 1.89+ and Git.
 
 ```sh
 cargo install --path crates/orbit-graph-cli --locked
 ```
 
-For development, build without installing:
-
-```sh
-cargo build --workspace --locked
-```
-
-### Install the Orbit plugin
-
-The v2 Orbit plugin installs from a tagged repository release. The launcher
-selects `bin/orbit-graph.bin` beside itself when a release bundles one, then
-`ORBIT_GRAPH_BIN`, and finally the first `orbit-graph` on the caller's `PATH`.
-It probes the selected executable with a v2 version envelope before forwarding
-the request. A stale or incompatible binary returns an `incompatible_binary`
-JSON error that names its path. Install the executable first:
-
-```sh
-cargo install --path crates/orbit-graph-cli --locked
-orbit plugin add git+https://github.com/constellation-works/orbit-graph#<tag> --enable --grant fs,orbit_tools
-orbit plugin show graph
-```
-
-For a service whose `PATH` puts an older `~/.orbit/bin/orbit-graph` before
-`~/.cargo/bin`, set `ORBIT_GRAPH_BIN` to the absolute current executable path
-in that service's environment (for example, `$HOME/.cargo/bin/orbit-graph`).
-An interactive shell's environment does not configure `orbit web serve`.
-Until a release bundles `bin/orbit-graph.bin`, a service with no override uses
-its own `PATH`; an incompatible selection fails with a structured error.
-
-Enabling the plugin provides `graph.version`, `graph.status`,
-`graph.recommend`, and `graph.maintain`, plus the derived
-`orbit graph` command group. The `fs` and `orbit_tools` grants are required for
-the requested workspace/index access and bounded callbacks; the plugin requests
-no network access.
-
-The older `orbit tool add` installation path and
-`scripts/install-orbit-plugin.sh` / `scripts/uninstall-orbit-plugin.sh` are
-deprecated and remain available for one compatibility release. They register
-only the three v1 sidecars. The installer uses the bundled executable when
-present, then `--binary` (or `ORBIT_GRAPH_BIN` when `--binary` is absent), then
-`PATH`, and verifies the v2 envelope before registration. Pass
-`--binary /absolute/path/to/orbit-graph` for a development build and
-`--orbit-root /absolute/path/to/.orbit` for a non-default Orbit authority.
-Removing either the plugin or the legacy registrations deliberately retains
-derived `.orbit-graph/` indexes.
+To use it as an Orbit plugin, see [docs/plugin.md](docs/plugin.md).
 
 ## Quick start
 
-Commands operate on the Git worktree containing the current directory. If the
-current directory is not in a Git worktree, it is treated as the root.
-
 ```sh
-fixture="$(mktemp -d)"
-git -C "$fixture" init -b main
-mkdir -p "$fixture/src"
-printf 'pub fn helper() -> i32 { 1 }\npub fn entry() -> i32 { helper() }\n' > "$fixture/src/lib.rs"
-
-cd "$fixture"
-orbit-graph --format json sync --full
-orbit-graph --format json search helper --kind symbol --limit 5
-orbit-graph --format json show 'symbol:src/lib.rs#entry:function' --max-bytes 1024
-orbit-graph --format json refs 'symbol:src/lib.rs#helper:function' --confidence fuzzy --kind call
-orbit-graph --format json callees 'symbol:src/lib.rs#entry:function'
+cd /path/to/repo
+orbit-graph sync
+orbit-graph search helper --kind symbol
+orbit-graph refs 'symbol:src/lib.rs#helper:function'
+orbit-graph callees 'symbol:src/lib.rs#entry:function'
 ```
 
-The default is deliberately human-oriented: a terminal receives a headed table
-and a redirected command receives lossless, tab-separated plain rows. Scripts
-must select the stable machine contract explicitly with `--format json`; use
-`--format ndjson` for one complete JSON record per line. `--help` remains
-conventional text help. Failures return a nonzero status, keep stdout empty,
-and write either a readable diagnostic or, in explicit JSON/NDJSON mode, a JSON
-object with `error.code` and `error.message` to stderr. Set `RUST_LOG` to enable
-diagnostic tracing on stderr.
-
-The grouped help layout, stream contracts, styling rules, and compatibility
-boundaries are documented in [the terminal-interface design](docs/design/terminal-interface.md).
+Pass `--format json` for machine-readable output. `orbit-graph --help` lists
+every command.
 
 ## Index lifecycle and location
 
-Synchronization is explicit. Query commands never refresh the index; run
-`orbit-graph sync` after source changes. Incremental sync compares metadata and
-content hashes. `orbit-graph sync --full` rehashes and re-extracts every
-supported file.
+Queries never refresh the index; run `orbit-graph sync` after source changes
+(`--full` to rebuild). The index lives in `.orbit-graph/` at the worktree root
+and should not be committed; `orbit-graph db-path` prints its location and
+`orbit-graph clean` removes obsolete databases.
 
-Each worktree stores scratch state under `.orbit-graph/` in its root. Attached
-branches use `.orbit-graph/<sanitized-branch>.4.db`; detached worktrees use a
-commit-prefixed database name. SQLite WAL and lock sidecars live beside the
-database. This directory is independent of Orbit's `.orbit/` control-plane
-state and should not be committed. `orbit-graph db-path` prints the exact path,
-and `orbit-graph clean` removes obsolete extractor versions and unreachable
-detached-commit indexes.
+## Documentation
 
-The scanner respects Git ignore rules and optional `.orbitignore` files. The
-latter is a source-scanning ignore format retained for compatibility; it is not
-an Orbit runtime configuration dependency.
-
-Delivered-change history is a separate rebuildable index at
-`.orbit-graph/change-history.2.sqlite3`. It learns only from immutable Git tree
-differences supplied by the public delivery contract or from explicitly weaker
-first-parent Git sync evidence. It never reads task `context_files` or Orbit
-private state. Delivery, ingestion, task creation, and snapshot availability
-times remain distinct and carry explicit certainty/provenance. See
-[the design and v2 contract](docs/design/change-recommendations.md).
-
-## Commands
-
-| Command | Purpose |
-| --- | --- |
-| `sync [--full]` | Incrementally update or fully rebuild the index. |
-| `history import --input <path\|->` | Import a validated v2 delivery JSON envelope. |
-| `history sync --branch <name> [--limit <n>]` | Atomically index new first-parent commits as Git-only evidence. |
-| `history status --branch <name>` | Report history versions, cursor, evidence, and association counts. |
-| `history rebuild --branch <name> [--limit <n>]` | Atomically recreate one scope from Git-only history. |
-| `recommend --query <text>\|--task-id <id> [--level file\|symbol]` | Rank current destinations with evidence and freshness. |
-| `evaluate --input <corpus.json>` | Compare four ranking variants chronologically. |
-| `search <query> [--kind symbol|string|config] [--lang <id>] [--limit <n>]` | Full-text search indexed definitions, strings, or config keys. |
-| `show <selector> [--max-bytes <n>]` | Return metadata and a bounded source slice. |
-| `refs <symbol> [--confidence <level>] [--kind <kind>]` | Return inbound references and relations. |
-| `callees <symbol>` | Return calls made by a symbol. |
-| `impact <selector> [--depth <n>] [--confidence <level>] [--direction inbound\|outbound\|both]` | Traverse callers, callees, or both around a selector (default: both). |
-| `trace <command> [--depth <n>] [--confidence <level>]` | Trace a discovered CLI command handler and its calls. |
-| `overview [<file-or-dir-selector>] [--format summary|full]` | Summarize indexed files and symbols. |
-| `implementors <trait-selector>` | Find concrete implementations of a trait-like symbol. |
-| `deps <file-or-dir-selector>` | List source-level module/import edges. |
-| `db-path` | Show the current database path and extractor version. |
-| `clean` | Delete obsolete graph databases. |
-| `version` | Show crate, extractor, and store schema versions. |
-
-Confidence levels are `exact`, `import`, `same_module`, and `fuzzy`. Reference
-kinds are `call`, `type`, `use`, `trait_bound`, `impl`, `extends`, and
-`implements`.
-
-Qualified cross-file calls such as `a::run()` and `pkg.mod.run()` report
-`exact` when the qualifier and indexed file-module path identify one symbol.
-Explicit imports report `import` (`import_resolved` in JSON and storage) when
-they identify one symbol; ambiguous qualifiers or imports remain `fuzzy`.
-
-A method call whose receiver type the extractor cannot determine
-(`args.execute()`, `rows.append(1)`) is never matched on its bare method name:
-it resolves only through an import or a qualified path, and otherwise reports
-`fuzzy`. A dispatcher's own same-named method is therefore not a match for the
-calls it dispatches. Receivers that name the enclosing definition (`self`,
-`Self`, `cls`) keep resolving within the defining file.
-
-Selectors use one of these forms:
-
-```text
-dir:<path>
-file:<path>
-symbol:<path>#<name>:<kind>
-module:<qualified-name>
-command:<name>
-```
-
-## Orbit recommendation plugin
-
-Every plugin request requires `schema_version: 1` and an explicit absolute
-`repository`. Task-ID and hybrid queries also require the owning `workspace`;
-the adapter never infers authority from cwd or `ORBIT_TOOL_WORKSPACE_ROOT`.
-
-```sh
-orbit tool run graph.recommend --input '{
-  "schema_version":1,
-  "repository":"/work/widgets",
-  "workspace":"ws_widgets",
-  "task_id":"TASK-123",
-  "level":"symbol",
-  "hybrid":true,
-  "limit":10
-}' --full
-
-orbit tool run graph.recommend --input '{
-  "schema_version":1,
-  "repository":"/work/widgets",
-  "query":"repair parser cache",
-  "level":"file"
-}' --full
-
-orbit tool run graph.status --input '{
-  "schema_version":1,
-  "repository":"/work/widgets",
-  "branch":"main"
-}' --full
-```
-
-Live task-ID lookup uses the current public `orbit.task.show` response, honestly
-labels started/completed text as post-execution, and may use that current
-observation for a recommendation made afterward. An explicit `cutoff` switches
-to strict historical replay: only text attested `known_pre_execution` and
-strictly before that cutoff is eligible. A supplied snapshot on a live request
-still verifies the task, workspace, and repository through the public API.
-`hybrid: true`
-uses public `orbit.search`; failure is surfaced and local lexical fallback is
-named in `adapter.warnings`.
-The calling activity must allow `orbit.workspace.list`, `orbit.task.show`,
-`orbit.search`, and `orbit.workflow.run.show` for the callback operations it
-uses; the adapter does not bypass Orbit policy. `orbit.workspace.list` is served
-only over MCP, so the adapter reaches it through a short-lived, bounded
-`orbit mcp serve` stdio session and binds the requested repository to the
-workspace by matching the repository's `origin` to the published `git_remote`.
-With narrower grants, pass an earlier public snapshot and use lexical/offline
-hits.
-
-Maintenance is deliberately separate from querying:
-
-```sh
-orbit tool run graph.maintain --input '{
-  "schema_version":1,
-  "operation":"orbit_sync",
-  "repository":"/work/widgets",
-  "workspace":"ws_widgets",
-  "branch":"main",
-  "run_ids":["jrun-20260907-0339-3"],
-  "limit":25
-}' --full
-```
-
-### Scheduled history synchronization
-
-The plugin also ships a disabled `history-sync` routine. Enabling the plugin
-seeds it as `.orbit/routines/graph-history-sync.yaml`; review that file and set
-`enabled: true` to run the plugin's `history_sync` maintenance operation on its
-daily schedule. The routine invokes only the bundled
-`graph_history_sync_pipeline` job, so it never enables a schedule by default
-or reaches another plugin's jobs.
-
-`orbit_sync` reads only public `orbit.workspace.list`, `orbit.task.show`, and
-`orbit.workflow.run.show` tool responses, then verifies full commit objects,
-strict base ancestry, and landing-branch reachability in the explicitly routed
-Git repository. `orbit.workflow.run.show` requires Orbit's `operator`
-capability, which a plugin backend does not hold, so under the plugin each run
-is currently reported `excluded` with Orbit's `capability_denied` reason rather
-than imported. It reports partial
-coverage: current Orbit has no cursor-paginated detailed delivery feed, so only
-explicit run IDs and each requested task's current `job_run_id` are processed.
-Retrying or submitting omitted IDs is safe because the immutable first-observed
-envelope is preserved for a stable delivery ID; changed boundaries still fail.
-Run completion time remains `uncertain` delivery-time evidence when the public
-response does not attest the exact landing instant. `history_sync` is a bounded,
-resumable newest-first Git-only bootstrap: partial responses expose a frozen
-`snapshot_tip` and `resume_from`, keep the complete cursor unchanged, and reach
-a no-op caught-up state after repeated calls. `import` accepts one public
-DeliveryImport v2 envelope.
-
-The bundled agent guidance is in
-[`plugin/skills/orbit-graph/SKILL.md`](plugin/skills/orbit-graph/SKILL.md).
-
-## Chronological evaluation
-
-`orbit-graph evaluate` consumes a versioned public corpus and runs combined,
-task-search-only, graph-only, and frequency ranking at file and symbol levels.
-Each case runs in a disposable clone with an isolated history index and a graph
-materialized from the exact target tree; operational indexes and the caller
-checkout are never read or mutated. Held-out delivery diffs are previewed as
-truth but never imported. Task text and training deliveries must be strictly
-before the cutoff. Held-out evidence must be verified and proven after the
-cutoff by an exact time or an explicit trustworthy prospective lower bound.
-Reports include
-recall@K, precision@K, stale-result rate, mean/maximum latency, coverage,
-per-level omitted-truth reasons, exclusions, source provenance, input digest,
-and exact graph revisions.
-
-The synthetic adversarial executable fixture runs in CI. The bounded real Orbit
-prospective input, measured result, and its no-superiority limitation are
-documented in [`docs/evaluation/`](docs/evaluation/README.md).
-
-## Language coverage
-
-Tree-sitter extractors cover Rust, C, C#, Go, Java, JavaScript/JSX, TypeScript/
-TSX, Kotlin, Python, and Ruby. Markdown headings and fenced code, plus JSON,
-YAML, TOML, and dotenv-style configuration keys, are also indexed.
-
-This is a static, syntax-driven graph rather than a compiler or language
-server. Dynamic dispatch, generated code, macro expansion, runtime imports,
-and ambiguous same-name symbols can produce missing or lower-confidence edges.
-Cross-file and cross-language resolution is deliberately conservative. Binary,
-archive, font, PDF, and lock files are skipped.
-
-## Workspace layout
-
-The repository is a virtual Cargo workspace with three members under
-`crates/`:
-
-- `crates/orbit-graph` — the library: extraction, storage, synchronization,
-  queries, recommendations, and the Orbit plugin adapter. Library target only.
-- `crates/orbit-graph-cli` — the `orbit-graph` executable: one module per
-  subcommand under `src/command/`, the shared output policy under `src/output/`,
-  and the integration tests that run the real binary.
-- `crates/orbit-graph-explorer` — the `orbit-graph-explorer` binary, a
-  developer-facing change explorer built strictly on the public `orbit_graph`
-  API.
-
-`cargo install --path crates/orbit-graph-cli` installs only the `orbit-graph`
-binary; `cargo install --path crates/orbit-graph-explorer` installs the
-change explorer separately. Neither reads Orbit control-plane state.
-
-## Change explorer
-
-`orbit-graph-explorer` explains one Git change — a base revision and a head
-revision — through source relationships, over a loopback HTTP service with an
-embedded UI, a human `snapshot` diagnostic, and a `report` export to static
-JSON and HTML. It is built strictly on the public `orbit_graph` API in
-`crates/orbit-graph-cli`'s and this crate's own workspace sibling
-`crates/orbit-graph`, and it never reads Orbit control-plane state or touches
-the user's working tree.
-
-```sh
-cargo install --path crates/orbit-graph-explorer --locked
-orbit-graph-explorer serve --repo /path/to/your/repo --base main --head HEAD
-```
-
-See [`crates/orbit-graph-explorer/README.md`](crates/orbit-graph-explorer/README.md)
-for prerequisites, install, first launch, the cache directory, and every flag;
-[the change-explorer design](docs/design/change-explorer.md) for the evidence
-contract, snapshot semantics, and full API reference; and
-[the change-explorer evaluation](docs/evaluation/change-explorer/README.md)
-for five real-repository studies of what it gets right, gets wrong, and does
-not know.
-
-## Library
-
-The crate exposes `Graph`, `Selector`, synchronization policies, and typed query
-results. It also exposes `HistoryIndex`, the v2 import/provenance and extracted
-change types, including explicit temporal certainty and pre-execution task-text
-availability, current-symbol resolution, and independent schema/extractor
-version constants. Chronological consumers must use only task snapshots marked
-`known_pre_execution` and must exclude uncertain or unavailable timing rather
-than inferring it from capture or Git commit time. A minimal manual-sync
-embedding looks like:
-
-```rust,no_run
-use std::path::Path;
-use orbit_graph::{Graph, SearchQuery, SyncMode, SyncPolicy};
-
-let graph = Graph::open(Path::new("."), SyncPolicy::Manual)?;
-graph.sync(SyncMode::Full)?;
-let matches = graph.search(&SearchQuery::new("helper"))?;
-# Ok::<(), orbit_graph::GraphError>(())
-```
-
-See [PROVENANCE.md](PROVENANCE.md) for the exact recovered source and adaptation
-boundary, and [CONTRIBUTING.md](CONTRIBUTING.md) for validation requirements.
+- [Usage](docs/usage.md) — commands, selectors, confidence levels, languages, library API
+- [Orbit plugin](docs/plugin.md) — install, tools, history maintenance
+- [Change explorer](crates/orbit-graph-explorer/README.md) — `orbit-graph-explorer`
+- Design: [terminal interface](docs/design/terminal-interface.md),
+  [change recommendations](docs/design/change-recommendations.md),
+  [change explorer](docs/design/change-explorer.md)
+- [Evaluation](docs/evaluation/README.md) ·
+  [Contributing](CONTRIBUTING.md) · [Provenance](PROVENANCE.md)
 
 ## License
 
