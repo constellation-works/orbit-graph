@@ -286,7 +286,15 @@ impl RecommendationEngine {
         let freshness = freshness(&repo, status.cursor, target);
         let deliveries = index.deliveries()?;
         let lineage_steps = index.path_lineage()?;
-        let resolver = TargetTree::load(&repo, target)?;
+        let mut resolver = TargetTree::load(&repo, target)?;
+        if request.level == RecommendationLevel::Symbol
+            || matches!(
+                request.variant,
+                RecommendationVariant::Combined | RecommendationVariant::GraphOnly
+            )
+        {
+            resolver.ensure_symbols(&repo, index.database_path().parent())?;
+        }
         let strict_replay = request.cutoff.is_some();
         let query = resolve_query(&deliveries, request, &cutoff, strict_replay, &repo, target)?;
         let hybrid = normalized_hybrid_hits(request.hybrid_hits.as_slice())?;
@@ -1523,12 +1531,39 @@ fn gap_renames(repo: &Repository, from: Oid, to: Oid) -> Result<GapRenames, Grap
     })
 }
 
+/// Layout version of the on-disk target symbol cache.
+const TARGET_SYMBOL_CACHE_FORMAT: u32 = 1;
+
+/// Current-extractor cache files kept per index directory (most recent first).
+const TARGET_SYMBOL_CACHE_KEEP: usize = 4;
+
+const TARGET_SYMBOL_CACHE_PREFIX: &str = "recommend-target.";
+
+static NO_SYMBOLS: BTreeMap<String, Vec<RawSymbol>> = BTreeMap::new();
+
+#[cfg(test)]
+thread_local! {
+    /// Full target-tree symbol extractions performed on this thread (test instrumentation).
+    static TARGET_SYMBOL_EXTRACTIONS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+/// Blob paths of the immutable target tree plus, when a request needs them,
+/// the symbols the language extractors find in those blobs.
+///
+/// Walking the tree is cheap; parsing every blob is not. Symbols are therefore
+/// loaded only for requests that read them (lexical, structural, or symbol
+/// level), and the extracted table is cached on disk keyed by the target
+/// *tree* OID and [`crate::EXTRACTOR_VERSION`], so repeated requests at an
+/// unchanged revision skip parsing. The cache holds exactly what extraction
+/// produced from Git objects, so cached and uncached results are identical.
 struct TargetTree {
+    tree: Oid,
     files: BTreeMap<String, Oid>,
-    symbols: BTreeMap<String, Vec<RawSymbol>>,
+    symbols: Option<BTreeMap<String, Vec<RawSymbol>>>,
 }
 
 impl TargetTree {
+    /// Walk the target tree's blob paths without parsing any of them.
     fn load(repo: &Repository, revision: Oid) -> Result<Self, GraphError> {
         let tree = repo
             .find_commit(revision)
@@ -1544,9 +1579,50 @@ impl TargetTree {
             TreeWalkResult::Ok
         })
         .map_err(git_error("walk recommendation target tree"))?;
+        Ok(Self {
+            tree: tree.id(),
+            files,
+            symbols: None,
+        })
+    }
+
+    /// Load the symbol table, from `cache_dir` when a valid entry exists.
+    ///
+    /// Cache reads and writes are best effort: a missing, stale, corrupt, or
+    /// unwritable cache falls back to extraction and never fails the request.
+    fn ensure_symbols(
+        &mut self,
+        repo: &Repository,
+        cache_dir: Option<&Path>,
+    ) -> Result<(), GraphError> {
+        if self.symbols.is_some() {
+            return Ok(());
+        }
+        let cache_path = cache_dir.map(|dir| target_symbol_cache_path(dir, self.tree));
+        if let Some(symbols) = cache_path
+            .as_deref()
+            .and_then(|path| read_target_symbol_cache(path, self.tree))
+        {
+            self.symbols = Some(symbols);
+            return Ok(());
+        }
+        let symbols = self.extract_symbols(repo)?;
+        if let (Some(dir), Some(path)) = (cache_dir, cache_path.as_deref()) {
+            write_target_symbol_cache(dir, path, self.tree, &symbols);
+        }
+        self.symbols = Some(symbols);
+        Ok(())
+    }
+
+    fn extract_symbols(
+        &self,
+        repo: &Repository,
+    ) -> Result<BTreeMap<String, Vec<RawSymbol>>, GraphError> {
+        #[cfg(test)]
+        TARGET_SYMBOL_EXTRACTIONS.with(|count| count.set(count.get() + 1));
         let extractors = languages::extractors();
         let mut symbols = BTreeMap::new();
-        for (path, oid) in &files {
+        for (path, oid) in &self.files {
             let path_ref = Path::new(path);
             let Some(extractor) = extractors
                 .iter()
@@ -1565,7 +1641,16 @@ impl TargetTree {
                 symbols.insert(path.clone(), extracted.symbols);
             }
         }
-        Ok(Self { files, symbols })
+        Ok(symbols)
+    }
+
+    /// Symbols by path; empty unless [`Self::ensure_symbols`] ran.
+    fn symbols(&self) -> &BTreeMap<String, Vec<RawSymbol>> {
+        debug_assert!(
+            self.symbols.is_some(),
+            "target symbols read before they were loaded"
+        );
+        self.symbols.as_ref().unwrap_or(&NO_SYMBOLS)
     }
 
     fn baseline_candidates(&self, level: RecommendationLevel) -> Vec<(String, String)> {
@@ -1575,7 +1660,7 @@ impl TargetTree {
                 .keys()
                 .map(|path| {
                     let mut text = path.clone();
-                    if let Some(symbols) = self.symbols.get(path) {
+                    if let Some(symbols) = self.symbols().get(path) {
                         for symbol in symbols {
                             text.push(' ');
                             text.push_str(symbol.name.as_str());
@@ -1587,7 +1672,7 @@ impl TargetTree {
                 })
                 .collect(),
             RecommendationLevel::Symbol => self
-                .symbols
+                .symbols()
                 .iter()
                 .flat_map(|(path, symbols)| {
                     symbols.iter().map(move |symbol| {
@@ -1608,7 +1693,7 @@ impl TargetTree {
         let Some((path, qualified, kind)) = split_symbol_selector(selector) else {
             return false;
         };
-        self.symbols.get(path).is_some_and(|symbols| {
+        self.symbols().get(path).is_some_and(|symbols| {
             symbols
                 .iter()
                 .any(|symbol| symbol.qualified == qualified && symbol.kind == kind)
@@ -1673,7 +1758,7 @@ impl TargetTree {
 
     fn resolve_symbol(&self, historical: &SymbolIdentity, mapped_path: &str) -> Option<RawSymbol> {
         let exact = self
-            .symbols
+            .symbols()
             .get(mapped_path)
             .into_iter()
             .flatten()
@@ -1686,7 +1771,7 @@ impl TargetTree {
             return exact.into_iter().next();
         }
         let global = self
-            .symbols
+            .symbols()
             .values()
             .flatten()
             .filter(|symbol| {
@@ -1699,7 +1784,7 @@ impl TargetTree {
         }
         let signature = historical.signature.as_deref()?;
         let similar = self
-            .symbols
+            .symbols()
             .values()
             .flatten()
             .filter(|symbol| {
@@ -1708,6 +1793,171 @@ impl TargetTree {
             .cloned()
             .collect::<Vec<_>>();
         (similar.len() == 1).then(|| similar[0].clone())
+    }
+}
+
+#[derive(Serialize, Deserialize)]
+struct TargetSymbolCache {
+    format: u32,
+    extractor_version: u32,
+    tree: String,
+    files: Vec<CachedFileSymbols>,
+}
+
+#[derive(Serialize, Deserialize)]
+struct CachedFileSymbols {
+    path: String,
+    symbols: Vec<CachedSymbol>,
+}
+
+#[derive(Serialize, Deserialize)]
+struct CachedSymbol {
+    /// Present only when it differs from the owning file path.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    file_path: Option<String>,
+    name: String,
+    qualified: String,
+    kind: String,
+    span_start: usize,
+    span_end: usize,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    signature: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    parent_symbol: Option<String>,
+}
+
+fn target_symbol_cache_path(dir: &Path, tree: Oid) -> PathBuf {
+    dir.join(format!(
+        "{TARGET_SYMBOL_CACHE_PREFIX}{}.{tree}.json",
+        crate::EXTRACTOR_VERSION
+    ))
+}
+
+/// Read a cache entry, rejecting any whose recorded format, extractor version,
+/// or tree differs from what its name promises.
+fn read_target_symbol_cache(path: &Path, tree: Oid) -> Option<BTreeMap<String, Vec<RawSymbol>>> {
+    let bytes = std::fs::read(path).ok()?;
+    let cache: TargetSymbolCache = serde_json::from_slice(bytes.as_slice()).ok()?;
+    if cache.format != TARGET_SYMBOL_CACHE_FORMAT
+        || cache.extractor_version != crate::EXTRACTOR_VERSION
+        || cache.tree != tree.to_string()
+    {
+        return None;
+    }
+    Some(
+        cache
+            .files
+            .into_iter()
+            .map(|file| {
+                let symbols = file
+                    .symbols
+                    .into_iter()
+                    .map(|symbol| RawSymbol {
+                        file_path: symbol.file_path.unwrap_or_else(|| file.path.clone()),
+                        name: symbol.name,
+                        qualified: symbol.qualified,
+                        kind: symbol.kind,
+                        span_start: symbol.span_start,
+                        span_end: symbol.span_end,
+                        signature: symbol.signature,
+                        parent_symbol: symbol.parent_symbol,
+                    })
+                    .collect();
+                (file.path, symbols)
+            })
+            .collect(),
+    )
+}
+
+/// Atomically publish a cache entry (owner-only temp file in the same
+/// directory, then rename) and prune stale entries. Failures are ignored: the
+/// cache only saves work.
+fn write_target_symbol_cache(
+    dir: &Path,
+    path: &Path,
+    tree: Oid,
+    symbols: &BTreeMap<String, Vec<RawSymbol>>,
+) {
+    let cache = TargetSymbolCache {
+        format: TARGET_SYMBOL_CACHE_FORMAT,
+        extractor_version: crate::EXTRACTOR_VERSION,
+        tree: tree.to_string(),
+        files: symbols
+            .iter()
+            .map(|(file_path, symbols)| CachedFileSymbols {
+                path: file_path.clone(),
+                symbols: symbols
+                    .iter()
+                    .map(|symbol| CachedSymbol {
+                        file_path: (symbol.file_path != *file_path)
+                            .then(|| symbol.file_path.clone()),
+                        name: symbol.name.clone(),
+                        qualified: symbol.qualified.clone(),
+                        kind: symbol.kind.clone(),
+                        span_start: symbol.span_start,
+                        span_end: symbol.span_end,
+                        signature: symbol.signature.clone(),
+                        parent_symbol: symbol.parent_symbol.clone(),
+                    })
+                    .collect(),
+            })
+            .collect(),
+    };
+    let Ok(bytes) = serde_json::to_vec(&cache) else {
+        return;
+    };
+    let temp = path.with_extension(format!("json.tmp-{}", std::process::id()));
+    if write_private_file(temp.as_path(), bytes.as_slice()).is_err()
+        || std::fs::rename(temp.as_path(), path).is_err()
+    {
+        let _ = std::fs::remove_file(temp.as_path());
+        return;
+    }
+    prune_target_symbol_caches(dir, path);
+}
+
+fn write_private_file(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
+    use std::io::Write;
+    let mut options = std::fs::OpenOptions::new();
+    options.write(true).create_new(true);
+    #[cfg(unix)]
+    std::os::unix::fs::OpenOptionsExt::mode(&mut options, 0o600);
+    let mut file = options.open(path)?;
+    file.write_all(bytes)?;
+    file.sync_all()
+}
+
+/// Remove cache entries from other extractor versions and all but the most
+/// recently written current-version entries.
+fn prune_target_symbol_caches(dir: &Path, keep: &Path) {
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
+    let current = format!("{TARGET_SYMBOL_CACHE_PREFIX}{}.", crate::EXTRACTOR_VERSION);
+    let mut retained = Vec::new();
+    for entry in entries.flatten() {
+        let path = entry.path();
+        let Some(name) = path.file_name().and_then(|name| name.to_str()) else {
+            continue;
+        };
+        if !name.starts_with(TARGET_SYMBOL_CACHE_PREFIX) || !name.ends_with(".json") {
+            continue;
+        }
+        if !name.starts_with(current.as_str()) {
+            let _ = std::fs::remove_file(path.as_path());
+            continue;
+        }
+        if path != keep {
+            let modified = entry
+                .metadata()
+                .and_then(|metadata| metadata.modified())
+                .unwrap_or(UNIX_EPOCH);
+            retained.push((modified, path));
+        }
+    }
+    retained.sort_by_key(|(modified, _)| std::cmp::Reverse(*modified));
+    for (_, path) in retained.into_iter().skip(TARGET_SYMBOL_CACHE_KEEP - 1) {
+        let _ = std::fs::remove_file(path);
     }
 }
 
@@ -1739,7 +1989,11 @@ pub(crate) fn selector_is_live_at(
         GraphError::invalid_data("open selector validation repository", error.to_string())
     })?;
     let oid = Oid::from_str(revision).map_err(git_error("parse selector validation revision"))?;
-    Ok(TargetTree::load(&repo, oid)?.selector_is_live(selector))
+    let mut tree = TargetTree::load(&repo, oid)?;
+    if !selector.starts_with("file:") {
+        tree.ensure_symbols(&repo, None)?;
+    }
+    Ok(tree.selector_is_live(selector))
 }
 
 fn git_error(operation: &'static str) -> impl FnOnce(git2::Error) -> GraphError {
@@ -2361,6 +2615,169 @@ mod tests {
         let gauge = historical_support(&replay, "file:src/gauge.rs")
             .expect("path contained in the target revision still resolves");
         assert_eq!(gauge.supporting_delivery_ids, vec!["D-A".to_string()]);
+    }
+
+    fn target_symbol_extractions() -> usize {
+        TARGET_SYMBOL_EXTRACTIONS.with(std::cell::Cell::get)
+    }
+
+    fn cache_files(root: &Path) -> Vec<String> {
+        let mut names = fs::read_dir(root.join(".orbit-graph"))
+            .expect("index dir")
+            .map(|entry| {
+                entry
+                    .expect("entry")
+                    .file_name()
+                    .to_string_lossy()
+                    .into_owned()
+            })
+            .filter(|name| name.starts_with(TARGET_SYMBOL_CACHE_PREFIX))
+            .collect::<Vec<_>>();
+        names.sort();
+        names
+    }
+
+    /// Everything except the live observation time, which differs per call.
+    fn comparable(result: &RecommendationResult) -> String {
+        let mut value = serde_json::to_value(result).expect("serialize result");
+        value["effective_cutoff"] = serde_json::Value::Null;
+        value.to_string()
+    }
+
+    fn cache_fixture() -> (TempDir, String, String) {
+        let fixture = fixture_repo();
+        let root = fixture.path();
+        fs::write(
+            root.join("src/invoice.rs"),
+            "pub struct Invoice;\nimpl Invoice {\n    pub fn invoice_total(&self) -> i32 { 1 }\n}\npub fn render_invoice() {}\n",
+        )
+        .expect("invoice");
+        fs::write(
+            root.join("src/tax.py"),
+            "def invoice_tax():\n    return 1\n",
+        )
+        .expect("tax");
+        commit_all(root, "base");
+        let base = head(root);
+        fs::write(
+            root.join("src/invoice.rs"),
+            "pub struct Invoice;\nimpl Invoice {\n    pub fn invoice_total(&self) -> i32 { 2 }\n}\npub fn render_invoice() {}\n",
+        )
+        .expect("edit invoice");
+        commit_all(root, "delivery");
+        let delivery = head(root);
+        let index = HistoryIndex::open(root, "main").expect("history");
+        import(
+            &index,
+            base.as_str(),
+            delivery.as_str(),
+            "D-INVOICE",
+            "TASK-INVOICE",
+            "Fix invoice total",
+            10,
+        );
+        (fixture, base, delivery)
+    }
+
+    #[test]
+    fn target_symbol_cache_is_reused_and_results_match_uncached_extraction() {
+        let (fixture, _base, delivery) = cache_fixture();
+        let root = fixture.path();
+        let engine = RecommendationEngine::open(root, "main").expect("engine");
+        for level in [RecommendationLevel::File, RecommendationLevel::Symbol] {
+            for name in cache_files(root) {
+                fs::remove_file(root.join(".orbit-graph").join(name)).expect("clear cache");
+            }
+            let mut request = query_request("invoice total", &delivery, None);
+            request.level = level;
+            let before = target_symbol_extractions();
+            let cold = engine.recommend(&request).expect("cold");
+            assert_eq!(target_symbol_extractions(), before + 1, "cold call parses");
+            let warm = engine.recommend(&request).expect("warm");
+            assert_eq!(
+                target_symbol_extractions(),
+                before + 1,
+                "warm call must reuse the cache"
+            );
+            assert!(!cold.recommendations.is_empty());
+            assert_eq!(comparable(&cold), comparable(&warm), "{level:?}");
+        }
+        let names = cache_files(root);
+        assert_eq!(names.len(), 1, "{names:?}");
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let mode = fs::metadata(root.join(".orbit-graph").join(&names[0]))
+                .expect("cache metadata")
+                .permissions()
+                .mode();
+            assert_eq!(mode & 0o777, 0o600);
+        }
+
+        // File-level history-only variants never parse the target tree.
+        let before = target_symbol_extractions();
+        for variant in [
+            RecommendationVariant::TaskSearchOnly,
+            RecommendationVariant::Frequency,
+        ] {
+            let mut request = query_request("invoice total", &delivery, None);
+            request.variant = variant;
+            engine.recommend(&request).expect("history-only variant");
+        }
+        assert_eq!(target_symbol_extractions(), before);
+    }
+
+    #[test]
+    fn target_symbol_cache_invalidates_on_revision_and_extractor_version() {
+        let (fixture, base, delivery) = cache_fixture();
+        let root = fixture.path();
+        let engine = RecommendationEngine::open(root, "main").expect("engine");
+        let request = query_request("invoice total", &delivery, None);
+        let reference = engine.recommend(&request).expect("populate cache");
+        let populated = target_symbol_extractions();
+        let names = cache_files(root);
+        assert_eq!(names.len(), 1);
+        let cache_path = root.join(".orbit-graph").join(&names[0]);
+
+        // A different target tree is a different key.
+        engine
+            .recommend(&query_request("invoice total", &base, None))
+            .expect("other revision");
+        assert_eq!(target_symbol_extractions(), populated + 1);
+        assert_eq!(cache_files(root).len(), 2);
+        engine.recommend(&request).expect("original revision");
+        assert_eq!(
+            target_symbol_extractions(),
+            populated + 1,
+            "the original revision's entry is still valid"
+        );
+
+        // An entry recorded by another extractor version is never trusted.
+        let mut document: serde_json::Value =
+            serde_json::from_slice(&fs::read(&cache_path).expect("read cache")).expect("json");
+        document["extractor_version"] = serde_json::json!(crate::EXTRACTOR_VERSION + 1);
+        document["files"] = serde_json::json!([]);
+        fs::write(&cache_path, document.to_string()).expect("tamper");
+        let rebuilt = engine.recommend(&request).expect("version mismatch");
+        assert_eq!(target_symbol_extractions(), populated + 2);
+        assert_eq!(comparable(&rebuilt), comparable(&reference));
+
+        // Corrupt entries fall back to extraction without failing the request.
+        fs::write(&cache_path, b"{not json").expect("corrupt");
+        let recovered = engine.recommend(&request).expect("corrupt cache");
+        assert_eq!(target_symbol_extractions(), populated + 3);
+        assert_eq!(comparable(&recovered), comparable(&reference));
+
+        // Entries named for another extractor version are pruned on the next write.
+        let stale = root.join(".orbit-graph").join(format!(
+            "{TARGET_SYMBOL_CACHE_PREFIX}{}.{}.json",
+            crate::EXTRACTOR_VERSION - 1,
+            "0".repeat(40)
+        ));
+        fs::write(&stale, b"{}").expect("stale entry");
+        fs::remove_file(&cache_path).expect("drop entry");
+        engine.recommend(&request).expect("rewrite");
+        assert!(!stale.exists(), "other extractor versions are pruned");
     }
 
     fn row(locations: &[&str]) -> DeliveryLocations {
