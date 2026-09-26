@@ -3,7 +3,7 @@ members = [
   "crates/orbit-graph",
   "crates/orbit-graph-cli",
   "crates/orbit-graph-extract",
-  "crates/orbit-graph-explorer",
+  "crates/orbit-graph-changes",
 ]
 resolver = "3"
 

@@ -88,8 +88,8 @@ fresh_copy; add_dep orbit-graph-extract 'clap = "4.5"'
 expect fail $G "clap in the extraction leaf" 'orbit-graph-extract must not depend on clap'
 fresh_copy; add_dep orbit-graph-cli 'orbit-graph-extract = { path = "../orbit-graph-extract" }'
 expect fail $G "a surface depending on the extraction leaf directly" 'orbit-graph-cli must not depend on internal crate orbit-graph-extract'
-fresh_copy; add_dep orbit-graph-cli 'orbit-graph-explorer = { path = "../orbit-graph-explorer" }'
-expect fail $G "an unlisted internal edge between surfaces" 'orbit-graph-cli must not depend on internal crate orbit-graph-explorer'
+fresh_copy; add_dep orbit-graph-cli 'orbit-graph-changes = { path = "../orbit-graph-changes" }'
+expect fail $G "a direct edge from CLI to the change library before its surface is added" 'orbit-graph-cli must not depend on internal crate orbit-graph-changes'
 fresh_copy; mkdir -p "$case_dir/crates/orbit-graph-new"
 printf '[package]\nname = "orbit-graph-new"\n\n[dependencies]\n' >"$case_dir/crates/orbit-graph-new/Cargo.toml"
 expect fail $G "a crate with no policy" "crate 'orbit-graph-new' .* has no policy"
@@ -97,7 +97,7 @@ fresh_copy; sed -i.bak 's/^| `orbit-graph` | library | `orbit-graph-extract` | .
 expect fail $G "ARCHITECTURE.md disagreeing with the policy" 'ARCHITECTURE.md has no crate row matching'
 fresh_copy; rm "$case_dir/ARCHITECTURE.md"
 expect fail $G "a missing ARCHITECTURE.md" 'ARCHITECTURE.md is missing'
-fresh_copy; add_dep orbit-graph 'itoa = "1"'; add_dep orbit-graph-explorer 'itoa = "1"'
+fresh_copy; add_dep orbit-graph 'itoa = "1"'; add_dep orbit-graph-changes 'itoa = "1"'
 expect fail $G "a third-party dependency declared by two members" 'itoa is used by 2 members but declared locally by'
 fresh_copy; printf '\n[dev-dependencies]\nclap = { workspace = true }\n' >>"$case_dir/crates/orbit-graph/Cargo.toml"
 edit crates/orbit-graph-cli/Cargo.toml 's/^clap = .*$/clap.workspace = true/'
@@ -107,8 +107,8 @@ fresh_copy; printf '\n[dependencies.clap]\nversion = "4"\n' >>"$case_dir/crates/
 expect fail $G "a [dependencies.<name>] table header" 'table-form dependency header \[dependencies\.clap\]'
 fresh_copy; printf '\n[target.'"'"'cfg(unix)'"'"'.dependencies.clap]\nversion = "4"\n' >>"$case_dir/crates/orbit-graph/Cargo.toml"
 expect fail $G "a target-specific table-form dependency header" 'table-form dependency header'
-fresh_copy; printf '\n[ dependencies ]\norbit-graph-explorer = { path = "../orbit-graph-explorer" }\n' >>"$case_dir/crates/orbit-graph/Cargo.toml"
-expect fail $G "whitespace inside the header brackets ([ dependencies ])" 'orbit-graph must not depend on internal crate orbit-graph-explorer'
+fresh_copy; printf '\n[ dependencies ]\norbit-graph-changes = { path = "../orbit-graph-changes" }\n' >>"$case_dir/crates/orbit-graph/Cargo.toml"
+expect fail $G "whitespace inside the header brackets ([ dependencies ])" 'orbit-graph must not depend on internal crate orbit-graph-changes'
 fresh_copy; printf '\n[ dependencies . clap ]\nversion = "4"\n' >>"$case_dir/crates/orbit-graph/Cargo.toml"
 expect fail $G "whitespace around the dots of a table-form header" 'table-form dependency header \[dependencies\.clap\]'
 fresh_copy; printf '\n["dependencies"]\nclap = "4"\n' >>"$case_dir/crates/orbit-graph/Cargo.toml"
@@ -117,8 +117,8 @@ fresh_copy; prepend crates/orbit-graph/Cargo.toml 'dependencies . clap = "4"'
 expect fail $G "whitespace around the dot of a dotted dependencies key" 'dotted-key dependency dependencies.clap'
 fresh_copy; add_dep orbit-graph 'cli = { package = "clap", version = "4" }'
 expect fail $G "a banned crate under another name (package =)" 'renamed dependency cli'
-fresh_copy; add_dep orbit-graph-cli 'graph-explorer = { package = "orbit-graph-explorer", path = "../orbit-graph-explorer" }'
-expect fail $G "an internal edge under another name (package =)" 'renamed dependency graph-explorer'
+fresh_copy; add_dep orbit-graph-cli 'graph-changes = { package = "orbit-graph-changes", path = "../orbit-graph-changes" }'
+expect fail $G "an internal edge under another name (package =)" 'renamed dependency graph-changes'
 fresh_copy; add_dep orbit-graph '"clap" = "4"'
 expect fail $G "a quoted dependency key" 'quoted dependency key "clap"'
 fresh_copy; add_dep orbit-graph 'clap.version = "4"'
@@ -129,9 +129,9 @@ fresh_copy; add_dep orbit-graph '    clap = "4.5"'
 expect fail $G "an indented dependency line" 'orbit-graph must not depend on clap'
 fresh_copy; add_dep orbit-graph 'clap = "4.5"'; edit crates/orbit-graph/Cargo.toml 's/^\[dependencies\]$/[dependencies] # runtime/'
 expect fail $G "a dependency header with a trailing comment" 'orbit-graph must not depend on clap'
-fresh_copy; m="$case_dir/crates/orbit-graph-explorer/Cargo.toml"
+fresh_copy; m="$case_dir/crates/orbit-graph-changes/Cargo.toml"
 awk '!done && $0 == "tempfile.workspace = true" { print "tempfile = \"3.1\""; done = 1; next } { print }' "$m" >"$m.new" && mv "$m.new" "$m"
-expect fail $G "one member declaring a shared dependency locally (§R9)" 'tempfile is used by 4 members but declared locally by orbit-graph-explorer'
+expect fail $G "one member declaring a shared dependency locally (§R9)" 'tempfile is used by 4 members but declared locally by orbit-graph-changes'
 fresh_copy; rm -rf "$case_dir"/crates/*
 expect fail $G "an empty tree" 'nothing was checked'
 
@@ -142,8 +142,8 @@ fresh_copy; append crates/orbit-graph/src/evaluation.rs 'fn seeded() { println!(
 expect fail $G "println! in the domain library" 'crates/orbit-graph/src/evaluation.rs:[0-9]+:'
 fresh_copy; append crates/orbit-graph-extract/src/history.rs 'fn seeded() { eprintln!("x"); }'
 expect fail $G "eprintln! in the extraction leaf" 'crates/orbit-graph-extract/src/history.rs:[0-9]+:'
-fresh_copy; append crates/orbit-graph-explorer/src/cache.rs 'fn seeded() { let _ = std::io::stderr(); }'
-expect fail $G "io::stderr in the explorer library" 'crates/orbit-graph-explorer/src/cache.rs:[0-9]+:'
+fresh_copy; append crates/orbit-graph-changes/src/cache.rs 'fn seeded() { let _ = std::io::stderr(); }'
+expect fail $G "io::stderr in the change library" 'crates/orbit-graph-changes/src/cache.rs:[0-9]+:'
 fresh_copy; append crates/orbit-graph-cli/src/command/search.rs 'fn seeded() -> bool { std::io::IsTerminal::is_terminal(&std::io::stdout()) }'
 expect fail $G "a TTY check in a CLI command module" 'crates/orbit-graph-cli/src/command/search.rs:[0-9]+:'
 fresh_copy; append crates/orbit-graph-cli/src/command/search.rs 'fn seeded() { dbg!(1); }'
@@ -152,12 +152,8 @@ fresh_copy; append crates/orbit-graph/src/evaluation.rs '// println!("only a com
 expect pass $G "a comment that mentions println!"
 fresh_copy; append crates/orbit-graph-cli/src/output/render.rs 'fn seeded() { let _ = std::io::stdout(); }'
 expect pass $G "io::stdout inside the CLI output layer"
-fresh_copy; rm "$case_dir/crates/orbit-graph-explorer/src/service.rs"
-expect fail $G "an allow-list entry whose file is gone" 'allow-list entry crates/orbit-graph-explorer/src/service.rs.* matched 0'
 fresh_copy; edit crates/orbit-graph-cli/src/main.rs '/\.with_writer(io::stderr)$/d'
 expect fail $G "an allow-list entry whose write site is gone" 'with_writer.* expects 1 hit\(s\) and matched 0'
-fresh_copy; append crates/orbit-graph-explorer/src/service.rs 'fn seeded() { eprintln!("x"); }'
-expect fail $G "a new write in an allow-listed file" 'crates/orbit-graph-explorer/src/service.rs:[0-9]+:fn seeded'
 fresh_copy; append crates/orbit-graph-cli/src/main.rs 'fn seeded() { let mut stdout = io::stdout().lock(); }'
 expect fail $G "a new write matching an allow-list entry's regex" 'crates/orbit-graph-cli/src/main.rs:[0-9]+:fn seeded'
 fresh_copy; printf 'fn seeded() {\n    let mut stdout = io::stdout().lock();\n}\n' >>"$case_dir/crates/orbit-graph-cli/src/main.rs"

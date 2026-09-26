@@ -8,9 +8,6 @@
 #
 # Output layers (permanent):
 #   - crates/orbit-graph-cli/src/output/       the CLI's single output layer
-#   - crates/orbit-graph-explorer/src/main.rs  the explorer binary's surface;
-#     its write_out/write_err are the explorer's only stream writers, and the
-#     explorer library (everything else under src/) must not touch streams.
 #
 # Anything else is one ALLOW entry per write site, one line each:
 #   <path>|<hits>|<extended regex over the hit's source line>|<reason; the task that removes it, or the rule that permits it>
@@ -23,7 +20,6 @@ cd "$(dirname "$0")/.."
 
 OUTPUT_LAYERS=(
   crates/orbit-graph-cli/src/output/
-  crates/orbit-graph-explorer/src/main.rs
 )
 
 # A plain here-document, not $(cat <<EOF): bash 3.2 (macOS) mis-parses a
@@ -36,7 +32,6 @@ crates/orbit-graph-cli/src/main.rs|1|!io::stdin\(\)\.is_terminal\(\)|The bare-in
 crates/orbit-graph-cli/src/main.rs|1|^[[:space:]]*io::stderr\(\)\.lock\(\),$|The bare-envelope deprecation warning. Temporary: ORB-13164 moves it to src/output/ and removes this entry.
 crates/orbit-graph-cli/src/main.rs|2|^[[:space:]]*let mut stdout = io::stdout\(\)\.lock\(\);$|emit_to_process and write_json_to_stdout. Temporary: ORB-13164 moves them to src/output/ and removes this entry.
 crates/orbit-graph-cli/src/main.rs|1|^[[:space:]]*let mut stderr = io::stderr\(\)\.lock\(\);$|emit_to_process. Temporary: ORB-13164 moves it to src/output/ and removes this entry.
-crates/orbit-graph-explorer/src/service.rs|1|^[[:space:]]*let mut stderr = io::stderr\(\)\.lock\(\);$|print_launch_banner writes the launch banner and token from the library. Temporary: ORB-13168 moves it to the explorer binary and removes this entry.
 EOF
 
 PATTERN='io::stdout|io::stderr|\bstd(out|err)\(\)|\bprintln!|\beprintln!|\bprint!|\beprint!|\bdbg!|is_terminal|IsTerminal'

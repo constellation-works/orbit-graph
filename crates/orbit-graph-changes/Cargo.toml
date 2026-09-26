@@ -1,16 +1,12 @@
 [package]
-name = "orbit-graph-explorer"
+name = "orbit-graph-changes"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
-description = "Local change explorer built on the public orbit-graph library API"
+description = "Git change analysis built on the public orbit-graph library API"
 publish = false
-
-[[bin]]
-name = "orbit-graph-explorer"
-path = "src/main.rs"
 
 [lints]
 workspace = true
@@ -23,7 +19,6 @@ serde.workspace = true
 serde_json.workspace = true
 tempfile.workspace = true
 thiserror.workspace = true
-tiny_http = { version = "0.12", default-features = false }
 
 [dev-dependencies]
 serde_json.workspace = true

@@ -11,15 +11,16 @@ script fails when the crate table below and its policy disagree.
 |------|------|------|---------------|
 | 1. Extraction | `orbit-graph-extract` (library) | Extraction contracts (`ExtractedFile`, the raw rows, `Selector`), the `Extractor` trait and every tree-sitter language extractor (`languages`), and the Git-tree change extraction behind the history index (`history`). A leaf: it knows nothing of the store, sync or queries, and prints nothing. | nothing internal |
 | 2. Domain | `orbit-graph` (library) | The SQLite store and its schema (`store`), sync and the file watcher (`sync`), queries (`query`), recommendations (`recommend`), and evaluation (`evaluation`), built on tier 1; it re-exports the extraction types its public API names. Embeddable; it prints nothing (`#![deny(clippy::print_stdout, clippy::print_stderr)]`), reads no Orbit plugin environment and starts no Orbit processes. | tier 1 |
-| 3. Explorer domain | `orbit-graph-explorer` (library) | Snapshots of two revisions, the snapshot cache, changed-symbol pairing, evidence paths, filters, the exported report and the loopback HTTP service, built on the public `orbit-graph` API only (`docs/design/change-explorer.md` D1). | `orbit-graph` |
-| 4. Surfaces | `orbit-graph-cli` (binary `orbit-graph`); `orbit-graph-explorer`'s `src/main.rs` (binary `orbit-graph-explorer`) | Argument parsing, one library call per command, rendering and the process exit code; in `orbit-graph-cli`, also the Orbit plugin tool protocol (`src/plugin.rs`, `src/plugin/`): the tool names, request and response envelopes, dispatch, the `ToolError` codes, the Orbit subprocess adapter and the plugin-state code-graph index. These are the output layers: the CLI's `src/output/` and the explorer's `src/main.rs` are the only code that writes to stdout or stderr or checks for a TTY (`scripts/check-terminal-guard.sh`, which lists the temporary exceptions). | tier 2; the explorer binary also its own library (tier 3) |
+| 3. Change analysis | `orbit-graph-changes` (library) | Immutable base/head snapshots, snapshot caching, changed-symbol pairing, evidence paths, filters and JSON reports, through the public `orbit-graph` API only (D1). No HTTP service or terminal output. | tier 2 |
+| 4. Surfaces | `orbit-graph-cli` (binary `orbit-graph`) | Argument parsing, one library call per command, rendering and process exit code; also the Orbit plugin tool protocol. The CLI's `src/output/` is its output layer, with temporary exceptions listed by `scripts/check-terminal-guard.sh`. | tier 2 |
 
-The CLI and the explorer are siblings: neither depends on the other, and
-neither depends on `orbit-graph-extract` directly; they reach extraction types
-through `orbit-graph`'s re-exports. `orbit-graph-extract` is its own crate for
-compile-graph isolation and an enforceable edge (STD-02 §R7): it owns every
-tree-sitter grammar, so a change to the store, sync or queries does not
-recompile extraction, and the direction check keeps the leaf free of them.
+The change-analysis library and CLI are siblings: neither depends on the
+other or on `orbit-graph-extract` directly. The library reaches extraction
+types through `orbit-graph`'s re-exports. The follow-up task will expose
+change analysis through the CLI and plugin surfaces.
+`orbit-graph-extract` is its own crate for compile-graph isolation and an
+enforceable edge (STD-02 §R7): it owns every tree-sitter grammar, so store,
+sync or query changes do not recompile extraction.
 
 ## Crates
 
@@ -28,10 +29,10 @@ recompile extraction, and the direction check keeps the leaf free of them.
 | `orbit-graph-extract` | library | — | `clap`, `tracing-subscriber`, `tiny_http`, `unicode-width` |
 | `orbit-graph` | library | `orbit-graph-extract` | `clap`, `tracing-subscriber`, `tiny_http`, `unicode-width` |
 | `orbit-graph-cli` | binary `orbit-graph` | `orbit-graph` | — |
-| `orbit-graph-explorer` | library and binary `orbit-graph-explorer` | `orbit-graph` | — |
+| `orbit-graph-changes` | library | `orbit-graph` | `clap`, `tracing-subscriber`, `tiny_http`, `unicode-width` |
 
 "Banned" lists external crates the libraries must not depend on: argument
-parsing, log subscribers, HTTP serving and terminal layout belong to surfaces
+parsing, log subscribers, HTTP serving and terminal layout do not belong to analysis libraries
 (STD-02 §R7). Dev-dependencies are exempt. A third-party dependency that more
 than one member uses is declared once in `[workspace.dependencies]`
 (STD-02 §R9); the script checks that too.
@@ -47,5 +48,5 @@ Each runs in `make ci` and in CI (`.github/workflows/ci.yml`):
 | `scripts/check-orphan-modules.sh` | STD-02 §R19 | a `src/**/tests/*.rs` file its `tests/mod.rs` does not declare, or a `tests/` directory its parent module does not declare |
 | `cargo deny --locked check` (`deny.toml`) | STD-02 §R23, STD-05 §R23/§R24 | an open advisory, a yanked crate, a license outside the allow-list, a registry other than crates.io, a git source |
 | `scripts/test-repo-gates.sh` | STD-04 §R10 | any of the three scripts above passing on a seeded violation or on an empty tree |
-| `crates/orbit-graph-explorer/tests/derived_artifacts.rs` | STD-04 §R11, §R13 | the explorer README's "Every flag" block differing from `orbit-graph-explorer --help`, or the committed `direct-call` sample export differing from a fresh `report` (regenerate both with `UPDATE_GOLDENS=1`) |
+| `crates/orbit-graph-changes/tests/derived_artifacts.rs` | STD-04 §R11, §R13 | the committed `direct-call` JSON sample differing from a fresh library-built report (regenerate with `UPDATE_GOLDENS=1`) |
 | `docs/usage.md` doctest (`cargo test --doc`) | STD-04 §R14 | the library example in `docs/usage.md` no longer compiling |

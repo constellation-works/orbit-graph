@@ -12,7 +12,7 @@
 //! Layout, under `<repo>/.orbit-graph/explorer/snapshots/` by default:
 //!
 //! ```text
-//! <cache-dir>/.orbit-graph-explorer-cache   marker: this directory is a cache
+//! <cache-dir>/.orbit-graph-changes-cache   marker: this directory is a cache
 //! <cache-dir>/<commit-sha>/entry.json       the key plus what the build observed
 //! <cache-dir>/<commit-sha>/in_use.lock      shared-locked while a comparison has it open
 //! <cache-dir>/<commit-sha>/tree/            the materialized commit tree
@@ -62,8 +62,8 @@ const STAGING_PREFIX: &str = ".staging-";
 const LAST_USED_FILE: &str = "last_used";
 /// File whose presence records that [`SnapshotCache::open`] created or adopted
 /// the directory as a snapshot cache.
-pub const CACHE_MARKER_FILE: &str = ".orbit-graph-explorer-cache";
-const CACHE_MARKER_CONTENTS: &str = "orbit-graph-explorer snapshot cache\n";
+pub const CACHE_MARKER_FILE: &str = ".orbit-graph-changes-cache";
+const CACHE_MARKER_CONTENTS: &str = "orbit-graph-changes snapshot cache\n";
 /// Exclusively locked by the process building a staging directory.
 const BUILDING_LOCK_FILE: &str = "building.lock";
 /// Shared-locked by every process that has the entry open.
