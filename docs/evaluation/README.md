@@ -65,8 +65,14 @@ without pretending to be the landing timestamp.
 [`orbit-prospective-20260907-result.json`](orbit-prospective-20260907-result.json)
 records the resulting two-case evaluation. Combined and graph-only each found
 three of 13 file destinations at K=10 (recall 0.231, precision 0.15); every
-symbol result and both historical baselines had zero hits. All stale rates were
-zero. The frozen target graphs were materialized but supplied no applicable structural neighbor; that
+symbol result and both historical baselines had zero hits. All stale rates read
+zero. That file uses evaluation report schema version 1, which wrote `0.0` for
+a metric with no data (an empty denominator or no latency samples) and did not
+report how many results each variant returned, so a `0.0` there cannot tell
+"no stale results" from "no results": with an empty training set the two
+historical baselines may have returned nothing. Schema version 2 reports such
+a metric as `null` and adds the `returned` count. The file was not regenerated,
+because it records a measurement of a specific Orbit checkout. The frozen target graphs were materialized but supplied no applicable structural neighbor; that
 absence is recorded rather than treating HEAD or a lexical row as graph
 evidence. Across both cases, truth coverage reports 13 eligible and 18 omitted
 file changes, plus 14 eligible and 200 omitted symbol changes, with every

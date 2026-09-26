@@ -19,14 +19,22 @@ use crate::{
 
 static EVALUATION_SEQUENCE: AtomicU64 = AtomicU64::new(0);
 
-/// Version of the chronological evaluation JSON contract.
-pub const EVALUATION_SCHEMA_VERSION: u32 = 1;
+/// Version of the chronological evaluation report JSON contract.
+///
+/// Version 2 reports `null` rather than `0.0` for a metric with no data: an
+/// empty denominator or no latency samples (STD-02 §R29).
+pub const EVALUATION_SCHEMA_VERSION: u32 = 2;
+
+/// Version of the evaluation corpus (input) JSON contract. It moves
+/// independently of [`EVALUATION_SCHEMA_VERSION`]: the input shape did not
+/// change when the report did.
+pub const EVALUATION_CORPUS_SCHEMA_VERSION: u32 = 1;
 
 /// Reproducible evaluation input composed only of public envelopes and observations.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct EvaluationCorpus {
-    /// Must equal [`EVALUATION_SCHEMA_VERSION`].
+    /// Must equal [`EVALUATION_CORPUS_SCHEMA_VERSION`].
     pub schema_version: u32,
     /// Stable repository identity expected by every delivery envelope.
     pub repository: String,
@@ -135,16 +143,20 @@ pub struct EvaluationMetrics {
     pub relevant: usize,
     /// Correct recommendations within K.
     pub true_positives: usize,
-    /// Micro-averaged recall at K.
-    pub recall_at_k: f64,
-    /// Precision at K, with K slots per evaluated case as denominator.
-    pub precision_at_k: f64,
-    /// Recommendations absent from the immutable target tree divided by returned results.
-    pub stale_result_rate: f64,
-    /// Mean query latency in milliseconds.
-    pub mean_latency_ms: f64,
-    /// Maximum query latency in milliseconds.
-    pub max_latency_ms: f64,
+    /// Recommendations returned across all cases: the stale-rate denominator.
+    pub returned: usize,
+    /// Micro-averaged recall at K; `None` (`null`) when `relevant` is 0.
+    pub recall_at_k: Option<f64>,
+    /// Precision at K, with K slots per evaluated case as denominator;
+    /// `None` (`null`) when `cases` is 0.
+    pub precision_at_k: Option<f64>,
+    /// Recommendations absent from the immutable target tree divided by
+    /// returned results; `None` (`null`) when `returned` is 0.
+    pub stale_result_rate: Option<f64>,
+    /// Mean query latency in milliseconds; `None` (`null`) with no queries.
+    pub mean_latency_ms: Option<f64>,
+    /// Maximum query latency in milliseconds; `None` (`null`) with no queries.
+    pub max_latency_ms: Option<f64>,
 }
 
 /// Admission result for one prospective case.
@@ -338,7 +350,6 @@ pub fn evaluate_corpus(
             let value = aggregates
                 .remove(&(variant_key(variant), level_key(level)))
                 .unwrap_or_default();
-            let latency_total: u128 = value.latency_micros.iter().sum();
             metrics.push(EvaluationMetrics {
                 variant,
                 level,
@@ -346,16 +357,16 @@ pub fn evaluate_corpus(
                 cases: value.cases,
                 relevant: value.relevant,
                 true_positives: value.true_positives,
+                returned: value.predictions,
                 recall_at_k: ratio(value.true_positives, value.relevant),
                 precision_at_k: ratio(value.true_positives, value.cases * corpus.k),
                 stale_result_rate: ratio(value.stale, value.predictions),
-                mean_latency_ms: if value.latency_micros.is_empty() {
-                    0.0
-                } else {
-                    latency_total as f64 / value.latency_micros.len() as f64 / 1_000.0
-                },
-                max_latency_ms: value.latency_micros.iter().max().copied().unwrap_or(0) as f64
-                    / 1_000.0,
+                mean_latency_ms: mean_latency_ms(value.latency_micros.as_slice()),
+                max_latency_ms: value
+                    .latency_micros
+                    .iter()
+                    .max()
+                    .map(|micros| *micros as f64 / 1_000.0),
             });
         }
     }
@@ -390,11 +401,11 @@ pub fn evaluate_corpus(
 }
 
 fn validate_corpus(corpus: &EvaluationCorpus) -> Result<(), GraphError> {
-    if corpus.schema_version != EVALUATION_SCHEMA_VERSION {
+    if corpus.schema_version != EVALUATION_CORPUS_SCHEMA_VERSION {
         return Err(GraphError::invalid_data(
             "validate evaluation schema",
             format!(
-                "expected schema_version {EVALUATION_SCHEMA_VERSION}, got {}",
+                "expected schema_version {EVALUATION_CORPUS_SCHEMA_VERSION}, got {}",
                 corpus.schema_version
             ),
         ));
@@ -666,12 +677,19 @@ fn level_name(level: RecommendationLevel) -> &'static str {
     }
 }
 
-fn ratio(numerator: usize, denominator: usize) -> f64 {
-    if denominator == 0 {
-        0.0
-    } else {
-        numerator as f64 / denominator as f64
+/// `numerator / denominator`, or `None` when there is nothing to divide by:
+/// "no data" is not a measured 0 (STD-02 §R29).
+fn ratio(numerator: usize, denominator: usize) -> Option<f64> {
+    (denominator != 0).then(|| numerator as f64 / denominator as f64)
+}
+
+/// Mean of the latency samples in milliseconds, or `None` with no samples.
+fn mean_latency_ms(samples_micros: &[u128]) -> Option<f64> {
+    if samples_micros.is_empty() {
+        return None;
     }
+    let total: u128 = samples_micros.iter().sum();
+    Some(total as f64 / samples_micros.len() as f64 / 1_000.0)
 }
 
 struct EvaluationWorkspace {

@@ -1,3 +1,5 @@
+// A library prints nothing: diagnostics go through `tracing` (STD-02 §R15).
+#![deny(clippy::print_stderr, clippy::print_stdout)]
 #![cfg_attr(test, allow(clippy::expect_used, clippy::unwrap_used))]
 
 //! SQLite-backed source-code graph store and query API.
@@ -27,6 +29,12 @@ mod recommend;
 mod store;
 mod sync;
 
+// `docs/usage.md`, included so `cargo test --doc` compiles its Rust example
+// against this API and a stale example fails the build (STD-04 §R14).
+#[cfg(doctest)]
+#[doc = include_str!("../../../docs/usage.md")]
+mod usage_doc {}
+
 pub use extract::history::{
     CHANGE_EXTRACTOR_VERSION, CurrentRevisionResolution, CurrentSymbolStatus,
     DEFAULT_HISTORY_SYNC_LIMIT, DELIVERY_IMPORT_SCHEMA_VERSION, DeliveredChange, DeliveryEvidence,
@@ -41,7 +49,8 @@ pub use store::history::{
 };
 
 pub use evaluation::{
-    EVALUATION_SCHEMA_VERSION, EvaluationCorpus, EvaluationReport, evaluate_corpus,
+    EVALUATION_CORPUS_SCHEMA_VERSION, EVALUATION_SCHEMA_VERSION, EvaluationCorpus,
+    EvaluationReport, evaluate_corpus,
 };
 pub use query::{
     DEFAULT_SEARCH_LIMIT, DEFAULT_SHOW_MAX_BYTES, Match, NodeMetadata, NodeView, SearchKind,
@@ -62,6 +71,10 @@ mod tests;
 /// Bump this when extractor output or storage expectations change
 /// incompatibly. Older graph DB files then become invisible to the active
 /// graph handle and are removed by the next sync.
+///
+/// A bump also changes the committed `direct-call` sample export, which
+/// records this number: regenerate it in the same change with
+/// `UPDATE_GOLDENS=1 cargo test -p orbit-graph-explorer --test derived_artifacts --locked`.
 // L-0052: FTS population invariants require a fresh DB when old indexes may be empty.
 /// Version 5 rebuilds stored refs so qualified cross-file and explicit-import
 /// resolution records stable symbol hints.

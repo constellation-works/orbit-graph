@@ -181,7 +181,7 @@ Options:
                            symbol).
   --out <DIR>              Directory `report` writes `<name>.json` and
                            `<name>.html` into. Created if missing.
-  --name <NAME>            Base file name for `report`'s two output files.
+  --name <NAME>            Single file name component for `report`'s two output files.
   --force                  Let `report` overwrite existing output files.
   --excerpts <MODE>        `report` excerpt policy: `none` (references only),
                            `controlled` (default; a bounded window around each
