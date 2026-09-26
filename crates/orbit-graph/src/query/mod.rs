@@ -18,6 +18,15 @@ pub(crate) mod trace;
 pub use search::{DEFAULT_SEARCH_LIMIT, Match, SearchKind, SearchQuery, SearchResult};
 pub use show::{DEFAULT_SHOW_MAX_BYTES, NodeMetadata, NodeView, SourceSpan};
 
+/// Format the `symbol:` selector that addresses one stored symbol row.
+///
+/// The symbol part is the row's qualified name: selector resolution prefers
+/// an exact qualified match, so this names the same row even when two symbols
+/// in one file share a short name.
+pub(crate) fn symbol_selector(file_path: &str, qualified: &str, kind: &str) -> String {
+    format!("symbol:{file_path}#{qualified}:{kind}")
+}
+
 /// Join `stored_path` to `worktree_root` only when the database path cannot
 /// leave the worktree.
 ///

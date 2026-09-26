@@ -41,6 +41,13 @@ workspace, task, and repository verification. `hybrid: true` asks the configured
 public `orbit.search` surface for ranked task hits. If it is unavailable, the
 response labels the deterministic lexical fallback.
 
+For live free-text `query` requests over Git-only history, a delivery's commit
+message can stand in for missing task text. Such contributions have the reason
+kind `historical_change_commit_text`, are labelled post-execution, are
+down-weighted, and the response lists the `git_commit_text_used` fallback. Task
+IDs cited in a message are hints, not `supporting_task_ids`. Strict replay
+(`cutoff`) and task-ID requests never use commit text.
+
 A failed call returns `error.code` `invalid_request` (fix the request: unknown
 field, unsupported `schema_version`, out-of-range bound, missing required
 field), `repository_unavailable` (the routed `repository` is missing or not a

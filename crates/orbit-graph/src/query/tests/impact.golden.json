@@ -3,14 +3,21 @@
     {
       "qualified_name": "crate::a",
       "distance": 1,
-      "edge_kind": "call"
+      "edge_kind": "call",
+      "selector": "symbol:src/a.rs#crate::a:function",
+      "file": "src/a.rs",
+      "line": 3
     },
     {
       "qualified_name": "crate::Impl",
       "distance": 2,
-      "edge_kind": "impl"
+      "edge_kind": "impl",
+      "selector": null,
+      "file": null,
+      "line": null
     }
   ],
   "truncated": false,
-  "visited_nodes": 2
+  "visited_nodes": 2,
+  "fallback_used": false
 }

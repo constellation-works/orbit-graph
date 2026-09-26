@@ -67,6 +67,12 @@ Options:
 
 Run `orbit-graph <COMMAND> --help` for command-specific options.
 
+Output:
+  On a terminal, results are a headed table. When stdout is piped or
+  redirected they are headerless tab-separated rows, one per record, in the
+  table's column order. Pass `--format table` for a header, or `--format json`
+  or `--format ndjson` for named fields (the stable machine contract).
+
 Examples:
   orbit-graph overview
   orbit-graph search parser --kind symbol

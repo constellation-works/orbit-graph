@@ -118,6 +118,11 @@ observation for a recommendation made afterward. An explicit `cutoff` switches
 to strict historical replay: only text attested `known_pre_execution` and
 strictly before that cutoff is eligible. A supplied snapshot on a live request
 still verifies the task, workspace, and repository through the public API.
+Over Git-only history, a live free-text `query` request may also rank from
+commit messages: those contributions use the reason kind
+`historical_change_commit_text`, are labelled post-execution, are down-weighted
+against task text, and add the `git_commit_text_used` fallback; strict replay
+and task-ID requests never use them.
 `hybrid: true`
 uses public `orbit.search`; failure is surfaced and local lexical fallback is
 named in `adapter.warnings`.
