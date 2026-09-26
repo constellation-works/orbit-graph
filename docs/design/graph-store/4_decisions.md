@@ -16,14 +16,21 @@ open history with `HistoryIndex::open_read_only`. Neither opener creates a
 directory, a database or a sidecar; a missing file is `GraphError::IndexMissing`
 with the command that builds it. `Graph::open` and `open_with_revision` no
 longer clean up either: `orbit-graph sync` runs `clean_old_databases` before
-syncing, and `orbit-graph clean` runs it on request. Cleanup resolves the
-active database without opening it, so it creates nothing.
+syncing, and `orbit-graph clean --confirm` runs it on request; `orbit-graph
+clean` without `--confirm` runs `plan_clean_old_databases`, which applies the
+same predicates and reports them without writing anything (`STD-01 §R5`).
+Cleanup resolves the active database without opening it, so it creates
+nothing.
 
 Cleanup removes a database family (`.db`, `-wal`, `-shm`, `.db.lock`) only
 when its extractor version is strictly older and `File::try_lock` on its
 `.db.lock` succeeds; a held lock keeps the family for a later run. A newer
 version is never removed (`STD-03 §R10`). An equal-version detached database
-is removed, as before, only when its commit is unreachable.
+is removed only when Git proves its commit unreachable: `find_commit_by_prefix`
+reports `NotFound`, or a walk of every ref finds none reaching it. Any other
+Git error (an ambiguous prefix, an object-database error, a ref that cannot be
+peeled) keeps it and reports it as `unverifiable` (`STD-02 §R31`,
+`STD-03 §R29`).
 
 ## D2. Read currency on a read-only index
 

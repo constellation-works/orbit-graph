@@ -59,7 +59,7 @@ for line in "${STUDIES[@]}"; do
   "$EXPLORER" report \
     --repo "$REPOS/$repo" --base "$base" --head "$head" \
     --cache-dir "$CACHE/study-$id" \
-    --out "$dest" --name "$name" --force \
+    --out "$dest" --name "$name" --confirm \
     --excerpts none --depth "$DEPTH" --generated-at "$GENERATED_AT" \
     "${args[@]}"
   end=$(date +%s.%N)

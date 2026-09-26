@@ -12,9 +12,11 @@
 //!   self-contained `<name>.html` — to a chosen directory. This is a machine
 //!   contract, per `docs/design/change-explorer.md`'s "Exported change
 //!   report".
-//! - `clean` removes snapshot-cache entries whose key no longer matches this
-//!   binary, and entries for commits the repository no longer has. It touches
-//!   nothing outside the cache directory.
+//! - `clean` reports the snapshot-cache entries it would remove — an older
+//!   binary's, and those for commits the repository no longer has — and
+//!   removes them only with `--confirm` (STD-01 §R5). It touches nothing
+//!   outside the cache directory, and keeps anything it cannot prove is its own,
+//!   stale, and unused.
 
 use std::io::{self, Write};
 use std::path::{Component, Path, PathBuf};
@@ -22,7 +24,7 @@ use std::process::ExitCode;
 use std::time::Duration;
 
 use orbit_graph::{Confidence, DEFAULT_IMPACT_DEPTH, IMPACT_NODE_CAP, RefOpts, Selector};
-use orbit_graph_explorer::cache::{CleanOptions, SnapshotCache, default_cache_dir};
+use orbit_graph_explorer::cache::{CleanOptions, Liveness, SnapshotCache, default_cache_dir};
 use orbit_graph_explorer::evidence::{
     DEFAULT_TIME_BUDGET_MS, MAX_EVIDENCE_DEPTH, parse_confidence,
 };
@@ -38,12 +40,13 @@ Usage:
   orbit-graph-explorer serve --base <REF> --head <REF> [--repo <PATH>] [--port <PORT>]
   orbit-graph-explorer snapshot --base <REF> --head <REF> [--repo <PATH>] [--selector <SELECTOR>]
   orbit-graph-explorer report --base <REF> --head <REF> --out <DIR> --name <NAME>
-                               [--repo <PATH>] [--force] [--selector <SELECTOR>]...
+                               [--repo <PATH>] [--confirm] [--selector <SELECTOR>]...
                                [--excerpts none|controlled|full-span] [--generated-at <RFC3339>]
                                [--include-absolute-paths] [--depth <N>] [--confidence <LEVEL>]
                                [--node-cap <N>] [--time-budget-ms <MS>] [--language <LANG>]
                                [--change-kind <KIND,...>] [--scope <PREFIX>]
   orbit-graph-explorer clean [--repo <PATH>] [--cache-dir <PATH>] [--older-than <DURATION>] [--keep <N>]
+                              [--confirm]
 
 Options:
   --repo <PATH>            Repository to inspect (default: current directory).
@@ -57,7 +60,9 @@ Options:
   --out <DIR>              Directory `report` writes `<name>.json` and
                            `<name>.html` into. Created if missing.
   --name <NAME>            Single file name component for `report`'s two output files.
-  --force                  Let `report` overwrite existing output files.
+  --confirm                Let `report` overwrite existing output files, and
+                           let `clean` remove what it reports. `--force` is a
+                           deprecated alias for `report --confirm`.
   --excerpts <MODE>        `report` excerpt policy: `none` (references only),
                            `controlled` (default; a bounded window around each
                            cited line), or `full-span` (the whole bounded file).
@@ -96,10 +101,14 @@ token, and any Origin or Referer that is not the service's own origin is
 refused.
 
 Snapshot trees and indexes are cached per commit, keyed by commit SHA, extractor
-version, and store schema version. A key that does not match this binary is
-rebuilt, never reused. `clean` removes stale-key entries and entries for commits
-the repository no longer has. `--older-than` and `--keep` provide manual age
-and least-recently-used retention; no retention policy runs automatically.
+version, and store schema version. An older binary's key is rebuilt, never
+reused; a newer binary's entry is left alone. `clean` reports what it would
+remove and removes it only with `--confirm`: an older binary's entries, entries
+for commits the repository no longer has, and abandoned staging directories.
+`--older-than` and `--keep` provide manual age and least-recently-used
+retention; no retention policy runs automatically. `clean` keeps, and reports
+with a reason, anything in use, being built, unreadable, from a newer binary,
+of unknown age, or in a directory without the cache marker.
 
 `snapshot` output is a human diagnostic, not a stable machine contract.
 
@@ -108,7 +117,7 @@ HTML rendering (readable from disk, no scripts, no service). It never includes
 the whole repository: only the changed symbols in scope are queried, and
 every cited source location is either a bounded excerpt or a precise
 `file:line-span@sha` reference. It refuses to overwrite `<name>.json` or
-`<name>.html` unless `--force` is given.
+`<name>.html` unless `--confirm` is given.
 ";
 
 fn main() -> ExitCode {
@@ -116,6 +125,12 @@ fn main() -> ExitCode {
     match run(args.as_slice()) {
         Ok(Outcome::Text(text)) => {
             if write_out(text.as_str()).is_err() {
+                return ExitCode::FAILURE;
+            }
+            ExitCode::SUCCESS
+        }
+        Ok(Outcome::TextWithNotice(text, notice)) => {
+            if write_out(text.as_str()).is_err() || write_err(notice.as_str()).is_err() {
                 return ExitCode::FAILURE;
             }
             ExitCode::SUCCESS
@@ -130,6 +145,8 @@ fn main() -> ExitCode {
 
 enum Outcome {
     Text(String),
+    /// Standard output plus one diagnostic line for standard error.
+    TextWithNotice(String, String),
     Served,
 }
 
@@ -138,11 +155,14 @@ fn run(args: &[String]) -> Result<Outcome, String> {
         return Ok(Outcome::Text(USAGE.to_string()));
     }
     let invocation = Invocation::parse(args)?;
+    for warning in &invocation.warnings {
+        write_err(warning.as_str()).map_err(|error| format!("write standard error: {error}"))?;
+    }
     match invocation.command {
         Command::Serve => serve(&invocation),
         Command::Snapshot => snapshot(&invocation).map(Outcome::Text),
         Command::Report => report(&invocation).map(Outcome::Text),
-        Command::Clean => clean(&invocation).map(Outcome::Text),
+        Command::Clean => clean(&invocation),
     }
 }
 
@@ -225,7 +245,7 @@ fn snapshot(invocation: &Invocation) -> Result<String, String> {
 }
 
 /// Write the exported change report's `<name>.json` and `<name>.html` into
-/// `--out`, refusing to overwrite either file unless `--force` was given.
+/// `--out`, refusing to overwrite either file unless `--confirm` was given.
 fn report(invocation: &Invocation) -> Result<String, String> {
     let out = invocation
         .out
@@ -238,11 +258,11 @@ fn report(invocation: &Invocation) -> Result<String, String> {
 
     let json_path = out.join(format!("{name}.json"));
     let html_path = out.join(format!("{name}.html"));
-    if !invocation.force {
+    if !invocation.confirm {
         for path in [&json_path, &html_path] {
             if path.exists() {
                 return Err(format!(
-                    "{} already exists; pass `--force` to overwrite\n\n{USAGE}",
+                    "{} already exists; pass `--confirm` to overwrite\n\n{USAGE}",
                     path.display()
                 ));
             }
@@ -345,13 +365,15 @@ fn describe_snapshot(report: &mut String, snapshot: &Snapshot) {
     );
 }
 
-/// Remove snapshot-cache entries this binary can no longer use.
+/// Report, and with `--confirm` remove, snapshot-cache entries this binary
+/// can prove are its own, stale, and unused.
 ///
-/// An entry is removed when its key does not match this binary's extractor and
-/// store schema versions, when its commit is no longer in the repository, or
-/// when it is a staging directory an interrupted build left behind. Anything
-/// else in the directory is reported and left alone.
-fn clean(invocation: &Invocation) -> Result<String, String> {
+/// An entry is removable when an older binary built it, when Git reports its
+/// commit not found, when it is a staging directory no builder holds, or when
+/// a requested retention policy expires it. Without `--confirm` nothing is
+/// created, written or removed (STD-01 §R5). Everything else is kept and
+/// reported with its reason.
+fn clean(invocation: &Invocation) -> Result<Outcome, String> {
     let repo = git2::Repository::discover(invocation.repo.as_path()).map_err(|error| {
         format!(
             "{} is not a usable Git working tree: {}",
@@ -367,12 +389,22 @@ fn clean(invocation: &Invocation) -> Result<String, String> {
         .cache_dir
         .clone()
         .unwrap_or_else(|| default_cache_dir(workdir.as_path()));
-    let cache = SnapshotCache::open(dir.as_path()).map_err(|error| error.to_string())?;
+    let cache = SnapshotCache::existing(dir.as_path());
 
-    let is_live = |commit: &str| -> bool {
-        git2::Oid::from_str(commit)
-            .ok()
-            .is_some_and(|oid| repo.find_commit(oid).is_ok())
+    // Integrity check, fail closed (STD-02 §R31): only Git's `NotFound` proves
+    // a commit is gone; any other error keeps the entry.
+    let is_live = |commit: &str| -> Liveness {
+        let oid = match git2::Oid::from_str(commit) {
+            Ok(oid) => oid,
+            Err(error) => return Liveness::Unknown(error.message().to_string()),
+        };
+        match repo.find_commit(oid) {
+            Ok(_) => Liveness::Live,
+            Err(error) if error.code() == git2::ErrorCode::NotFound => Liveness::Gone,
+            Err(error) => {
+                Liveness::Unknown(format!("look up commit {commit}: {}", error.message()))
+            }
+        }
     };
     let older_than = invocation
         .older_than
@@ -385,21 +417,28 @@ fn clean(invocation: &Invocation) -> Result<String, String> {
             &CleanOptions {
                 older_than,
                 keep: invocation.keep,
+                apply: invocation.confirm,
                 ..CleanOptions::default()
             },
         )
         .map_err(|error| error.to_string())?;
 
+    let action = if report.applied {
+        "removed"
+    } else {
+        "would_delete"
+    };
     let mut text = String::new();
     push_line(
         &mut text,
         format!("cache\tdir\t{}", report.cache_dir.display()),
     );
-    for entry in &report.removed {
+    push_line(&mut text, format!("applied\t{}", report.applied));
+    for entry in &report.would_delete {
         push_line(
             &mut text,
             format!(
-                "removed\t{}\t{}",
+                "{action}\t{}\t{}",
                 entry.reason.label(),
                 entry.path.display()
             ),
@@ -414,6 +453,14 @@ fn clean(invocation: &Invocation) -> Result<String, String> {
             &mut text,
             format!("kept\t{}\t{}", entry.reason.label(), entry.path.display()),
         );
+        if let Some(detail) = entry.detail.as_deref() {
+            // One record per line: a Git message may carry tabs or newlines.
+            let detail = detail.replace(['\t', '\n', '\r'], " ");
+            push_line(
+                &mut text,
+                format!("detail\t{detail}\t{}", entry.path.display()),
+            );
+        }
         push_line(
             &mut text,
             format!("size\t{}\t{}", entry.size_bytes, entry.path.display()),
@@ -422,13 +469,20 @@ fn clean(invocation: &Invocation) -> Result<String, String> {
     push_line(
         &mut text,
         format!(
-            "summary\tremoved\t{}\tkept\t{}\ttotal_size\t{}",
-            report.removed.len(),
+            "summary\t{action}\t{}\tkept\t{}\ttotal_size\t{}",
+            report.would_delete.len(),
             report.kept.len(),
             report.total_size_bytes()
         ),
     );
-    Ok(text)
+    if report.applied || report.would_delete.is_empty() {
+        return Ok(Outcome::Text(text));
+    }
+    let notice = format!(
+        "dry run: nothing was removed; pass `--confirm` to remove the {} listed item(s)",
+        report.would_delete.len()
+    );
+    Ok(Outcome::TextWithNotice(text, notice))
 }
 
 fn push_line(report: &mut String, line: String) {
@@ -457,7 +511,7 @@ struct Invocation {
     node_cap: Option<usize>,
     out: Option<PathBuf>,
     name: Option<String>,
-    force: bool,
+    confirm: bool,
     excerpts: Option<String>,
     generated_at: Option<String>,
     include_absolute_paths: bool,
@@ -468,6 +522,8 @@ struct Invocation {
     scope: Option<String>,
     older_than: Option<String>,
     keep: Option<usize>,
+    /// Deprecation warnings, written to standard error before the command runs.
+    warnings: Vec<String>,
 }
 
 impl Invocation {
@@ -493,6 +549,7 @@ impl Invocation {
         let mut node_cap = None;
         let mut out = None;
         let mut name = None;
+        let mut confirm = false;
         let mut force = false;
         let mut excerpts = None;
         let mut generated_at = None;
@@ -538,6 +595,9 @@ impl Invocation {
                 }
                 "--out" => out = Some(PathBuf::from(take_value()?)),
                 "--name" => name = Some(take_value()?),
+                "--confirm" => confirm = true,
+                // Deprecated alias of `report --confirm`, kept for one release
+                // (STD-01 §R35).
                 "--force" => force = true,
                 "--excerpts" => excerpts = Some(take_value()?),
                 "--generated-at" => generated_at = Some(take_value()?),
@@ -590,6 +650,11 @@ impl Invocation {
                 "`--older-than` and `--keep` apply to `clean` only\n\n{USAGE}"
             ));
         }
+        if !matches!(command, Command::Report | Command::Clean) && confirm {
+            return Err(format!(
+                "`--confirm` applies to `report` and `clean` only\n\n{USAGE}"
+            ));
+        }
         if command != Command::Report
             && (out.is_some()
                 || name.is_some()
@@ -631,6 +696,13 @@ impl Invocation {
         }
         // `clean` inspects the cache, not a comparison, so it names no
         // revisions.
+        let mut warnings = Vec::new();
+        if force {
+            warnings.push(
+                "warning: `--force` is deprecated and will be removed; use `--confirm`".to_string(),
+            );
+            confirm = true;
+        }
         let (base, head) = if command == Command::Clean {
             (String::new(), String::new())
         } else {
@@ -653,7 +725,7 @@ impl Invocation {
             node_cap,
             out,
             name,
-            force,
+            confirm,
             excerpts,
             generated_at,
             include_absolute_paths,
@@ -664,6 +736,7 @@ impl Invocation {
             scope,
             older_than,
             keep,
+            warnings,
         })
     }
 }

@@ -242,12 +242,21 @@ fn only_sync_and_clean_remove_strictly_older_databases_whose_lock_is_free() {
         "sync left the obsolete database's WAL"
     );
 
-    let clean = run_json(repo.path(), &["clean"]);
+    let clean = run_json(repo.path(), &["clean", "--confirm"]);
     assert_eq!(clean["deleted"], json!([]), "{clean}");
+    assert!(
+        clean["kept"]
+            .as_array()
+            .is_some_and(|kept| kept.iter().any(|item| {
+                item["path"] == json!(older_locked.display().to_string())
+                    && item["reason"] == "locked"
+            })),
+        "{clean}"
+    );
     assert!(newer.exists() && older_locked.exists());
 
     drop(older_lock);
-    let clean = run_json(repo.path(), &["clean"]);
+    let clean = run_json(repo.path(), &["clean", "--confirm"]);
     assert!(
         !older_locked.exists(),
         "clean kept a free obsolete database"
@@ -260,7 +269,7 @@ fn only_sync_and_clean_remove_strictly_older_databases_whose_lock_is_free() {
     );
 
     drop(newer_lock);
-    run_json(repo.path(), &["clean"]);
+    run_json(repo.path(), &["clean", "--confirm"]);
     run_json(repo.path(), &["sync"]);
     assert!(newer.exists(), "a newer database must never be removed");
     assert!(active.exists());
