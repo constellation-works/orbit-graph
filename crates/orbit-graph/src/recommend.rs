@@ -7,7 +7,7 @@
 //! while live calls may use honestly labeled current observations. Standalone callers
 //! get a deterministic lexical baseline over eligible historical task snapshots.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
@@ -992,6 +992,29 @@ fn score_history(
     Ok(scored)
 }
 
+/// Seeds considered for directional co-change, strongest direct evidence
+/// first. Bounds the association pass on large histories; a destination's
+/// best association almost always comes from a strong seed, because the
+/// contribution is proportional to the seed's direct strength.
+const ASSOCIATION_SEED_LIMIT: usize = 256;
+
+/// Best association found so far for one destination.
+struct BestAssociation<'a> {
+    contribution: f64,
+    source: &'a str,
+    support: usize,
+    source_count: usize,
+}
+
+/// Add at most one `directional_cochange` reason per destination: the
+/// strongest association from a seed (a selector with direct evidence) to a
+/// destination it co-occurred with, ties broken by the smaller seed selector.
+///
+/// Work is proportional to the deliveries each seed occurs in rather than to
+/// every (destination, seed, delivery) triple: per-selector delivery lists are
+/// built once, each seed counts co-occurring destinations over its own
+/// deliveries only, and the supporting delivery IDs are materialized once per
+/// destination for the winning seed.
 fn add_associations(
     rows: &[DeliveryLocations],
     prevalence: &BTreeMap<String, usize>,
@@ -999,73 +1022,117 @@ fn add_associations(
     direct: &BTreeMap<String, f64>,
     scored: &mut BTreeMap<String, Accumulator>,
 ) {
-    let seeds = direct
+    let mut seeds = direct
         .iter()
         .filter(|(_, score)| **score > 0.0)
+        .map(|(selector, score)| (selector.as_str(), *score))
         .collect::<Vec<_>>();
-    for (destination, destination_count) in prevalence {
-        let mut best: Option<(f64, RecommendationAssociation, String)> = None;
-        for (source, source_score) in &seeds {
-            if *source == destination {
-                continue;
-            }
-            let source_count = *prevalence.get(*source).unwrap_or(&0);
-            if source_count == 0 {
-                continue;
-            }
-            let supporting_rows = rows
-                .iter()
-                .filter(|row| {
-                    row.locations.contains_key(*source) && row.locations.contains_key(destination)
-                })
-                .collect::<Vec<_>>();
-            let support = supporting_rows.len();
-            if support == 0 {
-                continue;
-            }
-            let supporting_source_ids = supporting_rows
-                .iter()
-                .flat_map(|row| row.source_delivery_ids.iter().cloned())
-                .collect::<BTreeSet<_>>()
-                .into_iter()
-                .collect::<Vec<_>>()
-                .join(", ");
-            let confidence = support as f64 / source_count as f64;
-            let lift = confidence / (*destination_count as f64 / history_total as f64);
-            let contribution = **source_score * confidence * lift.ln_1p() * 0.25;
-            let association = RecommendationAssociation {
-                from_selector: (*source).clone(),
-                support,
-                source_count,
-                destination_count: *destination_count,
-                confidence,
-                lift,
-            };
-            if best.as_ref().is_none_or(|(score, current, _)| {
-                contribution > *score
-                    || (contribution == *score && association.from_selector < current.from_selector)
-            }) {
-                best = Some((contribution, association, supporting_source_ids));
-            }
-        }
-        if let Some((contribution, association, supporting_source_ids)) = best {
-            let entry = scored.entry(destination.clone()).or_default();
-            entry.score += contribution;
-            entry.reasons.push(RecommendationReason {
-                kind: "directional_cochange".to_string(),
-                contribution,
-                explanation: format!(
-                    "{} predicts this destination with support {}, confidence {:.3}, lift {:.3}; source delivery IDs: {}",
-                    association.from_selector,
-                    association.support,
-                    association.confidence,
-                    association.lift,
-                    supporting_source_ids
-                ),
-            });
-            entry.association = Some(association);
+    seeds.sort_by(|left, right| right.1.total_cmp(&left.1).then_with(|| left.0.cmp(right.0)));
+    seeds.truncate(ASSOCIATION_SEED_LIMIT);
+    if seeds.is_empty() {
+        return;
+    }
+    // Ascending row indices per selector (rows are visited in order).
+    let mut rows_by_selector: HashMap<&str, Vec<usize>> = HashMap::new();
+    for (index, row) in rows.iter().enumerate() {
+        for selector in row.locations.keys() {
+            rows_by_selector
+                .entry(selector.as_str())
+                .or_default()
+                .push(index);
         }
     }
+    let mut best: BTreeMap<&str, BestAssociation<'_>> = BTreeMap::new();
+    let mut support: HashMap<&str, usize> = HashMap::new();
+    for &(source, source_score) in &seeds {
+        let source_count = prevalence.get(source).copied().unwrap_or(0);
+        let Some(source_rows) = rows_by_selector.get(source) else {
+            continue;
+        };
+        if source_count == 0 {
+            continue;
+        }
+        support.clear();
+        for &index in source_rows {
+            for destination in rows[index].locations.keys() {
+                if destination != source {
+                    *support.entry(destination.as_str()).or_default() += 1;
+                }
+            }
+        }
+        for (&destination, &destination_support) in &support {
+            let destination_count = prevalence.get(destination).copied().unwrap_or(0);
+            let confidence = destination_support as f64 / source_count as f64;
+            let lift = confidence / (destination_count as f64 / history_total as f64);
+            let contribution = source_score * confidence * lift.ln_1p() * 0.25;
+            let replace = best.get(destination).is_none_or(|current| {
+                contribution > current.contribution
+                    || (contribution == current.contribution && source < current.source)
+            });
+            if replace {
+                best.insert(
+                    destination,
+                    BestAssociation {
+                        contribution,
+                        source,
+                        support: destination_support,
+                        source_count,
+                    },
+                );
+            }
+        }
+    }
+    for (destination, winner) in best {
+        let destination_count = prevalence.get(destination).copied().unwrap_or(0);
+        let confidence = winner.support as f64 / winner.source_count as f64;
+        let lift = confidence / (destination_count as f64 / history_total as f64);
+        let supporting_source_ids = intersect_sorted(
+            rows_by_selector
+                .get(winner.source)
+                .map_or(&[][..], Vec::as_slice),
+            rows_by_selector
+                .get(destination)
+                .map_or(&[][..], Vec::as_slice),
+        )
+        .flat_map(|index| rows[index].source_delivery_ids.iter().cloned())
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .collect::<Vec<_>>()
+        .join(", ");
+        let association = RecommendationAssociation {
+            from_selector: winner.source.to_string(),
+            support: winner.support,
+            source_count: winner.source_count,
+            destination_count,
+            confidence,
+            lift,
+        };
+        let contribution = winner.contribution;
+        let entry = scored.entry(destination.to_string()).or_default();
+        entry.score += contribution;
+        entry.reasons.push(RecommendationReason {
+            kind: "directional_cochange".to_string(),
+            contribution,
+            explanation: format!(
+                "{} predicts this destination with support {}, confidence {:.3}, lift {:.3}; source delivery IDs: {}",
+                association.from_selector,
+                association.support,
+                association.confidence,
+                association.lift,
+                supporting_source_ids
+            ),
+        });
+        entry.association = Some(association);
+    }
+}
+
+/// Elements present in both ascending slices, in order.
+fn intersect_sorted<'a>(left: &'a [usize], right: &'a [usize]) -> impl Iterator<Item = usize> + 'a {
+    let mut right = right.iter().copied().peekable();
+    left.iter().copied().filter(move |value| {
+        while right.next_if(|candidate| candidate < value).is_some() {}
+        right.next_if_eq(value).is_some()
+    })
 }
 
 fn add_lexical_baseline(
@@ -1271,7 +1338,27 @@ fn commit_text_relevance(similarity: f64) -> f64 {
 /// Upper bound on commit-message bytes considered per delivery.
 const COMMIT_TEXT_MAX_BYTES: usize = 4_096;
 
-/// Bounded subject and body of a commit, without its trailer block.
+/// Attribution and bookkeeping trailer keys (compared case-insensitively)
+/// removed from a commit message's final paragraph. Keys starting with
+/// `orbit-` are removed too. Other `Key: value` lines, such as `Scope: …` or a
+/// squashed `fix: …` subject, are message content and are kept.
+const KNOWN_TRAILER_KEYS: &[&str] = &[
+    "acked-by",
+    "cc",
+    "change-id",
+    "claude-session",
+    "co-authored-by",
+    "helped-by",
+    "implemented-by",
+    "planned-by",
+    "reported-by",
+    "reviewed-by",
+    "signed-off-by",
+    "suggested-by",
+    "tested-by",
+];
+
+/// Bounded subject and body of a commit, without its known trailers.
 ///
 /// Read from the immutable commit object of the delivery's landed revision,
 /// so existing history indexes need no re-extraction.
@@ -1281,15 +1368,20 @@ fn commit_message_text(repo: &Repository, revision: Oid) -> Option<String> {
     let mut paragraphs = message
         .trim()
         .split("\n\n")
-        .map(str::trim)
+        .map(|paragraph| paragraph.trim().to_string())
         .filter(|paragraph| !paragraph.is_empty())
         .collect::<Vec<_>>();
     if paragraphs.len() > 1
-        && paragraphs
-            .last()
-            .is_some_and(|last| last.lines().all(is_trailer_line))
+        && let Some(last) = paragraphs.pop()
     {
-        paragraphs.pop();
+        let kept = last
+            .lines()
+            .filter(|line| !is_known_trailer_line(line))
+            .collect::<Vec<_>>()
+            .join("\n");
+        if !kept.trim().is_empty() {
+            paragraphs.push(kept);
+        }
     }
     let mut text = paragraphs.join("\n\n");
     if text.len() > COMMIT_TEXT_MAX_BYTES {
@@ -1302,13 +1394,19 @@ fn commit_message_text(repo: &Repository, revision: Oid) -> Option<String> {
     (!text.trim().is_empty()).then_some(text)
 }
 
-fn is_trailer_line(line: &str) -> bool {
-    line.split_once(": ").is_some_and(|(key, value)| {
-        !key.is_empty()
+/// A `Key: value` line whose key is a known attribution or bookkeeping
+/// trailer ([`KNOWN_TRAILER_KEYS`] or an `orbit-` key).
+fn is_known_trailer_line(line: &str) -> bool {
+    line.trim().split_once(": ").is_some_and(|(key, value)| {
+        let key = key.to_ascii_lowercase();
+        !value.trim().is_empty()
             && key
                 .chars()
                 .all(|ch| ch.is_ascii_alphanumeric() || ch == '-')
-            && !value.trim().is_empty()
+            && (KNOWN_TRAILER_KEYS.contains(&key.as_str())
+                || key
+                    .strip_prefix("orbit-")
+                    .is_some_and(|rest| !rest.is_empty()))
     })
 }
 
@@ -3266,6 +3364,57 @@ mod tests {
                 .any(|fallback| fallback.kind == "git_commit_text_used")
         );
 
+        // A live task-ID request never reads commit text: the target task's
+        // own Git-only delivery carries no task association, so its message
+        // could describe the change being predicted. The snapshot's text
+        // matches the commit message exactly, so only the free-text guard
+        // excludes it.
+        let source = Provenance {
+            system: "test".to_string(),
+            record_id: Some("QUOTA-1".to_string()),
+        };
+        let known = |value: &str| TemporalFact {
+            status: TemporalStatus::Known,
+            timestamp: Some(value.to_string()),
+            source: source.clone(),
+        };
+        let by_task = engine
+            .recommend(&RecommendationRequest {
+                input: RecommendationInput::TaskId("QUOTA-1".to_string()),
+                level: RecommendationLevel::File,
+                variant: RecommendationVariant::Combined,
+                limit: Some(10),
+                target_revision: Some(target.clone()),
+                cutoff: None,
+                task_snapshot: Some(TaskAssociation {
+                    task_id: "QUOTA-1".to_string(),
+                    title: "Raise tenant quota ceiling for burst traffic".to_string(),
+                    description: "Raise tenant quota ceiling burst traffic".to_string(),
+                    acceptance_criteria: Vec::new(),
+                    source: source.clone(),
+                    created_at: known("unix:1"),
+                    snapshot_available_at: known("unix:2"),
+                    text_availability: TaskTextAvailability::PostExecution,
+                    captured_at: "unix:3".to_string(),
+                }),
+                hybrid_hits: Vec::new(),
+            })
+            .expect("task-ID request");
+        assert!(
+            by_task.recommendations.iter().all(|item| item
+                .reasons
+                .iter()
+                .all(|reason| reason.kind != "historical_change_commit_text")),
+            "{:?}",
+            by_task.recommendations
+        );
+        assert!(
+            by_task
+                .fallbacks
+                .iter()
+                .all(|fallback| fallback.kind != "git_commit_text_used")
+        );
+
         // Task-search-only ranks task text only.
         let mut task_only = query_request(query, &target, None);
         task_only.variant = RecommendationVariant::TaskSearchOnly;
@@ -3335,13 +3484,174 @@ mod tests {
         }));
     }
 
+    /// The exhaustive (destination × seed × delivery) association pass that
+    /// `add_associations` replaced, kept as the reference it must match.
+    fn reference_associations(
+        rows: &[DeliveryLocations],
+        prevalence: &BTreeMap<String, usize>,
+        history_total: usize,
+        direct: &BTreeMap<String, f64>,
+    ) -> BTreeMap<String, (f64, RecommendationAssociation, String)> {
+        let mut out = BTreeMap::new();
+        for (destination, destination_count) in prevalence {
+            let mut best: Option<(f64, RecommendationAssociation, String)> = None;
+            for (source, source_score) in direct.iter().filter(|(_, score)| **score > 0.0) {
+                if source == destination {
+                    continue;
+                }
+                let source_count = *prevalence.get(source).unwrap_or(&0);
+                let supporting = rows
+                    .iter()
+                    .filter(|row| {
+                        row.locations.contains_key(source)
+                            && row.locations.contains_key(destination)
+                    })
+                    .collect::<Vec<_>>();
+                if source_count == 0 || supporting.is_empty() {
+                    continue;
+                }
+                let ids = supporting
+                    .iter()
+                    .flat_map(|row| row.source_delivery_ids.iter().cloned())
+                    .collect::<BTreeSet<_>>()
+                    .into_iter()
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                let confidence = supporting.len() as f64 / source_count as f64;
+                let lift = confidence / (*destination_count as f64 / history_total as f64);
+                let contribution = source_score * confidence * lift.ln_1p() * 0.25;
+                let association = RecommendationAssociation {
+                    from_selector: source.clone(),
+                    support: supporting.len(),
+                    source_count,
+                    destination_count: *destination_count,
+                    confidence,
+                    lift,
+                };
+                if best.as_ref().is_none_or(|(score, current, _)| {
+                    contribution > *score
+                        || (contribution == *score
+                            && association.from_selector < current.from_selector)
+                }) {
+                    best = Some((contribution, association, ids));
+                }
+            }
+            if let Some(found) = best {
+                out.insert(destination.clone(), found);
+            }
+        }
+        out
+    }
+
+    fn association_rows(count: usize) -> Vec<DeliveryLocations> {
+        // Deterministic overlapping deliveries over 23 selectors, with equal
+        // direct strengths to exercise the selector tie-break.
+        (0..count)
+            .map(|index| {
+                let members = (0..23)
+                    .filter(|selector| {
+                        (index * 7 + selector * 3) % 5 < 2 || selector % 11 == index % 11
+                    })
+                    .map(|selector| format!("file:s{selector:02}.rs"))
+                    .collect::<Vec<_>>();
+                let mut delivery = row(&members.iter().map(String::as_str).collect::<Vec<_>>());
+                delivery.delivery_id = format!("d{index}");
+                delivery.source_delivery_ids =
+                    BTreeSet::from([format!("d{index}"), format!("alias-{}", index % 3)]);
+                delivery
+            })
+            .collect()
+    }
+
+    #[test]
+    fn indexed_associations_match_the_exhaustive_reference() {
+        let rows = association_rows(40);
+        let mut prevalence = BTreeMap::new();
+        for delivery in &rows {
+            for selector in delivery.locations.keys() {
+                *prevalence.entry(selector.clone()).or_insert(0) += 1;
+            }
+        }
+        let direct = prevalence
+            .keys()
+            .enumerate()
+            .filter(|(index, _)| index % 4 != 3)
+            .map(|(index, selector)| {
+                (
+                    selector.clone(),
+                    [0.3, 0.3, 0.0, 0.7][index % 4] + 0.01 * (index % 2) as f64,
+                )
+            })
+            .collect::<BTreeMap<_, _>>();
+        let mut scored = BTreeMap::new();
+        add_associations(&rows, &prevalence, rows.len(), &direct, &mut scored);
+        let expected = reference_associations(&rows, &prevalence, rows.len(), &direct);
+        assert!(!expected.is_empty());
+        assert_eq!(scored.len(), expected.len());
+        for (destination, (contribution, association, ids)) in expected {
+            let entry = scored.get(&destination).expect("destination scored");
+            assert_eq!(
+                entry.score.to_bits(),
+                contribution.to_bits(),
+                "{destination}"
+            );
+            assert_eq!(
+                entry.association.as_ref(),
+                Some(&association),
+                "{destination}"
+            );
+            assert_eq!(entry.reasons.len(), 1);
+            assert!(
+                entry.reasons[0]
+                    .explanation
+                    .ends_with(&format!("source delivery IDs: {ids}"))
+            );
+        }
+    }
+
+    #[test]
+    fn associations_consider_only_the_strongest_seeds() {
+        // Every seed co-occurs with its own destination only; the weakest seed
+        // falls beyond the limit, so its destination gets no association.
+        let rows = (0..=ASSOCIATION_SEED_LIMIT)
+            .map(|index| {
+                let seed = format!("file:seed{index:04}.rs");
+                let destination = format!("file:dest{index:04}.rs");
+                row(&[seed.as_str(), destination.as_str()])
+            })
+            .collect::<Vec<_>>();
+        let prevalence = rows
+            .iter()
+            .flat_map(|delivery| delivery.locations.keys().cloned())
+            .map(|selector| (selector, 1))
+            .collect::<BTreeMap<_, _>>();
+        let direct = (0..=ASSOCIATION_SEED_LIMIT)
+            .map(|index| (format!("file:seed{index:04}.rs"), 1.0 / (index + 1) as f64))
+            .collect::<BTreeMap<_, _>>();
+        let mut scored = BTreeMap::new();
+        add_associations(&rows, &prevalence, rows.len(), &direct, &mut scored);
+        assert!(scored.contains_key("file:dest0000.rs"));
+        assert!(scored.contains_key(&format!("file:dest{:04}.rs", ASSOCIATION_SEED_LIMIT - 1)));
+        assert!(!scored.contains_key(&format!("file:dest{ASSOCIATION_SEED_LIMIT:04}.rs")));
+    }
+
     #[test]
     fn commit_text_drops_trailers_bounds_length_and_parses_cited_ids() {
         assert!((commit_text_relevance(1.0) - COMMIT_TEXT_WEIGHT).abs() < f64::EPSILON);
         assert!(commit_text_relevance(0.5) < 0.5 * commit_text_relevance(1.0));
-        assert!(is_trailer_line("Co-Authored-By: A <a@example.invalid>"));
-        assert!(!is_trailer_line("See the design: it moved"));
-        assert!(!is_trailer_line("plain prose without a key"));
+        assert!(is_known_trailer_line(
+            "Co-Authored-By: A <a@example.invalid>"
+        ));
+        assert!(is_known_trailer_line(
+            "Signed-off-by: X <x@example.invalid>"
+        ));
+        assert!(is_known_trailer_line("Orbit-Run: jrun-1"));
+        assert!(is_known_trailer_line("planned-by: claude"));
+        assert!(!is_known_trailer_line("Scope: auto-task delete"));
+        assert!(!is_known_trailer_line("fix: repair the parser cache"));
+        assert!(!is_known_trailer_line("Orbit-: empty suffix"));
+        assert!(!is_known_trailer_line("Co-Authored-By:"));
+        assert!(!is_known_trailer_line("plain prose without a key"));
         assert_eq!(
             cited_task_ids("feat: x [ORB-13007] (#2612) [DANI-1] [not-an-id] [ORB-]"),
             vec!["DANI-1".to_string(), "ORB-13007".to_string()]
@@ -3366,6 +3676,25 @@ mod tests {
         assert!(text.starts_with("subject line"));
         assert!(text.len() <= COMMIT_TEXT_MAX_BYTES);
         assert!(!text.contains("Signed-off-by"));
+
+        // A final paragraph of message content that merely looks like
+        // trailers is kept; only the known trailer lines are removed.
+        fs::write(root.join("src/a.rs"), "fn a() {  }\n").expect("edit again");
+        git(
+            root,
+            &[
+                "commit",
+                "-am",
+                "Squash of two changes (#12)\n\nScope: auto-task delete\nfix: keep opt-out durable\nCo-authored-by: A <a@example.invalid>\nPlanned-by: claude",
+            ],
+        );
+        let oid = Oid::from_str(head(root).as_str()).expect("oid");
+        assert_eq!(
+            commit_message_text(&repo, oid).as_deref(),
+            Some(
+                "Squash of two changes (#12)\n\nScope: auto-task delete\nfix: keep opt-out durable"
+            )
+        );
     }
 
     fn row(locations: &[&str]) -> DeliveryLocations {

@@ -136,3 +136,19 @@ by the target symbol cache (ORB-13091). Same clone and query, load average
 Warm output is identical to cold output and to the uncached build. This holds
 for the file-level query both with and without history, and for the
 symbol-level query.
+
+Commit-text relevance for Git-only history (ORB-13102) seeds directional
+co-change from many more selectors, so the association pass is indexed by
+selector and capped at the 256 strongest seeds. Warm file-level calls, Orbit
+clone at `9591bbbd1`, Git-only history synced to 200 and 1,000 first-parent
+commits, `--limit 20`, load average 17–29:
+
+| History | Query | #84 (no commit text) | Commit text, unindexed pass | Commit text, indexed pass |
+| --- | --- | --- | --- | --- |
+| 200 commits | the auto-task delete query | 0.14–0.17 s | 3.6–4.0 s | 0.19–0.25 s |
+| 200 commits | `workspace` | 0.12 s | 1.5–2.3 s | 0.17–0.18 s |
+| 1,000 commits | the auto-task delete query | 0.44–0.61 s | 77–112 s | 0.46–0.59 s |
+| 1,000 commits | `workspace` | 0.46–0.76 s | 40–51 s | 0.45–0.69 s |
+
+The indexed pass returns byte-identical results to the unindexed one, with
+and without the seed cap, apart from the live `effective_cutoff`.
