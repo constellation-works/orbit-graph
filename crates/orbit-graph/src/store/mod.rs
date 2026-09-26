@@ -127,6 +127,32 @@ fn configure_connection(conn: &Connection) -> Result<(), GraphError> {
     Ok(())
 }
 
+/// Page cache for a sync writer connection, in KiB (SQLite reads a negative
+/// `cache_size` as KiB). SQLite's default of about 2 MiB is small beside a
+/// full index of a large repository (about 76 MB for Orbit), and each sync
+/// pass reads symbols and imports back while it writes.
+const SYNC_WRITER_CACHE_KIB: i64 = 64 * 1024;
+
+/// Configures a connection that a sync pass writes through.
+///
+/// `foreign_keys` and `synchronous` are per-connection settings, so a writer
+/// opened separately from [`open`] must set them again: without
+/// `synchronous=NORMAL` every per-file commit waits for a full WAL fsync.
+/// Under WAL, `NORMAL` still keeps the database consistent after a crash; at
+/// worst the last commits roll back, and the index is rebuildable.
+pub(crate) fn configure_sync_writer(
+    conn: &Connection,
+    operation: &'static str,
+) -> Result<(), GraphError> {
+    conn.pragma_update(None, "foreign_keys", "ON")
+        .map_err(|source| GraphError::sqlite(operation, source))?;
+    conn.pragma_update(None, "synchronous", "NORMAL")
+        .map_err(|source| GraphError::sqlite(operation, source))?;
+    conn.pragma_update(None, "cache_size", -SYNC_WRITER_CACHE_KIB)
+        .map_err(|source| GraphError::sqlite(operation, source))?;
+    Ok(())
+}
+
 struct GitContext {
     branch: String,
     commit_sha: String,

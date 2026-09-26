@@ -415,6 +415,53 @@ fn pass2_failure_rolls_back_ref_rewrites_and_meta_update() {
     assert_eq!(meta_value(&conn, "last_full_build_at"), 0);
 }
 
+#[test]
+fn refs_sharing_a_name_in_one_file_resolve_by_their_own_receiver() {
+    // Pass 2 resolves a file's refs once per distinct resolution key. The
+    // receiver-bearing call and the plain call share a file and a name, so
+    // the key must still keep them apart, and repeated plain calls must all
+    // receive the same result.
+    let worktree = TestWorktree::new("memo-receiver");
+    let graph = Graph::open(worktree.path(), SyncPolicy::Manual).expect("open graph");
+    worktree.write(
+        "scripts/fixture.py",
+        r#"
+def append(value):
+    return value
+"#,
+    );
+    worktree.write(
+        "sims/mixed.py",
+        r#"
+def run():
+    rows = []
+    rows.append(1)
+    append(1)
+    append(2)
+    return rows
+"#,
+    );
+
+    graph.sync(SyncMode::Full).expect("sync graph");
+
+    let conn = open_test_connection(worktree.path());
+    let appends = refs_for_file(&conn, "sims/mixed.py")
+        .into_iter()
+        .filter(|row| row.target_name == "append" && row.kind == "call")
+        .collect::<Vec<_>>();
+    assert_eq!(appends.len(), 3, "{appends:?}");
+    let expected_hint = symbol_id(&conn, "scripts/fixture.py", "append");
+    let (method, plain) = appends.split_first().expect("method call first");
+    assert_eq!(method.target_qualified, None, "{method:?}");
+    assert_eq!(method.target_symbol_hint, None, "{method:?}");
+    assert_eq!(method.confidence, super::CONFIDENCE_FUZZY_NAME);
+    for row in plain {
+        assert_eq!(row.target_qualified.as_deref(), Some("append"), "{row:?}");
+        assert_eq!(row.target_symbol_hint, Some(expected_hint), "{row:?}");
+        assert_eq!(row.confidence, super::CONFIDENCE_SAME_MODULE, "{row:?}");
+    }
+}
+
 fn assert_ref(row: &StoredRef, target_qualified: Option<&str>, confidence: &str) {
     assert_eq!(row.target_qualified.as_deref(), target_qualified);
     assert_eq!(row.confidence, confidence);

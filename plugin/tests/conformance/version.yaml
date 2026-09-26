@@ -7,7 +7,7 @@ tests:
     expect:
       output:
         crate_version: 0.10.0
-        extractor_version: 11
+        extractor_version: 12
         store_schema_version: 1
         history_schema_version: 3
         plugin_schema_version: 1

@@ -17,8 +17,9 @@
 //! qualified path, and otherwise land at `fuzzy_name`, where name-only
 //! matching is labelled as such.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::path::Path;
+use std::rc::Rc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use crate::extract::RawRef;
@@ -60,11 +61,12 @@ pub(crate) fn run(
         report_resolving_progress(observer, files_seen, &current_path, units_done, units_total);
     }
 
+    let mut resolver = Resolver::new(&tx);
     for file_refs in refs_by_file {
         delete_refs_for_file(&tx, &file_refs.file_path)?;
-        for raw_ref in &file_refs.refs {
-            let resolved = resolve_ref(&tx, &file_refs.file_path, raw_ref)?;
-            insert_ref(&tx, &file_refs.file_path, raw_ref, &resolved)?;
+        let resolved = resolver.resolve_file(&file_refs.file_path, &file_refs.refs)?;
+        for (raw_ref, resolved) in file_refs.refs.iter().zip(&resolved) {
+            insert_ref(&tx, &file_refs.file_path, raw_ref, resolved)?;
             units_done += 1;
             if let Some(observer) = observer
                 && units_done.is_multiple_of(RESOLVE_PROGRESS_CADENCE)
@@ -110,8 +112,7 @@ fn report_resolving_progress(
 fn open_writer_connection(db_path: &Path) -> Result<Connection, GraphError> {
     let conn = Connection::open(db_path)
         .map_err(|source| GraphError::sqlite("open graph database for pass2 writes", source))?;
-    conn.pragma_update(None, "foreign_keys", "ON")
-        .map_err(|source| GraphError::sqlite("enable foreign keys for pass2 writes", source))?;
+    crate::store::configure_sync_writer(&conn, "configure graph database for pass2 writes")?;
     Ok(conn)
 }
 
@@ -150,52 +151,283 @@ fn insert_ref(
     Ok(())
 }
 
-fn resolve_ref(
-    tx: &Transaction<'_>,
-    from_file: &str,
-    raw_ref: &RawRef,
-) -> Result<ResolvedRef, GraphError> {
-    // A runtime invocation names a program, not a symbol: it is stored as the
-    // opaque program string and never climbs the resolution ladder, so a
-    // program named like a function (`["git", ...]` beside `def git`) is not
-    // mistaken for a call to it.
-    if raw_ref.kind == RUNTIME_INVOCATION_KIND {
-        return Ok(ResolvedRef {
-            target_qualified: None,
-            target_symbol_hint: None,
-            confidence: CONFIDENCE_FUZZY_NAME,
-        });
-    }
-    if let Some(candidate) = resolve_exact(tx, from_file, raw_ref)? {
-        return Ok(ResolvedRef::candidate(candidate, CONFIDENCE_EXACT));
-    }
-    match resolve_import(tx, from_file, raw_ref)? {
-        ImportResolution::Unique(candidate) => {
-            return Ok(ResolvedRef::candidate(
-                candidate,
-                CONFIDENCE_IMPORT_RESOLVED,
-            ));
+/// Everything a ref's resolution depends on besides the file it sits in.
+///
+/// [`Resolver::resolve_ref`] is a pure function of the calling file, these
+/// fields, and the symbol and import rows Pass 1 wrote, which Pass 2 never
+/// changes. Two refs in one file with equal keys therefore resolve
+/// identically, so a file's refs are resolved once per distinct key.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+struct RefKey {
+    is_use: bool,
+    name_only: bool,
+    target_name: String,
+    target_qualified: Option<String>,
+}
+
+impl RefKey {
+    fn of(raw_ref: &RawRef) -> Self {
+        Self {
+            is_use: raw_ref.kind == "use",
+            name_only: resolves_by_name_only(raw_ref),
+            target_name: raw_ref.target_name.clone(),
+            target_qualified: raw_ref.target_qualified.clone(),
         }
-        ImportResolution::Ambiguous => {
-            return Ok(ResolvedRef {
-                target_qualified: None,
-                target_symbol_hint: None,
-                confidence: CONFIDENCE_FUZZY_NAME,
-            });
+    }
+}
+
+/// Resolves refs against the symbols and imports Pass 1 wrote.
+///
+/// Pass 2 only rewrites `refs`, so the symbol and import rows it reads are
+/// fixed for the whole pass. The resolver memoizes the lookups the ladder
+/// repeats: each file's module prefixes, each name's cross-file candidates,
+/// and each calling file's imports. Without the memo a common name such as
+/// `new` reloaded every candidate file's symbols for every ref naming it.
+struct Resolver<'a, 'conn> {
+    tx: &'a Transaction<'conn>,
+    file_prefixes: HashMap<String, Rc<BTreeSet<String>>>,
+    candidates_by_name: HashMap<String, Rc<[NamedCandidate]>>,
+}
+
+impl<'a, 'conn> Resolver<'a, 'conn> {
+    fn new(tx: &'a Transaction<'conn>) -> Self {
+        Self {
+            tx,
+            file_prefixes: HashMap::new(),
+            candidates_by_name: HashMap::new(),
         }
-        ImportResolution::None => {}
     }
-    if let Some(candidate) = resolve_qualified(tx, raw_ref)? {
-        return Ok(ResolvedRef::candidate(candidate, CONFIDENCE_EXACT));
+
+    /// Resolves every ref of one file, in order.
+    fn resolve_file(
+        &mut self,
+        from_file: &str,
+        refs: &[RawRef],
+    ) -> Result<Vec<ResolvedRef>, GraphError> {
+        let imports = imports_for_file(self.tx, from_file)?;
+        let mut memo: HashMap<RefKey, ResolvedRef> = HashMap::new();
+        let mut resolved = Vec::with_capacity(refs.len());
+        for raw_ref in refs {
+            let key = RefKey::of(raw_ref);
+            if let Some(known) = memo.get(&key) {
+                resolved.push(known.clone());
+                continue;
+            }
+            let result = self.resolve_ref(from_file, &imports, raw_ref)?;
+            memo.insert(key, result.clone());
+            resolved.push(result);
+        }
+        Ok(resolved)
     }
-    if let Some(candidate) = resolve_same_module(tx, from_file, raw_ref)? {
-        return Ok(ResolvedRef::candidate(candidate, CONFIDENCE_SAME_MODULE));
+
+    fn resolve_ref(
+        &mut self,
+        from_file: &str,
+        imports: &[ImportCandidate],
+        raw_ref: &RawRef,
+    ) -> Result<ResolvedRef, GraphError> {
+        // A runtime invocation names a program, not a symbol: it is stored as the
+        // opaque program string and never climbs the resolution ladder, so a
+        // program named like a function (`["git", ...]` beside `def git`) is not
+        // mistaken for a call to it.
+        if raw_ref.kind == RUNTIME_INVOCATION_KIND {
+            return Ok(ResolvedRef::fuzzy());
+        }
+        if let Some(candidate) = resolve_exact(self.tx, from_file, raw_ref)? {
+            return Ok(ResolvedRef::candidate(candidate, CONFIDENCE_EXACT));
+        }
+        match self.resolve_import(from_file, imports, raw_ref)? {
+            ImportResolution::Unique(candidate) => {
+                return Ok(ResolvedRef::candidate(
+                    candidate,
+                    CONFIDENCE_IMPORT_RESOLVED,
+                ));
+            }
+            ImportResolution::Ambiguous => return Ok(ResolvedRef::fuzzy()),
+            ImportResolution::None => {}
+        }
+        if let Some(candidate) = self.resolve_qualified(raw_ref)? {
+            return Ok(ResolvedRef::candidate(candidate, CONFIDENCE_EXACT));
+        }
+        if let Some(candidate) = self.resolve_same_module(from_file, raw_ref)? {
+            return Ok(ResolvedRef::candidate(candidate, CONFIDENCE_SAME_MODULE));
+        }
+        Ok(ResolvedRef::fuzzy())
     }
-    Ok(ResolvedRef {
-        target_qualified: None,
-        target_symbol_hint: None,
-        confidence: CONFIDENCE_FUZZY_NAME,
-    })
+
+    fn resolve_qualified(
+        &mut self,
+        raw_ref: &RawRef,
+    ) -> Result<Option<SymbolCandidate>, GraphError> {
+        if raw_ref.kind == "use" {
+            return Ok(None);
+        }
+        let Some(target) = raw_ref.target_qualified.as_deref() else {
+            return Ok(None);
+        };
+        if !target.contains("::") && !target.contains('.') {
+            return Ok(None);
+        }
+        let target = normalize_module_path(target);
+        let mut matched = None;
+        for candidate in self.symbols_by_name(&raw_ref.target_name)?.iter() {
+            if self.candidate_matches_qualified(candidate, &target)? {
+                if matched.is_some() {
+                    return Ok(None);
+                }
+                matched = Some(candidate.symbol.clone());
+            }
+        }
+        Ok(matched)
+    }
+
+    fn resolve_import(
+        &mut self,
+        from_file: &str,
+        imports: &[ImportCandidate],
+        raw_ref: &RawRef,
+    ) -> Result<ImportResolution, GraphError> {
+        for explicit in [true, false] {
+            let mut matches = BTreeMap::new();
+            for import in imports.iter().filter(|import| {
+                (import.target_symbol.as_deref() == Some(raw_ref.target_name.as_str())) == explicit
+            }) {
+                let Some(module_path) = import_module_for_ref(from_file, import, raw_ref) else {
+                    continue;
+                };
+                let module = normalize_module_path(&module_path);
+                for candidate in self.symbols_by_name(&raw_ref.target_name)?.iter() {
+                    if self.candidate_matches_module(candidate, &module)? {
+                        matches.insert(candidate.symbol.id, candidate.symbol.clone());
+                    }
+                }
+            }
+            let mut candidates = matches.into_values();
+            match (candidates.next(), candidates.next()) {
+                (Some(candidate), None) => return Ok(ImportResolution::Unique(candidate)),
+                (Some(_), Some(_)) => return Ok(ImportResolution::Ambiguous),
+                _ => {}
+            }
+        }
+        Ok(ImportResolution::None)
+    }
+
+    fn resolve_same_module(
+        &mut self,
+        from_file: &str,
+        raw_ref: &RawRef,
+    ) -> Result<Option<SymbolCandidate>, GraphError> {
+        if !resolves_by_name_only(raw_ref) {
+            return Ok(None);
+        }
+        let prefixes = self.module_prefixes_for_file(from_file)?;
+        if prefixes.is_empty() {
+            return Ok(None);
+        }
+
+        let mut matched = None;
+        for candidate in self.symbols_by_name(&raw_ref.target_name)?.iter() {
+            if candidate.symbol.file_path == from_file {
+                continue;
+            }
+            if self.candidate_shares_module(candidate, &prefixes)? {
+                if matched.is_some() {
+                    return Ok(None);
+                }
+                matched = Some(candidate.symbol.clone());
+            }
+        }
+        Ok(matched)
+    }
+
+    /// Cross-file counterpart of [`symbols_in_file_by_name`]; applies the same
+    /// `impl` exclusion. Memoized per name for the pass.
+    fn symbols_by_name(&mut self, name: &str) -> Result<Rc<[NamedCandidate]>, GraphError> {
+        if let Some(candidates) = self.candidates_by_name.get(name) {
+            return Ok(Rc::clone(candidates));
+        }
+        let candidates: Rc<[NamedCandidate]> = symbols_by_name(self.tx, name)?
+            .into_iter()
+            .map(NamedCandidate::new)
+            .collect();
+        self.candidates_by_name
+            .insert(name.to_string(), Rc::clone(&candidates));
+        Ok(candidates)
+    }
+
+    /// Memoized [`module_prefixes_for_file`].
+    fn module_prefixes_for_file(
+        &mut self,
+        file_path: &str,
+    ) -> Result<Rc<BTreeSet<String>>, GraphError> {
+        if let Some(prefixes) = self.file_prefixes.get(file_path) {
+            return Ok(Rc::clone(prefixes));
+        }
+        let prefixes = Rc::new(module_prefixes_for_file(self.tx, file_path)?);
+        self.file_prefixes
+            .insert(file_path.to_string(), Rc::clone(&prefixes));
+        Ok(prefixes)
+    }
+
+    /// Whether `target` (already normalized) names the candidate, either
+    /// directly or under one of the candidate's module prefixes.
+    ///
+    /// The candidate's prefixes are its file's prefixes plus the prefix of its
+    /// own qualified name; the test is a disjunction over them, so the two
+    /// sources are checked in turn rather than merged into a new set.
+    fn candidate_matches_qualified(
+        &mut self,
+        candidate: &NamedCandidate,
+        target: &str,
+    ) -> Result<bool, GraphError> {
+        let qualified = normalize_module_path(&candidate.symbol.qualified);
+        if qualified == target {
+            return Ok(true);
+        }
+        let matches = |prefix: &str| join_module_symbol(prefix, &qualified) == target;
+        if candidate.own_prefix.as_deref().is_some_and(matches) {
+            return Ok(true);
+        }
+        Ok(self
+            .module_prefixes_for_file(&candidate.symbol.file_path)?
+            .iter()
+            .any(|prefix| matches(prefix)))
+    }
+
+    /// Whether one of the candidate's module prefixes is `module` (already
+    /// normalized) or ends with it.
+    fn candidate_matches_module(
+        &mut self,
+        candidate: &NamedCandidate,
+        module: &str,
+    ) -> Result<bool, GraphError> {
+        let suffix = format!("::{module}");
+        let matches = |prefix: &str| prefix == module || prefix.ends_with(&suffix);
+        if candidate.own_prefix.as_deref().is_some_and(matches) {
+            return Ok(true);
+        }
+        Ok(self
+            .module_prefixes_for_file(&candidate.symbol.file_path)?
+            .iter()
+            .any(|prefix| matches(prefix)))
+    }
+
+    /// Whether the candidate's module prefixes intersect `prefixes`.
+    fn candidate_shares_module(
+        &mut self,
+        candidate: &NamedCandidate,
+        prefixes: &BTreeSet<String>,
+    ) -> Result<bool, GraphError> {
+        if candidate
+            .own_prefix
+            .as_ref()
+            .is_some_and(|prefix| prefixes.contains(prefix))
+        {
+            return Ok(true);
+        }
+        let candidate_prefixes = self.module_prefixes_for_file(&candidate.symbol.file_path)?;
+        Ok(!prefixes.is_disjoint(&candidate_prefixes))
+    }
 }
 
 fn resolve_exact(
@@ -230,83 +462,6 @@ fn resolve_exact(
 /// not the calling file or module, decides which same-named method runs.
 fn resolves_by_name_only(raw_ref: &RawRef) -> bool {
     raw_ref.unresolved_receiver.is_none()
-}
-
-fn resolve_qualified(
-    tx: &Transaction<'_>,
-    raw_ref: &RawRef,
-) -> Result<Option<SymbolCandidate>, GraphError> {
-    if raw_ref.kind == "use" {
-        return Ok(None);
-    }
-    let Some(target) = raw_ref.target_qualified.as_deref() else {
-        return Ok(None);
-    };
-    if !target.contains("::") && !target.contains('.') {
-        return Ok(None);
-    }
-    let mut candidates = Vec::new();
-    for candidate in symbols_by_name(tx, &raw_ref.target_name)? {
-        if candidate_matches_qualified(tx, &candidate, target)? {
-            candidates.push(candidate);
-        }
-    }
-    Ok(unique_candidate(&candidates))
-}
-
-fn resolve_import(
-    tx: &Transaction<'_>,
-    from_file: &str,
-    raw_ref: &RawRef,
-) -> Result<ImportResolution, GraphError> {
-    let imports = imports_for_file(tx, from_file)?;
-    for explicit in [true, false] {
-        let mut matches = BTreeMap::new();
-        for import in imports.iter().filter(|import| {
-            (import.target_symbol.as_deref() == Some(raw_ref.target_name.as_str())) == explicit
-        }) {
-            let Some(module_path) = import_module_for_ref(from_file, import, raw_ref) else {
-                continue;
-            };
-            for candidate in symbols_by_name(tx, &raw_ref.target_name)? {
-                if candidate_matches_module(tx, &candidate, &module_path)? {
-                    matches.insert(candidate.id, candidate);
-                }
-            }
-        }
-        let mut candidates = matches.into_values();
-        match (candidates.next(), candidates.next()) {
-            (Some(candidate), None) => return Ok(ImportResolution::Unique(candidate)),
-            (Some(_), Some(_)) => return Ok(ImportResolution::Ambiguous),
-            _ => {}
-        }
-    }
-    Ok(ImportResolution::None)
-}
-
-fn resolve_same_module(
-    tx: &Transaction<'_>,
-    from_file: &str,
-    raw_ref: &RawRef,
-) -> Result<Option<SymbolCandidate>, GraphError> {
-    if !resolves_by_name_only(raw_ref) {
-        return Ok(None);
-    }
-    let prefixes = module_prefixes_for_file(tx, from_file)?;
-    if prefixes.is_empty() {
-        return Ok(None);
-    }
-
-    let candidates = symbols_by_name(tx, &raw_ref.target_name)?
-        .into_iter()
-        .filter(|candidate| candidate.file_path != from_file)
-        .filter(|candidate| {
-            module_prefixes_for_candidate(tx, candidate)
-                .is_ok_and(|candidate_prefixes| !prefixes.is_disjoint(&candidate_prefixes))
-        })
-        .collect::<Vec<_>>();
-
-    Ok(unique_candidate(&candidates))
 }
 
 /// Symbols a textual ref can resolve to. Rust `impl` blocks are stored under the
@@ -350,6 +505,8 @@ fn symbols_by_name(tx: &Transaction<'_>, name: &str) -> Result<Vec<SymbolCandida
         .map_err(|source| GraphError::sqlite("collect symbols for ref resolution", source))
 }
 
+/// Module paths a file's symbols live under: the prefixes of every symbol's
+/// qualified name, plus each suffix of the file's own module path.
 fn module_prefixes_for_file(
     tx: &Transaction<'_>,
     from_file: &str,
@@ -417,43 +574,6 @@ fn unique_candidate(candidates: &[SymbolCandidate]) -> Option<SymbolCandidate> {
     } else {
         None
     }
-}
-
-fn candidate_matches_qualified(
-    tx: &Transaction<'_>,
-    candidate: &SymbolCandidate,
-    target: &str,
-) -> Result<bool, GraphError> {
-    let target = normalize_module_path(target);
-    let qualified = normalize_module_path(&candidate.qualified);
-    if qualified == target {
-        return Ok(true);
-    }
-    Ok(module_prefixes_for_candidate(tx, candidate)?
-        .into_iter()
-        .any(|prefix| join_module_symbol(&prefix, &qualified) == target))
-}
-
-fn candidate_matches_module(
-    tx: &Transaction<'_>,
-    candidate: &SymbolCandidate,
-    module: &str,
-) -> Result<bool, GraphError> {
-    let module = normalize_module_path(module);
-    Ok(module_prefixes_for_candidate(tx, candidate)?
-        .into_iter()
-        .any(|prefix| prefix == module || prefix.ends_with(&format!("::{module}"))))
-}
-
-fn module_prefixes_for_candidate(
-    tx: &Transaction<'_>,
-    candidate: &SymbolCandidate,
-) -> Result<BTreeSet<String>, GraphError> {
-    let mut prefixes = module_prefixes_for_file(tx, &candidate.file_path)?;
-    if let Some(prefix) = qualified_prefix_before_name(&candidate.qualified, &candidate.name) {
-        prefixes.insert(normalize_module_path(&prefix));
-    }
-    Ok(prefixes)
 }
 
 fn import_module_for_ref(
@@ -613,6 +733,14 @@ struct ResolvedRef {
 }
 
 impl ResolvedRef {
+    fn fuzzy() -> Self {
+        Self {
+            target_qualified: None,
+            target_symbol_hint: None,
+            confidence: CONFIDENCE_FUZZY_NAME,
+        }
+    }
+
     fn candidate(candidate: SymbolCandidate, confidence: &'static str) -> Self {
         Self {
             target_qualified: Some(candidate.qualified),
@@ -628,6 +756,22 @@ struct SymbolCandidate {
     file_path: String,
     name: String,
     qualified: String,
+}
+
+/// A cross-file candidate with the module prefix of its own qualified name
+/// computed once, since the ladder tests it for every ref naming it.
+#[derive(Debug)]
+struct NamedCandidate {
+    symbol: SymbolCandidate,
+    own_prefix: Option<String>,
+}
+
+impl NamedCandidate {
+    fn new(symbol: SymbolCandidate) -> Self {
+        let own_prefix = qualified_prefix_before_name(&symbol.qualified, &symbol.name)
+            .map(|prefix| normalize_module_path(&prefix));
+        Self { symbol, own_prefix }
+    }
 }
 
 #[derive(Debug, Clone)]

@@ -91,7 +91,11 @@ mod tests;
 /// Version 11 records `runtime_invocation` refs for Python `subprocess` and
 /// Rust `Command::new` / `Command::cargo_bin` calls that name the program they
 /// start, so [`Graph::runtime_invocations`] has rows to report.
-pub const EXTRACTOR_VERSION: u32 = 11;
+///
+/// Version 12 adds indexes on the store's foreign-key child columns and on
+/// `imports(from_file)`, which reference resolution and per-file rewrites
+/// look up; the stored rows are unchanged.
+pub const EXTRACTOR_VERSION: u32 = 12;
 
 /// SQLite schema version used by the graph store.
 ///

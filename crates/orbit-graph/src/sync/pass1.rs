@@ -341,8 +341,7 @@ struct ExtractedSourceFile {
 fn open_writer_connection(db_path: &Path) -> Result<Connection, GraphError> {
     let conn = Connection::open(db_path)
         .map_err(|source| GraphError::sqlite("open graph database for pass1 writes", source))?;
-    conn.pragma_update(None, "foreign_keys", "ON")
-        .map_err(|source| GraphError::sqlite("enable foreign keys for pass1 writes", source))?;
+    crate::store::configure_sync_writer(&conn, "configure graph database for pass1 writes")?;
     Ok(conn)
 }
 
