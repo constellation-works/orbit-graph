@@ -6,7 +6,7 @@ rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
 description = "Standalone source-code graph index and query library"
-keywords = ["code-graph", "tree-sitter", "sqlite"]
+keywords = ["code-graph", "sqlite"]
 categories = ["development-tools"]
 
 [lints]
@@ -19,25 +19,14 @@ git2.workspace = true
 ignore = "0.4.25"
 libc.workspace = true
 notify = "8"
+orbit-graph-extract.workspace = true
 rayon = "1.12.0"
 rusqlite = { version = "0.40", features = ["bundled"] }
 serde.workspace = true
 serde_json.workspace = true
-serde_norway.workspace = true
 thiserror.workspace = true
-toml = "1.1"
+toml.workspace = true
 tracing = "0.1"
-tree-sitter = "0.26"
-tree-sitter-c = "0.24.2"
-tree-sitter-c-sharp = "0.23.5"
-tree-sitter-go = "0.25.0"
-tree-sitter-java = "0.23.5"
-tree-sitter-javascript = "0.25.0"
-tree-sitter-kotlin-ng = "1.1.0"
-tree-sitter-python = "0.25"
-tree-sitter-ruby = "0.23.1"
-tree-sitter-rust = "0.24"
-tree-sitter-typescript = "0.23.2"
 
 [dev-dependencies]
 serde_json.workspace = true

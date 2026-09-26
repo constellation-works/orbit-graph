@@ -43,6 +43,12 @@ and `explorer/` became `crates/orbit-graph-explorer`. The relocations are pure
 moves, so `git log --follow` still reaches the pre-move history; no recovered
 code was rewritten.
 
+On 2026-09-26 (ORB-13253) `crates/orbit-graph/src/extract/**` moved to its own
+crate, `crates/orbit-graph-extract/src/**` (`extract/mod.rs` became `lib.rs`),
+with `crates/orbit-graph/tests/fixtures/selector_corpus.txt` alongside it. The
+move rewrote only module paths, visibility and the history extraction's error
+type; extraction behavior is unchanged.
+
 ## Standalone adaptation boundary
 
 The recovery intentionally changes only repository packaging and dependencies:

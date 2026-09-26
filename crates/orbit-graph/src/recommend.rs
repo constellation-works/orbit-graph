@@ -14,14 +14,14 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use git2::{
     Delta, DiffFindOptions, DiffOptions, ObjectType, Oid, Repository, TreeWalkMode, TreeWalkResult,
 };
-use serde::{Deserialize, Serialize};
-
-use crate::extract::RawSymbol;
-use crate::extract::history::{
+use orbit_graph_extract::RawSymbol;
+use orbit_graph_extract::history::{
     DeliveredChange, DeliveryEvidence, FileChange, SymbolIdentity, TaskAssociation,
     TaskTextAvailability, TemporalStatus, Timestamp, parse_timestamp, validate_task_association,
 };
-use crate::extract::languages;
+use orbit_graph_extract::languages;
+use serde::{Deserialize, Serialize};
+
 use crate::store::history::PathLineageStep;
 use crate::{Graph, GraphError, HistoryIndex};
 

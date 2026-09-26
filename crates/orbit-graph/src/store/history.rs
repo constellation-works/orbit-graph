@@ -9,18 +9,18 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use fs2::FileExt;
 use git2::{Oid, Repository};
-use rusqlite::{Connection, OptionalExtension, Transaction, TransactionBehavior, params};
-use serde::Serialize;
-
-use crate::GraphError;
-use crate::extract::history::{
+use orbit_graph_extract::history::{
     CHANGE_EXTRACTOR_VERSION, CurrentRevisionResolution, CurrentSymbolStatus,
     DEFAULT_HISTORY_SYNC_LIMIT, DELIVERY_IMPORT_SCHEMA_VERSION, DeliveredChange, DeliveryEvidence,
     DeliveryImport, FileChange, FileChangeKind, Provenance, RevisionSide, SymbolIdentity,
     TaskAssociation, TaskTextAvailability, TemporalFact, TemporalStatus, branch_tip,
     extract_delivery, repository_identity, validate_task_association,
 };
-use crate::extract::languages;
+use orbit_graph_extract::languages;
+use rusqlite::{Connection, OptionalExtension, Transaction, TransactionBehavior, params};
+use serde::Serialize;
+
+use crate::GraphError;
 
 /// Version of the history SQLite schema.
 ///
@@ -417,7 +417,7 @@ impl HistoryIndex {
         let repo = Repository::open(self.repo_root.as_path()).map_err(|error| {
             GraphError::invalid_data("open repository for history preview", error.to_string())
         })?;
-        extract_delivery(&repo, delivery)
+        Ok(extract_delivery(&repo, delivery)?)
     }
 
     /// Incrementally index first-parent commits, bounded by `limit`.
@@ -947,7 +947,7 @@ impl HistoryIndex {
                         captured_at: captured_at.clone(),
                     })
                     .collect();
-                extract_delivery(
+                Ok(extract_delivery(
                     repo,
                     DeliveryImport {
                         schema_version: DELIVERY_IMPORT_SCHEMA_VERSION,
@@ -972,7 +972,7 @@ impl HistoryIndex {
                         captured_at,
                         tasks,
                     },
-                )
+                )?)
             })
             .collect()
     }

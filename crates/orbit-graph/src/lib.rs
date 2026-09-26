@@ -12,8 +12,6 @@ mod clean;
 mod db_path;
 mod error;
 mod evaluation;
-/// Pure extraction contracts and language-specific extractors.
-mod extract;
 mod graph;
 mod live_evaluation;
 mod lock;
@@ -22,6 +20,9 @@ mod query;
 mod recommend;
 mod store;
 mod sync;
+
+#[cfg(test)]
+mod tests;
 
 // `docs/usage.md`, included so `cargo test --doc` compiles its Rust example
 // against this API and a stale example fails the build (STD-04 §R14).
@@ -53,14 +54,16 @@ pub use sync::report::{
     SyncReport, SyncSkip,
 };
 
-pub use extract::history::{
+#[doc(inline)]
+pub use orbit_graph_extract::history::{
     CHANGE_EXTRACTOR_VERSION, CurrentRevisionResolution, CurrentSymbolStatus,
     DEFAULT_HISTORY_SYNC_LIMIT, DELIVERY_IMPORT_SCHEMA_VERSION, DeliveredChange, DeliveryEvidence,
     DeliveryImport, FileChange, FileChangeKind, FileFallbackReason, Provenance, RevisionSide,
     SymbolAttribution, SymbolChange, SymbolIdentity, SymbolMatchConfidence, TaskAssociation,
     TaskTextAvailability, TemporalFact, TemporalStatus,
 };
-pub use extract::{Selector, SelectorParseError};
+#[doc(inline)]
+pub use orbit_graph_extract::{Selector, SelectorParseError};
 pub use store::history::{
     HISTORY_INDEX_SCHEMA_VERSION, HistoryImportReport, HistoryIndex, HistoryRebuildReport,
     HistoryStatus, HistorySyncReport,

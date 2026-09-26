@@ -3,7 +3,7 @@
 use std::fs;
 use std::str;
 
-use crate::extract::Selector;
+use orbit_graph_extract::Selector;
 use rusqlite::{Connection, OptionalExtension, params};
 use serde::Serialize;
 use serde::ser::{SerializeStruct, Serializer};

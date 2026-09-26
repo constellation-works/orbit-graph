@@ -7,9 +7,11 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Instant;
 
 use git2::{Oid, Repository};
+use orbit_graph_extract::history::{
+    parse_timestamp, repository_identity, validate_task_association,
+};
 use serde::{Deserialize, Serialize};
 
-use crate::extract::history::{parse_timestamp, repository_identity, validate_task_association};
 use crate::recommend::selector_is_live_at;
 use crate::{
     DeliveryEvidence, DeliveryImport, Graph, GraphError, HistoryIndex, HybridTaskHit, Provenance,

@@ -29,9 +29,16 @@ err() { echo "dependency-direction: $*" >&2; fail=1; }
 # policy <crate> -> sets KIND, ALLOWED (internal deps) and BANNED (external deps)
 policy() {
   case "$1" in
-    orbit-graph)
+    orbit-graph-extract)
       KIND="library"
       ALLOWED=""
+      # The extraction leaf knows nothing of the store, sync or queries, and
+      # like the domain library it leaves surface concerns to surfaces.
+      BANNED="clap tracing-subscriber tiny_http unicode-width"
+      ;;
+    orbit-graph)
+      KIND="library"
+      ALLOWED="orbit-graph-extract"
       # The domain library never parses arguments, draws on a terminal,
       # installs a log subscriber or serves HTTP: those belong to surfaces.
       BANNED="clap tracing-subscriber tiny_http unicode-width"

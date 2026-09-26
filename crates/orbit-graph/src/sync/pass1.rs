@@ -31,7 +31,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Once;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-use crate::extract::{
+use orbit_graph_extract::{
     ExtractedFile, RawCommand, RawConfig, RawImport, RawRef, RawRelation, RawString, RawSymbol,
     languages,
 };

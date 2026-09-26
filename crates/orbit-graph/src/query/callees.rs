@@ -4,7 +4,7 @@ use std::collections::HashMap;
 use std::fs;
 use std::path::Path;
 
-use crate::extract::Selector;
+use orbit_graph_extract::Selector;
 use rusqlite::{Connection, params};
 
 use crate::{

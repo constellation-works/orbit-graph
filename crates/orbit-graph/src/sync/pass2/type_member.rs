@@ -30,6 +30,7 @@
 use std::collections::{BTreeSet, HashMap};
 use std::rc::Rc;
 
+use orbit_graph_extract::RawRef;
 use rusqlite::Transaction;
 
 use super::{
@@ -38,7 +39,6 @@ use super::{
     resolve_import_path, symbol_candidate_from_row,
 };
 use crate::GraphError;
-use crate::extract::RawRef;
 
 /// A ref target, or a symbol's qualified name, read as `Type::member`.
 #[derive(Debug, Clone, PartialEq, Eq)]
