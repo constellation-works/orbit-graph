@@ -400,7 +400,7 @@ impl Resolver<'_, '_> {
                 by_type
                     .entry(self_name)
                     .or_default()
-                    .push((trait_name, NamedCandidate::new(symbol)));
+                    .push((trait_name, NamedCandidate::new(symbol, "rust".to_string())));
             }
             self.trait_impls = Some(
                 by_type
