@@ -70,8 +70,9 @@ pub struct RawRef {
     /// self-receivers (`self`, `Self`, `cls`), whose type is the enclosing
     /// definition's own. Resolution must not treat a reference carrying a
     /// receiver as a name-only match, because the bare method name says
-    /// nothing about which type's method is being called. Not stored: it is
-    /// an extraction-time hint consumed by pass 2.
+    /// nothing about which type's method is being called. Stored in
+    /// `refs.unresolved_receiver` only so pass 2 can re-resolve the ref in a
+    /// later incremental sync; queries do not read it.
     pub unresolved_receiver: Option<String>,
     /// Whether `target_qualified` is the path written at the reference site
     /// (`a::b::f(..)`, `crate::x::T`), as opposed to one the extractor
