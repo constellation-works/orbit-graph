@@ -348,6 +348,38 @@ Ordered by how much they distort an answer.
    tests remain real coverage the tool cannot see; the disclosure is still
    generic ("the index is syntax-driven"), not specific to the subprocess
    call.
+
+   **After DANI-10357 (re-measured 2026-09-26, `EXTRACTOR_VERSION` 11):** the
+   six are now disclosed as `runtime_invocation` candidate tests, associated
+   with the changed script by path only. Measured with `orbit-graph-explorer
+   report --excerpts none` (depth 3, `same_module`, 200-node cap) over every
+   study-5 changed symbol. Before is `agent-main` `b744204` at
+   `EXTRACTOR_VERSION` 10; after is the same commit plus this change. The
+   export's candidate tests went from 95 `call_path` + 32 `naming_heuristic`
+   rows to the same 95 + 32 plus 143 `runtime_invocation` rows. Those rows
+   name exactly the six subprocess-driven tests. Five of them
+   (`test_authority_is_exact_and_complete`,
+   `test_isolated_migration_is_byte_identical`,
+   `test_rollback_restores_every_legacy_json_byte`,
+   `test_tampered_authority_fails_closed`,
+   `test_landed_migration_survives_head_advance_and_refuses_source_drift`)
+   appear on each of `scripts/research_records.py`'s 27 changed symbols,
+   including the CLI entry point `main`. They reach the script through `run`
+   → `run_at`'s `subprocess.run([sys.executable, str(root /
+   "scripts/research_records.py"), …])`
+   (`tests/test_research_records.py:22@82c24be9a49d`). The sixth,
+   `test_cancelled_fixture_registers_without_science`, appears on each of
+   `scripts/native_registration_fixture.py`'s 8 changed symbols
+   (`tests/test_research_records.py:175@82c24be9a49d`). Before, `main`'s only
+   candidate tests were two file-level `heuristic_match` rows (`call_path`
+   and `naming_heuristic`) for `tests/test_research_records.py`. The six
+   appeared only as 16 name-only `heuristic_match` rows, involving two of the
+   six tests, on unrelated same-named helpers such as
+   `native_registration_fixture.py#git`, never on either entry point. Every
+   new row carries `category: runtime_invocation`, a UI/export badge, and a
+   note that the association is by program name only. Still unseen: programs
+   built at run time (`subprocess.run([*argv, *args])`, `-m orbit_research`),
+   and ORB-12425's resolution gap. Study 4 was not re-run.
 6. **Nested functions are not symbols.** Unaffected by either fix. Re-confirmed
    in the re-run: `GET /api/search?q=snap` against the re-built study-5 index
    returns zero matches, so study 5's `snapshot` → `snap` rename is still

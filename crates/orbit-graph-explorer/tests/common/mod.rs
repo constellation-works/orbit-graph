@@ -1,7 +1,9 @@
 //! Shared deterministic Git fixtures for explorer integration tests.
 //!
-//! Two builders live here. [`build_fixture`] creates a two-commit throwaway
-//! repository used by the snapshot tests. [`corpus`] materializes a case from
+//! Three builders live here. [`build_fixture`] creates a two-commit throwaway
+//! repository used by the snapshot tests, and
+//! [`build_runtime_invocation_fixture`] one whose test drives its binary as a
+//! subprocess. [`corpus`] materializes a case from
 //! the shared change-explorer fixture corpus under
 //! `crates/orbit-graph-cli/tests/fixtures/change-explorer/`.
 
@@ -104,6 +106,43 @@ pub fn commit_tree(
         )
         .expect("create fixture commit");
     commit.to_string()
+}
+
+/// A Rust package whose only test drives its binary as a subprocess
+/// (`Command::new(env!("CARGO_BIN_EXE_tool"))`), with `src/lib.rs#run`
+/// changed between base and head: the smallest repository whose
+/// candidate tests carry a `runtime_invocation` row.
+pub fn build_runtime_invocation_fixture() -> Fixture {
+    let dir = TempDir::new().expect("create fixture repository");
+    let repo = Repository::init(dir.path()).expect("init fixture repository");
+    let base = commit_files(
+        &repo,
+        dir.path(),
+        &[
+            (
+                "Cargo.toml",
+                "[package]\nname = \"tool\"\nversion = \"0.1.0\"\n",
+            ),
+            ("src/lib.rs", "pub fn run() -> i32 {\n    1\n}\n"),
+            ("src/main.rs", "fn main() {}\n"),
+            (
+                "tests/cli.rs",
+                "use std::process::Command;\n\n#[test]\nfn runs_the_binary() {\n    \
+                 Command::new(env!(\"CARGO_BIN_EXE_tool\")).status().unwrap();\n}\n",
+            ),
+        ],
+        "base: tool with a subprocess-driven test",
+        0,
+    );
+    let head = commit_files(
+        &repo,
+        dir.path(),
+        &[("src/lib.rs", "pub fn run() -> i32 {\n    2\n}\n")],
+        "head: change run",
+        1,
+    );
+    drop(repo);
+    Fixture { dir, base, head }
 }
 
 /// Write `files` into `root`, stage everything, and commit it.

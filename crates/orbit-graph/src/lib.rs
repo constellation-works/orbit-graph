@@ -87,7 +87,11 @@ mod tests;
 /// Version 10 rebuilds stored refs once more: calls on an impl's literal `self`
 /// receiver and `Self::method()` now retain that impl type, so they can resolve
 /// to the intended method rather than joining the name-only fallback.
-pub const EXTRACTOR_VERSION: u32 = 10;
+///
+/// Version 11 records `runtime_invocation` refs for Python `subprocess` and
+/// Rust `Command::new` / `Command::cargo_bin` calls that name the program they
+/// start, so [`Graph::runtime_invocations`] has rows to report.
+pub const EXTRACTOR_VERSION: u32 = 11;
 
 /// SQLite schema version used by the graph store.
 ///
@@ -469,6 +473,79 @@ impl Graph {
     pub fn deps(&self, sel: &Selector) -> Result<DepsResult, GraphError> {
         self.ensure_synced()?;
         query::deps::run(self, sel)
+    }
+
+    /// Return every recorded runtime-invocation site: a call that starts a
+    /// program the syntax names, such as `subprocess.run(["prog", ...])` or
+    /// `Command::new(env!("CARGO_BIN_EXE_prog"))`.
+    ///
+    /// Each entry's `program` is the opaque program string as written (for an
+    /// interpreter launch, the `.py` script path); it is never resolved to a
+    /// symbol. Ordered by file, then source position.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use std::fs;
+    ///
+    /// use orbit_graph::{Graph, SyncMode, SyncPolicy};
+    ///
+    /// let dir = tempfile::tempdir()?;
+    /// fs::create_dir_all(dir.path().join("tests"))?;
+    /// fs::write(
+    ///     dir.path().join("tests/cli.rs"),
+    ///     "#[test]\nfn runs() {\n    Command::new(env!(\"CARGO_BIN_EXE_tool\"));\n}\n",
+    /// )?;
+    ///
+    /// let graph = Graph::open(dir.path(), SyncPolicy::Manual)?;
+    /// graph.sync(SyncMode::Full)?;
+    ///
+    /// let invocations = graph.runtime_invocations()?;
+    /// assert_eq!(invocations.len(), 1);
+    /// assert_eq!(invocations[0].program, "tool");
+    /// assert_eq!(invocations[0].line, 3);
+    /// assert_eq!(invocations[0].symbol.as_ref().map(|symbol| symbol.name.as_str()), Some("runs"));
+    /// # Ok::<(), Box<dyn std::error::Error>>(())
+    /// ```
+    pub fn runtime_invocations(&self) -> Result<Vec<RuntimeInvocation>, GraphError> {
+        self.ensure_synced()?;
+        query::runtime::invocations(self)
+    }
+
+    /// Return the program names the source file at `path` (worktree-relative)
+    /// ships under, read from its nearest manifests: the nearest `Cargo.toml`
+    /// with a `[package]` (package name, `[[bin]]` names, `src/bin` targets)
+    /// and the nearest `pyproject.toml` (`[project.scripts]` and
+    /// `[tool.poetry.scripts]` keys).
+    ///
+    /// Manifests are read from the worktree at query time; one that is missing
+    /// or does not parse contributes nothing. A path that leaves the worktree
+    /// is refused.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use std::fs;
+    ///
+    /// use orbit_graph::{Graph, ProgramNameSource, SyncPolicy};
+    ///
+    /// let dir = tempfile::tempdir()?;
+    /// fs::create_dir_all(dir.path().join("src"))?;
+    /// fs::write(
+    ///     dir.path().join("Cargo.toml"),
+    ///     "[package]\nname = \"tool\"\n\n[[bin]]\nname = \"tool-cli\"\npath = \"src/main.rs\"\n",
+    /// )?;
+    ///
+    /// let graph = Graph::open(dir.path(), SyncPolicy::Manual)?;
+    /// let names = graph.program_names("src/lib.rs")?;
+    /// assert!(names.iter().any(|name| name.name == "tool"
+    ///     && name.source == ProgramNameSource::CargoPackage));
+    /// assert!(names.iter().any(|name| name.name == "tool-cli"
+    ///     && name.source == ProgramNameSource::CargoBin));
+    /// # Ok::<(), Box<dyn std::error::Error>>(())
+    /// ```
+    pub fn program_names(&self, path: &str) -> Result<Vec<ProgramName>, GraphError> {
+        query::runtime::program_names(self, path)
     }
 }
 
@@ -1527,4 +1604,54 @@ pub struct DepEdge {
     /// Imported symbol, or `None` for a whole-module import.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub target_symbol: Option<String>,
+}
+
+/// One runtime-invocation site returned by [`Graph::runtime_invocations`].
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct RuntimeInvocation {
+    /// Source file containing the invoking call.
+    pub file: String,
+    /// One-based source line where the invoking call starts.
+    pub line: usize,
+    /// Program string as written: the first argv element, a shell command's
+    /// first token, a Cargo binary name, or the `.py` script an interpreter
+    /// launch runs. Opaque; never resolved to a symbol.
+    pub program: String,
+    /// Innermost indexed symbol whose span contains the call, or `None` when
+    /// the call lies outside every symbol span.
+    pub symbol: Option<RuntimeInvocationSymbol>,
+}
+
+/// Enclosing symbol of a [`RuntimeInvocation`].
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct RuntimeInvocationSymbol {
+    /// Short symbol name.
+    pub name: String,
+    /// Symbol kind.
+    pub kind: String,
+    /// Fully-qualified symbol name.
+    pub qualified: String,
+}
+
+/// One program name returned by [`Graph::program_names`].
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize)]
+pub struct ProgramName {
+    /// Program name as the manifest declares it.
+    pub name: String,
+    /// Which manifest entry declared it.
+    pub source: ProgramNameSource,
+    /// Worktree-relative path of the declaring manifest.
+    pub manifest: String,
+}
+
+/// Manifest entry kinds that name a program.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ProgramNameSource {
+    /// `Cargo.toml` `[package].name`.
+    CargoPackage,
+    /// `Cargo.toml` `[[bin]].name`, or a `src/bin` target.
+    CargoBin,
+    /// A `pyproject.toml` `[project.scripts]` or `[tool.poetry.scripts]` key.
+    PyprojectScript,
 }

@@ -930,6 +930,176 @@ impl Case {
     }
 }
 
+/// A Rust crate and a Python package whose tests drive their programs as
+/// subprocesses: every listed invocation shape reaches `candidate-tests` as a
+/// `runtime_invocation` row carrying the by-name disclosure, and an invocation
+/// of an unrelated program does not.
+#[test]
+fn subprocess_driven_tests_surface_as_runtime_invocation_candidates() {
+    let repository = tempfile::TempDir::new().expect("create repository");
+    let repo = git2::Repository::init(repository.path()).expect("init repository");
+    let cargo_toml = "[package]\nname = \"tool\"\nversion = \"0.1.0\"\n\n[[bin]]\nname = \"tool-cli\"\npath = \"src/main.rs\"\n";
+    let cli_tests = r#"use std::process::Command;
+
+#[test]
+fn runs_the_binary() {
+    Command::new(env!("CARGO_BIN_EXE_tool-cli")).status().unwrap();
+}
+
+fn tool() -> Command {
+    Command::cargo_bin("tool").unwrap()
+}
+
+#[test]
+fn drives_the_helper() {
+    tool().status().unwrap();
+}
+
+#[test]
+fn runs_git() {
+    Command::new("git").status().unwrap();
+}
+"#;
+    let pyproject = "[project]\nname = \"research\"\n\n[project.scripts]\nresearch-cli = \"research.cli:main\"\n";
+    let python_tests = r#"import subprocess
+import sys
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[1]
+
+
+def run(*args):
+    return run_at(ROOT, *args)
+
+
+def run_at(root, *args):
+    return subprocess.run([sys.executable, str(root / "scripts/records.py"), *args])
+
+
+def test_check():
+    run("check")
+
+
+def test_entry_point():
+    subprocess.run(["research-cli", "--help"])
+
+
+def test_git():
+    subprocess.run(["git", "status"])
+"#;
+    let base = commit_all(
+        &repo,
+        repository.path(),
+        &[
+            ("Cargo.toml", cargo_toml),
+            ("src/lib.rs", "pub fn run() -> i32 {\n    1\n}\n"),
+            ("src/main.rs", "fn main() {}\n"),
+            ("tests/cli.rs", cli_tests),
+            ("pyproject.toml", pyproject),
+            ("scripts/records.py", "def main():\n    return 1\n"),
+            ("research/cli.py", "def main():\n    return 1\n"),
+            ("tests/test_records.py", python_tests),
+        ],
+        "base",
+        0,
+    );
+    let head = commit_all(
+        &repo,
+        repository.path(),
+        &[
+            ("src/lib.rs", "pub fn run() -> i32 {\n    2\n}\n"),
+            ("scripts/records.py", "def main():\n    return 2\n"),
+            ("research/cli.py", "def main():\n    return 2\n"),
+        ],
+        "head",
+        1,
+    );
+    let comparison = Comparison::open(repository.path(), &base, &head).expect("open comparison");
+    let query = EvidenceQuery::new(Confidence::default());
+
+    let runtime_rows = |selector: &str| -> Vec<(String, String)> {
+        let mut collector = EvidenceCollector::new(&comparison, SnapshotSide::Head)
+            .expect("build evidence collector");
+        let candidates = collector
+            .candidate_tests(selector, &query, Vec::new())
+            .expect("candidate tests");
+        candidates
+            .candidates
+            .into_iter()
+            .filter(|candidate| candidate.source == CandidateSource::RuntimeInvocation)
+            .map(|candidate| {
+                assert_eq!(candidate.label, "runtime-invocation");
+                assert_eq!(candidate.category, EvidenceCategory::RuntimeInvocation);
+                assert_eq!(candidate.path_id, None);
+                let note = candidate.note.expect("runtime invocation note");
+                assert!(
+                    note.contains("by program name only"),
+                    "every runtime_invocation row discloses the by-name association: {note}"
+                );
+                (candidate.test.selector, note)
+            })
+            .collect()
+    };
+
+    // Rust: `Command::new(env!("CARGO_BIN_EXE_tool-cli"))` matches the
+    // `[[bin]]` target; `Command::cargo_bin("tool")` in a helper matches the
+    // package name and is listed as the test calling that helper.
+    let rust = runtime_rows("symbol:src/lib.rs#run:function");
+    let rust_tests: Vec<&str> = rust.iter().map(|(test, _)| test.as_str()).collect();
+    assert_eq!(
+        rust_tests,
+        vec![
+            "symbol:tests/cli.rs#drives_the_helper:test",
+            "symbol:tests/cli.rs#runs_the_binary:test",
+        ],
+        "{rust:?}"
+    );
+    assert!(rust[0].1.contains("calls helper `tool`"), "{rust:?}");
+    assert!(rust[1].1.contains("a Cargo binary target"), "{rust:?}");
+
+    // Python: an interpreter launch of `scripts/records.py` through two helper
+    // hops matches that script's symbols; a `[project.scripts]` entry point
+    // matches Python symbols under that pyproject; `git` matches neither.
+    // Cargo names never apply to a Python file, nor pyproject scripts to a
+    // Rust one, although both manifests sit at the repository root.
+    let script = runtime_rows("symbol:scripts/records.py#main:function");
+    let script_tests: Vec<&str> = script.iter().map(|(test, _)| test.as_str()).collect();
+    assert_eq!(
+        script_tests,
+        vec![
+            "symbol:tests/test_records.py#test_check:function",
+            "symbol:tests/test_records.py#test_entry_point:function",
+        ],
+        "{script:?}"
+    );
+    let via_helper = script
+        .iter()
+        .find(|(test, _)| test.ends_with("#test_check:function"))
+        .expect("test_check reaches the script through run -> run_at");
+    assert!(
+        via_helper
+            .1
+            .contains("calls helper `run_at` (2 call hop(s)"),
+        "{via_helper:?}"
+    );
+    assert!(
+        via_helper.1.contains("script path `scripts/records.py`"),
+        "{via_helper:?}"
+    );
+
+    let entry_point = runtime_rows("symbol:research/cli.py#main:function");
+    let entry_tests: Vec<&str> = entry_point.iter().map(|(test, _)| test.as_str()).collect();
+    assert_eq!(
+        entry_tests,
+        vec!["symbol:tests/test_records.py#test_entry_point:function"],
+        "{entry_point:?}"
+    );
+    assert!(
+        entry_point[0].1.contains("a `pyproject.toml` script"),
+        "{entry_point:?}"
+    );
+}
+
 fn changed_from_sources(base_source: &str, head_source: &str) -> ChangedSymbols {
     let repository = tempfile::TempDir::new().expect("create repository");
     let repo = git2::Repository::init(repository.path()).expect("init repository");

@@ -191,7 +191,8 @@ fn neighbors(
 // `target_qualified` and are matchable only by `target_name`, so keying solely on
 // `target_qualified` makes every fuzzy edge invisible to `impact`. We only widen to the
 // name match when the confidence floor admits fuzzy edges (otherwise they would be
-// filtered out anyway).
+// filtered out anyway). `runtime_invocation` refs are excluded from that name match:
+// their `target_name` is a program string, not a symbol name.
 fn inbound_ref_neighbors(
     conn: &Connection,
     symbol_id: i64,
@@ -224,7 +225,8 @@ fn inbound_ref_neighbors(
              FROM refs r
              WHERE r.target_symbol_hint = ?1
                 OR (r.target_symbol_hint IS NULL AND r.target_qualified = ?2)
-                OR (r.confidence = 'fuzzy_name' AND r.target_name = ?3)
+                OR (r.confidence = 'fuzzy_name' AND r.target_name = ?3
+                    AND r.kind <> 'runtime_invocation')
              ORDER BY r.from_file, r.from_span_start, r.id"
         );
         let mut stmt = conn

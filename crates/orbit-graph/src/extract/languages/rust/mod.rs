@@ -643,7 +643,87 @@ fn collect_call_ref(node: Node, source: &str, module: &ModuleScope, state: &mut 
     let Some(function) = node.child_by_field_name("function") else {
         return;
     };
+    collect_runtime_invocation(node, function, source, state);
     push_call_target_ref(function, source, module, state);
+}
+
+/// Records a `runtime_invocation` ref for a call that starts a program the
+/// syntax names: `Command::new("<prog>")`,
+/// `Command::new(env!("CARGO_BIN_EXE_<name>"))` (target `<name>`), and
+/// `Command::cargo_bin("<name>")` (`assert_cmd`), under any path prefix
+/// (`std::process::Command`, `assert_cmd::Command`, ...).
+///
+/// The target is the program string exactly as written and is never resolved
+/// to a symbol: a consumer may only associate it with a program by name. The
+/// ref is anchored at the whole call, so its span lies inside the enclosing
+/// function.
+fn collect_runtime_invocation(
+    call: Node,
+    function: Node,
+    source: &str,
+    state: &mut ExtractionState,
+) {
+    if function.kind() != "scoped_identifier" {
+        return;
+    }
+    let path = normalize_qualified_name(&node_text(function, source));
+    let mut segments = path.rsplit("::");
+    let (Some(constructor), Some("Command")) = (segments.next(), segments.next()) else {
+        return;
+    };
+    if !matches!(constructor, "new" | "cargo_bin") {
+        return;
+    }
+    let Some(arguments) = call.child_by_field_name("arguments") else {
+        return;
+    };
+    let mut cursor = arguments.walk();
+    let Some(first) = arguments
+        .named_children(&mut cursor)
+        .find(|argument| !matches!(argument.kind(), "line_comment" | "block_comment"))
+    else {
+        return;
+    };
+    let program = match first.kind() {
+        "string_literal" | "raw_string_literal" => rust_string_literal_value(first, source),
+        "macro_invocation" if constructor == "new" => cargo_bin_exe_name(first, source),
+        _ => None,
+    };
+    let Some(program) = program.filter(|program| !program.is_empty()) else {
+        return;
+    };
+    state.refs.push(RawRef {
+        from_file: state.file_path.clone(),
+        from_span_start: call.start_byte(),
+        from_span_end: call.end_byte(),
+        target_name: program,
+        target_qualified: None,
+        kind: "runtime_invocation".to_string(),
+        confidence: "fuzzy_name".to_string(),
+        unresolved_receiver: None,
+    });
+}
+
+/// Contents of a plain or raw string literal without escape processing.
+fn rust_string_literal_value(node: Node, source: &str) -> Option<String> {
+    let text = node_text(node, source);
+    let body = text.trim_start_matches('r').trim_matches('#');
+    body.strip_prefix('"')?
+        .strip_suffix('"')
+        .map(ToOwned::to_owned)
+}
+
+/// `<name>` from `env!("CARGO_BIN_EXE_<name>")`, the path Cargo gives an
+/// integration test for the package's `<name>` binary.
+fn cargo_bin_exe_name(node: Node, source: &str) -> Option<String> {
+    let macro_name = node.child_by_field_name("macro")?;
+    if node_text(macro_name, source) != "env" {
+        return None;
+    }
+    let text = node_text(node, source);
+    let (_, rest) = text.split_once("\"CARGO_BIN_EXE_")?;
+    let (name, _) = rest.split_once('"')?;
+    Some(name.to_string())
 }
 
 /// Pushes a ref for the call target at `function`, then recurses into any

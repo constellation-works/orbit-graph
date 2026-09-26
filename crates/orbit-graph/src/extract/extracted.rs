@@ -54,6 +54,11 @@ pub struct RawRef {
     /// Best-effort qualified target name when known at extraction time.
     pub target_qualified: Option<String>,
     /// Reference kind, such as `call`, `type`, `use`, or `trait_bound`.
+    ///
+    /// `runtime_invocation` records a call that starts a program the syntax
+    /// names (`subprocess.run(["prog", ...])`, `Command::new("prog")`). Its
+    /// `target_name` is that program string, not a symbol name, and it has no
+    /// `target_qualified`: pass 2 never resolves it.
     pub kind: String,
     /// Confidence label from the graph confidence ladder.
     pub confidence: String,

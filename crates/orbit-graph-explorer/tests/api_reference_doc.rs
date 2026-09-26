@@ -11,6 +11,11 @@
 //! longer produces does not (the check is deliberately one-directional, per
 //! the task's "keep the check simple: names present in the doc text").
 //!
+//! The same one-directional check covers the candidate-test vocabulary: every
+//! `source` and `category` string `/api/candidate-tests` actually returns for a
+//! fixture that exercises the `runtime_invocation` source, and every
+//! `CandidateSource`/`EvidenceCategory` label, must appear in the doc.
+//!
 //! A handful of codes are not triggered live because doing so needs a broken
 //! or racy service state (a corrupted index, a build that fails, a request
 //! that lands mid-build, a spoofed `Host` header the shared HTTP harness does
@@ -19,8 +24,11 @@
 
 #![allow(clippy::expect_used)]
 
+use std::collections::BTreeSet;
 use std::fs;
 use std::path::PathBuf;
+
+use orbit_graph_explorer::evidence::{CandidateSource, EvidenceCategory};
 
 mod common;
 
@@ -249,6 +257,70 @@ fn every_documented_route_and_error_code_appears_in_the_design_doc() {
         assert!(
             doc.contains(code),
             "the design doc's API reference must name error code `{code}`"
+        );
+    }
+}
+
+#[test]
+fn every_candidate_test_source_and_category_appears_in_the_design_doc() {
+    let fixture = common::build_runtime_invocation_fixture();
+    let (path, base, head) = (
+        fixture.path().to_path_buf(),
+        fixture.base.clone(),
+        fixture.head.clone(),
+    );
+    let service = Service::launch_at(path, base, head, Box::new(fixture));
+    service.wait_until_ready();
+
+    let selector = percent_encode("symbol:src/lib.rs#run:function");
+    let response = service.authorized(
+        "GET",
+        format!("/api/candidate-tests?selector={selector}&side=head").as_str(),
+        &[],
+    );
+    assert_eq!(response.status, 200, "{response:?}");
+    let json = response.json();
+    let mut returned = BTreeSet::new();
+    for candidate in json["candidates"].as_array().expect("candidates array") {
+        for field in ["source", "category"] {
+            returned.insert(
+                candidate[field]
+                    .as_str()
+                    .unwrap_or_else(|| panic!("candidate `{field}` is a string: {candidate}"))
+                    .to_string(),
+            );
+        }
+    }
+    assert!(
+        returned.contains("runtime_invocation"),
+        "the fixture must exercise the runtime_invocation source: {json}"
+    );
+
+    let labels = [
+        CandidateSource::CallPath,
+        CandidateSource::ImportRelationship,
+        CandidateSource::NamingHeuristic,
+        CandidateSource::RuntimeInvocation,
+    ]
+    .into_iter()
+    .map(|source| source.label().to_string())
+    .chain(
+        [
+            EvidenceCategory::ResolvedCall,
+            EvidenceCategory::ObservedReference,
+            EvidenceCategory::ImportRelationship,
+            EvidenceCategory::HeuristicMatch,
+            EvidenceCategory::RuntimeInvocation,
+        ]
+        .into_iter()
+        .map(|category| category.label().to_string()),
+    );
+
+    let doc = read_design_doc();
+    for value in returned.into_iter().chain(labels) {
+        assert!(
+            doc.contains(format!("`{value}`").as_str()),
+            "the design doc must name candidate-test source/category `{value}`"
         );
     }
 }
