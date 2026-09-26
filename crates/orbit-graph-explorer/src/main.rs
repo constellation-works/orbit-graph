@@ -1,5 +1,3 @@
-#![allow(missing_docs)]
-
 //! Entry point for the change explorer.
 //!
 //! Four commands:

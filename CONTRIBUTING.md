@@ -10,6 +10,11 @@ Before opening a pull request, run:
 
 ```sh
 sh docs/standards/check.sh
+scripts/check-dependency-direction.sh
+scripts/check-terminal-guard.sh
+scripts/check-orphan-modules.sh
+scripts/test-repo-gates.sh
+cargo deny --locked check
 cargo fmt --all --check
 cargo clippy --workspace --all-targets --locked -- -D warnings
 cargo test --workspace --locked
@@ -17,6 +22,25 @@ RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps --locked
 cargo build --workspace --locked
 git diff --check
 ```
+
+`make ci` runs the same sequence. `cargo deny` needs cargo-deny 0.19.9
+(`cargo install cargo-deny --version 0.19.9 --locked`); CI installs that
+release from a SHA-256-pinned download. The layer model and what each
+`scripts/check-*.sh` gate enforces are in [ARCHITECTURE.md](ARCHITECTURE.md):
+a new crate or internal edge changes that file and
+`scripts/check-dependency-direction.sh` together, and a new stream writer
+outside an output layer needs a per-site allow-list entry in
+`scripts/check-terminal-guard.sh` (file, line pattern, hit count) with its
+reason and the task that removes it; the change that removes the write
+removes the entry, or the guard fails.
+
+Some committed files are derived from the binaries and checked by tests: the
+explorer README's "Every flag" block and the `direct-call` sample export under
+`docs/evaluation/change-explorer/samples/`. After an intended change to the
+explorer's help text or report output (including an `EXTRACTOR_VERSION` or
+crate version bump), regenerate them in the same change with
+`UPDATE_GOLDENS=1 cargo test -p orbit-graph-explorer --test derived_artifacts --locked`
+and review the diff.
 
 Changes must follow the constellation standards vendored in
 [`docs/standards/`](docs/standards/README.md); cite a rule as `STD-nn §Rn`.

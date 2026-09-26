@@ -1,5 +1,5 @@
 .DEFAULT_GOAL := help
-.PHONY: help build release run dev check test fmt fmt-check clippy doc tree ci ci-fast ci-lint standards-check install uninstall clean watch plugin-bundle plugin-check
+.PHONY: help build release run dev check test fmt fmt-check clippy doc tree ci ci-fast ci-lint standards-check structure deny install uninstall clean watch plugin-bundle plugin-check
 
 CARGO ?= cargo
 BINARY := orbit-graph
@@ -41,6 +41,8 @@ help:
 	@echo "  make ci-fast      Check formatting and diff whitespace"
 	@echo "  make ci-lint      Run clippy gate"
 	@echo "  make standards-check Verify vendored docs/standards"
+	@echo "  make structure    Dependency direction, stream guard, orphan tests (no build)"
+	@echo "  make deny         Supply-chain check with cargo-deny (deny.toml)"
 	@echo "  make install      Install binary (INSTALL_PROFILE=debug optional)"
 	@echo "  make uninstall    Remove binary from INSTALL_BIN_DIR"
 	@echo "  make clean        Clean build artifacts"
@@ -84,6 +86,8 @@ tree:
 # Keep the full gate sequential, including when invoked with make -j.
 ci:
 	$(MAKE) standards-check
+	$(MAKE) structure
+	$(MAKE) deny
 	$(MAKE) fmt-check
 	$(MAKE) clippy
 	$(MAKE) test
@@ -91,13 +95,35 @@ ci:
 	$(MAKE) build
 	git diff --check
 
-ci-fast: fmt-check standards-check
+ci-fast: fmt-check standards-check structure
 	git diff --check
 
 ci-lint: clippy
 
 standards-check:
 	sh docs/standards/check.sh
+
+# Source-only repository gates (see ARCHITECTURE.md): dependency direction
+# (STD-02 R1-R7, R9), std-stream ownership (STD-02 R15) and unit-test module
+# reachability (STD-02 R19), plus a self-test that seeds a violation for each
+# and requires it to fail (STD-04 R10).
+structure:
+	scripts/check-dependency-direction.sh
+	scripts/check-terminal-guard.sh
+	scripts/check-orphan-modules.sh
+	scripts/test-repo-gates.sh
+
+# Supply chain (STD-02 R23, STD-05 R23/R24): advisories, yanked crates,
+# licenses and sources, against deny.toml. CI installs the pinned release the
+# workflow names; a missing cargo-deny fails here rather than skipping.
+CARGO_DENY_VERSION := 0.19.9
+deny:
+	@if ! $(CARGO) deny --version >/dev/null 2>&1; then \
+		echo "error: cargo-deny is not installed; make deny needs it." >&2; \
+		echo "       install: cargo install cargo-deny --version $(CARGO_DENY_VERSION) --locked" >&2; \
+		exit 1; \
+	fi
+	$(CARGO) deny --locked check
 
 install:
 	$(CARGO) build -p $(BINARY_PACKAGE) --bin $(BINARY) --locked $(INSTALL_CARGO_PROFILE) --target-dir "$(CARGO_TARGET_DIR)"

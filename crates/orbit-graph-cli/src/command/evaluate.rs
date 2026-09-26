@@ -143,8 +143,13 @@ pub(crate) fn output(document: Value) -> CommandOutput {
     CommandOutput::with_view(document, view).with_ndjson_records(records)
 }
 
+/// A metric cell: three decimals, or `n/a` when the report says there was no
+/// data (`null`), which is not the same as a measured 0 (STD-02 §R29).
 fn decimal(value: &Value) -> String {
-    value
-        .as_f64()
-        .map_or_else(|| "-".to_owned(), |value| format!("{value:.3}"))
+    match value {
+        Value::Null => "n/a".to_owned(),
+        value => value
+            .as_f64()
+            .map_or_else(|| "-".to_owned(), |value| format!("{value:.3}")),
+    }
 }

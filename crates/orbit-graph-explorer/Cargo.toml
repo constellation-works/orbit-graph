@@ -16,9 +16,9 @@ path = "src/main.rs"
 workspace = true
 
 [dependencies]
-blake3 = "1"
+blake3.workspace = true
 git2.workspace = true
-orbit-graph = { path = "../orbit-graph", version = "0.10.0" }
+orbit-graph.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 tempfile.workspace = true

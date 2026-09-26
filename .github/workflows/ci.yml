@@ -24,6 +24,12 @@ jobs:
           components: clippy, rustfmt
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
       - run: sh docs/standards/check.sh
+      # Source-only repository gates (ARCHITECTURE.md) and their seeded-
+      # violation self-test.
+      - run: scripts/check-dependency-direction.sh
+      - run: scripts/check-terminal-guard.sh
+      - run: scripts/check-orphan-modules.sh
+      - run: scripts/test-repo-gates.sh
       - run: cargo fmt --all --check
       - run: cargo clippy --workspace --all-targets --locked -- -D warnings
       - run: cargo test --workspace --locked
@@ -35,6 +41,32 @@ jobs:
       - run: cargo doc --workspace --no-deps --locked
         env:
           RUSTDOCFLAGS: -D warnings
+
+  supply-chain:
+    name: Supply chain (cargo-deny 0.19.9)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: dtolnay/rust-toolchain@02cb101ec7c40f2c49e1d9714d64511d8e1b74de # 1.89.0
+        with:
+          toolchain: 1.89.0
+      # Pinned release, verified by its SHA-256 before it runs (STD-05 §R23).
+      # Keep the version in step with CARGO_DENY_VERSION in the Makefile.
+      - name: Download pinned cargo-deny release
+        shell: bash
+        run: |
+          curl --fail --location --retry 3 --output "$RUNNER_TEMP/cargo-deny.tar.gz" \
+            https://github.com/EmbarkStudios/cargo-deny/releases/download/0.19.9/cargo-deny-0.19.9-x86_64-unknown-linux-musl.tar.gz
+          printf '%s  %s\n' \
+            'f1f8eedc2a3ac297c540873f93785d4104b102c0079506b2a6b3221b7ec956af' \
+            "$RUNNER_TEMP/cargo-deny.tar.gz" | sha256sum --check -
+          tar -xzf "$RUNNER_TEMP/cargo-deny.tar.gz" -C "$RUNNER_TEMP" --strip-components=1 \
+            cargo-deny-0.19.9-x86_64-unknown-linux-musl/cargo-deny
+          install -m 755 "$RUNNER_TEMP/cargo-deny" "$HOME/.cargo/bin/cargo-deny"
+          cargo deny --version
+      # Advisories, yanked crates, licenses and sources against deny.toml
+      # (STD-02 §R23, STD-05 §R24).
+      - run: cargo deny --locked check
 
   plugin-conformance:
     name: Plugin conformance (Orbit v0.24.0)
@@ -85,4 +117,7 @@ jobs:
         with:
           toolchain: 1.89.0
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+      # The gate scripts run under macOS's BSD userland and bash 3.2 too.
+      - if: runner.os == 'macOS'
+        run: scripts/test-repo-gates.sh
       - run: cargo test --workspace --locked
