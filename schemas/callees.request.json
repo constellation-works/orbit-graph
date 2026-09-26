@@ -1,0 +1,36 @@
+{
+  "type": "object",
+  "required": [
+    "selector"
+  ],
+  "properties": {
+    "schema_version": {
+      "description": "Request contract version; must be 1 when present.",
+      "type": "integer",
+      "const": 1
+    },
+    "repository": {
+      "description": "Absolute path of the Git repository to query. Defaults to the caller's workspace root; never inferred from the tool cwd.",
+      "type": "string",
+      "minLength": 1
+    },
+    "selector": {
+      "description": "Selector of the node to query, as search and other results print it: symbol:<path>#<qualified>:<kind>, file:<path>, or dir:<path>.",
+      "type": "string",
+      "minLength": 1
+    },
+    "include_unresolved": {
+      "description": "Also list unresolved calls whose name has no indexed function, method, class, or struct definition (typically standard-library or prelude calls such as map_err or Ok). By default they are omitted and counted in result.hidden_unresolved.",
+      "type": "boolean",
+      "default": false
+    },
+    "limit": {
+      "description": "Cap on each result array, nested ones included (callees and the lists inside their entries); 1-500, default 50. Cut arrays are reported in truncation.",
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 500,
+      "default": 50
+    }
+  },
+  "additionalProperties": false
+}

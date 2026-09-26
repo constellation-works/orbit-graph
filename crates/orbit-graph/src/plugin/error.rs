@@ -20,6 +20,12 @@ pub enum ToolErrorCode {
     RepositoryUnavailable,
     /// Any other graph, index, Git, or Orbit-callback failure.
     GraphError,
+    /// A query tool found no published code-graph index for the repository;
+    /// the `graph_sync` maintenance operation builds one.
+    IndexMissing,
+    /// The published code-graph index was built by another extractor or
+    /// schema version; a full `graph_sync` replaces it.
+    IndexIncompatible,
 }
 
 impl ToolErrorCode {
@@ -29,6 +35,8 @@ impl ToolErrorCode {
             Self::InvalidRequest => "invalid_request",
             Self::RepositoryUnavailable => "repository_unavailable",
             Self::GraphError => "graph_error",
+            Self::IndexMissing => "index_missing",
+            Self::IndexIncompatible => "index_incompatible",
         }
     }
 }
@@ -69,6 +77,22 @@ impl ToolError {
         Self {
             code: ToolErrorCode::GraphError,
             source,
+        }
+    }
+
+    /// A query that needs a code-graph index that has not been built.
+    pub fn index_missing(reason: impl Into<String>) -> Self {
+        Self {
+            code: ToolErrorCode::IndexMissing,
+            source: GraphError::invalid_data("read code-graph index", reason),
+        }
+    }
+
+    /// A query against an index from another extractor or schema version.
+    pub fn index_incompatible(reason: impl Into<String>) -> Self {
+        Self {
+            code: ToolErrorCode::IndexIncompatible,
+            source: GraphError::invalid_data("read code-graph index", reason),
         }
     }
 

@@ -1,0 +1,42 @@
+{
+  "type": "object",
+  "required": [
+    "command"
+  ],
+  "properties": {
+    "schema_version": {
+      "description": "Request contract version; must be 1 when present.",
+      "type": "integer",
+      "const": 1
+    },
+    "repository": {
+      "description": "Absolute path of the Git repository to query. Defaults to the caller's workspace root; never inferred from the tool cwd.",
+      "type": "string",
+      "minLength": 1
+    },
+    "command": {
+      "description": "Command name to trace, with or without a command: prefix; must not be blank.",
+      "type": "string",
+      "minLength": 1
+    },
+    "depth": {
+      "description": "Traversal depth in edges; 1-10, default 5. The library also stops at 200 nodes and sets truncated.",
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 10,
+      "default": 5
+    },
+    "confidence": {
+      "description": "Minimum resolution confidence: exact, import_resolved, same_module, or fuzzy_name (name-only matches, which include cross-crate callers through re-exports). Default same_module.",
+      "type": "string",
+      "enum": [
+        "exact",
+        "import_resolved",
+        "same_module",
+        "fuzzy_name"
+      ],
+      "default": "same_module"
+    }
+  },
+  "additionalProperties": false
+}

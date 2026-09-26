@@ -55,6 +55,70 @@ spec:
       mcp_scope: workspace
       input_schema: {$ref: schemas/maintain.request.json}
       output_schema: {$ref: schemas/maintain.response.json}
+    - name: search
+      description: "Full-text search over indexed symbols, string literals, and config keys. Reads the index graph_sync publishes."
+      execution_kind: read_only
+      mcp_scope: workspace
+      input_schema: {$ref: schemas/search.request.json}
+      output_schema: {$ref: schemas/search.response.json}
+      cli:
+        positional: [query]
+    - name: show
+      description: "Show one node's metadata and a bounded slice of its source. Reads the index graph_sync publishes."
+      execution_kind: read_only
+      mcp_scope: workspace
+      input_schema: {$ref: schemas/show.request.json}
+      output_schema: {$ref: schemas/show.response.json}
+      cli:
+        positional: [selector]
+    - name: refs
+      description: "Inbound references and structural relations of a symbol. Reads the index graph_sync publishes."
+      execution_kind: read_only
+      mcp_scope: workspace
+      input_schema: {$ref: schemas/refs.request.json}
+      output_schema: {$ref: schemas/refs.response.json}
+      cli:
+        positional: [selector]
+    - name: callees
+      description: "Outbound call edges from a symbol. Reads the index graph_sync publishes."
+      execution_kind: read_only
+      mcp_scope: workspace
+      input_schema: {$ref: schemas/callees.request.json}
+      output_schema: {$ref: schemas/callees.response.json}
+      cli:
+        positional: [selector]
+    - name: impact
+      description: "Bounded blast radius around a symbol: what it reaches and what reaches it. Reads the index graph_sync publishes."
+      execution_kind: read_only
+      mcp_scope: workspace
+      input_schema: {$ref: schemas/impact.request.json}
+      output_schema: {$ref: schemas/impact.response.json}
+      cli:
+        positional: [selector]
+    - name: trace
+      description: "Call tree rooted at a command handler. Reads the index graph_sync publishes."
+      execution_kind: read_only
+      mcp_scope: workspace
+      input_schema: {$ref: schemas/trace.request.json}
+      output_schema: {$ref: schemas/trace.response.json}
+      cli:
+        positional: [command]
+    - name: deps
+      description: "Outbound source-level import edges of a file or directory (not Cargo crate edges). Reads the index graph_sync publishes."
+      execution_kind: read_only
+      mcp_scope: workspace
+      input_schema: {$ref: schemas/deps.request.json}
+      output_schema: {$ref: schemas/deps.response.json}
+      cli:
+        positional: [selector]
+    - name: overview
+      description: "Summarize indexed files, symbols, and languages for the repository or a scope. Reads the index graph_sync publishes."
+      execution_kind: read_only
+      mcp_scope: workspace
+      input_schema: {$ref: schemas/overview.request.json}
+      output_schema: {$ref: schemas/overview.response.json}
+      cli:
+        positional: [selector]
   definitions:
     activities: [definitions/activities/*.yaml]
     jobs: [definitions/jobs/*.yaml]
