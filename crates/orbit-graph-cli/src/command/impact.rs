@@ -34,6 +34,7 @@ pub(crate) fn output(document: Value) -> CommandOutput {
         Column::number("distance"),
         Column::fixed("edge"),
         Column::text("symbol"),
+        Column::path("location"),
     ]);
     for entry in &touched {
         push_impact_row(&mut table, "primary", entry);
@@ -80,7 +81,18 @@ fn push_impact_row(table: &mut TableView, set: &str, entry: &Value) {
         super::display_value(&entry["distance"]),
         super::display_value(&entry["edge_kind"]),
         super::display_value(&entry["qualified_name"]),
+        location(entry),
     ]);
+}
+
+/// `file:line` for an impacted node, `file` when only the file is known, or
+/// `-` when the node has no indexed definition.
+fn location(entry: &Value) -> String {
+    match (entry["file"].as_str(), entry["line"].as_u64()) {
+        (Some(file), Some(line)) => format!("{file}:{line}"),
+        (Some(file), None) => file.to_owned(),
+        _ => "-".to_owned(),
+    }
 }
 
 impl ImpactCommand {

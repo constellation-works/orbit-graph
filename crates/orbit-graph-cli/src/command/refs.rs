@@ -47,9 +47,16 @@ pub(crate) fn output(document: Value) -> CommandOutput {
         Column::fixed("kind"),
         Column::fixed("confidence"),
         Column::text("target"),
+        Column::text("snippet"),
     ]);
     for entry in &refs {
-        push_ref_row(&mut table, "reference", entry, "-", target.as_str());
+        push_ref_row(
+            &mut table,
+            "reference",
+            entry,
+            super::display_value(&entry["from_selector"]).as_str(),
+            target.as_str(),
+        );
     }
     for entry in &relations {
         push_ref_row(
@@ -61,7 +68,13 @@ pub(crate) fn output(document: Value) -> CommandOutput {
         );
     }
     for entry in &fallback_refs {
-        push_ref_row(&mut table, "fallback", entry, "-", target.as_str());
+        push_ref_row(
+            &mut table,
+            "fallback",
+            entry,
+            super::display_value(&entry["from_selector"]).as_str(),
+            target.as_str(),
+        );
     }
 
     let mut context = document.clone();
@@ -110,6 +123,7 @@ fn push_ref_row(table: &mut TableView, record: &str, entry: &Value, from: &str, 
         super::display_value(&entry["kind"]),
         super::display_value(&entry["confidence"]),
         target.to_owned(),
+        entry["snippet"].as_str().unwrap_or("-").to_owned(),
     ]);
 }
 

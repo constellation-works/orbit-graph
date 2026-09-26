@@ -24,13 +24,14 @@ use super::corpus;
 /// How long to wait for indexing to finish before failing a test.
 const READY_TIMEOUT: Duration = Duration::from_secs(60);
 
-/// How long [`Service::wait_until_ready_while_progressing`] tolerates a build
-/// that reports no progress at all before failing: a hung build, not a slow
-/// one.
+/// How long a [`ProgressWatchdog`] (and so
+/// [`Service::wait_until_ready_while_progressing`]) tolerates a build that
+/// reports no progress at all before failing: a hung build, not a slow one.
 const STALL_TIMEOUT: Duration = Duration::from_secs(120);
 
-/// Absolute ceiling for [`Service::wait_until_ready_while_progressing`], so a
-/// build that keeps inching forward can never hang a test run indefinitely.
+/// Absolute ceiling for any wait a [`ProgressWatchdog`] guards (including
+/// [`Service::wait_until_ready_while_progressing`]), so a build that keeps
+/// inching forward can never hang a test run indefinitely.
 const PROGRESS_CEILING: Duration = Duration::from_secs(20 * 60);
 
 /// A launched `orbit-graph-explorer serve` process.

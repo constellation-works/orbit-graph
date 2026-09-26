@@ -6,6 +6,7 @@ use crate::extract::Selector;
 use rusqlite::{Connection, OptionalExtension, params};
 
 use crate::query::callees;
+use crate::query::refs::LineCache;
 use crate::{
     DEFAULT_IMPACT_DEPTH, Graph, GraphError, IMPACT_NODE_CAP, ImpactDirection, ImpactEntry,
     ImpactFallback, ImpactOrigin, ImpactResult, RefConfidence, RefKind, SymbolSpan,
@@ -18,6 +19,7 @@ pub(crate) fn run(
     min_confidence: RefConfidence,
     direction: ImpactDirection,
 ) -> Result<ImpactResult, GraphError> {
+    let mut line_cache = LineCache::new(graph.worktree_root.as_path());
     graph.with_read_connection(|conn| {
         let Some(origin) = resolve_selector(conn, sel)? else {
             return Ok(empty_result(direction));
@@ -28,9 +30,17 @@ pub(crate) fn run(
         } else {
             depth
         });
-        let traversal = traverse(conn, origin.clone(), max_depth, min_confidence, direction)?;
+        let traversal = traverse(
+            conn,
+            &mut line_cache,
+            origin.clone(),
+            max_depth,
+            min_confidence,
+            direction,
+        )?;
         let fallback = maybe_fuzzy_fallback(
             conn,
+            &mut line_cache,
             &origin,
             max_depth,
             min_confidence,
@@ -43,6 +53,7 @@ pub(crate) fn run(
             visited_nodes: traversal.touched.len(),
             touched: traversal.touched,
             truncated: traversal.truncated,
+            fallback_used: fallback.is_some(),
             fallback,
         })
     })
@@ -54,12 +65,14 @@ fn empty_result(direction: ImpactDirection) -> ImpactResult {
         touched: Vec::new(),
         truncated: false,
         visited_nodes: 0,
+        fallback_used: false,
         fallback: None,
     }
 }
 
 fn traverse(
     conn: &Connection,
+    line_cache: &mut LineCache,
     origin: ImpactSymbol,
     max_depth: usize,
     min_confidence: RefConfidence,
@@ -91,11 +104,15 @@ fn traverse(
             {
                 queue.push_back((next_symbol, next_distance));
             }
+            let location = locate(conn, line_cache, &neighbor)?;
             touched.push(ImpactEntry {
                 qualified_name: neighbor.qualified_name,
                 origin: neighbor.origin,
                 distance: next_distance,
                 edge_kind: neighbor.edge_kind,
+                selector: location.selector,
+                file: location.file,
+                line: location.line,
             });
         }
     }
@@ -103,8 +120,75 @@ fn traverse(
     Ok(ImpactTraversal { touched, truncated })
 }
 
+/// Where an impacted node lives, so a reader can open or `show` it.
+#[derive(Default)]
+struct NodeLocation {
+    selector: Option<String>,
+    file: Option<String>,
+    line: Option<usize>,
+}
+
+/// Locate `neighbor` for its [`ImpactEntry`].
+///
+/// A file-attributed node is the call site's file and line. A symbol node is
+/// the symbol row with that qualified name, preferring the file the edge was
+/// observed in (an inbound call's enclosing symbol is in the call site's
+/// file), since short qualified names can repeat across files. Line numbers
+/// are best-effort: a source file missing since the last sync leaves `line`
+/// empty rather than failing the query.
+fn locate(
+    conn: &Connection,
+    line_cache: &mut LineCache,
+    neighbor: &ImpactNeighbor,
+) -> Result<NodeLocation, GraphError> {
+    if neighbor.origin == ImpactOrigin::File {
+        let file = neighbor.qualified_name.clone();
+        let line = neighbor
+            .site_offset
+            .and_then(|offset| line_cache.line_for(file.as_str(), offset).ok());
+        return Ok(NodeLocation {
+            selector: Some(format!("file:{file}")),
+            file: Some(file),
+            line,
+        });
+    }
+    let row = conn
+        .query_row(
+            "SELECT file_path, qualified, kind, span_start
+             FROM symbols
+             WHERE qualified = ?1
+             ORDER BY CASE WHEN file_path = ?2 THEN 0 ELSE 1 END, id
+             LIMIT 1",
+            params![neighbor.qualified_name, neighbor.site_file],
+            |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, String>(2)?,
+                    row.get::<_, i64>(3)?,
+                ))
+            },
+        )
+        .optional()
+        .map_err(|source| GraphError::sqlite("locate impacted symbol", source))?;
+    let Some((file, qualified, kind, span_start)) = row else {
+        return Ok(NodeLocation::default());
+    };
+    let line = line_cache.line_for(file.as_str(), span_start).ok();
+    Ok(NodeLocation {
+        selector: Some(super::symbol_selector(
+            file.as_str(),
+            qualified.as_str(),
+            kind.as_str(),
+        )),
+        file: Some(file),
+        line,
+    })
+}
+
 fn maybe_fuzzy_fallback(
     conn: &Connection,
+    line_cache: &mut LineCache,
     origin: &ImpactSymbol,
     max_depth: usize,
     min_confidence: RefConfidence,
@@ -117,6 +201,7 @@ fn maybe_fuzzy_fallback(
 
     let fallback = traverse(
         conn,
+        line_cache,
         origin.clone(),
         max_depth,
         RefConfidence::FuzzyName,
@@ -221,7 +306,7 @@ fn inbound_ref_neighbors(
     let include_fuzzy_name = min_confidence == RefConfidence::FuzzyName;
     let rows = if include_fuzzy_name {
         let sql = format!(
-            "SELECT {SOURCE_QUALIFIED}, r.kind, r.confidence
+            "SELECT {SOURCE_QUALIFIED}, r.kind, r.confidence, r.from_file, r.from_span_start
              FROM refs r
              WHERE r.target_symbol_hint = ?1
                 OR (r.target_symbol_hint IS NULL AND r.target_qualified = ?2)
@@ -237,7 +322,7 @@ fn inbound_ref_neighbors(
             .collect::<Result<Vec<_>, _>>()
     } else {
         let sql = format!(
-            "SELECT {SOURCE_QUALIFIED}, r.kind, r.confidence
+            "SELECT {SOURCE_QUALIFIED}, r.kind, r.confidence, r.from_file, r.from_span_start
              FROM refs r
              WHERE r.target_symbol_hint = ?1
                 OR (r.target_symbol_hint IS NULL AND r.target_qualified = ?2)
@@ -264,6 +349,8 @@ fn raw_neighbor_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<RawNeighborRow>
             "file" => ImpactOrigin::File,
             _ => ImpactOrigin::Symbol,
         },
+        site_file: Some(row.get(4)?),
+        site_offset: Some(row.get(5)?),
     })
 }
 
@@ -289,6 +376,8 @@ fn outbound_call_neighbors(
             qualified_name,
             edge_kind: RefKind::Call,
             origin: ImpactOrigin::Symbol,
+            site_file: None,
+            site_offset: None,
         });
     }
     Ok(neighbors)
@@ -341,6 +430,8 @@ fn relation_rows(
                 kind: row.get(1)?,
                 confidence: row.get(2)?,
                 origin: ImpactOrigin::Symbol,
+                site_file: None,
+                site_offset: None,
             })
         })
         .map_err(|source| GraphError::sqlite(operation, source))?
@@ -366,6 +457,8 @@ fn rows_to_neighbors(
             qualified_name,
             edge_kind: RefKind::from_db(row.kind.as_str())?,
             origin: row.origin,
+            site_file: row.site_file,
+            site_offset: row.site_offset,
         });
     }
     Ok(neighbors)
@@ -505,6 +598,10 @@ struct ImpactNeighbor {
     qualified_name: String,
     edge_kind: RefKind,
     origin: ImpactOrigin,
+    /// File and byte offset of the reference that produced this edge, for an
+    /// inbound reference; `None` for callee and relation edges.
+    site_file: Option<String>,
+    site_offset: Option<i64>,
 }
 
 struct ImpactTraversal {
@@ -517,6 +614,8 @@ struct RawNeighborRow {
     kind: String,
     confidence: String,
     origin: ImpactOrigin,
+    site_file: Option<String>,
+    site_offset: Option<i64>,
 }
 
 #[cfg(test)]

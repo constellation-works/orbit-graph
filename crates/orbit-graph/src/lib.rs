@@ -192,6 +192,8 @@ impl Graph {
     /// Open a graph that indexes `worktree_root` at a caller-supplied database path.
     ///
     /// Missing parent directories are created. The path must name a file.
+    /// orbit-graph writes nothing else into a caller-supplied directory: it
+    /// is not marked with a `.gitignore`.
     ///
     /// # Examples
     ///
@@ -209,7 +211,21 @@ impl Graph {
         db_path: &Path,
         policy: SyncPolicy,
     ) -> Result<Self, GraphError> {
-        let opened = store::open_with_db_path(worktree_root, db_path)?;
+        let opened =
+            store::open_with_db_path(worktree_root, db_path, store::IndexDirOwner::Caller)?;
+        Self::from_opened(worktree_root, policy, opened)
+    }
+
+    /// Open a graph whose database lives in orbit-graph's own per-repository
+    /// directory under `$ORBIT_PLUGIN_STATE`, which is marked with a
+    /// `.gitignore` like the default scratch directory.
+    pub(crate) fn open_in_plugin_state(
+        worktree_root: &Path,
+        db_path: &Path,
+        policy: SyncPolicy,
+    ) -> Result<Self, GraphError> {
+        let opened =
+            store::open_with_db_path(worktree_root, db_path, store::IndexDirOwner::PluginState)?;
         Self::from_opened(worktree_root, policy, opened)
     }
 
@@ -386,17 +402,33 @@ impl Graph {
         query::refs::run(self, sel, opts)
     }
 
-    /// Return outbound call edges from `sel`.
+    /// Return every outbound call edge from `sel`, unresolved ones included
+    /// (nothing is hidden, so there is no count to report).
     pub fn callees(&self, sel: &Selector) -> Result<Vec<CalleeEdge>, GraphError> {
         self.callees_with_options(sel, &CalleeOpts::all())
     }
 
     /// Return outbound call edges from `sel` filtered by `opts`.
+    ///
+    /// This drops [`CalleeReport::hidden_unresolved`]. A caller that sets
+    /// [`CalleeOpts::hide_unresolved`] and shows the result to anyone should
+    /// call [`Graph::callees_report`] instead and report what it hid; that
+    /// method is the one place the filter is applied.
     pub fn callees_with_options(
         &self,
         sel: &Selector,
         opts: &CalleeOpts,
     ) -> Result<Vec<CalleeEdge>, GraphError> {
+        Ok(self.callees_report(sel, opts)?.callees)
+    }
+
+    /// Return outbound call edges from `sel` filtered by `opts`, with the
+    /// number of unresolved edges [`CalleeOpts::hide_unresolved`] omitted.
+    pub fn callees_report(
+        &self,
+        sel: &Selector,
+        opts: &CalleeOpts,
+    ) -> Result<CalleeReport, GraphError> {
         self.ensure_synced()?;
         query::callees::run(self, sel, opts)
     }
@@ -645,6 +677,9 @@ pub(crate) fn resolve_symbol_span(
 
     // Match on either short name or qualified; apply kind filter when provided.
     // Paths in DB are normalized (slash-separated, relative to worktree).
+    // An exact qualified match wins over a short-name match, so a printed
+    // selector such as `#helper` names the top-level `helper`, not a nested
+    // `inner::helper` that happens to have a lower id (STD-01 §R32).
     let mut sql = String::from(
         "SELECT file_path, span_start, span_end FROM symbols
          WHERE file_path = ?1 AND (name = ?2 OR qualified = ?2)",
@@ -653,7 +688,7 @@ pub(crate) fn resolve_symbol_span(
     if has_kind {
         sql.push_str(" AND kind = ?3");
     }
-    sql.push_str(" ORDER BY id LIMIT 1");
+    sql.push_str(" ORDER BY CASE WHEN qualified = ?2 THEN 0 ELSE 1 END, id LIMIT 1");
 
     let mut stmt = conn
         .prepare(&sql)
@@ -1274,6 +1309,11 @@ pub struct RefResult {
     pub relations: Vec<RelationEntry>,
     /// Number of candidate rows excluded by the confidence floor.
     pub skipped_low_confidence: usize,
+    /// Whether `fallback` is present: `true` means the requested floor found
+    /// no textual `refs` and the rows under `fallback.refs` are name-only
+    /// matches. Always serialized, so a reader never has to infer it from a
+    /// missing key.
+    pub fallback_used: bool,
     /// Lower-confidence references surfaced because the precise floor found no
     /// textual `refs`. Present only when the precise result was empty and a
     /// lower-confidence (`fuzzy_name`) match exists — see [`RefFallback`].
@@ -1319,6 +1359,13 @@ pub struct RefEntry {
     pub kind: RefKind,
     /// Resolution confidence for this reference.
     pub confidence: RefConfidence,
+    /// `symbol:` selector of the innermost indexed symbol enclosing the
+    /// reference (the caller, for a call), or `None` when the reference lies
+    /// outside every symbol span, such as a top-level statement.
+    pub from_selector: Option<String>,
+    /// The trimmed source line containing the reference, cut to at most 160
+    /// characters with a trailing `…`.
+    pub snippet: String,
 }
 
 /// Structural relation entry returned by [`Graph::refs`].
@@ -1372,6 +1419,7 @@ pub struct CalleeEdge {
 /// let opts = CalleeOpts {
 ///     confidence: Confidence::Exact,
 ///     kind: None,
+///     hide_unresolved: false,
 /// };
 /// let callees = graph.callees_with_options(&selector, &opts)?;
 /// assert_eq!(callees.len(), 1);
@@ -1385,6 +1433,12 @@ pub struct CalleeOpts {
     /// Optional edge-kind filter. Since this query returns calls, any non-call
     /// kind produces an empty result.
     pub kind: Option<RefKind>,
+    /// Omit unresolved call edges (no `target_qualified`) whose call name has
+    /// no indexed callable definition (a `function`, `method`, `class`, or
+    /// `struct` of that name) anywhere in the graph, such as standard-library
+    /// or prelude calls (`map_err`, `Ok`, `to_string`). They are counted in
+    /// [`CalleeReport::hidden_unresolved`] instead.
+    pub hide_unresolved: bool,
 }
 
 impl CalleeOpts {
@@ -1393,8 +1447,20 @@ impl CalleeOpts {
         Self {
             confidence: RefConfidence::FuzzyName,
             kind: None,
+            hide_unresolved: false,
         }
     }
+}
+
+/// Outbound call edges plus what [`CalleeOpts::hide_unresolved`] omitted,
+/// returned by [`Graph::callees_report`].
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
+pub struct CalleeReport {
+    /// Returned call edges, in call-site order.
+    pub callees: Vec<CalleeEdge>,
+    /// Unresolved edges with no indexed definition that were omitted; `0`
+    /// unless [`CalleeOpts::hide_unresolved`] is set.
+    pub hidden_unresolved: usize,
 }
 
 /// Bounded impact result returned by [`Graph::impact`].
@@ -1409,6 +1475,10 @@ pub struct ImpactResult {
     pub truncated: bool,
     /// Number of impacted symbols returned in `touched`.
     pub visited_nodes: usize,
+    /// Whether `fallback` is present: `true` means the requested floor reached
+    /// no node and `fallback.touched` holds name-only matches. Always
+    /// serialized.
+    pub fallback_used: bool,
     /// Lower-confidence impact surfaced because the precise floor found no
     /// touched nodes. Present only when a lower-confidence (`fuzzy_name`) match
     /// exists; see [`ImpactFallback`].
@@ -1448,6 +1518,16 @@ pub struct ImpactEntry {
     pub distance: usize,
     /// Edge kind used for the prior hop into this symbol.
     pub edge_kind: RefKind,
+    /// Selector that `show`, `refs`, `callees`, or `impact` accept for this
+    /// node: `symbol:<file>#<qualified>:<kind>` for an indexed symbol, or
+    /// `file:<file>` for a file-attributed call site. `None` when the name
+    /// has no indexed definition, such as a trait from another crate.
+    pub selector: Option<String>,
+    /// Workspace-relative file of the node, when indexed.
+    pub file: Option<String>,
+    /// One-based line: the symbol's definition line, or for a file-attributed
+    /// node the first call site that reached it.
+    pub line: Option<usize>,
 }
 
 /// Direction followed by an impact traversal.
