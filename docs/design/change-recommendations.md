@@ -16,8 +16,8 @@ The SQLite database is a local derived index at
 `.orbit-graph/change-history.4.sqlite3` (the file name carries
 `HISTORY_INDEX_SCHEMA_VERSION`). It is not task authority. External
 delivery/task systems retain authority and should be able to replay the public
-envelopes after `history rebuild`, which intentionally recreates only evidence
-available from Git.
+envelopes if a producer must replay them. A confirmed `history rebuild`
+re-extracts Git evidence and preserves verified deliveries by default.
 
 Stage 1 supplies ingestion, extraction, provenance, current-symbol resolution,
 and stable types. Stage 2 will rank candidate destinations from this evidence.
@@ -179,10 +179,12 @@ newest, and refuses a missing or off-chain stored cursor as divergent/rebound
 history. Traversal is capped (default 1,000); exceeding the cap fails without a
 partial cursor or partial evidence, and callers may explicitly raise `--limit`.
 
-`history rebuild` validates and extracts the entire bounded first-parent range
-before opening its replacement transaction, then deletes and recreates only the
-selected repository/branch scope atomically. Verified envelopes are not hidden
-inside a second source of truth and must be replayed by their producer afterward.
+`history rebuild` previews the selected repository/branch scope by default.
+With `--confirm`, it validates and extracts the bounded first-parent range
+before opening its replacement transaction, then recreates that scope atomically.
+It re-extracts retained verified deliveries from their stored import envelopes;
+only `--discard-verified` removes them. The report counts any verified rows
+removed. Rebuild refuses the `agent-main` branch.
 
 ## CLI contract
 
@@ -198,7 +200,7 @@ orbit-graph --format json history import --input delivery.json
 orbit-graph --format json history import --input -
 orbit-graph --format json history sync --branch main [--limit 1000]
 orbit-graph --format json history status --branch main
-orbit-graph --format json history rebuild --branch main [--limit 1000]
+orbit-graph --format json history rebuild --branch main [--limit 1000] [--confirm] [--discard-verified]
 ```
 
 `status` reports repository/branch, database path, versions, cursor, total
@@ -212,7 +214,7 @@ temporal fields change the meaning needed for leakage-safe evaluation, and
 unknown fields were rejected by v1. Producers must emit `schema_version: 2`;
 v1 envelopes fail closed rather than receiving guessed timestamps. The history
 index and change extractor also advance independently to version 2, selecting a fresh
-`change-history.2.sqlite3` database. Existing v1 databases are left untouched;
+`change-history.4.sqlite3` database. Existing v1 databases are left untouched;
 verified producers replay v2 envelopes and Git-only evidence can be rebuilt.
 The crate/package version remains unchanged because this task is not a release.
 

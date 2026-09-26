@@ -5,6 +5,7 @@
 use std::fs;
 #[cfg(unix)]
 use std::io::Read;
+use std::io::Write;
 use std::path::Path;
 use std::process::{Command, Output, Stdio};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
@@ -16,6 +17,7 @@ use std::os::unix::fs::PermissionsExt;
 #[cfg(unix)]
 use std::os::unix::net::UnixStream;
 
+use fs2::FileExt;
 use serde_json::Value;
 use tempfile::TempDir;
 
@@ -2255,6 +2257,8 @@ fn real_binary_imports_syncs_reports_and_rebuilds_history() {
         ["history", "import", "--input", envelope_arg.as_ref()],
     );
     assert_eq!(imported["inserted"], true);
+    assert_eq!(imported["landing_branch"], "main");
+    assert!(imported["database_path"].as_str().is_some());
     let stored = HistoryIndex::open(fixture.path(), "main")
         .expect("open imported history")
         .deliveries()
@@ -2359,6 +2363,8 @@ fn real_binary_imports_syncs_reports_and_rebuilds_history() {
         ["history", "sync", "--branch", "main", "--limit", "10"],
     );
     assert_eq!(synced["complete"], true);
+    assert_eq!(synced["landing_branch"], "main");
+    assert_eq!(synced["database_path"], imported["database_path"]);
     let synced_human = run(
         fixture.path(),
         ["history", "sync", "--branch", "main", "--limit", "10"],
@@ -2395,27 +2401,240 @@ fn real_binary_imports_syncs_reports_and_rebuilds_history() {
     assert_eq!(status_ndjson.len(), 1);
     assert!(status_ndjson[0]["verified_deliveries"].is_number());
 
-    let rebuilt = run_json(
+    let preview = run_json(
         fixture.path(),
         ["history", "rebuild", "--branch", "main", "--limit", "10"],
     );
+    assert_eq!(preview["confirmed"], false);
+    assert_eq!(preview["verified_deliveries"], 1);
+    assert_eq!(preview["would_remove_deliveries"], 2);
+    assert_eq!(preview["removed_deliveries"], 0);
+    assert_eq!(
+        run_json(fixture.path(), ["history", "status", "--branch", "main"]),
+        status
+    );
+    let rebuilt = run_json(
+        fixture.path(),
+        [
+            "history",
+            "rebuild",
+            "--branch",
+            "main",
+            "--limit",
+            "10",
+            "--confirm",
+        ],
+    );
+    assert_eq!(rebuilt["confirmed"], true);
     assert_eq!(rebuilt["removed_deliveries"], 2);
+    assert_eq!(rebuilt["removed_verified_deliveries"], 0);
+    assert_eq!(rebuilt["database_path"], imported["database_path"]);
+    assert_eq!(rebuilt["landing_branch"], "main");
     assert_eq!(rebuilt["sync"]["deliveries_inserted"], 1);
+    assert_eq!(
+        run_json(fixture.path(), ["history", "status", "--branch", "main"])["verified_deliveries"],
+        1
+    );
     let rebuilt_human = run(
         fixture.path(),
-        ["history", "rebuild", "--branch", "main", "--limit", "10"],
+        [
+            "history",
+            "rebuild",
+            "--branch",
+            "main",
+            "--limit",
+            "10",
+            "--confirm",
+        ],
     );
     assert!(rebuilt_human.status.success());
     assert!(String::from_utf8_lossy(&rebuilt_human.stdout).contains("operation\trebuild"));
     let rebuilt_ndjson = run(
         fixture.path(),
         [
-            "history", "rebuild", "--branch", "main", "--format", "ndjson",
+            "history",
+            "rebuild",
+            "--branch",
+            "main",
+            "--confirm",
+            "--format",
+            "ndjson",
         ],
     );
     let rebuilt_ndjson = parse_ndjson(&rebuilt_ndjson.stdout);
     assert_eq!(rebuilt_ndjson.len(), 1);
     assert!(rebuilt_ndjson[0]["sync"].is_object());
+    let discarded = run_json(
+        fixture.path(),
+        [
+            "history",
+            "rebuild",
+            "--branch",
+            "main",
+            "--confirm",
+            "--discard-verified",
+        ],
+    );
+    assert_eq!(discarded["removed_verified_deliveries"], 1);
+    assert_eq!(
+        run_json(fixture.path(), ["history", "status", "--branch", "main"])["verified_deliveries"],
+        0
+    );
+}
+
+#[test]
+fn real_binary_recovers_each_history_contract_version_mismatch() {
+    for key in ["extractor_version", "import_schema_version"] {
+        let fixture = fixture_repository();
+        let before = git_stdout(fixture.path(), ["rev-parse", "HEAD"]);
+        fs::write(
+            fixture.path().join("src/lib.rs"),
+            "pub fn helper() -> i32 { 3 }\n",
+        )
+        .expect("edit history fixture");
+        run_git(fixture.path(), ["add", "."]);
+        run_git(fixture.path(), ["commit", "-m", "repair helper"]);
+        let after = git_stdout(fixture.path(), ["rev-parse", "HEAD"]);
+        import_cli_delivery(
+            fixture.path(),
+            before.as_str(),
+            after.as_str(),
+            "VERSION-VERIFIED",
+            "VERSION-TASK",
+            "Repair helper",
+            "2002-01-01T00:00:00Z",
+            "2001-01-01T00:00:00Z",
+        );
+        let synced = run_json(fixture.path(), ["history", "sync", "--branch", "main"]);
+        let path = synced["database_path"].as_str().expect("history path");
+        let conn = rusqlite::Connection::open(path).expect("open history fixture");
+        conn.execute("UPDATE history_meta SET value='0' WHERE key=?1", [key])
+            .expect("seed old version");
+        let rejected = run_explicit_json(fixture.path(), ["history", "status", "--branch", "main"]);
+        assert!(!rejected.status.success(), "{key}");
+        let error: Value = serde_json::from_slice(&rejected.stderr).expect("JSON error");
+        assert_eq!(error["error"]["code"], "version_mismatch", "{key}: {error}");
+        let message = error["error"]["message"].as_str().expect("error message");
+        for expected in [
+            key,
+            "=0",
+            "expected 2",
+            path,
+            "orbit-graph history rebuild --branch main --confirm",
+        ] {
+            assert!(message.contains(expected), "{key}: {message}");
+        }
+        let preview = run_json(fixture.path(), ["history", "rebuild", "--branch", "main"]);
+        assert_eq!(preview["confirmed"], false);
+        assert_eq!(preview["verified_deliveries"], 1);
+        let still_old: String = conn
+            .query_row(
+                "SELECT value FROM history_meta WHERE key=?1",
+                [key],
+                |row| row.get(0),
+            )
+            .expect("version after preview");
+        assert_eq!(still_old, "0");
+        let rebuilt = run_json(
+            fixture.path(),
+            ["history", "rebuild", "--branch", "main", "--confirm"],
+        );
+        assert_eq!(rebuilt["removed_verified_deliveries"], 0);
+        let status = run_json(fixture.path(), ["history", "status", "--branch", "main"]);
+        assert_eq!(status["verified_deliveries"], 1);
+        let recommended = run_json(
+            fixture.path(),
+            ["recommend", "--query", "helper", "--branch", "main"],
+        );
+        assert!(recommended["resolved_target_revision"].is_string());
+    }
+}
+
+#[test]
+fn real_binary_refuses_history_rebuild_on_agent_main() {
+    let fixture = fixture_repository();
+    run_git(fixture.path(), ["branch", "agent-main"]);
+    for confirm in [false, true] {
+        let output = if confirm {
+            run_explicit_json(
+                fixture.path(),
+                ["history", "rebuild", "--branch", "agent-main", "--confirm"],
+            )
+        } else {
+            run_explicit_json(
+                fixture.path(),
+                ["history", "rebuild", "--branch", "agent-main"],
+            )
+        };
+        assert!(!output.status.success());
+        assert!(String::from_utf8_lossy(&output.stderr).contains("agent-main"));
+    }
+}
+
+#[test]
+fn real_binary_history_lock_timeout_names_holder() {
+    let fixture = fixture_repository();
+    let synced = run_json(fixture.path(), ["history", "sync", "--branch", "main"]);
+    let db_path = Path::new(synced["database_path"].as_str().expect("history path"));
+    let lock_path = db_path.with_extension("sqlite3.lock");
+    let mut held = fs::OpenOptions::new()
+        .write(true)
+        .truncate(true)
+        .open(&lock_path)
+        .expect("open lock");
+    let acquired_at = "2026-09-26T22:00:00Z";
+    let label = "held history writer";
+    write!(
+        held,
+        "{}",
+        serde_json::json!({
+            "pid": std::process::id(), "acquired_at": acquired_at, "label": label
+        })
+    )
+    .expect("write holder record");
+    held.flush().expect("flush holder record");
+    held.lock_exclusive().expect("hold history lock");
+    let started = Instant::now();
+    let output = Command::new(env!("CARGO_BIN_EXE_orbit-graph"))
+        .current_dir(fixture.path())
+        .env("ORBIT_GRAPH_LOCK_TIMEOUT_MS", "100")
+        .args(["--format", "json", "history", "sync", "--branch", "main"])
+        .output()
+        .expect("run blocked history writer");
+    assert!(!output.status.success());
+    assert!(started.elapsed() < Duration::from_secs(2));
+    let message = String::from_utf8_lossy(&output.stderr);
+    for expected in [
+        std::process::id().to_string(),
+        acquired_at.to_string(),
+        label.to_string(),
+    ] {
+        assert!(message.contains(&expected), "{message}");
+    }
+}
+
+#[test]
+fn real_binary_recommend_reports_unknown_git_ancestry() {
+    let fixture = fixture_repository();
+    let synced = run_json(fixture.path(), ["history", "sync", "--branch", "main"]);
+    let path = synced["database_path"].as_str().expect("history path");
+    let conn = rusqlite::Connection::open(path).expect("open history fixture");
+    conn.execute(
+        "UPDATE history_scopes SET cursor=?1 WHERE landing_branch='main'",
+        ["0000000000000000000000000000000000000000"],
+    )
+    .expect("seed missing Git cursor");
+    let recommended = run_json(
+        fixture.path(),
+        ["recommend", "--query", "helper", "--branch", "main"],
+    );
+    let reason = recommended["source_freshness"]["reason"]
+        .as_str()
+        .expect("freshness reason");
+    assert!(
+        reason.contains("ancestry is unknown because Git failed"),
+        "{reason}"
+    );
 }
 
 #[cfg(unix)]

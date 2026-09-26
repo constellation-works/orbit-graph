@@ -7,7 +7,6 @@ use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use fs2::FileExt;
 use git2::{Oid, Repository};
 use orbit_graph_extract::history::{
     CHANGE_EXTRACTOR_VERSION, CurrentRevisionResolution, CurrentSymbolStatus,
@@ -20,7 +19,8 @@ use orbit_graph_extract::languages;
 use rusqlite::{Connection, OptionalExtension, Transaction, TransactionBehavior, params};
 use serde::Serialize;
 
-use crate::GraphError;
+use crate::error::VersionMismatchDetails;
+use crate::{GraphError, lock};
 
 /// Version of the history SQLite schema.
 ///
@@ -115,6 +115,18 @@ pub struct HistoryStatus {
 /// Outcome of an explicit scope rebuild from first-parent Git history.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct HistoryRebuildReport {
+    /// History database scoped by this request.
+    pub database_path: PathBuf,
+    /// Landing branch scoped by this request.
+    pub landing_branch: String,
+    /// Whether the request changed the database.
+    pub confirmed: bool,
+    /// Existing verified deliveries in this scope before rebuilding.
+    pub verified_deliveries: usize,
+    /// Deliveries that would be cleared by a confirmed rebuild.
+    pub would_remove_deliveries: usize,
+    /// Verified deliveries intentionally discarded.
+    pub removed_verified_deliveries: usize,
     /// Number of pre-rebuild delivery rows removed in the same transaction.
     pub removed_deliveries: usize,
     /// Git-only first-parent rebuild result.
@@ -159,6 +171,47 @@ impl HistoryIndex {
     /// [`HistoryIndex::open_read_only`].
     pub fn open(repo_root: &Path, landing_branch: &str) -> Result<Self, GraphError> {
         Self::open_with_optional_index_dir(repo_root, landing_branch, None)
+    }
+
+    /// Open a history index for a rebuild, validating only its schema.
+    /// Preview mode is observational and never creates an index.
+    pub fn open_for_rebuild(
+        repo_root: &Path,
+        landing_branch: &str,
+        confirm: bool,
+    ) -> Result<Self, GraphError> {
+        let mut index = Self::resolve(repo_root, landing_branch, None)?;
+        if index.landing_branch == "agent-main" {
+            return Err(GraphError::invalid_data(
+                "rebuild history",
+                "rebuilding agent-main is refused because it is the agent work branch",
+            ));
+        }
+        if !confirm {
+            index.read_only = true;
+            if index.db_path.is_file() {
+                let conn = index.open_connection()?;
+                index.validate_schema_version(&conn)?;
+            }
+            return Ok(index);
+        }
+        if let Some(parent) = index.db_path.parent() {
+            super::create_index_dir(
+                parent,
+                super::IndexDirOwner::Scratch {
+                    worktree_root: index.repo_root.as_path(),
+                },
+                "create history index directory",
+            )?;
+        }
+        let _guard = HistoryLock::acquire(index.db_path.as_path(), "history rebuild open")?;
+        let conn = index.open_connection()?;
+        if history_database_is_empty(&conn)? {
+            initialize_schema(&conn)?;
+        } else {
+            index.validate_schema_version(&conn)?;
+        }
+        Ok(index)
     }
 
     /// Open the existing local history index strictly for reading.
@@ -243,9 +296,11 @@ impl HistoryIndex {
         if let Some(parent) = index.db_path.parent() {
             super::create_index_dir(parent, owner, "create history index directory")?;
         }
-        let _lock = HistoryLock::acquire(index.db_path.as_path())?;
+        let _lock = HistoryLock::acquire(index.db_path.as_path(), "history open")?;
         let mut conn = index.open_connection()?;
-        initialize_schema(&conn)?;
+        if history_database_is_empty(&conn)? {
+            initialize_schema(&conn)?;
+        }
         index.validate_versions(&conn)?;
         index.copy_previous_schema_once(&mut conn)?;
         Ok(index)
@@ -403,7 +458,7 @@ impl HistoryIndex {
             GraphError::invalid_data("open repository for history import", error.to_string())
         })?;
         let extracted = extract_delivery(&repo, delivery)?;
-        let _lock = HistoryLock::acquire(self.db_path.as_path())?;
+        let _lock = HistoryLock::acquire(self.db_path.as_path(), "history import")?;
         let mut conn = self.open_connection()?;
         let tx = conn
             .transaction_with_behavior(TransactionBehavior::Immediate)
@@ -434,10 +489,27 @@ impl HistoryIndex {
         self.sync_impl(limit.unwrap_or(DEFAULT_HISTORY_SYNC_LIMIT))
     }
 
-    /// Atomically clear this branch scope and rebuild it from first-parent Git history.
-    /// Verified delivery envelopes are external source records and must be re-imported.
+    /// Atomically re-extract Git-only history while retaining verified imports.
     pub fn rebuild(&self, limit: Option<usize>) -> Result<HistoryRebuildReport, GraphError> {
-        self.refuse_read_only("rebuild history")?;
+        self.rebuild_with_options(limit, true, false)
+    }
+
+    /// Preview or apply a scope rebuild. A preview does not modify the index.
+    pub fn rebuild_with_options(
+        &self,
+        limit: Option<usize>,
+        confirm: bool,
+        discard_verified: bool,
+    ) -> Result<HistoryRebuildReport, GraphError> {
+        if self.landing_branch == "agent-main" {
+            return Err(GraphError::invalid_data(
+                "rebuild history",
+                "rebuilding agent-main is refused because it is the agent work branch",
+            ));
+        }
+        if confirm {
+            self.refuse_read_only("rebuild history")?;
+        }
         let limit = limit.unwrap_or(DEFAULT_HISTORY_SYNC_LIMIT);
         if limit == 0 {
             return Err(GraphError::invalid_data(
@@ -448,17 +520,72 @@ impl HistoryIndex {
         let repo = Repository::open(self.repo_root.as_path()).map_err(|error| {
             GraphError::invalid_data("open repository for history rebuild", error.to_string())
         })?;
-        let commits = self.pending_commits(&repo, None, limit)?;
         let tip = branch_tip(&repo, self.landing_branch.as_str())?;
+        let (existing, verified, cursor_before) = self.rebuild_scope_counts()?;
+        if !confirm {
+            return Ok(HistoryRebuildReport {
+                database_path: self.db_path.clone(),
+                landing_branch: self.landing_branch.clone(),
+                confirmed: false,
+                verified_deliveries: verified,
+                would_remove_deliveries: existing,
+                removed_verified_deliveries: 0,
+                removed_deliveries: 0,
+                sync: HistorySyncReport {
+                    commits_indexed: 0,
+                    deliveries_inserted: 0,
+                    cursor_before: cursor_before.clone(),
+                    cursor_after: cursor_before,
+                    snapshot_tip: tip.to_string(),
+                    resume_from: None,
+                    complete: false,
+                },
+            });
+        }
+        let commits = self.pending_commits(&repo, tip, None, limit)?;
         let extracted = self.extract_git_deliveries(&repo, commits.as_slice())?;
-        let _lock = HistoryLock::acquire(self.db_path.as_path())?;
+        #[cfg(test)]
+        REBUILD_AFTER_ENUMERATION.with(|hook| {
+            if let Some(hook) = hook.borrow_mut().take() {
+                hook();
+            }
+        });
+        let _lock = HistoryLock::acquire(self.db_path.as_path(), "history rebuild")?;
+        let (existing, verified, cursor_before) = self.rebuild_scope_counts()?;
+        let preserved = if discard_verified {
+            Vec::new()
+        } else {
+            self.deliveries()?
+                .into_iter()
+                .filter(|change| change.delivery.evidence == DeliveryEvidence::VerifiedDelivery)
+                .map(|change| {
+                    let mut delivery = change.delivery;
+                    delivery.schema_version = DELIVERY_IMPORT_SCHEMA_VERSION;
+                    extract_delivery(&repo, delivery).map_err(GraphError::from)
+                })
+                .collect::<Result<Vec<_>, _>>()?
+        };
         let mut conn = self.open_connection()?;
         let tx = conn
             .transaction_with_behavior(TransactionBehavior::Immediate)
             .map_err(|source| GraphError::sqlite("begin history rebuild", source))?;
         let removed = delete_scope(&tx, self.repository.as_str(), self.landing_branch.as_str())?;
+        for change in &preserved {
+            insert_delivery(&tx, change)?;
+        }
         for change in &extracted {
             insert_delivery(&tx, change)?;
+        }
+        for (key, value) in [
+            ("schema_version", HISTORY_INDEX_SCHEMA_VERSION),
+            ("extractor_version", CHANGE_EXTRACTOR_VERSION),
+            ("import_schema_version", DELIVERY_IMPORT_SCHEMA_VERSION),
+        ] {
+            tx.execute(
+                "INSERT OR REPLACE INTO history_meta(key,value) VALUES(?1,?2)",
+                params![key, value.to_string()],
+            )
+            .map_err(|source| GraphError::sqlite("rewrite history version", source))?;
         }
         write_cursor(
             &tx,
@@ -469,17 +596,45 @@ impl HistoryIndex {
         tx.commit()
             .map_err(|source| GraphError::sqlite("commit history rebuild", source))?;
         Ok(HistoryRebuildReport {
+            database_path: self.db_path.clone(),
+            landing_branch: self.landing_branch.clone(),
+            confirmed: true,
+            verified_deliveries: verified,
+            would_remove_deliveries: existing,
+            removed_verified_deliveries: if discard_verified { verified } else { 0 },
             removed_deliveries: removed,
             sync: HistorySyncReport {
                 commits_indexed: extracted.len(),
                 deliveries_inserted: extracted.len(),
-                cursor_before: None,
+                cursor_before,
                 cursor_after: Some(tip.to_string()),
                 snapshot_tip: tip.to_string(),
                 resume_from: None,
                 complete: true,
             },
         })
+    }
+
+    fn rebuild_scope_counts(&self) -> Result<(usize, usize, Option<String>), GraphError> {
+        if !self.db_path.is_file() {
+            return Ok((0, 0, None));
+        }
+        let conn = self.open_connection()?;
+        let counts: (i64, i64) = conn.query_row(
+            "SELECT count(*), coalesce(sum(CASE WHEN evidence='verified_delivery' THEN 1 ELSE 0 END),0) FROM history_deliveries WHERE repository=?1 AND landing_branch=?2",
+            params![self.repository, self.landing_branch],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        ).map_err(|source| GraphError::sqlite("count history rebuild scope", source))?;
+        let scope = read_scope(
+            &conn,
+            self.repository.as_str(),
+            self.landing_branch.as_str(),
+        )?;
+        Ok((
+            usize_from_i64(counts.0, "rebuild delivery count")?,
+            usize_from_i64(counts.1, "rebuild verified count")?,
+            scope.cursor,
+        ))
     }
 
     /// Read counts and the incremental cursor without consulting Orbit state.
@@ -742,7 +897,7 @@ impl HistoryIndex {
         let batch = self.pending_batch(&repo, cursor_oid, start, limit)?;
         let commits = batch.commits;
         let extracted = self.extract_git_deliveries(&repo, commits.as_slice())?;
-        let _lock = HistoryLock::acquire(self.db_path.as_path())?;
+        let _lock = HistoryLock::acquire(self.db_path.as_path(), "history sync")?;
         let mut conn = self.open_connection()?;
         let tx = conn
             .transaction_with_behavior(TransactionBehavior::Immediate)
@@ -859,10 +1014,10 @@ impl HistoryIndex {
     fn pending_commits(
         &self,
         repo: &Repository,
+        tip: Oid,
         cursor: Option<Oid>,
         limit: usize,
     ) -> Result<Vec<Oid>, GraphError> {
-        let tip = branch_tip(repo, self.landing_branch.as_str())?;
         if cursor == Some(tip) {
             return Ok(Vec::new());
         }
@@ -1016,25 +1171,56 @@ impl HistoryIndex {
         Ok(conn)
     }
 
+    fn validate_schema_version(&self, conn: &Connection) -> Result<(), GraphError> {
+        self.validate_version(conn, "schema_version", HISTORY_INDEX_SCHEMA_VERSION)
+    }
+
     fn validate_versions(&self, conn: &Connection) -> Result<(), GraphError> {
         for (key, expected) in [
             ("schema_version", HISTORY_INDEX_SCHEMA_VERSION),
             ("extractor_version", CHANGE_EXTRACTOR_VERSION),
             ("import_schema_version", DELIVERY_IMPORT_SCHEMA_VERSION),
         ] {
-            let actual: String = conn
-                .query_row(
-                    "SELECT value FROM history_meta WHERE key=?1",
-                    [key],
-                    |row| row.get(0),
-                )
-                .map_err(|source| GraphError::sqlite("read history index version", source))?;
-            if actual != expected.to_string() {
-                return Err(GraphError::invalid_data(
-                    "validate history index version",
-                    format!("{key} is {actual}; expected {expected}; run history-rebuild"),
-                ));
+            self.validate_version(conn, key, expected)?;
+        }
+        Ok(())
+    }
+
+    fn validate_version(
+        &self,
+        conn: &Connection,
+        key: &str,
+        expected: u32,
+    ) -> Result<(), GraphError> {
+        let actual: String = conn
+            .query_row(
+                "SELECT value FROM history_meta WHERE key=?1",
+                [key],
+                |row| row.get(0),
+            )
+            .map_err(|source| GraphError::sqlite("read history index version", source))?;
+        if actual != expected.to_string() {
+            if key == "schema_version" {
+                return Err(GraphError::IndexIncompatible {
+                    path: self.db_path.clone(),
+                    reason: format!(
+                        "history index {} has schema_version={actual}; expected {expected}; this binary cannot rebuild an incompatible history schema",
+                        self.db_path.display()
+                    ),
+                });
             }
+            return Err(GraphError::VersionMismatch(Box::new(
+                VersionMismatchDetails {
+                    key: key.to_string(),
+                    found: actual,
+                    expected: expected.to_string(),
+                    path: self.db_path.clone(),
+                    command: format!(
+                        "orbit-graph history rebuild --branch {} --confirm",
+                        self.landing_branch
+                    ),
+                },
+            )));
         }
         Ok(())
     }
@@ -1102,6 +1288,17 @@ CREATE TABLE IF NOT EXISTS history_path_lineage (
     REFERENCES history_deliveries(repository, landing_branch, delivery_id) ON DELETE CASCADE
 ) STRICT;
 "#;
+
+fn history_database_is_empty(conn: &Connection) -> Result<bool, GraphError> {
+    let tables: i64 = conn
+        .query_row(
+            "SELECT count(*) FROM sqlite_master WHERE type='table'",
+            [],
+            |row| row.get(0),
+        )
+        .map_err(|source| GraphError::sqlite("inspect history schema", source))?;
+    Ok(tables == 0)
+}
 
 fn initialize_schema(conn: &Connection) -> Result<(), GraphError> {
     conn.execute_batch(HISTORY_SCHEMA)
@@ -1221,7 +1418,7 @@ type PreviousSchemaContents = (Vec<(String, String, HistoryScope)>, Vec<Delivere
 /// when the versions differ, so the caller records a skipped copy instead of
 /// importing payloads with a different meaning.
 fn read_previous_schema(path: &Path) -> Result<Option<PreviousSchemaContents>, GraphError> {
-    let _lock = HistoryLock::acquire(path)?;
+    let _lock = HistoryLock::acquire(path, "history legacy copy")?;
     let conn = Connection::open_with_flags(path, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)
         .map_err(|source| GraphError::sqlite("open previous history index", source))?;
     conn.pragma_update(None, "busy_timeout", 5_000)
@@ -1515,17 +1712,27 @@ fn should_interrupt_sync(repo_root: &Path) -> bool {
 static SYNC_INTERRUPTION: std::sync::OnceLock<std::sync::Mutex<Option<PathBuf>>> =
     std::sync::OnceLock::new();
 
+#[cfg(test)]
+thread_local! {
+    static REBUILD_AFTER_ENUMERATION: std::cell::RefCell<Option<Box<dyn FnOnce()>>> =
+        std::cell::RefCell::new(None);
+}
+
 struct HistoryLock {
-    _file: File,
+    _guard: lock::FileLockGuard,
 }
 
 impl HistoryLock {
-    fn acquire(db_path: &Path) -> Result<Self, GraphError> {
+    fn acquire(db_path: &Path, activity: &str) -> Result<Self, GraphError> {
         let path = db_path.with_extension("sqlite3.lock");
-        let file = open_private_history_file(path.as_path())?;
-        file.lock_exclusive()
-            .map_err(|source| GraphError::io("lock history index", path, source))?;
-        Ok(Self { _file: file })
+        let _private_file = open_private_history_file(path.as_path())?;
+        let guard = lock::FileLockGuard::acquire(
+            path.as_path(),
+            lock::holder_label(activity).as_str(),
+            lock::lock_timeout()?,
+            "lock history index",
+        )?;
+        Ok(Self { _guard: guard })
     }
 }
 

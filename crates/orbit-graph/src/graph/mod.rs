@@ -73,6 +73,24 @@ impl Graph {
         Self::open_observed(worktree_root, db_path)
     }
 
+    /// Read the graph selected by a checkout identity already pinned by the caller.
+    pub(crate) fn open_existing_for_pinned_target(
+        worktree_root: &Path,
+        branch: &str,
+        target: &str,
+    ) -> Result<Self, GraphError> {
+        let db_path = crate::resolve_db_path_for_commit(
+            worktree_root,
+            branch,
+            target,
+            crate::EXTRACTOR_VERSION,
+        );
+        if !db_path.path().is_file() {
+            return Err(store::missing_graph_index(worktree_root, db_path.path()));
+        }
+        Self::open_observed(worktree_root, db_path)
+    }
+
     /// Open a graph for a synthetic or detached tree identified by `revision`.
     ///
     /// The database uses the existing `detached-<short-sha>` naming contract.

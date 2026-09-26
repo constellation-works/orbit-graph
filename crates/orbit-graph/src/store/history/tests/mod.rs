@@ -324,6 +324,37 @@ fn path_lineage_records_renames_and_deletions_and_survives_rebuild() {
 }
 
 #[test]
+fn rebuild_cursors_only_the_tip_it_enumerated_when_branch_advances() {
+    let repo = fixture_repo();
+    write(repo.path(), "a.rs", "fn value() -> i32 { 1 }\n");
+    commit(repo.path(), "root");
+    write(repo.path(), "a.rs", "fn value() -> i32 { 2 }\n");
+    commit(repo.path(), "second");
+    let enumerated_tip = head(repo.path());
+    let index = HistoryIndex::open(repo.path(), "main").expect("open");
+    let root = repo.path().to_path_buf();
+    REBUILD_AFTER_ENUMERATION.with(|slot| {
+        *slot.borrow_mut() = Some(Box::new(move || {
+            write(&root, "a.rs", "fn value() -> i32 { 3 }\n");
+            commit(&root, "third");
+        }));
+    });
+    let report = index.rebuild(Some(10)).expect("rebuild after advance");
+    assert_eq!(
+        report.sync.cursor_after.as_deref(),
+        Some(enumerated_tip.as_str())
+    );
+    assert!(!index.status().expect("stale status").complete);
+    let resumed = index.sync(Some(10)).expect("sync new tip");
+    assert_eq!(resumed.deliveries_inserted, 1);
+    assert_eq!(
+        resumed.cursor_after.as_deref(),
+        Some(head(repo.path()).as_str())
+    );
+    assert!(index.status().expect("caught up status").complete);
+}
+
+#[test]
 fn opening_the_current_schema_copies_a_compatible_previous_index_once() {
     let repo = fixture_repo();
     write(repo.path(), "a.rs", "fn alpha() -> i32 { 1 }\n");
@@ -373,10 +404,10 @@ fn opening_the_current_schema_copies_a_compatible_previous_index_once() {
         index.deliveries().expect("original deliveries")
     );
 
-    // A second open never copies again, even after the scope is cleared.
+    // A second open never copies again, even after the scope is rebuilt.
     reopened.rebuild(Some(10)).expect("rebuild");
     let again = HistoryIndex::open(repo.path(), "main").expect("open again");
-    assert_eq!(again.status().expect("status again").verified_deliveries, 0);
+    assert_eq!(again.status().expect("status again").verified_deliveries, 1);
 
     // An incompatible previous index is left alone and recorded as skipped.
     std::fs::remove_file(&current).expect("remove current again");

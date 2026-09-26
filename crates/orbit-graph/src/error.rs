@@ -1,6 +1,21 @@
 use std::fmt::{Display, Formatter};
 use std::path::PathBuf;
 
+/// Details of a history version contract that needs a rebuild.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct VersionMismatchDetails {
+    /// Key in `history_meta` that differs.
+    pub key: String,
+    /// Stored value.
+    pub found: String,
+    /// Value required by this binary.
+    pub expected: String,
+    /// History database containing the mismatch.
+    pub path: PathBuf,
+    /// Runnable recovery command.
+    pub command: String,
+}
+
 /// Graph crate error surface.
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]
@@ -43,6 +58,8 @@ pub enum GraphError {
         /// Actionable message naming the stored and expected identities.
         reason: String,
     },
+    /// A history index uses an older extractor or import contract.
+    VersionMismatch(Box<VersionMismatchDetails>),
     /// Placeholder variant until storage, sync, and query errors are defined.
     Unimplemented,
 }
@@ -103,6 +120,15 @@ impl Display for GraphError {
             Self::IndexMissing { reason, .. } | Self::IndexIncompatible { reason, .. } => {
                 f.write_str(reason)
             }
+            Self::VersionMismatch(details) => write!(
+                f,
+                "history index {} has {key}={found}; expected {expected}; run `{command}`",
+                details.path.display(),
+                key = details.key,
+                found = details.found,
+                expected = details.expected,
+                command = details.command,
+            ),
             Self::Unimplemented => f.write_str("graph operation is not implemented"),
         }
     }

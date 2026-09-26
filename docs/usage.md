@@ -170,6 +170,12 @@ a few recent entries kept). The cache is best effort, not index state: it is
 skipped when the directory is read-only, and deleting these files is always
 safe.
 
+If the history extractor or import version changes, history reads fail with
+`version_mismatch`, naming the stored and expected values, database path, and
+rebuild command. Run `history rebuild --branch <name>` to inspect the scope,
+then add `--confirm` to repair it. Verified deliveries are re-extracted from
+their stored envelopes and retained unless `--discard-verified` is explicit.
+
 ## Commands
 
 | Command | Purpose |
@@ -178,7 +184,7 @@ safe.
 | `history import --input <path\|->` | Import a validated v2 delivery JSON envelope. |
 | `history sync --branch <name> [--limit <n>]` | Atomically index new first-parent commits as Git-only evidence. |
 | `history status --branch <name>` | Report history versions, cursor, evidence, and association counts. |
-| `history rebuild --branch <name> [--limit <n>]` | Atomically recreate one scope from Git-only history. |
+| `history rebuild --branch <name> [--limit <n>] [--confirm] [--discard-verified]` | Preview one scope, then atomically re-extract Git-only history while retaining verified deliveries by default. |
 | `recommend --query <text>\|--task-id <id> [--level file\|symbol]` | Rank current destinations with evidence and freshness. |
 | `evaluate --input <corpus.json>` | Compare four ranking variants chronologically. |
 | `evaluate --live --branch <name> [--limit <n>] [--k <n>] [--revision <rev>]` | Hold out first-parent commits and score Git-only commit-text relevance. Requires `history sync` first. |

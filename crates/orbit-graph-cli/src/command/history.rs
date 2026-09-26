@@ -25,6 +25,8 @@ impl HistoryCommand {
         let rows = match self.command {
             HistorySubcommand::Import(_) => vec![
                 ("operation", "import".to_owned()),
+                ("branch", display_value(&document["landing_branch"])),
+                ("database", display_value(&document["database_path"])),
                 ("delivery", display_value(&document["delivery_id"])),
                 ("inserted", display_value(&document["inserted"])),
                 ("files", display_value(&document["files"])),
@@ -64,6 +66,21 @@ impl HistoryCommand {
             HistorySubcommand::Rebuild(_) => {
                 let mut rows = vec![
                     ("operation", "rebuild".to_owned()),
+                    ("branch", display_value(&document["landing_branch"])),
+                    ("database", display_value(&document["database_path"])),
+                    ("confirmed", display_value(&document["confirmed"])),
+                    (
+                        "verified deliveries",
+                        display_value(&document["verified_deliveries"]),
+                    ),
+                    (
+                        "would remove deliveries",
+                        display_value(&document["would_remove_deliveries"]),
+                    ),
+                    (
+                        "removed verified deliveries",
+                        display_value(&document["removed_verified_deliveries"]),
+                    ),
                     (
                         "removed deliveries",
                         display_value(&document["removed_deliveries"]),
@@ -83,6 +100,8 @@ impl HistoryCommand {
 fn sync_rows(operation: &'static str, document: &Value) -> Vec<(&'static str, String)> {
     vec![
         ("operation", operation.to_owned()),
+        ("branch", display_value(&document["landing_branch"])),
+        ("database", display_value(&document["database_path"])),
         (
             "commits indexed",
             display_value(&document["commits_indexed"]),
@@ -97,6 +116,13 @@ fn sync_rows(operation: &'static str, document: &Value) -> Vec<(&'static str, St
         ("resume from", display_value(&document["resume_from"])),
         ("complete", display_value(&document["complete"])),
     ]
+}
+
+fn scoped_json<T: serde::Serialize>(index: &HistoryIndex, report: T) -> Result<Value, CliError> {
+    let mut document = json_value(report)?;
+    document["database_path"] = json_value(index.database_path())?;
+    document["landing_branch"] = Value::String(index.landing_branch().to_string());
+    Ok(document)
 }
 
 fn detail_table(rows: Vec<(&str, String)>) -> TableView {
@@ -148,7 +174,7 @@ impl HistoryImportCommand {
                 ))
             })?;
         let index = HistoryIndex::open(context.worktree_root(), delivery.landing_branch.as_str())?;
-        json_value(index.import(delivery)?)
+        scoped_json(&index, index.import(delivery)?)
     }
 }
 
@@ -165,7 +191,7 @@ struct HistorySyncCommand {
 impl HistorySyncCommand {
     fn run(&self, context: &CommandContext) -> Result<serde_json::Value, CliError> {
         let index = HistoryIndex::open(context.worktree_root(), self.branch.as_str())?;
-        json_value(index.sync(self.limit)?)
+        scoped_json(&index, index.sync(self.limit)?)
     }
 }
 
@@ -192,12 +218,22 @@ struct HistoryRebuildCommand {
     /// Maximum commits to traverse in this atomic operation.
     #[arg(long)]
     limit: Option<usize>,
+    /// Apply the rebuild; without this flag the command only reports its scope.
+    #[arg(long)]
+    confirm: bool,
+    /// Explicitly remove verified imports instead of preserving them.
+    #[arg(long, requires = "confirm")]
+    discard_verified: bool,
 }
 
 impl HistoryRebuildCommand {
     fn run(&self, context: &CommandContext) -> Result<serde_json::Value, CliError> {
-        let index = HistoryIndex::open(context.worktree_root(), self.branch.as_str())?;
-        json_value(index.rebuild(self.limit)?)
+        let index = HistoryIndex::open_for_rebuild(
+            context.worktree_root(),
+            self.branch.as_str(),
+            self.confirm,
+        )?;
+        json_value(index.rebuild_with_options(self.limit, self.confirm, self.discard_verified)?)
     }
 }
 

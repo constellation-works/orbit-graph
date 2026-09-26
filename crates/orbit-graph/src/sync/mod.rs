@@ -208,6 +208,7 @@ pub(crate) fn graph_failure(path: &Path, error: &GraphError) -> SyncFailure {
         GraphError::InvalidData { operation, .. } => (*operation, "invalid_data"),
         GraphError::IndexMissing { .. } => ("open graph index", "index_missing"),
         GraphError::IndexIncompatible { .. } => ("open graph index", "index_incompatible"),
+        GraphError::VersionMismatch(_) => ("open history index", "version_mismatch"),
         GraphError::Unimplemented => ("sync", "unimplemented"),
     };
     SyncFailure {

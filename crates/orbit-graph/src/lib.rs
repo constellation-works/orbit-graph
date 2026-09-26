@@ -37,7 +37,7 @@ pub use clean::{
 pub use db_path::{
     GraphDbPath, resolve_db_path, resolve_db_path_for_commit, resolve_worktree_db_path,
 };
-pub use error::GraphError;
+pub use error::{GraphError, VersionMismatchDetails};
 pub use graph::Graph;
 pub(crate) use graph::open_read_connection;
 pub use query::types::{
