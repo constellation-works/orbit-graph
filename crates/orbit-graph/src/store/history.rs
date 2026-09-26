@@ -222,7 +222,13 @@ impl HistoryIndex {
     /// in `history_meta` so it runs at most once per database, and it is skipped
     /// when the new index already holds any scope or delivery.
     fn copy_previous_schema_once(&self, conn: &mut Connection) -> Result<(), GraphError> {
-        let attempted: Option<String> = conn
+        // Decide and act inside one IMMEDIATE transaction (in addition to the
+        // sidecar lock held by `open`), so concurrent openers of an empty index
+        // cannot both pass the checks and copy twice.
+        let tx = conn
+            .transaction_with_behavior(TransactionBehavior::Immediate)
+            .map_err(|source| GraphError::sqlite("begin history legacy copy", source))?;
+        let attempted: Option<String> = tx
             .query_row(
                 "SELECT value FROM history_meta WHERE key=?1",
                 [LEGACY_COPY_META_KEY],
@@ -233,7 +239,7 @@ impl HistoryIndex {
         if attempted.is_some() {
             return Ok(());
         }
-        let populated: i64 = conn
+        let populated: i64 = tx
             .query_row(
                 "SELECT (SELECT count(*) FROM history_deliveries) + (SELECT count(*) FROM history_scopes)",
                 [],
@@ -250,11 +256,6 @@ impl HistoryIndex {
         } else {
             match read_previous_schema(previous.as_path())? {
                 Some((scopes, deliveries)) => {
-                    let tx = conn
-                        .transaction_with_behavior(TransactionBehavior::Immediate)
-                        .map_err(|source| {
-                            GraphError::sqlite("begin history legacy copy", source)
-                        })?;
                     for change in &deliveries {
                         insert_delivery(&tx, change)?;
                     }
@@ -265,24 +266,18 @@ impl HistoryIndex {
                         )
                         .map_err(|source| GraphError::sqlite("copy history scope", source))?;
                     }
-                    record_legacy_copy(
-                        &tx,
-                        format!(
-                            "copied {} deliveries and {} scopes from schema {PREVIOUS_HISTORY_INDEX_SCHEMA_VERSION}",
-                            deliveries.len(),
-                            scopes.len()
-                        )
-                        .as_str(),
-                    )?;
-                    tx.commit().map_err(|source| {
-                        GraphError::sqlite("commit history legacy copy", source)
-                    })?;
-                    return Ok(());
+                    format!(
+                        "copied {} deliveries and {} scopes from schema {PREVIOUS_HISTORY_INDEX_SCHEMA_VERSION}",
+                        deliveries.len(),
+                        scopes.len()
+                    )
                 }
                 None => "skipped: previous index has incompatible versions".to_string(),
             }
         };
-        record_legacy_copy(conn, outcome.as_str())
+        record_legacy_copy(&tx, outcome.as_str())?;
+        tx.commit()
+            .map_err(|source| GraphError::sqlite("commit history legacy copy", source))
     }
 
     /// Stable repository identity expected by import envelopes.

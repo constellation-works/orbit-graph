@@ -401,6 +401,76 @@ fn opening_the_current_schema_copies_a_compatible_previous_index_once() {
     assert!(outcome.contains("incompatible"), "{outcome}");
 }
 
+#[test]
+fn concurrent_opens_copy_a_previous_index_exactly_once() {
+    let repo = fixture_repo();
+    write(repo.path(), "a.rs", "fn alpha() -> i32 { 1 }\n");
+    commit(repo.path(), "root");
+    let root = head(repo.path());
+    write(repo.path(), "a.rs", "fn alpha() -> i32 { 2 }\n");
+    commit(repo.path(), "edit");
+    let edited = head(repo.path());
+    git(repo.path(), &["mv", "a.rs", "b.rs"]);
+    commit(repo.path(), "rename");
+    let index = HistoryIndex::open(repo.path(), "main").expect("open");
+    index.sync(Some(10)).expect("sync");
+    index
+        .import(fixture_delivery(&index, root, edited, "verified-edit"))
+        .expect("import verified");
+    let original = index.status().expect("original status");
+    let current = index.database_path().to_path_buf();
+    let previous = current.with_file_name(format!(
+        "change-history.{PREVIOUS_HISTORY_INDEX_SCHEMA_VERSION}.sqlite3"
+    ));
+    std::fs::copy(&current, &previous).expect("copy database");
+    {
+        let conn = Connection::open(&previous).expect("open previous");
+        conn.execute_batch(&format!(
+            "DROP TABLE history_path_lineage; DELETE FROM history_meta WHERE key='{LEGACY_COPY_META_KEY}'; UPDATE history_meta SET value='{PREVIOUS_HISTORY_INDEX_SCHEMA_VERSION}' WHERE key='schema_version';"
+        ))
+        .expect("downgrade copy");
+    }
+
+    for round in 0..3 {
+        std::fs::remove_file(&current).expect("remove current");
+        let barrier = std::sync::Arc::new(std::sync::Barrier::new(4));
+        let handles = (0..4)
+            .map(|_| {
+                let barrier = barrier.clone();
+                let root = repo.path().to_path_buf();
+                std::thread::spawn(move || {
+                    barrier.wait();
+                    HistoryIndex::open(root.as_path(), "main")
+                        .map(|index| index.status().expect("status").deliveries)
+                })
+            })
+            .collect::<Vec<_>>();
+        for handle in handles {
+            let deliveries = handle
+                .join()
+                .expect("open thread")
+                .unwrap_or_else(|error| panic!("round {round}: concurrent open failed: {error}"));
+            assert_eq!(deliveries, original.deliveries, "round {round}");
+        }
+        let reopened = HistoryIndex::open(repo.path(), "main").expect("reopen");
+        let status = reopened.status().expect("status");
+        assert_eq!(status.deliveries, original.deliveries);
+        assert_eq!(status.verified_deliveries, 1);
+        assert_eq!(status.task_associations, original.task_associations);
+        assert_eq!(status.cursor, original.cursor);
+        assert_eq!(reopened.path_lineage().expect("lineage").len(), 1);
+        let conn = Connection::open(&current).expect("open current");
+        let outcome: String = conn
+            .query_row(
+                "SELECT value FROM history_meta WHERE key=?1",
+                [LEGACY_COPY_META_KEY],
+                |row| row.get(0),
+            )
+            .expect("legacy outcome");
+        assert!(outcome.starts_with("copied"), "{outcome}");
+    }
+}
+
 fn fixture_delivery(
     index: &HistoryIndex,
     before: String,
