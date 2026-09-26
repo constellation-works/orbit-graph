@@ -597,6 +597,10 @@ fn post_cancel_stops_a_cold_build_discards_its_cache_entry_and_a_later_request_r
     let cancel = service.authorized("POST", "/api/cancel", &[]);
     assert_eq!(cancel.status, 200, "{cancel:?}");
 
+    // The build checks the cancellation flag between files, so this bounds
+    // cancellation latency, not how long a build takes: it holds on a slow
+    // host too. A side that runs on to `ready` (or `failed`) instead ignored
+    // the cancellation, and fails at once rather than at the deadline.
     let deadline = Instant::now() + Duration::from_secs(60);
     loop {
         let status = service.authorized("GET", "/api/status", &[]).json();
@@ -611,6 +615,12 @@ fn post_cancel_stops_a_cold_build_discards_its_cache_entry_and_a_later_request_r
         if states.iter().all(|state| *state == "cancelled") {
             break;
         }
+        assert!(
+            !states
+                .iter()
+                .any(|state| matches!(*state, "ready" | "failed")),
+            "a side finished instead of honouring the cancellation: {status}"
+        );
         assert!(
             Instant::now() < deadline,
             "both builds did not cancel within the deadline: {status}"
@@ -635,10 +645,13 @@ fn post_cancel_stops_a_cold_build_discards_its_cache_entry_and_a_later_request_r
         "cancelled builds must discard their staging directories: {staging:?}"
     );
 
-    // The next request restarts the build, and it completes normally.
+    // The next request restarts the build, and it completes normally. The
+    // restart is another cold 4,000-file build on each side, whose duration
+    // tracks the host's disk, so wait on its progress rather than on a fixed
+    // budget sized for a fast runner.
     let restarted = service.authorized("GET", "/api/comparison", &[]);
     assert!(matches!(restarted.status, 200 | 409), "{restarted:?}");
-    service.wait_until_ready();
+    service.wait_until_ready_while_progressing();
     let ready = service.authorized("GET", "/api/comparison", &[]);
     assert_eq!(ready.status, 200, "{ready:?}");
     for sha in [base.as_str(), head.as_str()] {
