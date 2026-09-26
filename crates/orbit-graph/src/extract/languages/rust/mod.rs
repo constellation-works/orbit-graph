@@ -1,5 +1,6 @@
 //! Rust tree-sitter extraction.
 
+use std::collections::{HashMap, HashSet};
 use std::path::Path;
 
 use tree_sitter::{Node, Parser};
@@ -56,6 +57,8 @@ struct ExtractionState {
     relations: Vec<RawRelation>,
     imports: Vec<RawImport>,
     commands: Vec<RawCommand>,
+    /// [`pattern_bindings`] per binding scope node id, computed on first use.
+    local_bindings: HashMap<usize, HashSet<String>>,
 }
 
 impl ExtractionState {
@@ -67,7 +70,17 @@ impl ExtractionState {
             relations: Vec::new(),
             imports: Vec::new(),
             commands: Vec::new(),
+            local_bindings: HashMap::new(),
         }
+    }
+
+    /// Whether a pattern in the function enclosing `node` binds `name`.
+    fn is_local_binding(&mut self, node: Node, name: &str, source: &str) -> bool {
+        let scope = binding_scope(node);
+        self.local_bindings
+            .entry(scope.id())
+            .or_insert_with(|| pattern_bindings(scope, source))
+            .contains(name)
     }
 
     fn finish(mut self) -> ExtractedFile {
@@ -611,7 +624,17 @@ fn collect_expression_refs(
     if node.kind() == "call_expression" {
         collect_call_ref(node, source, module, state);
         if let Some(arguments) = node.child_by_field_name("arguments") {
+            collect_function_value_refs(arguments, source, module, state);
             collect_expression_refs(arguments, source, module, state);
+        }
+        return;
+    }
+    if node.kind() == "macro_invocation" {
+        let mut cursor = node.walk();
+        for child in node.named_children(&mut cursor) {
+            if child.kind() == "token_tree" {
+                collect_macro_token_refs(child, source, module, state);
+            }
         }
         return;
     }
@@ -637,6 +660,329 @@ fn collect_expression_refs(
             _ => collect_expression_refs(child, source, module, state),
         }
     }
+}
+
+/// Records a `call` ref for each function passed by name as a call argument
+/// (`.map(skill_link_roots)`, `.and_then(Self::parse)`, `run(module::step)`):
+/// the callee invokes it on the caller's behalf, so without this edge the
+/// function looks uncalled.
+///
+/// A bare identifier argument is far more often a local value than a
+/// function, and the extractor has no type information, so one is only
+/// recorded when it is spelled like a function (starts with a lowercase
+/// letter or `_`) and no pattern in the enclosing function binds that name
+/// (parameters, `let`, closure parameters, `for`, `match`/`if let` arms).
+/// Paths (`a::b`) name items, never locals, and only need the spelling check.
+fn collect_function_value_refs(
+    arguments: Node,
+    source: &str,
+    module: &ModuleScope,
+    state: &mut ExtractionState,
+) {
+    let mut cursor = arguments.walk();
+    for argument in arguments.named_children(&mut cursor) {
+        match argument.kind() {
+            "identifier" => {
+                let name = node_text(argument, source);
+                if !is_function_like_name(&name) || state.is_local_binding(argument, &name, source)
+                {
+                    continue;
+                }
+                state.push_ref(
+                    argument,
+                    source,
+                    Some(module.qualify(&name)),
+                    "call",
+                    "fuzzy_name",
+                );
+            }
+            "scoped_identifier" => {
+                let is_function_like = argument
+                    .child_by_field_name("name")
+                    .is_some_and(|name| is_function_like_name(&node_text(name, source)));
+                if is_function_like {
+                    push_call_target_ref(argument, source, module, state);
+                }
+            }
+            _ => {}
+        }
+    }
+}
+
+/// Whether an identifier follows Rust's function naming convention. Types,
+/// enum variants, and constants are capitalised and never match.
+fn is_function_like_name(name: &str) -> bool {
+    name.starts_with(|ch: char| ch.is_ascii_lowercase() || ch == '_')
+        && name != "_"
+        && !is_reserved_word(name)
+}
+
+/// Words that tree-sitter's token-tree grammar yields as `identifier` although
+/// they are Rust keywords (the grammar lists only some keywords as tokens).
+fn is_reserved_word(name: &str) -> bool {
+    matches!(
+        name,
+        "in" | "move"
+            | "ref"
+            | "dyn"
+            | "else"
+            | "extern"
+            | "box"
+            | "do"
+            | "final"
+            | "macro"
+            | "override"
+            | "priv"
+            | "typeof"
+            | "unsized"
+            | "virtual"
+            | "yield"
+            | "try"
+            | "abstract"
+            | "become"
+            | "true"
+            | "false"
+    )
+}
+
+/// Names bound by any pattern inside `scope`: parameters, `let`, `for`,
+/// `match` arms, `if let`/`while let` conditions, and closure parameters.
+/// Over-collecting (e.g. a tuple-struct path inside a pattern) only makes the
+/// function-value heuristic more conservative.
+fn pattern_bindings(scope: Node, source: &str) -> HashSet<String> {
+    let mut bindings = HashSet::new();
+    let mut stack = vec![scope];
+    while let Some(node) = stack.pop() {
+        if let Some(pattern) = node.child_by_field_name("pattern") {
+            collect_identifiers(pattern, source, &mut bindings);
+        }
+        if node.kind() == "closure_parameters" {
+            collect_identifiers(node, source, &mut bindings);
+        }
+        let mut cursor = node.walk();
+        stack.extend(node.named_children(&mut cursor));
+    }
+    bindings
+}
+
+fn collect_identifiers(node: Node, source: &str, names: &mut HashSet<String>) {
+    let mut stack = vec![node];
+    while let Some(node) = stack.pop() {
+        if matches!(node.kind(), "identifier" | "shorthand_field_identifier") {
+            names.insert(node_text(node, source));
+        }
+        let mut cursor = node.walk();
+        stack.extend(node.named_children(&mut cursor));
+    }
+}
+
+/// The node whose patterns can bind a name visible at `node`: the nearest
+/// enclosing function, or else the outermost item (a `const`/`static`
+/// initializer's closures).
+fn binding_scope(node: Node) -> Node {
+    let mut scope = node;
+    let mut current = node;
+    while let Some(parent) = current.parent() {
+        if current.kind() == "function_item" {
+            return current;
+        }
+        if parent.kind() != "source_file" {
+            scope = parent;
+        }
+        current = parent;
+    }
+    scope
+}
+
+/// Recovers call refs from a macro invocation's token tree, which tree-sitter
+/// leaves unparsed: an identifier or path immediately followed by a
+/// parenthesised token tree (`f(..)`, `a::b(..)`, `x.m(..)`, `f::<T>(..)`) is
+/// read as a call, at any nesting depth (`assert!(!store.delete(id)?)`,
+/// `vec![path(root, "a")]`, `format!("{}", render(x))`).
+///
+/// Recovered refs carry exactly what the same call written outside a macro
+/// would: method calls keep their receiver text (so the ORB-12416 rule — no
+/// name-only match for an unknown receiver — still applies), paths keep their
+/// qualified spelling, and resolution confidence is still decided by pass 2's
+/// ladder from the symbol table, never raised by the extractor. Declarations
+/// spelled inside a macro (`fn f(..)`, `struct S(..)`) are skipped.
+fn collect_macro_token_refs(
+    tree: Node,
+    source: &str,
+    module: &ModuleScope,
+    state: &mut ExtractionState,
+) {
+    let mut cursor = tree.walk();
+    let tokens: Vec<Node> = tree.children(&mut cursor).collect();
+    for (index, token) in tokens.iter().enumerate() {
+        match token.kind() {
+            "token_tree" => collect_macro_token_refs(*token, source, module, state),
+            "identifier" if is_macro_call_head(&tokens, index) => {
+                push_macro_call_ref(&tokens, index, source, module, state);
+            }
+            _ => {}
+        }
+    }
+}
+
+/// Whether the identifier at `index` is followed by call arguments: a `(`
+/// token tree, optionally after a `::<..>` turbofish.
+fn is_macro_call_head(tokens: &[Node], index: usize) -> bool {
+    let mut next = index + 1;
+    if tokens.get(next).is_some_and(|token| token.kind() == "::")
+        && tokens
+            .get(next + 1)
+            .is_some_and(|token| token.kind() == "<")
+    {
+        let mut depth = 0i32;
+        let mut cursor = next + 1;
+        loop {
+            let Some(token) = tokens.get(cursor) else {
+                return false;
+            };
+            depth += match token.kind() {
+                "<" => 1,
+                "<<" => 2,
+                ">" => -1,
+                ">>" => -2,
+                _ => 0,
+            };
+            cursor += 1;
+            if depth <= 0 {
+                break;
+            }
+        }
+        next = cursor;
+    }
+    let Some(arguments) = tokens.get(next) else {
+        return false;
+    };
+    arguments.kind() == "token_tree"
+        && arguments
+            .child(0)
+            .is_some_and(|delimiter| delimiter.kind() == "(")
+}
+
+fn push_macro_call_ref(
+    tokens: &[Node],
+    index: usize,
+    source: &str,
+    module: &ModuleScope,
+    state: &mut ExtractionState,
+) {
+    let name_node = tokens[index];
+    let name = node_text(name_node, source);
+    if is_reserved_word(&name) || is_ignored_type_name(&name) {
+        return;
+    }
+    let previous = index.checked_sub(1).map(|previous| tokens[previous]);
+    if previous.is_some_and(|previous| {
+        matches!(
+            previous.kind(),
+            "fn" | "struct" | "enum" | "union" | "trait" | "mod" | "type" | "impl" | "const"
+        )
+    }) {
+        return;
+    }
+
+    let (span_start, target_qualified, confidence, receiver) = match previous.map(|p| p.kind()) {
+        Some(".") => {
+            let receiver_end = index - 1;
+            let receiver_start = macro_receiver_start(tokens, receiver_end);
+            if receiver_start == receiver_end {
+                return;
+            }
+            let receiver_text = source
+                .get(tokens[receiver_start].start_byte()..tokens[receiver_end - 1].end_byte())
+                .unwrap_or_default()
+                .to_string();
+            if receiver_text == "self" {
+                let target = enclosing_impl_type(name_node, source, module)
+                    .map(|type_name| format!("<{type_name}>::{name}"));
+                (name_node.start_byte(), target, "fuzzy_name", None)
+            } else {
+                (
+                    name_node.start_byte(),
+                    None,
+                    "fuzzy_name",
+                    Some(receiver_text),
+                )
+            }
+        }
+        Some("::") => {
+            let mut start = index;
+            while start >= 2
+                && tokens[start - 1].kind() == "::"
+                && matches!(
+                    tokens[start - 2].kind(),
+                    "identifier" | "self" | "super" | "crate"
+                )
+            {
+                start -= 2;
+            }
+            let path = source
+                .get(tokens[start].start_byte()..name_node.end_byte())
+                .map(normalize_qualified_name)
+                .unwrap_or_default();
+            let fully_spelled = start == 0 || tokens[start - 1].kind() != "::";
+            if let Some(rest) = path.strip_prefix("Self::") {
+                let target = enclosing_impl_type(name_node, source, module)
+                    .map(|type_name| format!("<{type_name}>::{rest}"));
+                (tokens[start].start_byte(), target, "fuzzy_name", None)
+            } else if fully_spelled && path.contains("::") {
+                (
+                    tokens[start].start_byte(),
+                    Some(path),
+                    "import_resolved",
+                    None,
+                )
+            } else {
+                // `Vec::<u8>::new(..)` or `<T as Trait>::m(..)`: the path is
+                // not recoverable from the tokens, so keep only the name.
+                (tokens[start].start_byte(), None, "fuzzy_name", None)
+            }
+        }
+        _ => (
+            name_node.start_byte(),
+            Some(module.qualify(&name)),
+            "fuzzy_name",
+            None,
+        ),
+    };
+
+    state.refs.push(RawRef {
+        from_file: state.file_path.clone(),
+        from_span_start: span_start,
+        from_span_end: name_node.end_byte(),
+        target_name: name,
+        target_qualified,
+        kind: "call".to_string(),
+        confidence: confidence.to_string(),
+        unresolved_receiver: receiver,
+    });
+}
+
+/// Index of the first token of the postfix expression that ends just before
+/// `dot` (the `.` of a method call): identifiers, `self`, literals, argument
+/// or index token trees, and the `.`/`::`/`?`/`.await` that chain them.
+fn macro_receiver_start(tokens: &[Node], dot: usize) -> usize {
+    let mut start = dot;
+    while start > 0 {
+        let kind = tokens[start - 1].kind();
+        let chains = matches!(
+            kind,
+            "identifier" | "self" | "super" | "crate" | "token_tree" | "." | "::" | "?" | "await"
+        ) || kind.ends_with("_literal");
+        if !chains {
+            break;
+        }
+        start -= 1;
+    }
+    // A leading `.`/`::`/`?` cannot start an expression.
+    while start < dot && matches!(tokens[start].kind(), "." | "::" | "?") {
+        start += 1;
+    }
+    start
 }
 
 fn collect_call_ref(node: Node, source: &str, module: &ModuleScope, state: &mut ExtractionState) {
@@ -835,12 +1181,17 @@ fn self_call_target_qualified(
                 .next()
                 .map(ToOwned::to_owned)
         })?;
-    let mut ancestor = Some(function);
+    let type_name = enclosing_impl_type(function, source, module)?;
+    Some(format!("<{type_name}>::{name}"))
+}
+
+/// Qualified name of the type whose `impl` block encloses `node`.
+fn enclosing_impl_type(node: Node, source: &str, module: &ModuleScope) -> Option<String> {
+    let mut ancestor = Some(node);
     while let Some(node) = ancestor {
         if node.kind() == "impl_item" {
             let type_node = node.child_by_field_name("type")?;
-            let type_name = type_qualified_name(type_node, source, module)?;
-            return Some(format!("<{type_name}>::{name}"));
+            return type_qualified_name(type_node, source, module);
         }
         ancestor = node.parent();
     }
