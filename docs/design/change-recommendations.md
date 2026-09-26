@@ -13,7 +13,8 @@ mutation target. The crate reads no Orbit database, configuration, task store,
 or private API and remains usable without Orbit.
 
 The SQLite database is a local derived index at
-`.orbit-graph/change-history.2.sqlite3`. It is not task authority. External
+`.orbit-graph/change-history.4.sqlite3` (the file name carries
+`HISTORY_INDEX_SCHEMA_VERSION`). It is not task authority. External
 delivery/task systems retain authority and should be able to replay the public
 envelopes after `history rebuild`, which intentionally recreates only evidence
 available from Git.
@@ -154,14 +155,21 @@ and unparseable records never become live recommendation destinations.
 
 ## Storage, sync, and failure behavior
 
-The v2 SQLite schema stores scope cursors, delivery payloads, normalized task
+The SQLite schema stores scope cursors, delivery payloads, normalized task
 memberships, delivery/creation/snapshot temporal status, timestamp and
-provenance columns, text availability, file stats/fallbacks, and both sides of
-symbol evidence. Foreign keys cascade within a delivery. Repository, branch,
+provenance columns, text availability, file stats/fallbacks, both sides of
+symbol evidence, and (since schema v4) per-delivery path lineage. Foreign keys cascade within a delivery. Repository, branch,
 schema version, extractor
 version, provenance, task ambiguity, and evidence strength remain queryable.
 `HistoryIndex::deliveries` returns stable typed records so ranking code does not
 depend on SQLite layout.
+
+Path lineage (`history_path_lineage`) is written in the same transaction as its
+delivery by import, sync, and rebuild. It records the delivery's own
+before-to-after rename steps (`old_path -> new_path`) and deletions
+(`old_path -> none`) exactly as that delivery's diff classified them. Copies
+and modifications record nothing, because the source path stays live. Lineage
+is derived evidence: it is recreated whenever its delivery is re-extracted.
 
 Every import and sync holds a sidecar file lock and uses one SQLite immediate
 transaction. Delivery rows and the cursor commit together. A failure after any
@@ -208,9 +216,19 @@ index and change extractor also advance independently to version 2, selecting a 
 verified producers replay v2 envelopes and Git-only evidence can be rebuilt.
 The crate/package version remains unchanged because this task is not a release.
 
+History schema v4 (`change-history.4.sqlite3`) adds only derived path lineage.
+The first open of a v4 index that holds no scope or delivery copies every scope
+cursor and delivery payload from a sibling `change-history.3.sqlite3` whose
+extractor and import versions match, deriving lineage on insert. Verified
+imports therefore survive the upgrade without replay, and no Git extraction is
+repeated. The v3 file is read, never modified, and the copy runs at most once
+(the outcome is recorded under `legacy_copy` in `history_meta`); an
+incompatible or absent v3 index is recorded as skipped. `history rebuild` and
+`history sync` populate lineage for Git-only evidence at any time.
+
 Tree-sitter extraction is syntactic; macros, generated code, dynamic dispatch,
 and malformed files can reduce evidence. Rename detection follows libgit2
-similarity heuristics. File moves plus semantic rewrites may remain unmatched,
+similarity heuristics, applied once per delivery at ingest. File moves plus semantic rewrites may remain unmatched,
 which is preferable to invented identity. Root commits lack a commit-valued
 before boundary and are used only as the starting cursor; their initial tree is
 not emitted as a delivery in v2.
@@ -287,7 +305,8 @@ cutoff; equality is excluded. Strict replay reads only snapshots proven
 available before execution. Live mode may use current started/completed task
 observations that predate the request while preserving their honest
 `post_execution` label. Both modes exclude every equivalent delivery boundary
-associated with the target task. Historical paths are followed through Git rename detection;
+associated with the target task. Historical paths are followed forward through
+persisted path lineage (see "Path lineage at query time" below);
 symbols must resolve uniquely by current qualified identity or conservative
 signature identity. Deleted and ambiguous symbols are omitted. Symbol mode
 uses a `file:` selector only when history has file-only or unresolvable symbol
@@ -308,6 +327,41 @@ committed deletion cannot return the removed file or symbol; skipped stale rows
 are explicit in `fallbacks`. These seams let Stage 3 run chronological
 backtests by setting both `target_revision` and `cutoff`, then comparing the
 ranked selectors to held-out delivered destinations.
+
+### Path lineage at query time
+
+Recommendation performs no whole-tree rename or copy detection per delivery.
+Each request builds one in-memory lineage from the persisted steps of every
+*visible* delivery, ordered by first-parent commit distance from the target
+(memoized per revision). A changed path observed at a delivery's landed
+revision resolves as follows:
+
+1. a path present in the target tree is used unchanged;
+2. otherwise the path is chained through every later visible delivery's
+   rename map, oldest first; a recorded deletion ends it and the file
+   contributes nothing;
+3. otherwise, when the newest visible delivery is behind the target (the
+   history cursor lags), the path is looked up in one bounded renames-only
+   diff from that delivery to the target. The diff is computed at most once per
+   request and only when some path needs it. It never detects copies, and when
+   more than 500 files were added or deleted in the gap it follows only
+   content-identical renames. Its use is reported as a `path_lineage_gap` or
+   `path_lineage_gap_exact_only` fallback.
+
+A resolved path must exist in the target tree. Paths that still cannot be
+followed are omitted; when indexed deliveries leave unindexed ranges (a
+delivery's base is not another visible delivery's landing), the omission is
+reported as `path_lineage_incomplete`.
+
+Visibility follows the same rule as ranking evidence, except that the target
+task's own boundary is kept: live requests use every delivery on the target's
+ancestry, and strict replay uses only deliveries that pass the explicit cutoff
+(known landing time strictly before it). Lineage recorded by a post-cutoff
+delivery therefore never resolves a path in strict replay. A rename performed
+by an excluded delivery can be followed only by the gap diff, which compares
+Git trees up to the target revision and so reveals nothing the target
+revision does not already contain; in every mode the target tree must contain
+the resolved path.
 
 ## Stage 3 Orbit adapter and plugin
 

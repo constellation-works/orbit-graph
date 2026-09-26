@@ -1493,7 +1493,7 @@ fn real_binary_imports_syncs_reports_and_rebuilds_history() {
     assert_eq!(synced_ndjson.len(), 1);
     assert!(synced_ndjson[0]["complete"].is_boolean());
     let status = run_json(fixture.path(), ["history", "status", "--branch", "main"]);
-    assert_eq!(status["schema_version"], 3);
+    assert_eq!(status["schema_version"], 4);
     assert_eq!(status["extractor_version"], 2);
     assert_eq!(status["verified_deliveries"], 1);
     assert_eq!(status["git_only_deliveries"], 1);

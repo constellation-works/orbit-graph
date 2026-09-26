@@ -16,14 +16,26 @@ use crate::GraphError;
 use crate::extract::history::{
     CHANGE_EXTRACTOR_VERSION, CurrentRevisionResolution, CurrentSymbolStatus,
     DEFAULT_HISTORY_SYNC_LIMIT, DELIVERY_IMPORT_SCHEMA_VERSION, DeliveredChange, DeliveryEvidence,
-    DeliveryImport, Provenance, RevisionSide, SymbolIdentity, TaskAssociation,
-    TaskTextAvailability, TemporalFact, TemporalStatus, branch_tip, extract_delivery,
-    repository_identity, validate_task_association,
+    DeliveryImport, FileChange, FileChangeKind, Provenance, RevisionSide, SymbolIdentity,
+    TaskAssociation, TaskTextAvailability, TemporalFact, TemporalStatus, branch_tip,
+    extract_delivery, repository_identity, validate_task_association,
 };
 use crate::extract::languages;
 
 /// Version of the history SQLite schema.
-pub const HISTORY_INDEX_SCHEMA_VERSION: u32 = 3;
+///
+/// Version 4 adds `history_path_lineage`: each delivery's own rename and
+/// deletion steps, persisted at ingest so recommendation can follow a
+/// historical path forward without query-time rename detection. Opening a v4
+/// index beside a compatible v3 index copies the v3 deliveries and cursors once
+/// (see [`HistoryIndex::open`]); `history rebuild` also repopulates lineage.
+pub const HISTORY_INDEX_SCHEMA_VERSION: u32 = 4;
+
+/// Previous schema version whose payloads can be re-inserted without re-extraction.
+const PREVIOUS_HISTORY_INDEX_SCHEMA_VERSION: u32 = 3;
+
+/// `history_meta` key recording that the one-time previous-schema copy was attempted.
+const LEGACY_COPY_META_KEY: &str = "legacy_copy";
 
 /// Handle to the repository-local, rebuildable delivery-history index.
 #[derive(Debug, Clone)]
@@ -106,6 +118,23 @@ pub struct HistoryRebuildReport {
     pub sync: HistorySyncReport,
 }
 
+/// One persisted path-lineage step recorded from a delivery's own before/after diff.
+///
+/// `new_path` is `Some` for a rename (the file continues under the new path)
+/// and `None` for a deletion (the path has no descendant after the delivery).
+/// Copies are not lineage: the source path stays live.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct PathLineageStep {
+    /// Delivery whose diff recorded the step.
+    pub(crate) delivery_id: String,
+    /// Immutable landed commit of that delivery.
+    pub(crate) after_revision: String,
+    /// Path in the delivery's before tree.
+    pub(crate) old_path: String,
+    /// Descendant path in the delivery's after tree, absent for a deletion.
+    pub(crate) new_path: Option<String>,
+}
+
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 struct HistoryScope {
     cursor: Option<String>,
@@ -177,10 +206,78 @@ impl HistoryIndex {
             landing_branch,
         };
         let _lock = HistoryLock::acquire(index.db_path.as_path())?;
-        let conn = index.open_connection()?;
+        let mut conn = index.open_connection()?;
         initialize_schema(&conn)?;
         index.validate_versions(&conn)?;
+        index.copy_previous_schema_once(&mut conn)?;
         Ok(index)
+    }
+
+    /// Populate a fresh index from a compatible previous-schema database once.
+    ///
+    /// Schema v4 only adds derived lineage rows, so v3 delivery payloads (which
+    /// include externally verified imports that `history rebuild` cannot
+    /// recreate) are re-inserted unchanged and their lineage derived on insert.
+    /// The previous database is read, never modified. The attempt is recorded
+    /// in `history_meta` so it runs at most once per database, and it is skipped
+    /// when the new index already holds any scope or delivery.
+    fn copy_previous_schema_once(&self, conn: &mut Connection) -> Result<(), GraphError> {
+        // Decide and act inside one IMMEDIATE transaction (in addition to the
+        // sidecar lock held by `open`), so concurrent openers of an empty index
+        // cannot both pass the checks and copy twice.
+        let tx = conn
+            .transaction_with_behavior(TransactionBehavior::Immediate)
+            .map_err(|source| GraphError::sqlite("begin history legacy copy", source))?;
+        let attempted: Option<String> = tx
+            .query_row(
+                "SELECT value FROM history_meta WHERE key=?1",
+                [LEGACY_COPY_META_KEY],
+                |row| row.get(0),
+            )
+            .optional()
+            .map_err(|source| GraphError::sqlite("read history legacy copy state", source))?;
+        if attempted.is_some() {
+            return Ok(());
+        }
+        let populated: i64 = tx
+            .query_row(
+                "SELECT (SELECT count(*) FROM history_deliveries) + (SELECT count(*) FROM history_scopes)",
+                [],
+                |row| row.get(0),
+            )
+            .map_err(|source| GraphError::sqlite("check history legacy copy target", source))?;
+        let previous = self.db_path.with_file_name(format!(
+            "change-history.{PREVIOUS_HISTORY_INDEX_SCHEMA_VERSION}.sqlite3"
+        ));
+        let outcome = if populated > 0 {
+            "skipped: index already populated".to_string()
+        } else if !previous.is_file() {
+            "skipped: no previous index".to_string()
+        } else {
+            match read_previous_schema(previous.as_path())? {
+                Some((scopes, deliveries)) => {
+                    for change in &deliveries {
+                        insert_delivery(&tx, change)?;
+                    }
+                    for (repository, branch, scope) in &scopes {
+                        tx.execute(
+                            "INSERT INTO history_scopes(repository,landing_branch,cursor,bootstrap_tip,bootstrap_frontier) VALUES(?1,?2,?3,?4,?5)",
+                            params![repository, branch, scope.cursor, scope.bootstrap_tip, scope.bootstrap_frontier],
+                        )
+                        .map_err(|source| GraphError::sqlite("copy history scope", source))?;
+                    }
+                    format!(
+                        "copied {} deliveries and {} scopes from schema {PREVIOUS_HISTORY_INDEX_SCHEMA_VERSION}",
+                        deliveries.len(),
+                        scopes.len()
+                    )
+                }
+                None => "skipped: previous index has incompatible versions".to_string(),
+            }
+        };
+        record_legacy_copy(&tx, outcome.as_str())?;
+        tx.commit()
+            .map_err(|source| GraphError::sqlite("commit history legacy copy", source))
     }
 
     /// Stable repository identity expected by import envelopes.
@@ -352,6 +449,27 @@ impl HistoryIndex {
             })?);
         }
         Ok(deliveries)
+    }
+
+    /// Load persisted rename/deletion lineage steps for this scope.
+    pub(crate) fn path_lineage(&self) -> Result<Vec<PathLineageStep>, GraphError> {
+        let conn = self.open_connection()?;
+        let mut stmt = conn
+            .prepare(
+                "SELECT l.delivery_id, d.after_revision, l.old_path, l.new_path FROM history_path_lineage l JOIN history_deliveries d ON d.repository=l.repository AND d.landing_branch=l.landing_branch AND d.delivery_id=l.delivery_id WHERE l.repository=?1 AND l.landing_branch=?2 ORDER BY l.delivery_id, l.ordinal",
+            )
+            .map_err(|source| GraphError::sqlite("prepare history lineage read", source))?;
+        stmt.query_map(params![self.repository, self.landing_branch], |row| {
+            Ok(PathLineageStep {
+                delivery_id: row.get(0)?,
+                after_revision: row.get(1)?,
+                old_path: row.get(2)?,
+                new_path: row.get(3)?,
+            })
+        })
+        .map_err(|source| GraphError::sqlite("query history lineage", source))?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|source| GraphError::sqlite("read history lineage row", source))
     }
 
     /// Return an indexed delivery by its stable source boundary identifier.
@@ -877,6 +995,13 @@ CREATE TABLE IF NOT EXISTS history_symbols (
   FOREIGN KEY(repository, landing_branch, delivery_id, file_ordinal)
     REFERENCES history_files(repository, landing_branch, delivery_id, ordinal) ON DELETE CASCADE
 ) STRICT;
+CREATE TABLE IF NOT EXISTS history_path_lineage (
+  repository TEXT NOT NULL, landing_branch TEXT NOT NULL, delivery_id TEXT NOT NULL,
+  ordinal INTEGER NOT NULL, old_path TEXT NOT NULL, new_path TEXT,
+  PRIMARY KEY(repository, landing_branch, delivery_id, ordinal),
+  FOREIGN KEY(repository, landing_branch, delivery_id)
+    REFERENCES history_deliveries(repository, landing_branch, delivery_id) ON DELETE CASCADE
+) STRICT;
 "#;
 
 fn initialize_schema(conn: &Connection) -> Result<(), GraphError> {
@@ -947,6 +1072,12 @@ fn insert_delivery(
             "INSERT INTO history_files(repository,landing_branch,delivery_id,ordinal,old_path,new_path,change_kind,additions,deletions,before_fallback,after_fallback) VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11)",
             params![delivery.repository, delivery.landing_branch, delivery.delivery_id, i64_len(file_ordinal)?, file.old_path, file.new_path, file.kind.as_str(), i64_len(file.additions)?, i64_len(file.deletions)?, file.before_fallback.map(|reason| reason.as_str()), file.after_fallback.map(|reason| reason.as_str())],
         ).map_err(|source| GraphError::sqlite("insert history file", source))?;
+        if let Some((old_path, new_path)) = lineage_step(file) {
+            tx.execute(
+                "INSERT INTO history_path_lineage(repository,landing_branch,delivery_id,ordinal,old_path,new_path) VALUES(?1,?2,?3,?4,?5,?6)",
+                params![delivery.repository, delivery.landing_branch, delivery.delivery_id, i64_len(file_ordinal)?, old_path, new_path],
+            ).map_err(|source| GraphError::sqlite("insert history path lineage", source))?;
+        }
         for (symbol_ordinal, symbol) in file.symbols.iter().enumerate() {
             for item in [symbol.before.as_ref(), symbol.after.as_ref()]
                 .into_iter()
@@ -968,6 +1099,95 @@ fn insert_delivery(
         files: change.files.len(),
         symbols: symbol_count,
     })
+}
+
+/// Lineage recorded for one extracted file change: renames continue the old
+/// path under the new one; deletions end it. Other kinds keep their path.
+fn lineage_step(file: &FileChange) -> Option<(&str, Option<&str>)> {
+    let old_path = file.old_path.as_deref()?;
+    match file.kind {
+        FileChangeKind::Renamed => {
+            let new_path = file.new_path.as_deref()?;
+            (new_path != old_path).then_some((old_path, Some(new_path)))
+        }
+        FileChangeKind::Deleted => Some((old_path, None)),
+        _ => None,
+    }
+}
+
+type PreviousSchemaContents = (Vec<(String, String, HistoryScope)>, Vec<DeliveredChange>);
+
+/// Read every scope and delivery payload from a previous-schema database whose
+/// extractor and import contracts match the running binary. Returns `None`
+/// when the versions differ, so the caller records a skipped copy instead of
+/// importing payloads with a different meaning.
+fn read_previous_schema(path: &Path) -> Result<Option<PreviousSchemaContents>, GraphError> {
+    let _lock = HistoryLock::acquire(path)?;
+    let conn = Connection::open_with_flags(path, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)
+        .map_err(|source| GraphError::sqlite("open previous history index", source))?;
+    conn.pragma_update(None, "busy_timeout", 5_000)
+        .map_err(|source| GraphError::sqlite("set previous history busy timeout", source))?;
+    for (key, expected) in [
+        ("schema_version", PREVIOUS_HISTORY_INDEX_SCHEMA_VERSION),
+        ("extractor_version", CHANGE_EXTRACTOR_VERSION),
+        ("import_schema_version", DELIVERY_IMPORT_SCHEMA_VERSION),
+    ] {
+        let actual: Option<String> = conn
+            .query_row(
+                "SELECT value FROM history_meta WHERE key=?1",
+                [key],
+                |row| row.get(0),
+            )
+            .optional()
+            .map_err(|source| GraphError::sqlite("read previous history version", source))?;
+        if actual != Some(expected.to_string()) {
+            return Ok(None);
+        }
+    }
+    let mut scopes_stmt = conn
+        .prepare("SELECT repository,landing_branch,cursor,bootstrap_tip,bootstrap_frontier FROM history_scopes ORDER BY repository, landing_branch")
+        .map_err(|source| GraphError::sqlite("prepare previous history scopes", source))?;
+    let scopes = scopes_stmt
+        .query_map([], |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, String>(1)?,
+                HistoryScope {
+                    cursor: row.get(2)?,
+                    bootstrap_tip: row.get(3)?,
+                    bootstrap_frontier: row.get(4)?,
+                },
+            ))
+        })
+        .map_err(|source| GraphError::sqlite("query previous history scopes", source))?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|source| GraphError::sqlite("read previous history scope", source))?;
+    let mut deliveries_stmt = conn
+        .prepare("SELECT payload_json FROM history_deliveries ORDER BY repository, landing_branch, delivery_id")
+        .map_err(|source| GraphError::sqlite("prepare previous history deliveries", source))?;
+    let payloads = deliveries_stmt
+        .query_map([], |row| row.get::<_, String>(0))
+        .map_err(|source| GraphError::sqlite("query previous history deliveries", source))?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|source| GraphError::sqlite("read previous history delivery", source))?;
+    let deliveries = payloads
+        .iter()
+        .map(|payload| {
+            serde_json::from_str(payload.as_str()).map_err(|error| {
+                GraphError::invalid_data("decode previous history delivery", error.to_string())
+            })
+        })
+        .collect::<Result<Vec<DeliveredChange>, _>>()?;
+    Ok(Some((scopes, deliveries)))
+}
+
+fn record_legacy_copy(conn: &Connection, outcome: &str) -> Result<(), GraphError> {
+    conn.execute(
+        "INSERT OR REPLACE INTO history_meta(key,value) VALUES(?1,?2)",
+        params![LEGACY_COPY_META_KEY, outcome],
+    )
+    .map(drop)
+    .map_err(|source| GraphError::sqlite("record history legacy copy", source))
 }
 
 fn task_ids_from_message(message: &str) -> Vec<String> {

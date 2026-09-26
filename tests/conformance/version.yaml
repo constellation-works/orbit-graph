@@ -9,5 +9,5 @@ tests:
         crate_version: 0.10.0
         extractor_version: 11
         store_schema_version: 1
-        history_schema_version: 3
+        history_schema_version: 4
         plugin_schema_version: 1
