@@ -24,6 +24,15 @@ use super::corpus;
 /// How long to wait for indexing to finish before failing a test.
 const READY_TIMEOUT: Duration = Duration::from_secs(60);
 
+/// How long [`Service::wait_until_ready_while_progressing`] tolerates a build
+/// that reports no progress at all before failing: a hung build, not a slow
+/// one.
+const STALL_TIMEOUT: Duration = Duration::from_secs(120);
+
+/// Absolute ceiling for [`Service::wait_until_ready_while_progressing`], so a
+/// build that keeps inching forward can never hang a test run indefinitely.
+const PROGRESS_CEILING: Duration = Duration::from_secs(20 * 60);
+
 /// A launched `orbit-graph-explorer serve` process.
 pub struct Service {
     child: Mutex<Child>,
@@ -220,6 +229,69 @@ impl Service {
             std::thread::sleep(Duration::from_millis(25));
         }
     }
+
+    /// Wait for a large build to finish, failing when it stops making
+    /// progress rather than after a fixed wall-clock budget.
+    ///
+    /// [`Service::wait_until_ready`] suits the small corpus cases, which index
+    /// in a fraction of its budget on any host. A deliberately large fixture
+    /// indexes at the speed of the host's disk: a cold 4,000-file build takes
+    /// tens of seconds on a fast runner and minutes on a loaded rotational
+    /// disk. This waits for as long as either side's reported state, phase,
+    /// or per-phase counters keep changing, and fails if they stay unchanged
+    /// for [`STALL_TIMEOUT`], if the build fails, if it is left `cancelled`
+    /// (nothing restarted it), or past [`PROGRESS_CEILING`].
+    pub fn wait_until_ready_while_progressing(&self) {
+        let started = Instant::now();
+        let mut last_change = started;
+        let mut last_signature = String::new();
+        loop {
+            let status = self.authorized("GET", "/api/status", &[]).json();
+            match status["indexing_status"].as_str() {
+                Some("ready") => return,
+                Some("failed") => panic!("indexing failed: {status}"),
+                Some("cancelled") => {
+                    panic!("indexing is cancelled and nothing restarted it: {status}")
+                }
+                _ => {}
+            }
+            let signature = progress_signature(&status["indexing"]);
+            if signature != last_signature {
+                last_signature = signature;
+                last_change = Instant::now();
+            }
+            assert!(
+                last_change.elapsed() < STALL_TIMEOUT,
+                "indexing made no progress for {STALL_TIMEOUT:?}: {status}"
+            );
+            assert!(
+                started.elapsed() < PROGRESS_CEILING,
+                "indexing did not finish within {PROGRESS_CEILING:?}: {status}"
+            );
+            std::thread::sleep(Duration::from_millis(100));
+        }
+    }
+}
+
+/// Everything in a `/api/status` `indexing` object that moves while a build
+/// advances; `elapsed_ms` is deliberately excluded, since it ticks even when
+/// the build is stuck.
+fn progress_signature(indexing: &Value) -> String {
+    ["base", "head"]
+        .iter()
+        .map(|side| {
+            let report = &indexing[*side];
+            format!(
+                "{}/{}/{}/{}/{}",
+                report["state"],
+                report["phase"],
+                report["phase_progress"],
+                report["files_seen"],
+                report["files_indexed"]
+            )
+        })
+        .collect::<Vec<_>>()
+        .join(";")
 }
 
 impl Drop for Service {
