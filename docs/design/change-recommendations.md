@@ -396,28 +396,31 @@ The rules:
   `fix: …` subjects Orbit's history contains, are message content and are
   kept. The message is then truncated to 4 KiB.
 - Relevance is `0.5 × similarity²`, where similarity is the same query-coverage
-  token overlap used for task text. **This is a heuristic, not a measured
-  optimum.** Its only evidence is one query on one repository: on a
-  200-commit Git-only Orbit index, the linear `0.5 × similarity` left the
-  expected file at rank 5, because weak partial matches on shared component
-  vocabulary (`auto-task`, `defaults`) stacked onto other files, while the
-  squared form ranked it 2nd. Squaring keeps a message that describes the whole
-  query at the full 0.5 weight and cuts a half-covering message to a quarter of
-  that. ORB-13229 tracks a live-mode evaluation, where a held-out commit's
-  subject is the query at `target = commit^` (leakage-safe through the ancestry
-  filter), to replace this with a measured setting. The value then
-  passes through the usual Git-only evidence weight, recency, breadth,
-  ubiquity and artifact discounts, and seeds directional co-change like any
-  direct change.
+  token overlap used for task text. The weight and the exponent are the
+  measured production setting from the live Git evaluation in
+  [`docs/evaluation/commit-text-live.md`](../evaluation/commit-text-live.md)
+  (ORB-13229). That run holds out a first-parent commit, queries its subject
+  at `target = commit^`, and checks that the held-out commit and later
+  deliveries contribute no evidence. It compares no commit text, linear
+  `0.5 × s`, squared `0.5 × s²`, squared `0.25 × s²`, and linear `1.0 × s` on
+  Orbit and orbit-graph. Squared weight 0.5 stays: under the cohort rule in
+  that record, no other point improved MRR@10 by at least 0.01 on both
+  repositories. Squaring keeps a message that describes the whole query at the
+  full 0.5 weight and cuts a half-covering message to a quarter of that. The
+  value then passes through the usual Git-only evidence weight, recency,
+  breadth, ubiquity and artifact discounts, and seeds directional co-change
+  like any direct change.
 - Contributions carry the reason kind `historical_change_commit_text`, and a
   response that used any is reported with the `git_commit_text_used`
   fallback. Task-search-only, graph-only and frequency variants do not use
   commit text.
 
-On a 200-commit Git-only Orbit index, the query "auto-task delete durable
-opt-out for shipped defaults" moved
+One earlier manual query on a 200-commit Git-only Orbit index ("auto-task
+delete durable opt-out for shipped defaults") moved
 `crates/orbit-core/src/application/auto_tasks/delete.rs` from a lexical-only
-tie at rank 6 to rank 2, behind its own test module.
+tie at rank 6 to rank 2, behind its own test module. The live evaluation above
+is the measurement that fixes the weight and exponent; that single query is
+only an illustration of the rank change.
 
 ### Target-tree symbols and their cache
 

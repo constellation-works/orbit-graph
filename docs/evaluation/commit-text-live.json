@@ -1,0 +1,643 @@
+{
+  "schema_version": 1,
+  "mode": "live_git_record",
+  "decision": {
+    "weight": 0.5,
+    "exponent": 2.0,
+    "kept": true,
+    "rule": "Keep 0.5 and exponent 2 unless another point improves MRR@10 by at least 0.01 on both repositories, using without_title_restating when that cohort has at least 20 truth-bearing cases, otherwise all."
+  },
+  "latency_note": "no_commit_text is scored first and pays cold target-symbol extraction. The other variants reuse that cache, so their lower mean latency is not evidence that commit text is cheaper.",
+  "title_restating": "A subject cites a bracketed task id such as [ORB-123]. No task store is read.",
+  "runs": [
+    {
+      "schema_version": 1,
+      "mode": "live_git",
+      "repository": "https://github.com/constellation-works/orbit-graph.git",
+      "landing_branch": "agent-main",
+      "resolved_tip": "d9d8ad4ddd52eccba458eca10b4ec0371686bb6a",
+      "oldest_held_out": "187de6e799198d4324cc0db1688a5efbcd621945",
+      "newest_held_out": "d9d8ad4ddd52eccba458eca10b4ec0371686bb6a",
+      "stop_reason": "history_exhausted",
+      "limit_requested": 300,
+      "k": 10,
+      "production_weight": 0.5,
+      "production_exponent": 2.0,
+      "history_deliveries": 110,
+      "history_git_only": 110,
+      "history_verified": 0,
+      "history_complete": true,
+      "loadavg_start": 6.08,
+      "loadavg_end": 3.91,
+      "available_parallelism": 15,
+      "held_out_indexed_cases": 110,
+      "cases_evaluated": 110,
+      "skipped_empty_subject": 0,
+      "leakage_violations": 0,
+      "variants": [
+        {
+          "commit_text": false,
+          "exponent": null,
+          "name": "no_commit_text",
+          "weight": null
+        },
+        {
+          "commit_text": true,
+          "exponent": 1.0,
+          "name": "linear_0.5",
+          "weight": 0.5
+        },
+        {
+          "commit_text": true,
+          "exponent": 2.0,
+          "name": "squared_0.5",
+          "weight": 0.5
+        },
+        {
+          "commit_text": true,
+          "exponent": 2.0,
+          "name": "squared_0.25",
+          "weight": 0.25
+        },
+        {
+          "commit_text": true,
+          "exponent": 1.0,
+          "name": "linear_1.0",
+          "weight": 1.0
+        }
+      ],
+      "cohorts": [
+        {
+          "cases": 110,
+          "cases_with_truth": 106,
+          "metrics": [
+            {
+              "cases": 106,
+              "cohort": "all",
+              "commit_text": false,
+              "exponent": null,
+              "k": 10,
+              "mean_latency_ms": 493.0823203207547,
+              "mrr_at_k": 0.49044249775381854,
+              "name": "no_commit_text",
+              "precision_at_k": 0.15188679245283018,
+              "recall_at_k": 0.20483460559796438,
+              "relevant": 786,
+              "true_positives": 161,
+              "weight": null
+            },
+            {
+              "cases": 106,
+              "cohort": "all",
+              "commit_text": true,
+              "exponent": 1.0,
+              "k": 10,
+              "mean_latency_ms": 41.74293255660378,
+              "mrr_at_k": 0.45722521713087744,
+              "name": "linear_0.5",
+              "precision_at_k": 0.1820754716981132,
+              "recall_at_k": 0.2455470737913486,
+              "relevant": 786,
+              "true_positives": 193,
+              "weight": 0.5
+            },
+            {
+              "cases": 106,
+              "cohort": "all",
+              "commit_text": true,
+              "exponent": 2.0,
+              "k": 10,
+              "mean_latency_ms": 40.80059647169811,
+              "mrr_at_k": 0.5159965558550464,
+              "name": "squared_0.5",
+              "precision_at_k": 0.19433962264150945,
+              "recall_at_k": 0.26208651399491095,
+              "relevant": 786,
+              "true_positives": 206,
+              "weight": 0.5
+            },
+            {
+              "cases": 106,
+              "cohort": "all",
+              "commit_text": true,
+              "exponent": 2.0,
+              "k": 10,
+              "mean_latency_ms": 40.15033183962264,
+              "mrr_at_k": 0.522319556753519,
+              "name": "squared_0.25",
+              "precision_at_k": 0.1830188679245283,
+              "recall_at_k": 0.24681933842239187,
+              "relevant": 786,
+              "true_positives": 194,
+              "weight": 0.25
+            },
+            {
+              "cases": 106,
+              "cohort": "all",
+              "commit_text": true,
+              "exponent": 1.0,
+              "k": 10,
+              "mean_latency_ms": 40.036976188679226,
+              "mrr_at_k": 0.43289532794249774,
+              "name": "linear_1.0",
+              "precision_at_k": 0.1830188679245283,
+              "recall_at_k": 0.24681933842239187,
+              "relevant": 786,
+              "true_positives": 194,
+              "weight": 1.0
+            }
+          ],
+          "name": "all"
+        },
+        {
+          "cases": 88,
+          "cases_with_truth": 87,
+          "metrics": [
+            {
+              "cases": 87,
+              "cohort": "title_restating",
+              "commit_text": false,
+              "exponent": null,
+              "k": 10,
+              "mean_latency_ms": 496.6306839770117,
+              "mrr_at_k": 0.5596195949644226,
+              "name": "no_commit_text",
+              "precision_at_k": 0.1724137931034483,
+              "recall_at_k": 0.2066115702479339,
+              "relevant": 726,
+              "true_positives": 150,
+              "weight": null
+            },
+            {
+              "cases": 87,
+              "cohort": "title_restating",
+              "commit_text": true,
+              "exponent": 1.0,
+              "k": 10,
+              "mean_latency_ms": 42.63243129885057,
+              "mrr_at_k": 0.5181764276591863,
+              "name": "linear_0.5",
+              "precision_at_k": 0.20229885057471264,
+              "recall_at_k": 0.24242424242424243,
+              "relevant": 726,
+              "true_positives": 176,
+              "weight": 0.5
+            },
+            {
+              "cases": 87,
+              "cohort": "title_restating",
+              "commit_text": true,
+              "exponent": 2.0,
+              "k": 10,
+              "mean_latency_ms": 41.754134091954036,
+              "mrr_at_k": 0.5737046159459952,
+              "name": "squared_0.5",
+              "precision_at_k": 0.21379310344827587,
+              "recall_at_k": 0.256198347107438,
+              "relevant": 726,
+              "true_positives": 186,
+              "weight": 0.5
+            },
+            {
+              "cases": 87,
+              "cohort": "title_restating",
+              "commit_text": true,
+              "exponent": 2.0,
+              "k": 10,
+              "mean_latency_ms": 40.98513303448275,
+              "mrr_at_k": 0.5886881955847474,
+              "name": "squared_0.25",
+              "precision_at_k": 0.20804597701149424,
+              "recall_at_k": 0.2493112947658402,
+              "relevant": 726,
+              "true_positives": 181,
+              "weight": 0.25
+            },
+            {
+              "cases": 87,
+              "cohort": "title_restating",
+              "commit_text": true,
+              "exponent": 1.0,
+              "k": 10,
+              "mean_latency_ms": 40.912506206896545,
+              "mrr_at_k": 0.485960591133005,
+              "name": "linear_1.0",
+              "precision_at_k": 0.20229885057471264,
+              "recall_at_k": 0.24242424242424243,
+              "relevant": 726,
+              "true_positives": 176,
+              "weight": 1.0
+            }
+          ],
+          "name": "title_restating"
+        },
+        {
+          "cases": 22,
+          "cases_with_truth": 19,
+          "metrics": [
+            {
+              "cases": 19,
+              "cohort": "without_title_restating",
+              "commit_text": false,
+              "exponent": null,
+              "k": 10,
+              "mean_latency_ms": 476.83454989473694,
+              "mrr_at_k": 0.1736842105263158,
+              "name": "no_commit_text",
+              "precision_at_k": 0.05789473684210526,
+              "recall_at_k": 0.18333333333333332,
+              "relevant": 60,
+              "true_positives": 11,
+              "weight": null
+            },
+            {
+              "cases": 19,
+              "cohort": "without_title_restating",
+              "commit_text": true,
+              "exponent": 1.0,
+              "k": 10,
+              "mean_latency_ms": 37.66996463157896,
+              "mrr_at_k": 0.1781328320802005,
+              "name": "linear_0.5",
+              "precision_at_k": 0.08947368421052632,
+              "recall_at_k": 0.2833333333333333,
+              "relevant": 60,
+              "true_positives": 17,
+              "weight": 0.5
+            },
+            {
+              "cases": 19,
+              "cohort": "without_title_restating",
+              "commit_text": true,
+              "exponent": 2.0,
+              "k": 10,
+              "mean_latency_ms": 36.43439789473683,
+              "mrr_at_k": 0.2517543859649123,
+              "name": "squared_0.5",
+              "precision_at_k": 0.10526315789473684,
+              "recall_at_k": 0.3333333333333333,
+              "relevant": 60,
+              "true_positives": 20,
+              "weight": 0.5
+            },
+            {
+              "cases": 19,
+              "cohort": "without_title_restating",
+              "commit_text": true,
+              "exponent": 2.0,
+              "k": 10,
+              "mean_latency_ms": 36.32782110526316,
+              "mrr_at_k": 0.21842105263157896,
+              "name": "squared_0.25",
+              "precision_at_k": 0.06842105263157895,
+              "recall_at_k": 0.21666666666666667,
+              "relevant": 60,
+              "true_positives": 13,
+              "weight": 0.25
+            },
+            {
+              "cases": 19,
+              "cohort": "without_title_restating",
+              "commit_text": true,
+              "exponent": 1.0,
+              "k": 10,
+              "mean_latency_ms": 36.027970315789474,
+              "mrr_at_k": 0.18991228070175437,
+              "name": "linear_1.0",
+              "precision_at_k": 0.09473684210526316,
+              "recall_at_k": 0.3,
+              "relevant": 60,
+              "true_positives": 18,
+              "weight": 1.0
+            }
+          ],
+          "name": "without_title_restating"
+        }
+      ],
+      "run": {
+        "name": "orbit-graph",
+        "commands": [
+          "orbit-graph --format json history sync --branch agent-main --limit 1000",
+          "orbit-graph --format json evaluate --live --branch agent-main --limit 300 --k 10"
+        ],
+        "note": "agent-main has 111 first-parent commits, so the hold-out stopped at history_exhausted after 110 indexed deliveries (the root is not a delivery)."
+      }
+    },
+    {
+      "schema_version": 1,
+      "mode": "live_git",
+      "repository": "/home/daniel/workspace/constellation/codebases/orbit",
+      "landing_branch": "agent-main",
+      "resolved_tip": "56c0924fb2e4380acc6406d58564979ffe6e9ea5",
+      "oldest_held_out": "8fed86429821e2344974c5d6ed77996cd3096f41",
+      "newest_held_out": "56c0924fb2e4380acc6406d58564979ffe6e9ea5",
+      "stop_reason": "limit_reached",
+      "limit_requested": 300,
+      "k": 10,
+      "production_weight": 0.5,
+      "production_exponent": 2.0,
+      "history_deliveries": 500,
+      "history_git_only": 500,
+      "history_verified": 0,
+      "history_complete": false,
+      "loadavg_start": 5.22,
+      "loadavg_end": 6.91,
+      "available_parallelism": 15,
+      "held_out_indexed_cases": 300,
+      "cases_evaluated": 300,
+      "skipped_empty_subject": 0,
+      "leakage_violations": 0,
+      "variants": [
+        {
+          "commit_text": false,
+          "exponent": null,
+          "name": "no_commit_text",
+          "weight": null
+        },
+        {
+          "commit_text": true,
+          "exponent": 1.0,
+          "name": "linear_0.5",
+          "weight": 0.5
+        },
+        {
+          "commit_text": true,
+          "exponent": 2.0,
+          "name": "squared_0.5",
+          "weight": 0.5
+        },
+        {
+          "commit_text": true,
+          "exponent": 2.0,
+          "name": "squared_0.25",
+          "weight": 0.25
+        },
+        {
+          "commit_text": true,
+          "exponent": 1.0,
+          "name": "linear_1.0",
+          "weight": 1.0
+        }
+      ],
+      "cohorts": [
+        {
+          "cases": 300,
+          "cases_with_truth": 298,
+          "metrics": [
+            {
+              "cases": 298,
+              "cohort": "all",
+              "commit_text": false,
+              "exponent": null,
+              "k": 10,
+              "mean_latency_ms": 5505.893582567114,
+              "mrr_at_k": 0.26920874613827633,
+              "name": "no_commit_text",
+              "precision_at_k": 0.08288590604026845,
+              "recall_at_k": 0.0953299884214589,
+              "relevant": 2591,
+              "true_positives": 247,
+              "weight": null
+            },
+            {
+              "cases": 298,
+              "cohort": "all",
+              "commit_text": true,
+              "exponent": 1.0,
+              "k": 10,
+              "mean_latency_ms": 216.20524119463087,
+              "mrr_at_k": 0.29802785767550877,
+              "name": "linear_0.5",
+              "precision_at_k": 0.10469798657718121,
+              "recall_at_k": 0.12041682747973756,
+              "relevant": 2591,
+              "true_positives": 312,
+              "weight": 0.5
+            },
+            {
+              "cases": 298,
+              "cohort": "all",
+              "commit_text": true,
+              "exponent": 2.0,
+              "k": 10,
+              "mean_latency_ms": 213.38660233557047,
+              "mrr_at_k": 0.3717175348886759,
+              "name": "squared_0.5",
+              "precision_at_k": 0.12348993288590604,
+              "recall_at_k": 0.14203010420686993,
+              "relevant": 2591,
+              "true_positives": 368,
+              "weight": 0.5
+            },
+            {
+              "cases": 298,
+              "cohort": "all",
+              "commit_text": true,
+              "exponent": 2.0,
+              "k": 10,
+              "mean_latency_ms": 211.86718877516773,
+              "mrr_at_k": 0.3913537338872909,
+              "name": "squared_0.25",
+              "precision_at_k": 0.13221476510067115,
+              "recall_at_k": 0.1520648398301814,
+              "relevant": 2591,
+              "true_positives": 394,
+              "weight": 0.25
+            },
+            {
+              "cases": 298,
+              "cohort": "all",
+              "commit_text": true,
+              "exponent": 1.0,
+              "k": 10,
+              "mean_latency_ms": 210.34969431543627,
+              "mrr_at_k": 0.28395786726323635,
+              "name": "linear_1.0",
+              "precision_at_k": 0.09798657718120805,
+              "recall_at_k": 0.11269780007719027,
+              "relevant": 2591,
+              "true_positives": 292,
+              "weight": 1.0
+            }
+          ],
+          "name": "all"
+        },
+        {
+          "cases": 220,
+          "cases_with_truth": 219,
+          "metrics": [
+            {
+              "cases": 219,
+              "cohort": "title_restating",
+              "commit_text": false,
+              "exponent": null,
+              "k": 10,
+              "mean_latency_ms": 5559.1038928858425,
+              "mrr_at_k": 0.25461332173660955,
+              "name": "no_commit_text",
+              "precision_at_k": 0.08447488584474885,
+              "recall_at_k": 0.083710407239819,
+              "relevant": 2210,
+              "true_positives": 185,
+              "weight": null
+            },
+            {
+              "cases": 219,
+              "cohort": "title_restating",
+              "commit_text": true,
+              "exponent": 1.0,
+              "k": 10,
+              "mean_latency_ms": 216.56739229223754,
+              "mrr_at_k": 0.342701311879394,
+              "name": "linear_0.5",
+              "precision_at_k": 0.12694063926940638,
+              "recall_at_k": 0.1257918552036199,
+              "relevant": 2210,
+              "true_positives": 278,
+              "weight": 0.5
+            },
+            {
+              "cases": 219,
+              "cohort": "title_restating",
+              "commit_text": true,
+              "exponent": 2.0,
+              "k": 10,
+              "mean_latency_ms": 213.5175560319637,
+              "mrr_at_k": 0.4223164456041169,
+              "name": "squared_0.5",
+              "precision_at_k": 0.14474885844748858,
+              "recall_at_k": 0.1434389140271493,
+              "relevant": 2210,
+              "true_positives": 317,
+              "weight": 0.5
+            },
+            {
+              "cases": 219,
+              "cohort": "title_restating",
+              "commit_text": true,
+              "exponent": 2.0,
+              "k": 10,
+              "mean_latency_ms": 213.9286758264841,
+              "mrr_at_k": 0.4278430093498587,
+              "name": "squared_0.25",
+              "precision_at_k": 0.15342465753424658,
+              "recall_at_k": 0.1520361990950226,
+              "relevant": 2210,
+              "true_positives": 336,
+              "weight": 0.25
+            },
+            {
+              "cases": 219,
+              "cohort": "title_restating",
+              "commit_text": true,
+              "exponent": 1.0,
+              "k": 10,
+              "mean_latency_ms": 214.10164104566206,
+              "mrr_at_k": 0.3335362760020294,
+              "name": "linear_1.0",
+              "precision_at_k": 0.12009132420091324,
+              "recall_at_k": 0.11900452488687782,
+              "relevant": 2210,
+              "true_positives": 263,
+              "weight": 1.0
+            }
+          ],
+          "name": "title_restating"
+        },
+        {
+          "cases": 80,
+          "cases_with_truth": 79,
+          "metrics": [
+            {
+              "cases": 79,
+              "cohort": "without_title_restating",
+              "commit_text": false,
+              "exponent": null,
+              "k": 10,
+              "mean_latency_ms": 5358.386519784809,
+              "mrr_at_k": 0.3096694796061884,
+              "name": "no_commit_text",
+              "precision_at_k": 0.07848101265822785,
+              "recall_at_k": 0.16272965879265092,
+              "relevant": 381,
+              "true_positives": 62,
+              "weight": null
+            },
+            {
+              "cases": 79,
+              "cohort": "without_title_restating",
+              "commit_text": true,
+              "exponent": 1.0,
+              "k": 10,
+              "mean_latency_ms": 215.2013033417721,
+              "mrr_at_k": 0.17418625678119348,
+              "name": "linear_0.5",
+              "precision_at_k": 0.043037974683544304,
+              "recall_at_k": 0.08923884514435695,
+              "relevant": 381,
+              "true_positives": 34,
+              "weight": 0.5
+            },
+            {
+              "cases": 79,
+              "cohort": "without_title_restating",
+              "commit_text": true,
+              "exponent": 2.0,
+              "k": 10,
+              "mean_latency_ms": 213.0235787974683,
+              "mrr_at_k": 0.23144966847498497,
+              "name": "squared_0.5",
+              "precision_at_k": 0.06455696202531645,
+              "recall_at_k": 0.13385826771653545,
+              "relevant": 381,
+              "true_positives": 51,
+              "weight": 0.5
+            },
+            {
+              "cases": 79,
+              "cohort": "without_title_restating",
+              "commit_text": true,
+              "exponent": 2.0,
+              "k": 10,
+              "mean_latency_ms": 206.15243353164558,
+              "mrr_at_k": 0.2901999196302994,
+              "name": "squared_0.25",
+              "precision_at_k": 0.07341772151898734,
+              "recall_at_k": 0.15223097112860892,
+              "relevant": 381,
+              "true_positives": 58,
+              "weight": 0.25
+            },
+            {
+              "cases": 79,
+              "cohort": "without_title_restating",
+              "commit_text": true,
+              "exponent": 1.0,
+              "k": 10,
+              "mean_latency_ms": 199.9487280632912,
+              "mrr_at_k": 0.14651898734177213,
+              "name": "linear_1.0",
+              "precision_at_k": 0.03670886075949367,
+              "recall_at_k": 0.07611548556430446,
+              "relevant": 381,
+              "true_positives": 29,
+              "weight": 1.0
+            }
+          ],
+          "name": "without_title_restating"
+        }
+      ],
+      "run": {
+        "name": "orbit",
+        "commands": [
+          "git clone --shared <orbit-checkout> <scratch>/orbit-live",
+          "orbit-graph --format json history sync --branch agent-main --limit 500",
+          "orbit-graph --format json evaluate --live --branch agent-main --limit 300 --k 10"
+        ],
+        "indexed_tip": "56c0924fb2e4380acc6406d58564979ffe6e9ea5",
+        "sync_resume_from": "45efa5f9aa0dfcfe263efb12f0529342d86057fb",
+        "note": "Shared clone of the Orbit checkout. The index records the clone path as repository identity. 500 newest first-parent commits were indexed; the newest 300 were held out, so the oldest held-out commit still has 200 older indexed deliveries as evidence."
+      }
+    }
+  ]
+}

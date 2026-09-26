@@ -4,6 +4,9 @@ This directory holds two unrelated evaluations.
 
 * **Recommendation evaluation** — below: `orbit-graph evaluate`'s chronological,
   fail-closed backtest of change-destination recommendations.
+* **[Live commit-text evaluation](commit-text-live.md)** — `evaluate --live`
+  on Git-only history: held-out subjects at `commit^`, with the measured
+  weight and exponent for commit-text relevance.
 * **[Change explorer](change-explorer/README.md)** — the Milestone 5 evidence for
   `orbit-graph-explorer`: five real change studies across Rust and Python, a
   measured performance envelope, and the limitations that follow from them.

@@ -1062,7 +1062,7 @@ fn real_binary_help_succeeds() {
         ),
         (
             "evaluate",
-            "Run leakage-safe chronological recommendation evaluation",
+            "Run chronological or live leakage-safe recommendation evaluation",
         ),
         ("sync", "Update or rebuild the source graph index"),
         ("db-path", "Print the current graph database path"),
@@ -3013,6 +3013,234 @@ fn run_in_pty(cwd: &Path, args: &[&str], columns: u16) -> (String, String) {
             .replace("\r\n", "\n"),
         String::from_utf8(output.stderr).expect("stderr is UTF-8"),
     )
+}
+
+#[test]
+fn real_binary_live_evaluation_excludes_held_out_and_later_deliveries() {
+    let fixture = TempDir::new().expect("live evaluation fixture");
+    let root = fixture.path();
+    run_git(root, ["init", "-b", "main"]);
+    run_git(root, ["config", "user.email", "graph@example.invalid"]);
+    run_git(root, ["config", "user.name", "Graph Test"]);
+    let commit = |rel: &str, body: &str, message: &str| {
+        let path = root.join(rel);
+        fs::create_dir_all(path.parent().expect("parent")).expect("mkdir");
+        fs::write(&path, body).expect("write");
+        run_git(root, ["add", rel]);
+        run_git(root, ["commit", "-m", message]);
+    };
+    commit(
+        "src/keep.rs",
+        "pub fn keep() {}\n",
+        "initialize keep module",
+    );
+    commit(
+        "src/noise.rs",
+        "pub fn noise() {}\n",
+        "chore: adjust unrelated noise module",
+    );
+    commit(
+        "src/widget.rs",
+        "pub fn widget_cache() -> u32 { 1 }\n",
+        "repair widget cache invalidation for durable defaults",
+    );
+    commit(
+        "src/widget.rs",
+        "pub fn widget_cache() -> u32 { 2 }\n",
+        "repair widget cache invalidation for durable defaults",
+    );
+    commit(
+        "src/widget.rs",
+        "pub fn widget_cache() -> u32 { 3 }\n",
+        "repair widget cache invalidation for durable defaults [ORB-8888]",
+    );
+    let head = git_stdout(root, ["rev-parse", "HEAD"]);
+    let held_out_sha = git_stdout(root, ["rev-parse", "HEAD^"]);
+    let parent_sha = git_stdout(root, ["rev-parse", "HEAD^^"]);
+    let later = head.trim();
+    let held_out = held_out_sha.trim();
+    let parent = parent_sha.trim();
+
+    let unsynced = TempDir::new().expect("unsynced");
+    run_git(unsynced.path(), ["init", "-b", "main"]);
+    run_git(
+        unsynced.path(),
+        ["config", "user.email", "graph@example.invalid"],
+    );
+    run_git(unsynced.path(), ["config", "user.name", "Graph Test"]);
+    fs::write(unsynced.path().join("README"), "unsynced\n").expect("readme");
+    run_git(unsynced.path(), ["add", "README"]);
+    run_git(unsynced.path(), ["commit", "-m", "unsynced root"]);
+    fs::write(unsynced.path().join("README"), "changed\n").expect("readme");
+    run_git(unsynced.path(), ["add", "README"]);
+    run_git(unsynced.path(), ["commit", "-m", "unsynced change"]);
+    let denied = run_explicit_json(
+        unsynced.path(),
+        ["evaluate", "--live", "--branch", "main", "--limit", "1"],
+    );
+    assert!(
+        !denied.status.success(),
+        "live evaluation must fail closed without a history index"
+    );
+    let denied_err = String::from_utf8_lossy(&denied.stderr);
+    assert!(
+        denied_err.contains("history") || denied_err.contains("index"),
+        "{denied_err}"
+    );
+
+    let conflict = run(
+        root,
+        [
+            "evaluate",
+            "--live",
+            "--input",
+            "corpus.json",
+            "--limit",
+            "1",
+        ],
+    );
+    assert!(!conflict.status.success(), " --live conflicts with --input");
+
+    run_json(
+        root,
+        ["history", "sync", "--branch", "main", "--limit", "20"],
+    );
+    let report = run_json(
+        root,
+        [
+            "evaluate", "--live", "--branch", "main", "--limit", "2", "--k", "5",
+        ],
+    );
+    assert_eq!(report["mode"], "live_git");
+    assert_eq!(report["leakage_violations"], 0);
+    assert_eq!(report["cases_evaluated"], 2);
+    assert_eq!(report["held_out_indexed_cases"], 2);
+    assert_eq!(report["production_weight"], 0.5);
+    assert_eq!(report["production_exponent"], 2.0);
+    let variant_names = report["variants"]
+        .as_array()
+        .expect("variants")
+        .iter()
+        .map(|variant| variant["name"].as_str().expect("name"))
+        .collect::<Vec<_>>();
+    assert_eq!(
+        variant_names,
+        [
+            "no_commit_text",
+            "linear_0.5",
+            "squared_0.5",
+            "squared_0.25",
+            "linear_1.0"
+        ]
+    );
+    for name in ["all", "title_restating", "without_title_restating"] {
+        assert!(
+            report["cohorts"]
+                .as_array()
+                .expect("cohorts")
+                .iter()
+                .any(|cohort| cohort["name"] == name),
+            "missing cohort {name}"
+        );
+    }
+    let cohort_cases = |name: &str| {
+        report["cohorts"]
+            .as_array()
+            .expect("cohorts")
+            .iter()
+            .find(|cohort| cohort["name"] == name)
+            .expect("cohort")["cases"]
+            .as_u64()
+            .expect("cases")
+    };
+    assert_eq!(cohort_cases("all"), 2);
+    assert_eq!(cohort_cases("title_restating"), 1);
+    assert_eq!(cohort_cases("without_title_restating"), 1);
+
+    let cases = report["cases"].as_array().expect("cases");
+    let case_for = |commit: &str| {
+        cases
+            .iter()
+            .find(|case| case["commit"] == commit)
+            .unwrap_or_else(|| panic!("missing case {commit}"))
+    };
+    let later_case = case_for(later);
+    let held_case = case_for(held_out);
+    assert_eq!(later_case["parent"].as_str(), Some(held_out));
+    assert_eq!(held_case["parent"].as_str(), Some(parent));
+    assert_eq!(later_case["title_restating"], true);
+    assert_eq!(held_case["title_restating"], false);
+    assert_eq!(
+        held_case["subject"].as_str(),
+        Some("repair widget cache invalidation for durable defaults")
+    );
+    assert!(
+        held_case["truth"]
+            .as_array()
+            .expect("truth")
+            .iter()
+            .any(|selector| selector == "file:src/widget.rs")
+    );
+    let prohibited = |case: &Value, id: &str| {
+        case["prohibited_delivery_ids"]
+            .as_array()
+            .expect("prohibited")
+            .iter()
+            .any(|value| value == id)
+    };
+    let held_id = format!("git:{held_out}");
+    let later_id = format!("git:{later}");
+    assert!(prohibited(held_case, &held_id));
+    assert!(prohibited(held_case, &later_id));
+    assert!(prohibited(later_case, &later_id));
+    assert!(!prohibited(later_case, &held_id));
+    let evidence_excludes = |case: &Value, forbidden: &[&str]| {
+        assert_eq!(case["held_out_indexed"], true);
+        assert_eq!(case["leakage"].as_array().expect("leakage").len(), 0);
+        for variant in case["variants"].as_array().expect("variants") {
+            let evidence = variant["evidence_delivery_ids"]
+                .as_array()
+                .expect("evidence");
+            assert!(
+                evidence
+                    .iter()
+                    .all(|id| id.as_str().is_none_or(|id| !forbidden.contains(&id))),
+                "prohibited delivery leaked into {}: {evidence:?}",
+                variant["name"]
+            );
+        }
+    };
+    // C's target is its parent, so both C and the later commit are prohibited.
+    // D's target is C, so C's own delivery is eligible and only D is prohibited.
+    evidence_excludes(held_case, &[&held_id, &later_id]);
+    evidence_excludes(later_case, &[&later_id]);
+    let squared = held_case["variants"]
+        .as_array()
+        .expect("variants")
+        .iter()
+        .find(|variant| variant["name"] == "squared_0.5")
+        .expect("squared");
+    assert!(
+        squared["ranked"]
+            .as_array()
+            .expect("ranked")
+            .iter()
+            .any(|selector| selector == "file:src/widget.rs"),
+        "ancestor commit text should surface the held-out file: {squared}"
+    );
+
+    let human = run(
+        root,
+        [
+            "evaluate", "--live", "--branch", "main", "--limit", "2", "--k", "5",
+        ],
+    );
+    assert!(
+        human.status.success(),
+        "{}",
+        String::from_utf8_lossy(&human.stderr)
+    );
+    assert!(String::from_utf8_lossy(&human.stdout).contains("squared_0.5"));
 }
 
 fn run_git<const N: usize>(cwd: &Path, args: [&str; N]) {
