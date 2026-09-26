@@ -664,7 +664,7 @@ fn cargo_bin_exe() {
 
 #[test]
 fn assert_cmd_cargo_bin() {
-    assert_cmd::Command::cargo_bin("orbit-graph-explorer").unwrap().assert();
+    assert_cmd::Command::cargo_bin("orbit-graph").unwrap().assert();
 }
 
 fn helper() -> Command {
@@ -679,7 +679,7 @@ fn helper() -> Command {
             ("literal_program", "git"),
             ("qualified_literal_program", "cargo"),
             ("cargo_bin_exe", "orbit-graph"),
-            ("assert_cmd_cargo_bin", "orbit-graph-explorer"),
+            ("assert_cmd_cargo_bin", "orbit-graph"),
             ("helper", "tool"),
         ]
     );

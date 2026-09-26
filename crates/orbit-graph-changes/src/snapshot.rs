@@ -844,12 +844,13 @@ impl Snapshot {
         );
 
         let commit_sha = commit.to_string();
-        let tree = TempDir::with_prefix(format!("orbit-graph-explorer-{}-", side.label()))
-            .map_err(|source| SnapshotError::Io {
+        let tree = TempDir::with_prefix(format!("orbit-graph-changes-{}-", side.label())).map_err(
+            |source| SnapshotError::Io {
                 operation: "create snapshot tree",
                 path: std::env::temp_dir(),
                 reason: source.to_string(),
-            })?;
+            },
+        )?;
         let materialization = materialize_commit(repo, commit, tree.path())?;
         anchor_git_discovery(tree.path())?;
 

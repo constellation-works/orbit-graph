@@ -99,7 +99,7 @@ pub use store::create_plugin_state_dir;
 ///
 /// A bump also changes the committed `direct-call` sample export, which
 /// records this number: regenerate it in the same change with
-/// `UPDATE_GOLDENS=1 cargo test -p orbit-graph-explorer --test derived_artifacts --locked`.
+/// `UPDATE_GOLDENS=1 cargo test -p orbit-graph-changes --test derived_artifacts --locked`.
 // L-0052: FTS population invariants require a fresh DB when old indexes may be empty.
 /// Version 5 rebuilds stored refs so qualified cross-file and explicit-import
 /// resolution records stable symbol hints.

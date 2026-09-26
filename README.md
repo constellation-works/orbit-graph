@@ -43,7 +43,7 @@ them).
 
 - [Usage](docs/usage.md) — commands, selectors, confidence levels, languages, library API
 - [Orbit plugin](docs/plugin.md) — install, query and recommendation tools, index maintenance
-- [Change explorer](crates/orbit-graph-explorer/README.md) — `orbit-graph-explorer`
+- [Change analysis library](crates/orbit-graph-changes/README.md) — snapshots, changed symbols, evidence and JSON reports
 - Design: [terminal interface](docs/design/terminal-interface.md),
   [change recommendations](docs/design/change-recommendations.md),
   [change explorer](docs/design/change-explorer.md)

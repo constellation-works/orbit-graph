@@ -3,7 +3,7 @@
 - This repository is a standalone Cargo workspace: `crates/orbit-graph-extract`
   (the language extractors and Git history extraction), `crates/orbit-graph`
   (the library), `crates/orbit-graph-cli` (the `orbit-graph` JSON CLI), and
-  `crates/orbit-graph-explorer` (the change explorer).
+  `crates/orbit-graph-changes` (the change analysis library).
 - Keep it independent of Orbit control-plane crates, configuration, and runtime
   state. Graph scratch files belong under `.orbit-graph/`.
 - Preserve recovered behavior and tests. Record any additional historical code

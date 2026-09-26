@@ -2,7 +2,7 @@
 #![deny(clippy::print_stderr, clippy::print_stdout)]
 #![cfg_attr(test, allow(clippy::expect_used, clippy::unwrap_used))]
 
-//! Change-explorer library built on the public `orbit_graph` API.
+//! Change-analysis library built on the public `orbit_graph` API.
 //!
 //! - [`snapshot`] resolves two refs to immutable commits and indexes each one
 //!   in isolation, so every answer is attributable to exactly one revision.
@@ -15,11 +15,9 @@
 //!   evidence paths, entry points, and labelled candidate tests.
 //! - [`filters`] applies presentation filters and states, in every filtered
 //!   response, what they removed and why.
-//! - [`service`] serves these over a loopback HTTP service scoped to one
-//!   repository and one pair of revisions.
 //!
-//! The evidence contract, service surface, and UI layout this crate implements
-//! are recorded in `docs/design/change-explorer.md`.
+//! The evidence contract and snapshot semantics are recorded in
+//! `docs/design/change-explorer.md`.
 //!
 //! The crate never reads Orbit control-plane state and never executes content
 //! from the repository under inspection.
@@ -29,6 +27,4 @@ pub mod changes;
 pub mod evidence;
 pub mod filters;
 pub mod report;
-pub mod service;
 pub mod snapshot;
-mod status;

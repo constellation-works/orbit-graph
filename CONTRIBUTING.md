@@ -4,7 +4,7 @@ Use Rust 1.89 or newer. The repository is a virtual Cargo workspace:
 `crates/orbit-graph-extract` holds the tree-sitter language extractors and the
 Git history extraction, `crates/orbit-graph` is the library built on it,
 `crates/orbit-graph-cli` builds the `orbit-graph` executable, and
-`crates/orbit-graph-explorer` builds the change explorer. Keep the workspace standalone: do not add path dependencies on an
+`crates/orbit-graph-changes` provides change analysis as a library. Keep the workspace standalone: do not add path dependencies on an
 Orbit checkout, Orbit runtime configuration, or private crates.
 
 Before opening a pull request, run:
@@ -35,12 +35,11 @@ outside an output layer needs a per-site allow-list entry in
 reason and the task that removes it; the change that removes the write
 removes the entry, or the guard fails.
 
-Some committed files are derived from the binaries and checked by tests: the
-explorer README's "Every flag" block and the `direct-call` sample export under
-`docs/evaluation/change-explorer/samples/`. After an intended change to the
-explorer's help text or report output (including an `EXTRACTOR_VERSION` or
-crate version bump), regenerate them in the same change with
-`UPDATE_GOLDENS=1 cargo test -p orbit-graph-explorer --test derived_artifacts --locked`
+The committed `direct-call` JSON sample under
+`docs/evaluation/change-explorer/samples/` is checked against the change
+analysis library. After an intended report output change (including an
+`EXTRACTOR_VERSION` or crate version bump), regenerate it with
+`UPDATE_GOLDENS=1 cargo test -p orbit-graph-changes --test derived_artifacts --locked`
 and review the diff.
 
 Changes must follow the constellation standards vendored in

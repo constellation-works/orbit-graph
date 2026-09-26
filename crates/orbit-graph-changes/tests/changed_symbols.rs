@@ -19,12 +19,12 @@
 use std::collections::BTreeSet;
 
 use orbit_graph::Confidence;
-use orbit_graph_explorer::changes::{ChangeStatus, ChangedSymbols, Pairing, PairingEvidence};
-use orbit_graph_explorer::evidence::{
+use orbit_graph_changes::changes::{ChangeStatus, ChangedSymbols, Pairing, PairingEvidence};
+use orbit_graph_changes::evidence::{
     CandidateSource, EvidenceBounds, EvidenceCategory, EvidenceCollector, EvidenceQuery,
     EvidenceReport,
 };
-use orbit_graph_explorer::snapshot::{Comparison, SnapshotSide};
+use orbit_graph_changes::snapshot::{Comparison, SnapshotSide};
 use serde_json::Value;
 
 mod common;
@@ -800,7 +800,7 @@ impl Case {
     }
 
     /// The single payload entry mentioning `selector`.
-    fn single(&self, selector: &str) -> &orbit_graph_explorer::changes::ChangedSymbol {
+    fn single(&self, selector: &str) -> &orbit_graph_changes::changes::ChangedSymbol {
         let entries = self.changed.entries_for(selector);
         assert_eq!(
             entries.len(),
@@ -1115,7 +1115,7 @@ trait ChangedSymbolsTestExt {
         &self,
         base_name: &str,
         head_name: &str,
-    ) -> &orbit_graph_explorer::changes::ChangedSymbol;
+    ) -> &orbit_graph_changes::changes::ChangedSymbol;
     fn single_status(&self, name: &str) -> ChangeStatus;
 }
 
@@ -1124,7 +1124,7 @@ impl ChangedSymbolsTestExt for ChangedSymbols {
         &self,
         base_name: &str,
         head_name: &str,
-    ) -> &orbit_graph_explorer::changes::ChangedSymbol {
+    ) -> &orbit_graph_changes::changes::ChangedSymbol {
         let base = format!("symbol:src/lib.rs#{base_name}:function");
         let head = format!("symbol:src/lib.rs#{head_name}:function");
         let rows: Vec<_> = self

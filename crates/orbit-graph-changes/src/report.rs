@@ -1,7 +1,7 @@
-//! Bounded change report: the JSON export and its static HTML rendering.
+//! Bounded change report: the JSON export.
 //!
-//! A report answers the same question the live service answers — what
-//! changed, what it affects, and what tests are plausibly connected — but as
+//! A report answers what
+//! changed, what it affects, and what tests are plausibly connected in
 //! one self-contained, deterministic document per the "Exported change
 //! report" contract in `docs/design/change-explorer.md`. Two rules the doc
 //! states for the export apply throughout this module:
@@ -15,9 +15,7 @@
 //!   truncated/unsupported/excluded scope are always present, even when
 //!   empty, so a reader never has to guess what was left out.
 //!
-//! Two deliberate extensions beyond the doc's literal example JSON, recorded
-//! here rather than in the design doc itself (which this task does not
-//! edit):
+//! Two deliberate extensions beyond the design document's literal example JSON:
 //!
 //! - `entry_points` and `unresolved` are new top-level fields. The doc's
 //!   example predates Milestone 3's entry-point rules
@@ -114,8 +112,7 @@ pub struct ReportOptions {
     /// Changed-symbol selectors to report on. Empty selects every changed
     /// symbol, which is the default: a report never silently narrows itself.
     pub selection: Vec<String>,
-    /// Presentation filters, applied the same way the live service applies
-    /// them.
+    /// Presentation filters applied to the analysis.
     pub filters: FilterSet,
     /// Confidence floor applied to every evidence and entry-point query.
     pub min_confidence: Confidence,
@@ -155,7 +152,7 @@ pub struct SourceExcerpt {
     pub start_line: usize,
     /// Last line of the excerpt, inclusive.
     pub end_line: usize,
-    /// The excerpt text itself. Never HTML; the HTML rendering escapes it.
+    /// The excerpt text itself.
     pub text: String,
     /// Whether the underlying read was itself truncated by
     /// `DEFAULT_SHOW_MAX_BYTES`, independent of the excerpt window.
@@ -362,7 +359,7 @@ pub struct WorkingTreeView {
     pub notice: Option<String>,
     /// Whether `entries` was truncated by `DIRTY_ENTRY_CAP`.
     pub truncated: bool,
-    /// Observed changes, capped the same way the live service caps them.
+    /// Observed changes, with the same bounded collection policy.
     pub entries: Vec<WorkingTreeEntryView>,
 }
 
@@ -448,7 +445,7 @@ pub struct IndexIdentityView {
     pub extractor_version: u32,
     /// `orbit_graph::STORE_SCHEMA_VERSION` used to build both snapshots.
     pub store_schema_version: u32,
-    /// Workspace-shared version of `orbit_graph` and `orbit-graph-explorer`
+    /// Workspace-shared version of `orbit_graph` and `orbit-graph-changes`
     /// (both crates share one workspace version).
     pub orbit_graph_version: String,
     /// This binary's own version.
@@ -1120,21 +1117,6 @@ fn exclusion_label(reason: ExclusionReason) -> &'static str {
     reason.label()
 }
 
-/// Stable label for [`PairingEvidence`], matching its `Serialize` output.
-///
-/// `changes.rs` derives `Serialize` for this enum but exposes no `label()`
-/// method of its own, unlike its sibling enums in the same module.
-fn pairing_evidence_label(evidence: PairingEvidence) -> &'static str {
-    match evidence {
-        PairingEvidence::Selector => "selector",
-        PairingEvidence::Signature => "signature",
-        PairingEvidence::GitRename => "git_rename",
-        PairingEvidence::GitCopy => "git_copy",
-        PairingEvidence::BodyHash => "body_hash",
-        PairingEvidence::None => "none",
-    }
-}
-
 fn render_changed_symbol(
     state: &mut RenderState<'_>,
     symbol: &ChangedSymbol,
@@ -1325,350 +1307,3 @@ fn civil_from_days(days_since_epoch: i64) -> (i64, u32, u32) {
     let year = if month <= 2 { year + 1 } else { year };
     (year, month, day)
 }
-
-// --- Static HTML rendering -------------------------------------------------
-
-/// Escape text for insertion into HTML as text content or an attribute value.
-///
-/// Every character with special meaning in either context is escaped, so the
-/// same function is safe for both.
-fn escape_html(input: &str) -> String {
-    let mut out = String::with_capacity(input.len());
-    for ch in input.chars() {
-        match ch {
-            '&' => out.push_str("&amp;"),
-            '<' => out.push_str("&lt;"),
-            '>' => out.push_str("&gt;"),
-            '"' => out.push_str("&quot;"),
-            '\'' => out.push_str("&#39;"),
-            _ => out.push(ch),
-        }
-    }
-    out
-}
-
-fn render_location_html(location: &LocationEvidence) -> String {
-    match location {
-        LocationEvidence::Embedded { excerpt } => format!(
-            "<div class=\"location embedded\"><span class=\"tag tag-embedded\">embedded</span> \
-             <span class=\"lines\">lines {}\u{2013}{}</span>{}<pre>{}</pre></div>",
-            excerpt.start_line,
-            excerpt.end_line,
-            if excerpt.truncated {
-                " <span class=\"tag tag-truncated\">truncated</span>"
-            } else {
-                ""
-            },
-            escape_html(excerpt.text.as_str()),
-        ),
-        LocationEvidence::Reference { reference } => format!(
-            "<div class=\"location reference\"><span class=\"tag tag-reference\">reference</span> \
-             <code>{}</code></div>",
-            escape_html(reference.as_str()),
-        ),
-    }
-}
-
-fn render_edge_html(edge: &ReportEdge) -> String {
-    format!(
-        "<li class=\"edge\"><code>{}</code> \u{2192} <code>{}</code> \
-         <span class=\"tag\">{}</span> <span class=\"tag\">{}</span> \
-         <span class=\"tag\">{}</span> ({}){}</li>",
-        escape_html(edge.edge.from.as_str()),
-        escape_html(edge.edge.to.as_str()),
-        escape_html(edge.edge.relationship.as_str()),
-        escape_html(edge.edge.category.label()),
-        escape_html(edge.edge.confidence.as_str()),
-        escape_html(edge.edge.snapshot.as_str()),
-        render_location_html(&edge.location),
-    )
-}
-
-fn render_path_html(path: &ReportEvidencePath) -> String {
-    let mut html = String::new();
-    html.push_str(&format!(
-        "<div class=\"path\"><p><strong>{}</strong> \u{2192} <strong>{}</strong> \
-         (distance {}, category {}{})</p><ul class=\"edges\">",
-        escape_html(path.from.label.as_str()),
-        escape_html(path.to.label.as_str()),
-        path.distance,
-        escape_html(path.category.label()),
-        if path.truncated {
-            format!(
-                ", truncated by {}",
-                escape_html(path.truncated_by.as_deref().unwrap_or("?"))
-            )
-        } else {
-            String::new()
-        },
-    ));
-    for edge in &path.edges {
-        html.push_str(&render_edge_html(edge));
-    }
-    html.push_str("</ul></div>");
-    html
-}
-
-/// Render a self-contained static HTML document for `report`.
-///
-/// No network access, no `<script>`, and no build step: every dynamic value
-/// is escaped text content, so the file is safe and readable when opened
-/// directly from disk.
-pub fn render_html(report: &ExportedReport) -> String {
-    let embedded_count: usize = count_locations(report, true);
-    let reference_count: usize = count_locations(report, false);
-
-    let mut html = String::new();
-    html.push_str("<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n<meta charset=\"utf-8\">\n");
-    html.push_str(&format!(
-        "<title>Change report: {} \u{2192} {}</title>\n",
-        escape_html(
-            &report.comparison.base.commit_sha[..12.min(report.comparison.base.commit_sha.len())]
-        ),
-        escape_html(
-            &report.comparison.head.commit_sha[..12.min(report.comparison.head.commit_sha.len())]
-        ),
-    ));
-    html.push_str(STYLE);
-    html.push_str("</head>\n<body>\n");
-
-    html.push_str("<header>\n<h1>Change report</h1>\n<dl>\n");
-    html.push_str(&format!(
-        "<dt>Base</dt><dd><code>{}</code> ({})</dd>\n",
-        escape_html(report.comparison.base.commit_sha.as_str()),
-        escape_html(report.comparison.base.requested_ref.as_str()),
-    ));
-    html.push_str(&format!(
-        "<dt>Head</dt><dd><code>{}</code> ({})</dd>\n",
-        escape_html(report.comparison.head.commit_sha.as_str()),
-        escape_html(report.comparison.head.requested_ref.as_str()),
-    ));
-    html.push_str(&format!(
-        "<dt>Mode</dt><dd>{} (effective base <code>{}</code>)</dd>\n",
-        escape_html(report.comparison.mode.as_str()),
-        escape_html(report.comparison.effective_base_sha.as_str()),
-    ));
-    html.push_str(&format!(
-        "<dt>Generated</dt><dd>{}</dd>\n",
-        escape_html(report.generated_at.as_str()),
-    ));
-    if let Some(notice) = &report.comparison.working_tree.notice {
-        html.push_str(&format!(
-            "<dt>Working tree</dt><dd class=\"warning\">{}</dd>\n",
-            escape_html(notice.as_str())
-        ));
-    }
-    html.push_str("</dl>\n</header>\n");
-
-    html.push_str(&format!(
-        "<div class=\"banner\">This report embeds {embedded_count} source location(s) directly. \
-         {reference_count} location(s) are references only and need repository access to view: \
-         look for the <span class=\"tag tag-reference\">reference</span> marker.</div>\n"
-    ));
-
-    html.push_str("<section id=\"scope\">\n<h2>Scope</h2>\n");
-    html.push_str(&format!(
-        "<p>Excerpt mode: <strong>{}</strong> (radius {} line(s)). Confidence floor: {}. Depth: {}.</p>\n",
-        escape_html(report.query_options.excerpts.as_str()),
-        report.query_options.excerpt_radius_lines,
-        escape_html(report.query_options.evidence.min_confidence.as_str()),
-        report.query_options.evidence.depth,
-    ));
-    if report.scope.truncated.is_empty() {
-        html.push_str("<p>No bound was reached while producing this report.</p>\n");
-    } else {
-        html.push_str("<ul>\n");
-        for flag in &report.scope.truncated {
-            html.push_str(&format!(
-                "<li class=\"warning\">{} truncated at <code>{}</code> = {}</li>\n",
-                escape_html(flag.what.as_str()),
-                escape_html(flag.bound.as_str()),
-                flag.value,
-            ));
-        }
-        html.push_str("</ul>\n");
-    }
-    if !report.scope.unsupported.is_empty() {
-        html.push_str("<h3>Out of scope</h3>\n<ul>\n");
-        for entry in &report.scope.unsupported {
-            html.push_str(&format!(
-                "<li>{} ({}, {})</li>\n",
-                escape_html(entry.path.as_str()),
-                escape_html(entry.reason.label()),
-                escape_html(entry.snapshot.as_str()),
-            ));
-        }
-        html.push_str("</ul>\n");
-    }
-    if !report.unresolved.is_empty() {
-        html.push_str("<h3>Unresolved areas</h3>\n<ul>\n");
-        for area in &report.unresolved {
-            html.push_str(&format!(
-                "<li><code>{}</code> ({}, {})<ul>",
-                escape_html(area.selector.as_str()),
-                escape_html(area.snapshot.as_str()),
-                escape_html(area.kind.as_str()),
-            ));
-            for reason in &area.reasons {
-                html.push_str(&format!("<li>{}</li>", escape_html(reason.as_str())));
-            }
-            html.push_str("</ul></li>\n");
-        }
-        html.push_str("</ul>\n");
-    }
-    html.push_str("</section>\n");
-
-    html.push_str("<section id=\"symbols\">\n<h2>Changed symbols</h2>\n");
-    for symbol in &report.changed_symbols.symbols {
-        let primary = symbol
-            .head
-            .as_ref()
-            .or(symbol.base.as_ref())
-            .map(|occurrence| occurrence.symbol.selector.clone())
-            .unwrap_or_default();
-        html.push_str("<article class=\"symbol\">\n");
-        html.push_str(&format!(
-            "<h3><span class=\"tag\">{}</span> <code>{}</code></h3>\n",
-            escape_html(symbol.status.label()),
-            escape_html(primary.as_str()),
-        ));
-        html.push_str(&format!(
-            "<p>Pairing: {} ({})</p>\n",
-            escape_html(symbol.pairing.label()),
-            escape_html(pairing_evidence_label(symbol.pairing_evidence)),
-        ));
-        if let Some(note) = &symbol.note {
-            html.push_str(&format!(
-                "<p class=\"note\">{}</p>\n",
-                escape_html(note.as_str())
-            ));
-        }
-        for (label, occurrence) in [("Base", &symbol.base), ("Head", &symbol.head)] {
-            if let Some(occurrence) = occurrence {
-                html.push_str(&format!(
-                    "<div class=\"occurrence\"><p><strong>{label}</strong> \
-                     <code>{}</code></p>{}</div>\n",
-                    escape_html(occurrence.symbol.selector.as_str()),
-                    render_location_html(&occurrence.location),
-                ));
-            }
-        }
-
-        let paths: Vec<&ReportEvidencePath> = report
-            .evidence_paths
-            .iter()
-            .filter(|path| path.to.selector == primary)
-            .collect();
-        if !paths.is_empty() {
-            html.push_str("<h4>Evidence paths</h4>\n");
-            for path in paths {
-                html.push_str(&render_path_html(path));
-            }
-        }
-
-        let entries: Vec<&ReportEntryPoint> = report
-            .entry_points
-            .iter()
-            .filter(|entry| entry.queried.selector == primary)
-            .collect();
-        if !entries.is_empty() {
-            html.push_str("<h4>Entry points</h4>\n<ul>\n");
-            for entry in entries {
-                html.push_str(&format!(
-                    "<li><code>{}</code> via <strong>{}</strong> (distance {}){}</li>\n",
-                    escape_html(entry.node.label.as_str()),
-                    escape_html(entry.rule.as_str()),
-                    entry.distance,
-                    render_location_html(&entry.node_location),
-                ));
-            }
-            html.push_str("</ul>\n");
-        }
-
-        let tests: Vec<&ReportCandidateTest> = report
-            .candidate_tests
-            .candidates
-            .iter()
-            .filter(|candidate| candidate.queried.selector == primary)
-            .collect();
-        if !tests.is_empty() {
-            html.push_str("<h4>Candidate tests</h4>\n<ul>\n");
-            for candidate in tests {
-                // A runtime invocation is associated by program name only;
-                // the tag says so beside the row, not only in its note.
-                let disclosure = if candidate.source == CandidateSource::RuntimeInvocation {
-                    " <span class=\"tag\">by program name only</span>"
-                } else {
-                    ""
-                };
-                html.push_str(&format!(
-                    "<li><code>{}</code> <span class=\"tag\">{}</span>{disclosure}{}{}</li>\n",
-                    escape_html(candidate.test.label.as_str()),
-                    escape_html(candidate.label.as_str()),
-                    candidate
-                        .note
-                        .as_ref()
-                        .map(|note| format!(" \u{2014} {}", escape_html(note.as_str())))
-                        .unwrap_or_default(),
-                    render_location_html(&candidate.location),
-                ));
-            }
-            html.push_str("</ul>\n");
-        }
-
-        html.push_str("</article>\n");
-    }
-    html.push_str("</section>\n");
-
-    html.push_str("</body>\n</html>\n");
-    html
-}
-
-fn count_locations(report: &ExportedReport, embedded: bool) -> usize {
-    let mut count = 0usize;
-    let mut tally = |location: &LocationEvidence| {
-        if matches!(location, LocationEvidence::Embedded { .. }) == embedded {
-            count += 1;
-        }
-    };
-    for symbol in &report.changed_symbols.symbols {
-        if let Some(occurrence) = &symbol.base {
-            tally(&occurrence.location);
-        }
-        if let Some(occurrence) = &symbol.head {
-            tally(&occurrence.location);
-        }
-    }
-    for path in &report.evidence_paths {
-        for edge in &path.edges {
-            tally(&edge.location);
-        }
-    }
-    for entry in &report.entry_points {
-        tally(&entry.node_location);
-        for edge in &entry.path.edges {
-            tally(&edge.location);
-        }
-    }
-    for candidate in &report.candidate_tests.candidates {
-        tally(&candidate.location);
-    }
-    count
-}
-
-const STYLE: &str = "<style>\n\
-body { font-family: system-ui, sans-serif; margin: 2rem; color: #1a1a1a; }\n\
-code, pre { font-family: ui-monospace, monospace; }\n\
-pre { background: #f4f4f4; padding: 0.5rem; overflow-x: auto; white-space: pre-wrap; }\n\
-.banner { background: #eef6ff; border: 1px solid #90c2ff; padding: 0.75rem; margin: 1rem 0; }\n\
-.tag { display: inline-block; border: 1px solid #999; border-radius: 3px; padding: 0 0.3rem; font-size: 0.85em; }\n\
-.tag-embedded { background: #e6ffed; border-color: #2ea44f; }\n\
-.tag-reference { background: #fff5e6; border-color: #d9822b; }\n\
-.tag-truncated { background: #ffe6e6; border-color: #d92b2b; }\n\
-.warning { color: #a33; }\n\
-.note { font-style: italic; }\n\
-article.symbol { border-top: 2px solid #ccc; padding-top: 1rem; margin-top: 1rem; }\n\
-.location { margin: 0.25rem 0; }\n\
-ul.edges { list-style: none; padding-left: 0; }\n\
-li.edge { margin: 0.25rem 0; }\n\
-</style>\n";

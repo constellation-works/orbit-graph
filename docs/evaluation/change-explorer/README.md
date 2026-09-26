@@ -1,5 +1,9 @@
 # Change-explorer evaluation (Milestone 5)
 
+The UI and HTTP service were retired on 2026-09-26 by ORB-13255; their
+change analysis continues in the `orbit-graph-changes` library.
+
+
 Five real change studies across two orbit-graph-supported language ecosystems.
 
 The original run was against `orbit-graph-explorer` at commit

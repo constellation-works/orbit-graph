@@ -23,7 +23,7 @@ ignore = [
 allow = [
     # Most of the tree, including tree-sitter and every tree-sitter grammar
     # (tree-sitter-c, -c-sharp, -go, -java, -javascript, -kotlin-ng, -python,
-    # -ruby, -rust, -typescript), clap, serde, rusqlite, git2, tiny_http.
+    # -ruby, -rust, -typescript), clap, serde, rusqlite, git2.
     "MIT",
     "Apache-2.0",
     # unicode-ident: (MIT OR Apache-2.0) AND Unicode-3.0.

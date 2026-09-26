@@ -48,10 +48,10 @@ policy() {
       ALLOWED="orbit-graph"
       BANNED=""
       ;;
-    orbit-graph-explorer)
-      KIND="library and binary \`orbit-graph-explorer\`"
+    orbit-graph-changes)
+      KIND="library"
       ALLOWED="orbit-graph"
-      BANNED=""
+      BANNED="clap tracing-subscriber tiny_http unicode-width"
       ;;
     *) return 1 ;;
   esac

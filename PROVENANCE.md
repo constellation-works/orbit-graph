@@ -39,7 +39,8 @@ The original paths recorded above are historical and stay as written. On
 2026-09-12 the tree moved to an Orbit-style `crates/` layout: the library became
 `crates/orbit-graph`, the executable and its real-binary tests became
 `crates/orbit-graph-cli` (`src/cli/**` → `src/command/**` and `src/output/**`),
-and `explorer/` became `crates/orbit-graph-explorer`. The relocations are pure
+and `explorer/` became the change explorer crate, subsequently renamed
+`crates/orbit-graph-changes` by ORB-13255. The relocations are pure
 moves, so `git log --follow` still reaches the pre-move history; no recovered
 code was rewritten.
 

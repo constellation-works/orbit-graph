@@ -1,9 +1,16 @@
 # Change explorer: evidence contract and snapshot semantics
 
-Status: approved milestone 1 contract. It describes the `orbit-graph-explorer`
-workspace member in this repository and the `orbit-graph` 0.9.x public API it
-consumes. It does not authorize a release, a user-facing launch, or any change
-to root-crate query semantics.
+Status: the analysis contract remains active in `orbit-graph-changes`. The
+service and UI portions below are historical. This document does not authorize
+a release or any change to core graph query semantics.
+
+## Current status (2026-09-26)
+
+ORB-13255 retained the snapshot, changed-symbol, evidence and JSON report
+contracts in `orbit-graph-changes`. Decision D2 (loopback HTTP and embedded
+UI), the service surface, API reference and UI sketch below are retired
+historical notes. They do not describe a live executable or service. The
+follow-up CLI/plugin task will provide the new surface.
 
 ## Purpose and boundaries
 
@@ -13,7 +20,7 @@ points may be affected, and which tests have a defensible connection. It does
 not judge whether a change is correct, complete, or safe to merge. Every claim
 it renders must name the revision and the evidence that supports it.
 
-The explorer consumes only the public `orbit_graph` library API. It reads no
+The change-analysis library consumes only the public `orbit_graph` API. It reads no
 Orbit control-plane state: no `.orbit/` directory, no Orbit configuration, no
 task store, and no Orbit plugin adapter. It does not modify the root crate's
 query semantics or `EXTRACTOR_VERSION`.
@@ -28,25 +35,24 @@ to make the UI simpler.
 
 ### D1. Placement: a workspace member crate
 
-The explorer is a workspace member of this repository,
-`crates/orbit-graph-explorer` (package `orbit-graph-explorer`, with its own
-`[[bin]]`). The library (`crates/orbit-graph`) and the `orbit-graph` executable
+The change-analysis library is a workspace member of this repository,
+`crates/orbit-graph-changes` (package `orbit-graph-changes`, with no binary). The library (`crates/orbit-graph`) and the `orbit-graph` executable
 (`crates/orbit-graph-cli`, installed with
 `cargo install --path crates/orbit-graph-cli`) keep their semantics and their
 independence from Orbit state.
 
-Reasoning: the explorer is the first consumer that exercises the public library
+Reasoning: the change-analysis library is the first consumer that exercises the public library
 API end to end, so keeping it in-tree makes an API gap visible in the same
 change that needs it, and one `cargo test --workspace` run covers both crates. A
 spin-out to a companion repository remains possible precisely because the
-dependency is one-directional and version-pinned: the explorer depends on
+dependency is one-directional and version-pinned: the change-analysis library depends on
 `orbit-graph` through its public API only, so the split cost is a manifest edit
-plus a published version bump, not a code untangling. Nothing in the explorer may
+plus a published version bump, not a code untangling. Nothing in the change-analysis library may
 be merged into the root crate to "make it work"; a genuine gap is recorded in
 [Capability gaps](#public-api-capability-gaps) and resolved by a separate,
 focused core change.
 
-### D2. Delivery: a loopback HTTP service with an embedded UI
+### D2. Retired 2026-09-26: loopback HTTP service with an embedded UI
 
 The UI is served by a small HTTP service bound to `127.0.0.1` only, with an
 explicit repository scope, an `Origin`/`Host` check, and a per-launch bearer
@@ -128,9 +134,9 @@ export. A ref that cannot be resolved is an error naming the ref; no snapshot is
 materialized.
 
 **Each revision is a separate, isolated index.**
-`crates/orbit-graph-explorer/src/snapshot.rs`
+`crates/orbit-graph-changes/src/snapshot.rs`
 materializes the committed tree of each revision into its own temporary
-directory (`orbit-graph-explorer-base-*`, `orbit-graph-explorer-head-*` under
+directory (`orbit-graph-changes-base-*`, `orbit-graph-changes-head-*` under
 the system temporary directory), then opens a `Graph` on that directory with
 `SyncPolicy::Manual` and runs one `SyncMode::Full` sync. Queries name a side, so
 no result can blend revisions.
@@ -168,28 +174,27 @@ means a session pays full indexing cost per revision.
 return source. A snapshot tree must therefore outlive every query against it.
 The tree is not a scratch artifact that may be deleted after indexing.
 
-**Snapshot caching (landed after Milestone 2).** Unless `--no-cache` is given,
-`serve`, `snapshot`, and `report` persist each revision's materialized tree
+**Snapshot caching (landed after Milestone 2).** Unless disabled by the library
+caller, a comparison persists each revision's materialized tree
 and index under a cache directory (default
-`<repo>/.orbit-graph/explorer/snapshots`, override with `--cache-dir`),
+`<repo>/.orbit-graph/explorer/snapshots`, override through `ComparisonOptions::cache_dir`),
 keyed by `(commit SHA, EXTRACTOR_VERSION, STORE_SCHEMA_VERSION)`
-(`crates/orbit-graph-explorer/src/cache.rs`). A key that does not match the
-running binary is rebuilt, never reused, when an older binary wrote it; an
-entry a newer binary wrote is never removed or rewritten (STD-03 §R10), and
+(`crates/orbit-graph-changes/src/cache.rs`). A key that does not match the
+running library version is rebuilt, never reused, when an older version wrote it; an
+entry a newer version wrote is never removed or rewritten (STD-03 §R10), and
 that side is indexed into a temporary tree with a cache note. An entry is
 published atomically — built into a staging directory, then renamed into
 place — so a crashed or concurrent build never leaves a half-indexed tree
 behind under a trusted SHA. `SnapshotCache::open` writes a cache-root marker
-(`.orbit-graph-explorer-cache`); a builder holds an exclusive `flock` on its
+(`.orbit-graph-changes-cache`); a builder holds an exclusive `flock` on its
 staging directory's `building.lock`, and every open snapshot holds a shared
 `flock` on its entry's `in_use.lock`.
-`orbit-graph-explorer clean` reports by default and removes only with
-`--confirm` (STD-01 §R5). It removes only what it can prove is its own, stale
-and unused (STD-03 §R29): an older binary's entries, entries whose commit Git
+The library's cache clean plan reports candidates before an explicit apply. It removes only what it can prove is its own, stale
+and unused (STD-03 §R29): an older version's entries, entries whose commit Git
 reports not found, and staging directories no builder holds. It keeps, and
 reports with a reason, a directory without the marker, anything it cannot lock
 exclusively (`building`, `in_use`), an unreadable `entry.json`, a newer
-binary's entry, an entry of unknown age under a retention policy, and an entry
+version's entry, an entry of unknown age under a retention policy, and an entry
 whose commit Git cannot look up for any other reason. `lookup` applies the
 same rules. `clean` never removes anything outside the cache directory, and it
 never touches the inspected repository's own `.orbit-graph/*.db` files.
@@ -557,7 +562,7 @@ evidence; it is always present, even when empty (a leaf changed symbol calls
 nothing). Two exports of the same inputs remain byte-identical with
 `outbound_paths` populated, the same as every other field.
 
-## Service surface
+## Retired service surface (historical)
 
 All endpoints are served on `127.0.0.1` only, under one repository scope fixed
 at launch. Every request must carry the per-launch token
@@ -748,14 +753,14 @@ rewriting the original examples.
   `invalid_excerpts` and `invalid_request_body` (`POST /api/report`), and
   `entry_points_failed` (`/api/entry-points`). Snapshot caching, described as
   deferred future work by the Milestone 2 amendment below, has since landed
-  (`crates/orbit-graph-explorer/src/cache.rs`, the `--cache-dir`/`--no-cache`
+  (`crates/orbit-graph-changes/src/cache.rs`, the `--cache-dir`/`--no-cache`
   flags, and the `clean` subcommand); see Revision and snapshot semantics
   above for the corrected description. This handoff task adds the
   [API reference](#api-reference) appendix below, generated from and
   cross-checked against the service's real serializers and route table by
   `crates/orbit-graph-explorer/tests/api_reference_doc.rs`.
 
-## UI sketch
+## Retired UI sketch (historical)
 
 Three panes, with a readable fallback that is mandatory rather than optional:
 
@@ -833,7 +838,7 @@ These gaps were found while building the milestone-1 scaffold and are now closed
 ## Milestone 1 scope
 
 Landed with this document: the Cargo workspace conversion (the library plus the
-explorer crate), the `crates/orbit-graph-explorer/src/snapshot.rs` module
+explorer crate), the `crates/orbit-graph-changes/src/snapshot.rs` module
 described above, the
 milestone-1 diagnostic binary (a human report explicitly labelled as not a
 machine contract), and tests covering the removed-symbol case across both
@@ -932,7 +937,7 @@ ORB-12416/ORB-12417; read that document directly rather than a copy of it.
   headless browser was available on its host; that gap is tracked in the
   evaluation document, not here.
 
-## API reference
+## Retired API reference (historical)
 
 Status: milestone 5 handoff appendix. Every row is verified against the
 current service (`crates/orbit-graph-explorer/src/service.rs`) rather than

@@ -10,7 +10,7 @@ use std::fs;
 use std::sync::Mutex;
 
 use orbit_graph::{Confidence, DEFAULT_IMPACT_DEPTH, RefOpts, Selector};
-use orbit_graph_explorer::snapshot::{
+use orbit_graph_changes::snapshot::{
     BuildState, BuildStatus, Comparison, ComparisonOptions, ComparisonOutcome, ComparisonProgress,
     SnapshotSide, WorkingTreeChange,
 };
