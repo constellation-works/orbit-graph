@@ -136,7 +136,10 @@ fn query_and_admin_subcommands_emit_json() {
     fs::create_dir_all(&graph_dir).expect("create graph dir");
     let old_db = graph_dir.join("main.1.db");
     fs::write(&old_db, b"stale").expect("write stale db");
-    let clean = run_json(&context, &["clean"]);
+    let plan = run_json(&context, &["clean"]);
+    assert_eq!(plan["applied"], false, "{plan}");
+    assert!(old_db.exists(), "clean without --confirm deletes nothing");
+    let clean = run_json(&context, &["clean", "--confirm"]);
     assert!(
         clean["deleted"].as_array().is_some_and(|deleted| {
             deleted.iter().any(|path| {

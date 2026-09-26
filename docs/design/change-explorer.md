@@ -174,13 +174,25 @@ and index under a cache directory (default
 `<repo>/.orbit-graph/explorer/snapshots`, override with `--cache-dir`),
 keyed by `(commit SHA, EXTRACTOR_VERSION, STORE_SCHEMA_VERSION)`
 (`crates/orbit-graph-explorer/src/cache.rs`). A key that does not match the
-running binary is rebuilt, never reused. An entry is published atomically —
-built into a staging directory, then renamed into place — so a crashed or
-concurrent build never leaves a half-indexed tree behind under a trusted SHA.
-`orbit-graph-explorer clean` removes entries whose key no longer matches this
-binary and entries for commits the repository no longer has; it never removes
-anything outside the cache directory, and it never touches the inspected
-repository's own `.orbit-graph/*.db` files.
+running binary is rebuilt, never reused, when an older binary wrote it; an
+entry a newer binary wrote is never removed or rewritten (STD-03 §R10), and
+that side is indexed into a temporary tree with a cache note. An entry is
+published atomically — built into a staging directory, then renamed into
+place — so a crashed or concurrent build never leaves a half-indexed tree
+behind under a trusted SHA. `SnapshotCache::open` writes a cache-root marker
+(`.orbit-graph-explorer-cache`); a builder holds an exclusive `flock` on its
+staging directory's `building.lock`, and every open snapshot holds a shared
+`flock` on its entry's `in_use.lock`.
+`orbit-graph-explorer clean` reports by default and removes only with
+`--confirm` (STD-01 §R5). It removes only what it can prove is its own, stale
+and unused (STD-03 §R29): an older binary's entries, entries whose commit Git
+reports not found, and staging directories no builder holds. It keeps, and
+reports with a reason, a directory without the marker, anything it cannot lock
+exclusively (`building`, `in_use`), an unreadable `entry.json`, a newer
+binary's entry, an entry of unknown age under a retention policy, and an entry
+whose commit Git cannot look up for any other reason. `lookup` applies the
+same rules. `clean` never removes anything outside the cache directory, and it
+never touches the inspected repository's own `.orbit-graph/*.db` files.
 
 **Dirty working trees are detected and reported, never indexed.** A comparison
 inspects the repository status (untracked files included, ignored files
@@ -882,10 +894,11 @@ ORB-12416/ORB-12417; read that document directly rather than a copy of it.
   under `<repo>/.orbit-graph/explorer/snapshots`: it is never shared across
   separate clones or worktrees of the same repository, it accumulates one
   entry per distinct base/head SHA ever compared until `clean` is run
-  manually. `clean --older-than <duration>` removes live entries that have not
-  been used within a humantime-style duration, and `clean --keep <N>` retains
-  the N most-recently-used live entries; both are explicit operator actions,
-  not automatic eviction at launch. Its report includes per-entry and total
+  manually with `--confirm`. `clean --older-than <duration>` removes live
+  entries that have not been used within a humantime-style duration, and
+  `clean --keep <N>` retains the N most-recently-used live entries; both are
+  explicit operator actions, not automatic eviction at launch, and neither
+  removes an entry that is in use or whose age is unknown. Its report includes per-entry and total
   sizes. Correctness
   relies entirely on its `(commit SHA, EXTRACTOR_VERSION,
   STORE_SCHEMA_VERSION)` key, which cannot mismatch a commit's real content

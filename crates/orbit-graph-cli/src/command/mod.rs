@@ -61,7 +61,7 @@ Recommendations and history:
 Index and utilities:
   sync     Update or rebuild the source graph index
   db-path  Print the current graph database path
-  clean    Remove obsolete graph databases
+  clean    Report obsolete graph databases; delete them with --confirm
   version  Print crate, extractor, and store schema versions
 
 Other:
@@ -190,7 +190,7 @@ pub enum Command {
     Deps(deps::DepsCommand),
     /// Print the current graph database path.
     DbPath(db_path::DbPathCommand),
-    /// Remove obsolete graph databases.
+    /// Report obsolete graph databases; delete them with --confirm.
     Clean(clean::CleanCommand),
     /// Print crate, extractor, and store schema versions.
     Version(version::VersionCommand),

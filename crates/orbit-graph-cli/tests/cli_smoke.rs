@@ -1066,7 +1066,10 @@ fn real_binary_help_succeeds() {
         ),
         ("sync", "Update or rebuild the source graph index"),
         ("db-path", "Print the current graph database path"),
-        ("clean", "Remove obsolete graph databases"),
+        (
+            "clean",
+            "Report obsolete graph databases; delete them with --confirm",
+        ),
         (
             "version",
             "Print crate, extractor, and store schema versions",
@@ -1594,10 +1597,19 @@ fn real_binary_renders_recommendation_and_index_views_with_complete_record_bound
     let old_db = fixture.path().join(".orbit-graph/main.1.db");
     fs::write(&old_db, b"stale").expect("write obsolete database");
     let expected_old_db_path = old_db.canonicalize().expect("canonical obsolete database");
-    let clean = run(fixture.path(), ["--format", "ndjson", "clean"]);
+    let plan = run(fixture.path(), ["--format", "ndjson", "clean"]);
+    assert!(plan.status.success());
+    let plan = parse_ndjson(&plan.stdout);
+    assert_eq!(plan[0]["record_type"], "clean_context");
+    assert_eq!(plan[0]["context"]["applied"], false);
+    assert_eq!(plan[1]["record_type"], "would_delete_database");
+    assert_eq!(plan[1]["reason"], "older_extractor_version");
+    assert!(old_db.exists(), "a plan deletes nothing");
+    let clean = run(fixture.path(), ["--format", "ndjson", "clean", "--confirm"]);
     assert!(clean.status.success());
     let clean = parse_ndjson(&clean.stdout);
     assert_eq!(clean[0]["record_type"], "clean_context");
+    assert_eq!(clean[0]["context"]["applied"], true);
     assert_eq!(clean[1]["record_type"], "deleted_database");
     assert_eq!(
         clean[1]["path"],
@@ -1609,11 +1621,217 @@ fn real_binary_renders_recommendation_and_index_views_with_complete_record_bound
     let expected_other_old_db_path = other_old_db
         .canonicalize()
         .expect("canonical second obsolete database");
-    let clean_human = run(fixture.path(), ["clean"]);
+    let clean_human = run(fixture.path(), ["clean", "--confirm"]);
     assert!(clean_human.status.success());
     let clean_human = String::from_utf8_lossy(&clean_human.stdout);
-    assert!(clean_human.contains("\t1\n"));
-    assert!(clean_human.contains(expected_other_old_db_path.to_string_lossy().as_ref()));
+    assert!(clean_human.contains("\ttrue\t0\t1\n"), "{clean_human}");
+    assert!(
+        clean_human.contains(
+            format!(
+                "deleted\tolder_extractor_version\t{}\n",
+                expected_other_old_db_path.display()
+            )
+            .as_str()
+        )
+    );
+}
+
+#[test]
+fn real_binary_clean_reports_by_default_and_deletes_exactly_the_report_with_confirm() {
+    let fixture = fixture_repository();
+    let [unreachable] = index_unreachable_detached_commits(fixture.path(), ["dropped"]);
+    let graph_dir = fixture
+        .path()
+        .join(".orbit-graph")
+        .canonicalize()
+        .expect("canonical graph directory");
+    fs::write(graph_dir.join("main.1.db"), b"stale").expect("write obsolete database");
+    fs::write(graph_dir.join("main.1.db-wal"), b"stale").expect("write obsolete WAL");
+    let newer = graph_dir.join(format!("main.{}.db", orbit_graph::EXTRACTOR_VERSION + 1));
+    fs::write(&newer, b"newer").expect("write newer database");
+
+    let before = digest_tree(fixture.path());
+    let plan = run_explicit_json(fixture.path(), ["clean"]);
+    assert!(plan.status.success(), "{plan:?}");
+    assert_eq!(
+        digest_tree(fixture.path()),
+        before,
+        "clean without --confirm changes nothing"
+    );
+    let stderr = String::from_utf8_lossy(&plan.stderr);
+    assert!(
+        stderr.contains("dry run") && stderr.contains("--confirm"),
+        "{stderr}"
+    );
+    let plan: Value = serde_json::from_slice(&plan.stdout).expect("plan JSON");
+    assert_eq!(plan["applied"], false, "{plan}");
+    assert_eq!(plan["deleted"], serde_json::json!([]), "{plan}");
+    let planned = listed_paths(&plan["would_delete"]);
+    let detached = format!("detached-{}", &unreachable[..12]);
+    assert!(
+        planned.contains(&graph_dir.join("main.1.db").display().to_string())
+            && planned.contains(&graph_dir.join("main.1.db-wal").display().to_string())
+            && planned.iter().any(|path| path.contains(detached.as_str())),
+        "{plan}"
+    );
+    assert!(
+        plan["kept"]
+            .as_array()
+            .is_some_and(|kept| kept.iter().any(|item| {
+                item["path"] == newer.display().to_string()
+                    && item["reason"] == "newer_extractor_version"
+            })),
+        "{plan}"
+    );
+
+    let applied = run_json(fixture.path(), ["clean", "--confirm"]);
+    assert_eq!(applied["applied"], true, "{applied}");
+    assert_eq!(listed_paths(&applied["would_delete"]), planned, "{applied}");
+    let deleted: Vec<String> = applied["deleted"]
+        .as_array()
+        .expect("deleted paths")
+        .iter()
+        .filter_map(|path| path.as_str().map(str::to_string))
+        .collect();
+    assert_eq!(deleted, planned, "{applied}");
+    let after = digest_tree(fixture.path());
+    let expected: std::collections::BTreeMap<_, _> = before
+        .into_iter()
+        .filter(|(path, _)| !planned.contains(&path.display().to_string()))
+        .collect();
+    assert_eq!(after, expected, "exactly the listed files are gone");
+}
+
+#[test]
+fn real_binary_clean_keeps_a_detached_database_git_cannot_prove_stale() {
+    let fixture = fixture_repository();
+    let [ambiguous, corrupt, gone] =
+        index_unreachable_detached_commits(fixture.path(), ["ambiguous", "corrupt", "gone"]);
+    let objects = fixture.path().join(".git/objects");
+    let loose = |sha: &str| objects.join(&sha[..2]).join(&sha[2..]);
+    // A second loose object sharing the first 12 hex digits makes the prefix
+    // ambiguous.
+    let twin_tail = if ambiguous.ends_with('0') { "1" } else { "0" };
+    fs::copy(
+        loose(ambiguous.as_str()),
+        objects
+            .join(&ambiguous[..2])
+            .join(format!("{}{twin_tail}", &ambiguous[2..39])),
+    )
+    .expect("write an ambiguous twin object");
+    // An unreadable object is an object-database error, not proof of absence.
+    let corrupt_object = loose(corrupt.as_str());
+    fs::remove_file(&corrupt_object).expect("remove the loose commit object");
+    fs::write(&corrupt_object, b"not a zlib stream").expect("corrupt the commit object");
+    // A commit whose object is gone is the one case Git proves stale.
+    fs::remove_file(loose(gone.as_str())).expect("remove the loose commit object");
+
+    let before = digest_tree(fixture.path());
+    let plan = run_json(fixture.path(), ["clean"]);
+    assert_eq!(digest_tree(fixture.path()), before, "{plan}");
+    let applied = run_json(fixture.path(), ["clean", "--confirm"]);
+    for sha in [&ambiguous, &corrupt] {
+        let prefix = format!("detached-{}", &sha[..12]);
+        for report in [&plan, &applied] {
+            assert!(
+                report["kept"]
+                    .as_array()
+                    .is_some_and(|kept| kept.iter().any(|item| {
+                        item["path"]
+                            .as_str()
+                            .is_some_and(|path| path.contains(prefix.as_str()))
+                            && item["reason"] == "unverifiable"
+                            && item["detail"]
+                                .as_str()
+                                .is_some_and(|detail| !detail.is_empty())
+                    })),
+                "{prefix} is kept and reported: {report}"
+            );
+        }
+        let kept_file = fs::read_dir(fixture.path().join(".orbit-graph"))
+            .expect("read graph directory")
+            .filter_map(Result::ok)
+            .any(|entry| {
+                entry
+                    .file_name()
+                    .to_string_lossy()
+                    .starts_with(prefix.as_str())
+            });
+        assert!(kept_file, "{prefix} survives clean --confirm: {applied}");
+    }
+    let gone_prefix = format!("detached-{}", &gone[..12]);
+    assert!(
+        listed_paths(&applied["deleted"])
+            .iter()
+            .any(|path| path.contains(gone_prefix.as_str())),
+        "a commit Git reports not found is deleted: {applied}"
+    );
+}
+
+/// Commit each name on its own throwaway branch, index each commit from a
+/// detached HEAD and `main` normally, then delete the branches, so no ref
+/// reaches the indexed commits. The branches outlive every sync, so no sync's
+/// own cleanup removes an index made earlier.
+fn index_unreachable_detached_commits<const N: usize>(
+    root: &Path,
+    names: [&str; N],
+) -> [String; N] {
+    let shas = names.map(|name| {
+        run_git(root, ["checkout", "-q", "-b", name, "main"]);
+        fs::write(
+            root.join("src").join(format!("{name}.rs")),
+            format!("pub fn {name}() {{}}\n"),
+        )
+        .expect("write branch source");
+        run_git(root, ["add", "."]);
+        run_git(root, ["commit", "-q", "-m", name]);
+        let sha = git_stdout(root, ["rev-parse", "HEAD"]);
+        run_git(root, ["checkout", "-q", "main"]);
+        sha
+    });
+    for sha in &shas {
+        run_git(root, ["checkout", "-q", "--detach", sha.as_str()]);
+        run_json(root, ["sync"]);
+    }
+    run_git(root, ["checkout", "-q", "main"]);
+    run_json(root, ["sync"]);
+    for name in names {
+        run_git(root, ["branch", "-q", "-D", name]);
+    }
+    shas
+}
+
+fn listed_paths(items: &Value) -> Vec<String> {
+    items
+        .as_array()
+        .map(|items| {
+            items
+                .iter()
+                .filter_map(|item| item.get("path").unwrap_or(item).as_str())
+                .map(str::to_string)
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+/// Every path under `root`, canonical, with a file's bytes (`None` for a
+/// directory), `.git` included.
+fn digest_tree(root: &Path) -> std::collections::BTreeMap<std::path::PathBuf, Option<Vec<u8>>> {
+    let mut digest = std::collections::BTreeMap::new();
+    let mut pending = vec![root.canonicalize().expect("canonical root")];
+    while let Some(dir) = pending.pop() {
+        for entry in fs::read_dir(dir.as_path()).expect("read directory") {
+            let path = entry.expect("directory entry").path();
+            if path.is_dir() {
+                digest.insert(path.clone(), None);
+                pending.push(path);
+            } else {
+                let bytes = fs::read(path.as_path()).expect("read file");
+                digest.insert(path, Some(bytes));
+            }
+        }
+    }
+    digest
 }
 
 #[test]

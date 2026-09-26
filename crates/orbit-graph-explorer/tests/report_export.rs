@@ -5,7 +5,7 @@
 //! Coverage follows the task's acceptance criteria: schema fields present,
 //! truncation carried through, embedded/reference marking per excerpt mode,
 //! byte-identical determinism across two runs, HTML escaping with no
-//! `<script>`, and `--force` semantics.
+//! `<script>`, and `--confirm` semantics.
 
 #![allow(clippy::expect_used)]
 
@@ -402,7 +402,7 @@ fn spaces_and_unicode_file_names_round_trip_in_both_formats() {
 }
 
 #[test]
-fn report_refuses_to_overwrite_without_force() {
+fn report_refuses_to_overwrite_without_confirm() {
     let case = corpus::build_case("direct-call");
     let out = tempfile::tempdir().expect("create output directory");
 
@@ -413,14 +413,36 @@ fn report_refuses_to_overwrite_without_force() {
     assert!(!second.status.success(), "{second:?}");
     let stderr = String::from_utf8_lossy(&second.stderr);
     assert!(stderr.contains("already exists"), "{stderr}");
-    assert!(stderr.contains("--force"), "{stderr}");
+    assert!(stderr.contains("pass `--confirm` to overwrite"), "{stderr}");
 
     std::fs::write(out.path().join("report.json"), "old json").expect("replace json sentinel");
     std::fs::write(out.path().join("report.html"), "old html").expect("replace html sentinel");
-    let forced = run_report(&case, out.path(), "report", &["--force"]);
-    assert!(forced.status.success(), "{forced:?}");
+    let confirmed = run_report(&case, out.path(), "report", &["--confirm"]);
+    assert!(confirmed.status.success(), "{confirmed:?}");
+    assert!(
+        !String::from_utf8_lossy(&confirmed.stderr).contains("deprecated"),
+        "{confirmed:?}"
+    );
     assert_eq!(read_json(out.path(), "report")["schema_version"], 1);
     assert!(read_html(out.path(), "report").contains("Change report"));
+}
+
+#[test]
+fn report_force_is_a_deprecated_alias_of_confirm() {
+    let case = corpus::build_case("direct-call");
+    let out = tempfile::tempdir().expect("create output directory");
+    let first = run_report(&case, out.path(), "report", &[]);
+    assert!(first.status.success(), "{first:?}");
+
+    std::fs::write(out.path().join("report.json"), "old json").expect("replace json sentinel");
+    let forced = run_report(&case, out.path(), "report", &["--force"]);
+    assert!(forced.status.success(), "{forced:?}");
+    let stderr = String::from_utf8_lossy(&forced.stderr);
+    assert!(
+        stderr.contains("`--force` is deprecated") && stderr.contains("`--confirm`"),
+        "{stderr}"
+    );
+    assert_eq!(read_json(out.path(), "report")["schema_version"], 1);
 }
 
 #[test]
@@ -439,7 +461,7 @@ fn report_rejects_names_that_are_not_single_file_components_before_writing() {
         "nested\\escaped",
         absolute,
     ] {
-        for extra in [&[][..], &["--force"][..]] {
+        for extra in [&[][..], &["--confirm"][..]] {
             let out = root.path().join("inside");
             let output = run_report(&case, &out, name, extra);
             assert!(!output.status.success(), "name {name:?}: {output:?}");

@@ -100,11 +100,26 @@ an older one, delete it and sync; a newer one belongs to a newer orbit-graph
 and is never modified. When `HEAD` cannot be read for any reason other than an
 unborn branch, commands fail instead of guessing which database to use.
 
-Only `sync` and `orbit-graph clean` remove databases. They remove a database
-from an older extractor version, with its WAL, shared-memory and lock
+Only `sync` and `orbit-graph clean --confirm` remove databases. They remove a
+database from an older extractor version, with its WAL, shared-memory and lock
 sidecars, only when no other process holds its lock; a locked one is kept
 until a later run. A database from a newer extractor version is never
-removed. `clean` also removes unreachable detached-commit indexes.
+removed. They also remove a detached-commit index whose commit Git reports
+not found, or that no local ref reaches. A detached index whose commit Git
+cannot look up for any other reason (an ambiguous prefix, an unreadable
+object, an unreadable ref) is kept and reported as `unverifiable`, with a
+`detail` naming the failure.
+
+**`clean` reports by default.** This is a deliberate change: earlier releases
+deleted as soon as `clean` ran. Without `--confirm`, `clean` prints
+`{graph_dir, would_delete: [{path, reason}], kept: [{path, reason, detail?}],
+applied: false, deleted: []}`, exits 0, and creates, writes or removes nothing;
+a stderr notice names `--confirm` when there is something to delete. With
+`--confirm` it deletes exactly the files the report lists, sets `applied` to
+`true`, and lists them again in `deleted`. The reasons are
+`older_extractor_version` and `unreachable_detached_commit` for deletion, and
+`current`, `newer_extractor_version`, `locked` and `unverifiable` for a kept
+database.
 
 The scanner respects Git ignore rules and optional `.orbitignore` files. The
 latter is a source-scanning ignore format retained for compatibility; it is not
@@ -174,7 +189,7 @@ safe.
 | `implementors <trait-selector>` | Find concrete implementations of a trait-like symbol. |
 | `deps <file-or-dir-selector>` | List source-level module/import edges. |
 | `db-path` | Show the current database path, extractor version, and whether it exists. |
-| `clean` | Delete obsolete graph databases. |
+| `clean [--confirm]` | Report obsolete graph databases; delete them only with `--confirm`. |
 | `version` | Show crate, extractor, and store schema versions. |
 
 Confidence levels are `exact`, `import`, `same_module`, and `fuzzy`. Reference

@@ -104,7 +104,8 @@ orbit-graph-explorer snapshot --repo /path/to/your/repo --base main --head HEAD 
 `report` writes the same evidence `serve` would answer over HTTP as two
 static files: `<name>.json` (the machine-contract export) and `<name>.html`
 (a self-contained rendering — readable from disk, no scripts, no service).
-It refuses to overwrite either file unless `--force` is given, and it never
+It refuses to overwrite either file unless `--confirm` is given (`--force`
+still works for one release as a deprecated alias and warns on stderr), and it never
 embeds the whole repository: only the changed symbols in scope are queried,
 and by default every excerpt is `controlled` — a bounded window around each
 cited line, not the whole file.
@@ -128,28 +129,57 @@ Unless `--no-cache` is given, `serve`, `snapshot`, and `report` cache each
 revision's materialized snapshot tree and index under
 `<repo>/.orbit-graph/explorer/snapshots` (override with `--cache-dir`), keyed
 by commit SHA, extractor version, and store schema version. A cache entry
-whose key does not match the running binary is rebuilt, never reused, so
-upgrading `orbit-graph-explorer` cannot silently serve a stale index. This
+an older binary built is rebuilt, never reused, so upgrading
+`orbit-graph-explorer` cannot silently serve a stale index; an entry a newer
+binary built is left alone, and that side is indexed into a temporary tree. This
 directory is scratch state: like the root crate's own `.orbit-graph/`, it
 should not be committed (see the
 [root README's index-lifecycle section](../../README.md#index-lifecycle-and-location)).
 
 ```sh
 orbit-graph-explorer clean --repo /path/to/your/repo --older-than 14d --keep 20
+orbit-graph-explorer clean --repo /path/to/your/repo --older-than 14d --keep 20 --confirm
 ```
 
-`clean` removes cache entries whose key this binary can no longer use and
-entries for commits the repository no longer has (for example, after a
-rebase or a force-push drops a commit this repository once compared).
-`--older-than` removes otherwise-live entries unused for longer than a
-humantime-style duration (`s`, `m`, `h`, `d`, or `w`), and `--keep` retains
-only the requested number of most-recently-used live entries. Existing stale
-and abandoned-entry reasons take precedence over these retention reasons.
-Nothing runs automatically at launch. Anything else in the cache directory — a
-staging directory an interrupted build left behind is the one exception, also
-removed — is reported and left alone. `clean` prints each entry's size and a
-total, touches nothing outside the cache directory, and does not affect the
-root crate's own `.orbit-graph/` index for this repository.
+**`clean` reports by default and removes only with `--confirm`.** This is a
+deliberate change: earlier releases removed entries as soon as `clean` ran.
+Without `--confirm`, `clean` prints what it would remove (`would_delete`
+lines) and what it keeps (`kept` lines), each with a reason, reports
+`applied` as `false`, exits 0, and creates, writes, or removes nothing. With
+`--confirm` it removes exactly the entries it lists (`removed` lines), each
+while holding that entry's lock.
+
+`clean` removes cache entries an older `orbit-graph-explorer` built
+(`stale_key`), entries for commits Git reports not found in the repository
+(`unreferenced_commit`, for example after a rebase or a force-push drops a
+commit this repository once compared), and staging directories no build still
+holds (`abandoned_staging`). `--older-than` removes otherwise-live entries
+unused for longer than a humantime-style duration (`s`, `m`, `h`, `d`, or
+`w`), and `--keep` retains only the requested number of most-recently-used
+live entries. Existing stale and abandoned-entry reasons take precedence over
+these retention reasons. Nothing runs automatically at launch.
+
+`clean` deletes only what it can prove is its own, stale, and unused. It keeps,
+and reports with a reason:
+
+- `building`: a staging directory whose builder still holds its lock;
+- `in_use`: an entry a running `serve`, `snapshot`, or `report` has open;
+- `unreadable`: an entry whose `entry.json` is missing or does not parse;
+- `newer_identity`: an entry a newer `orbit-graph-explorer` built;
+- `unknown_age`: with `--older-than` or `--keep`, an entry that records no
+  publish or last-use time;
+- `unverifiable`: an entry whose commit Git could not look up for a reason
+  other than "not found" (a `detail` line says why);
+- `unrecognized`: anything else in the directory;
+- `no_cache_marker`: the whole directory, when it lacks the
+  `.orbit-graph-explorer-cache` marker that `serve`, `snapshot`, and `report`
+  write when they open a cache. A cache last used by an older release gains the
+  marker the next time one of them opens it.
+
+`clean` prints each entry's size and a total, touches nothing outside the cache
+directory, and does not affect the root crate's own `.orbit-graph/` index for
+this repository. A launch that finds its commit's entry kept for one of these
+reasons indexes that side into a temporary tree and says so in the cache note.
 
 ## Every flag
 
@@ -163,12 +193,13 @@ Usage:
   orbit-graph-explorer serve --base <REF> --head <REF> [--repo <PATH>] [--port <PORT>]
   orbit-graph-explorer snapshot --base <REF> --head <REF> [--repo <PATH>] [--selector <SELECTOR>]
   orbit-graph-explorer report --base <REF> --head <REF> --out <DIR> --name <NAME>
-                               [--repo <PATH>] [--force] [--selector <SELECTOR>]...
+                               [--repo <PATH>] [--confirm] [--selector <SELECTOR>]...
                                [--excerpts none|controlled|full-span] [--generated-at <RFC3339>]
                                [--include-absolute-paths] [--depth <N>] [--confidence <LEVEL>]
                                [--node-cap <N>] [--time-budget-ms <MS>] [--language <LANG>]
                                [--change-kind <KIND,...>] [--scope <PREFIX>]
   orbit-graph-explorer clean [--repo <PATH>] [--cache-dir <PATH>] [--older-than <DURATION>] [--keep <N>]
+                              [--confirm]
 
 Options:
   --repo <PATH>            Repository to inspect (default: current directory).
@@ -182,7 +213,9 @@ Options:
   --out <DIR>              Directory `report` writes `<name>.json` and
                            `<name>.html` into. Created if missing.
   --name <NAME>            Single file name component for `report`'s two output files.
-  --force                  Let `report` overwrite existing output files.
+  --confirm                Let `report` overwrite existing output files, and
+                           let `clean` remove what it reports. `--force` is a
+                           deprecated alias for `report --confirm`.
   --excerpts <MODE>        `report` excerpt policy: `none` (references only),
                            `controlled` (default; a bounded window around each
                            cited line), or `full-span` (the whole bounded file).
@@ -221,10 +254,14 @@ token, and any Origin or Referer that is not the service's own origin is
 refused.
 
 Snapshot trees and indexes are cached per commit, keyed by commit SHA, extractor
-version, and store schema version. A key that does not match this binary is
-rebuilt, never reused. `clean` removes stale-key entries and entries for commits
-the repository no longer has. `--older-than` and `--keep` provide manual age
-and least-recently-used retention; no retention policy runs automatically.
+version, and store schema version. An older binary's key is rebuilt, never
+reused; a newer binary's entry is left alone. `clean` reports what it would
+remove and removes it only with `--confirm`: an older binary's entries, entries
+for commits the repository no longer has, and abandoned staging directories.
+`--older-than` and `--keep` provide manual age and least-recently-used
+retention; no retention policy runs automatically. `clean` keeps, and reports
+with a reason, anything in use, being built, unreadable, from a newer binary,
+of unknown age, or in a directory without the cache marker.
 
 `snapshot` output is a human diagnostic, not a stable machine contract.
 
@@ -233,7 +270,7 @@ HTML rendering (readable from disk, no scripts, no service). It never includes
 the whole repository: only the changed symbols in scope are queried, and
 every cited source location is either a bounded excerpt or a precise
 `file:line-span@sha` reference. It refuses to overwrite `<name>.json` or
-`<name>.html` unless `--force` is given.
+`<name>.html` unless `--confirm` is given.
 ```
 
 ## Limitations

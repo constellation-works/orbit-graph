@@ -36,7 +36,8 @@ every command.
 Queries never refresh the index; run `orbit-graph sync` after source changes
 (`--full` to rebuild). The index lives in `.orbit-graph/` at the worktree root
 and should not be committed; `orbit-graph db-path` prints its location and
-`orbit-graph clean` removes obsolete databases.
+`orbit-graph clean` reports obsolete databases (`clean --confirm` removes
+them).
 
 ## Documentation
 

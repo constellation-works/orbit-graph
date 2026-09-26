@@ -9,9 +9,12 @@
 //! Snapshot trees and their indexes are cached by [`crate::cache`], keyed by
 //! `(commit SHA, EXTRACTOR_VERSION, STORE_SCHEMA_VERSION)`, so a second launch
 //! against the same revisions reuses the index instead of paying the extraction
-//! cost again. A key that does not match the running binary is discarded and
-//! rebuilt. When the cache directory is unusable the snapshot falls back to a
-//! task-owned temporary tree and says so, rather than failing the comparison.
+//! cost again. An older binary's key is discarded and rebuilt. When the cache
+//! directory is unusable, or the commit's entry is one this binary may neither
+//! use nor remove (a newer binary's, an unreadable one, or one in use
+//! elsewhere), the snapshot falls back to a task-owned temporary tree and says
+//! so, rather than failing the comparison. A cached snapshot holds its entry's
+//! shared in-use lock while it is open, so `clean` keeps the entry.
 //!
 //! Safety rules this module enforces:
 //!
@@ -49,8 +52,8 @@ use tempfile::TempDir;
 use thiserror::Error;
 
 use crate::cache::{
-    CacheError, CacheOutcome, IndexIdentity, SnapshotCache, StoredBuild, StoredExclusion,
-    default_cache_dir,
+    CacheError, CacheOutcome, CachedEntry, IndexIdentity, SnapshotCache, StoredBuild,
+    StoredExclusion, default_cache_dir,
 };
 
 /// Largest blob materialized into a snapshot tree.
@@ -525,8 +528,9 @@ pub struct Snapshot {
 /// Where a snapshot's materialized tree lives, and who removes it.
 enum SnapshotStorage {
     /// A cache entry. It outlives the snapshot: a later launch reuses it, and
-    /// only `clean` removes it.
-    Cached(PathBuf),
+    /// only `clean` removes it. Holding the entry holds its shared in-use lock,
+    /// so no `clean` removes it while this snapshot is open.
+    Cached(CachedEntry),
     /// A task-owned temporary tree, removed when the snapshot is dropped.
     Temporary(TempDir),
 }
@@ -561,7 +565,7 @@ impl Snapshot {
     /// snapshot is cached, and the temporary directory otherwise.
     pub fn storage_root(&self) -> &Path {
         match &self.storage {
-            SnapshotStorage::Cached(root) => root.as_path(),
+            SnapshotStorage::Cached(entry) => entry.root(),
             SnapshotStorage::Temporary(tree) => tree.path(),
         }
     }
@@ -691,7 +695,26 @@ impl Snapshot {
         progress: &dyn ComparisonProgress,
     ) -> Result<Option<PreparedSnapshot>, SnapshotError> {
         let commit_sha = commit.to_string();
-        if let Some(entry) = cache.lookup(commit_sha.as_str()).map_err(cache_error)? {
+        let found = match cache.lookup(commit_sha.as_str()) {
+            Ok(found) => found,
+            // The commit's directory holds an entry this binary may neither
+            // use nor remove (a newer binary's, an unreadable one, or one in
+            // use elsewhere): index this side into a temporary tree instead.
+            Err(error @ CacheError::Kept { .. }) => {
+                let note = format!(
+                    "{error}; this side was indexed into a task-owned temporary tree and \
+                     reused nothing."
+                );
+                return Ok(Self::prepare_temporary(repo, side, commit, progress)?.map(
+                    |prepared| PreparedSnapshot {
+                        cache_note: Some(note),
+                        ..prepared
+                    },
+                ));
+            }
+            Err(error) => return Err(cache_error(error)),
+        };
+        if let Some(entry) = found {
             // The tree and the index are immutable, and the key already proves
             // they were produced by this extractor and store schema, so the
             // entry is opened as it stands: no re-materialization, no re-sync.
@@ -707,7 +730,7 @@ impl Snapshot {
             progress.on_status(side, &ready_status(&build));
             return Ok(Some(PreparedSnapshot {
                 graph,
-                storage: SnapshotStorage::Cached(entry.root().to_path_buf()),
+                storage: SnapshotStorage::Cached(entry),
                 tree_root,
                 db_path,
                 materialization: materialization_from_stored(&build),
@@ -788,7 +811,7 @@ impl Snapshot {
         progress.on_status(side, &ready_status(&build));
         Ok(Some(PreparedSnapshot {
             graph,
-            storage: SnapshotStorage::Cached(entry.root().to_path_buf()),
+            storage: SnapshotStorage::Cached(entry),
             tree_root,
             db_path,
             materialization: materialization_from_stored(&build),

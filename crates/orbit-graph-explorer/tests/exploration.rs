@@ -1095,13 +1095,13 @@ fn a_second_launch_hits_the_cache_and_a_stale_key_rebuilds_it() {
     );
     drop(warm);
 
-    // Forge a stale key on the head entry: a mismatched extractor version must
+    // Forge a stale key on the head entry: an older extractor version must
     // rebuild, never be reused with a warning.
     let entry = cache.path().join(head.as_str()).join("entry.json");
     let mut metadata: Value =
         serde_json::from_slice(fs::read(entry.as_path()).expect("read entry").as_slice())
             .expect("parse entry");
-    let forged = metadata["extractor_version"].as_u64().unwrap_or_default() + 1;
+    let forged = metadata["extractor_version"].as_u64().unwrap_or_default() - 1;
     metadata["extractor_version"] = Value::from(forged);
     fs::write(
         entry.as_path(),
@@ -1187,6 +1187,7 @@ fn clean_applies_retention_and_preserves_existing_cleanup_reasons() {
             cache_dir.as_str(),
             "--keep",
             "1",
+            "--confirm",
         ])
         .output()
         .expect("run clean");
