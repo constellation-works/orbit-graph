@@ -1,5 +1,6 @@
 //! Outbound call-edge query.
 
+use std::collections::HashMap;
 use std::fs;
 use std::path::Path;
 
@@ -7,7 +8,7 @@ use crate::extract::Selector;
 use rusqlite::{Connection, params};
 
 use crate::{
-    CalleeEdge, CalleeOpts, Graph, GraphError, RefConfidence, RefKind, SymbolSpan,
+    CalleeEdge, CalleeOpts, CalleeReport, Graph, GraphError, RefConfidence, RefKind, SymbolSpan,
     resolve_symbol_span,
 };
 
@@ -15,38 +16,72 @@ pub(crate) fn run(
     graph: &Graph,
     sel: &Selector,
     opts: &CalleeOpts,
-) -> Result<Vec<CalleeEdge>, GraphError> {
+) -> Result<CalleeReport, GraphError> {
     if opts.kind.is_some_and(|kind| kind != RefKind::Call) {
-        return Ok(Vec::new());
+        return Ok(CalleeReport::default());
     }
     let resolved = graph.with_read_connection(|conn| {
         let Some(symbol) = resolve_symbol_span(conn, sel)? else {
             return Ok(None);
         };
-        let edges = edges_for_symbol(conn, &symbol)?
-            .into_iter()
-            .filter_map(
-                |edge| match RefConfidence::from_db(edge.confidence.as_str()) {
-                    Ok(confidence) if confidence.visible_at_floor(opts.confidence) => {
-                        Some(Ok((edge, confidence)))
-                    }
-                    Ok(_) => None,
-                    Err(error) => Some(Err(error)),
-                },
-            )
-            .collect::<Result<Vec<_>, _>>()?;
-        Ok(Some((symbol, edges)))
+        let mut defined = HashMap::new();
+        let mut hidden_unresolved = 0;
+        let mut edges = Vec::new();
+        for edge in edges_for_symbol(conn, &symbol)? {
+            let confidence = RefConfidence::from_db(edge.confidence.as_str())?;
+            if !confidence.visible_at_floor(opts.confidence) {
+                continue;
+            }
+            if opts.hide_unresolved
+                && edge.target_qualified.is_none()
+                && !has_indexed_definition(conn, &mut defined, edge.target_name.as_str())?
+            {
+                hidden_unresolved += 1;
+                continue;
+            }
+            edges.push((edge, confidence));
+        }
+        Ok(Some((symbol, edges, hidden_unresolved)))
     })?;
-    let (symbol, edges) = match resolved {
-        Some(resolved) => resolved,
-        None => return Ok(vec![]),
+    let Some((symbol, edges, hidden_unresolved)) = resolved else {
+        return Ok(CalleeReport::default());
     };
 
-    materialize_edges(
-        graph.worktree_root.as_path(),
-        symbol.file_path.as_str(),
-        edges,
-    )
+    Ok(CalleeReport {
+        callees: materialize_edges(
+            graph.worktree_root.as_path(),
+            symbol.file_path.as_str(),
+            edges,
+        )?,
+        hidden_unresolved,
+    })
+}
+
+/// Symbol kinds a call expression can target. A same-named `type_alias`
+/// (Rust's associated `type Err`), module, or heading is not a definition of
+/// the called name.
+const CALLABLE_KINDS: &str = "'function', 'method', 'class', 'struct'";
+
+/// Whether any indexed callable symbol is named `name`, memoized per query.
+fn has_indexed_definition(
+    conn: &Connection,
+    memo: &mut HashMap<String, bool>,
+    name: &str,
+) -> Result<bool, GraphError> {
+    if let Some(defined) = memo.get(name) {
+        return Ok(*defined);
+    }
+    let defined = conn
+        .prepare_cached(
+            format!(
+                "SELECT EXISTS (SELECT 1 FROM symbols WHERE name = ?1 AND kind IN ({CALLABLE_KINDS}))"
+            )
+            .as_str(),
+        )
+        .and_then(|mut stmt| stmt.query_row(params![name], |row| row.get::<_, bool>(0)))
+        .map_err(|source| GraphError::sqlite("look up callee definition", source))?;
+    memo.insert(name.to_string(), defined);
+    Ok(defined)
 }
 
 pub(crate) fn edges_for_symbol(

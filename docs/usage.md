@@ -85,7 +85,7 @@ a few recent entries kept). Deleting these files is always safe.
 | `search <query> [--kind symbol|string|config] [--lang <id>] [--limit <n>]` | Full-text search indexed definitions, strings, or config keys. |
 | `show <selector> [--max-bytes <n>]` | Return metadata and a bounded source slice. |
 | `refs <symbol> [--confidence <level>] [--kind <kind>]` | Return inbound references and relations. |
-| `callees <symbol>` | Return calls made by a symbol. |
+| `callees <symbol> [--include-unresolved]` | Return calls made by a symbol. Unresolved calls whose name has no indexed definition (standard-library and prelude calls) are hidden by default, counted in `hidden_unresolved`, and noted on stderr. |
 | `impact <selector> [--depth <n>] [--confidence <level>] [--direction inbound\|outbound\|both]` | Traverse callers, callees, or both around a selector (default: both). |
 | `trace <command> [--depth <n>] [--confidence <level>]` | Trace a discovered CLI command handler and its calls. |
 | `overview [<file-or-dir-selector>] [--format summary|full]` | Summarize indexed files and symbols. |
