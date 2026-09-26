@@ -620,7 +620,12 @@ fn sync_window_elapsed(last_incremental_at: i64, window: Duration) -> Result<boo
     })? > window.as_nanos())
 }
 
-fn open_read_connection(db_path: &Path, operation: &'static str) -> Result<Connection, GraphError> {
+/// Opens a read connection with the standard bounded busy wait and foreign
+/// keys.
+pub(crate) fn open_read_connection(
+    db_path: &Path,
+    operation: &'static str,
+) -> Result<Connection, GraphError> {
     let conn = Connection::open(db_path).map_err(|source| GraphError::sqlite(operation, source))?;
     conn.pragma_update(None, "busy_timeout", 5_000)
         .map_err(|source| GraphError::sqlite("set busy_timeout for graph read", source))?;

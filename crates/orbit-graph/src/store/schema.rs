@@ -37,8 +37,10 @@ CREATE TABLE symbols (
     signature      TEXT,               -- one-line normalized signature
     parent_symbol  INTEGER REFERENCES symbols(id) ON DELETE CASCADE
 ) STRICT;
--- symbols.id is autoincrement and NOT stable across re-extracts.
--- Use `qualified` for stable cross-build identity. See §6.3.
+-- symbols.id is a plain rowid (no AUTOINCREMENT): it is NOT stable across
+-- re-extracts, and ids freed by deleting a file's rows are reused, possibly
+-- for different symbols. Use `qualified` for stable cross-build identity.
+-- See §6.3.
 
 CREATE INDEX symbols_name      ON symbols(name);
 CREATE INDEX symbols_qualified ON symbols(qualified);

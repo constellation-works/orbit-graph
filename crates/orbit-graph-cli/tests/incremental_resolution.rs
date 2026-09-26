@@ -49,7 +49,10 @@ fn renaming_a_definition_demotes_remote_callers_like_a_full_sync() {
             "{caller}"
         );
     }
-    assert_incremental_matches_full(repo.path());
+    assert_incremental_matches_full(
+        repo.path(),
+        &["symbol:src/defs.rs#remote_target_renamed:function"],
+    );
 }
 
 #[test]
@@ -68,7 +71,7 @@ fn removing_a_definition_file_demotes_remote_callers_like_a_full_sync() {
             "{caller}"
         );
     }
-    assert_incremental_matches_full(repo.path());
+    assert_incremental_matches_full(repo.path(), &[]);
 }
 
 #[test]
@@ -92,20 +95,89 @@ fn adding_a_unique_definition_promotes_a_fuzzy_remote_call_like_a_full_sync() {
         callee(repo.path(), CALLERS[1], "later_target"),
         ("same_module".to_string(), Some("later_target".to_string()))
     );
-    assert_incremental_matches_full(repo.path());
+    assert_incremental_matches_full(repo.path(), &["symbol:src/later.rs#later_target:function"]);
 }
 
-/// Every caller's outbound refs after the incremental sync that just ran
-/// equal those after rebuilding the same tree from scratch.
-fn assert_incremental_matches_full(repo: &Path) {
-    let incremental = CALLERS.map(|caller| run_json(repo, ["callees", caller]));
+/// pass1 rewrites a changed file's symbol rows, and SQLite reuses the freed
+/// rowids. When the file holds the highest ids, a definition added above the
+/// others takes the first old id, so an unchanged definition moves to a new
+/// id. A caller's stored hint must follow it, or `refs` for the moved symbol
+/// comes back empty and the new symbol collects the caller instead.
+#[test]
+fn rewriting_the_file_with_the_highest_symbol_ids_keeps_hints_on_their_symbols() {
+    let repo = TempDir::new().expect("create fixture repository");
+    run_git(repo.path(), &["init", "-q", "-b", "main"]);
+    write(repo.path(), "src/lib.rs", "mod caller;\nmod zdefs;\n");
+    write(
+        repo.path(),
+        "src/caller.rs",
+        "pub fn call() -> i32 {\n    crate::zdefs::alpha()\n}\n",
+    );
+    write(
+        repo.path(),
+        "src/zdefs.rs",
+        "pub fn alpha() -> i32 {\n    1\n}\n\npub fn beta() -> i32 {\n    2\n}\n",
+    );
+    sync(repo.path(), false);
+    let alpha = "symbol:src/zdefs.rs#alpha:function";
+    assert_eq!(referencing_files(repo.path(), alpha), ["src/caller.rs"]);
+
+    write(
+        repo.path(),
+        "src/zdefs.rs",
+        "pub fn gamma() -> i32 {\n    3\n}\n\npub fn alpha() -> i32 {\n    1\n}\n\npub fn beta() -> i32 {\n    2\n}\n",
+    );
+    let report = sync(repo.path(), false);
+    assert_eq!(report["files_changed"], 1, "{report}");
+
+    assert_eq!(referencing_files(repo.path(), alpha), ["src/caller.rs"]);
+    let gamma = "symbol:src/zdefs.rs#gamma:function";
+    assert!(referencing_files(repo.path(), gamma).is_empty());
+    assert_queries_match_full(
+        repo.path(),
+        &["symbol:src/caller.rs#call:function"],
+        &[alpha, gamma, "symbol:src/zdefs.rs#beta:function"],
+    );
+}
+
+/// The files holding refs to `target`, as `refs` reports them.
+fn referencing_files(repo: &Path, target: &str) -> Vec<String> {
+    run_json(repo, ["refs", target])["refs"]
+        .as_array()
+        .expect("refs array")
+        .iter()
+        .map(|reference| reference["file"].as_str().expect("ref file").to_string())
+        .collect()
+}
+
+/// Every caller's outbound refs, and the inbound `refs` and `impact` of each
+/// target, after the incremental sync that just ran equal those after
+/// rebuilding the same tree from scratch.
+fn assert_incremental_matches_full(repo: &Path, targets: &[&str]) {
+    assert_queries_match_full(repo, &CALLERS, targets);
+}
+
+fn assert_queries_match_full(repo: &Path, callers: &[&str], targets: &[&str]) {
+    let incremental = graph_queries(repo, callers, targets);
     let rebuilt = sync(repo, true);
     assert!(
         rebuilt["files_indexed"].as_u64().is_some_and(|n| n >= 3),
         "{rebuilt}"
     );
-    let full = CALLERS.map(|caller| run_json(repo, ["callees", caller]));
-    assert_eq!(incremental, full);
+    assert_eq!(incremental, graph_queries(repo, callers, targets));
+}
+
+fn graph_queries(repo: &Path, callers: &[&str], targets: &[&str]) -> Vec<Value> {
+    let outbound = callers
+        .iter()
+        .map(|caller| run_json(repo, ["callees", caller]));
+    let inbound = targets.iter().flat_map(|target| {
+        [
+            run_json(repo, ["refs", target]),
+            run_json(repo, ["impact", target]),
+        ]
+    });
+    outbound.chain(inbound).collect()
 }
 
 /// The confidence and resolved qualified name of the caller's one callee

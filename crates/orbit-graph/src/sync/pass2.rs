@@ -142,9 +142,8 @@ impl Definitions {
         db_path: &Path,
         file_paths: impl IntoIterator<Item = &'a str>,
     ) -> Result<Self, GraphError> {
-        let conn = Connection::open(db_path).map_err(|source| {
-            GraphError::sqlite("open graph database for prior definitions", source)
-        })?;
+        let conn =
+            crate::open_read_connection(db_path, "open graph database for prior definitions")?;
         let mut by_file = BTreeMap::new();
         for file_path in file_paths {
             by_file.insert(file_path.to_string(), defined_symbols(&conn, file_path)?);
@@ -219,9 +218,10 @@ impl Dependents {
     }
 
     fn add_file(&mut self, file_path: &str, old: &[DefinedSymbol], new: &[DefinedSymbol]) {
-        let new_ids = new.iter().map(|symbol| symbol.id).collect::<BTreeSet<_>>();
-        for symbol in old.iter().filter(|symbol| !new_ids.contains(&symbol.id)) {
-            self.replaced.insert(symbol.id, symbol.name.clone());
+        for symbol in old {
+            if !keeps_meaning(symbol, old, new) {
+                self.replaced.insert(symbol.id, symbol.name.clone());
+            }
         }
 
         // Every candidate in the file is matched against its module prefixes;
@@ -244,6 +244,30 @@ impl Dependents {
             }
         }
     }
+}
+
+/// Whether a hint to the old row `symbol.id` still names the same definition
+/// after the file was rewritten.
+///
+/// pass1 deletes a rewritten file's symbol rows and inserts them again, and
+/// `symbols.id` is a plain rowid (no `AUTOINCREMENT`), so SQLite hands the
+/// freed ids out again: when the file held the highest ids, an unchanged
+/// definition can come back under a new id while its old id now names a
+/// different symbol. A hint is kept only when the row now holding its id is
+/// the same definition, `(name, qualified, kind)`, and no other definition in
+/// the file shares that `(name, qualified)`, since the ladder orders equal
+/// candidates by id.
+fn keeps_meaning(symbol: &DefinedSymbol, old: &[DefinedSymbol], new: &[DefinedSymbol]) -> bool {
+    let same_identity =
+        |other: &&DefinedSymbol| other.name == symbol.name && other.qualified == symbol.qualified;
+    let Some(now) = new.iter().find(|other| other.id == symbol.id) else {
+        return false;
+    };
+    now.name == symbol.name
+        && now.qualified == symbol.qualified
+        && now.kind == symbol.kind
+        && old.iter().filter(same_identity).count() == 1
+        && new.iter().filter(same_identity).count() == 1
 }
 
 /// A file's definitions grouped by name, as the ladder sees them: the
@@ -462,7 +486,10 @@ fn insert_ref(
 /// check), and its `target_name` and `target_qualified` (every rung, the
 /// type-member rung, and [`import_module_for_ref`]). Two refs in one file with equal keys
 /// therefore resolve identically, so a file's refs are resolved once per
-/// distinct key. A new ladder input must be added here.
+/// distinct key. A new ladder input must be added here AND stored in `refs`
+/// ([`insert_ref`]) and read back by [`StoredRef::from_row`], because an
+/// incremental sync re-resolves refs in unchanged files from their stored
+/// rows alone.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 struct RefKey {
     is_runtime_invocation: bool,

@@ -618,6 +618,44 @@ fn allocation_free_module_matching_agrees_with_the_joined_strings() {
     }
 }
 
+#[test]
+fn a_rewritten_file_reusing_an_old_id_for_another_symbol_marks_that_id_replaced() {
+    fn defined(name: &str, id: i64) -> super::DefinedSymbol {
+        super::DefinedSymbol {
+            name: name.to_string(),
+            qualified: name.to_string(),
+            kind: "function".to_string(),
+            id,
+        }
+    }
+    // `gamma` was added above `alpha` and took its freed id.
+    let old = [defined("alpha", 4), defined("beta", 5)];
+    let new = [defined("alpha", 5), defined("beta", 6), defined("gamma", 4)];
+    let mut dependents = super::Dependents::default();
+    dependents.add_file("src/zdefs.rs", &old, &new);
+    assert_eq!(
+        dependents.replaced,
+        [(4, "alpha".to_string()), (5, "beta".to_string())]
+            .into_iter()
+            .collect()
+    );
+
+    // An id that still names the same, unique definition keeps its hint;
+    // one shared by two equal definitions does not, since the ladder orders
+    // equal candidates by id.
+    let old = [defined("alpha", 4), defined("twin", 5), defined("twin", 6)];
+    let new = [defined("alpha", 4), defined("twin", 5), defined("twin", 6)];
+    let mut dependents = super::Dependents::default();
+    dependents.add_file("src/zdefs.rs", &old, &new);
+    assert_eq!(
+        dependents.replaced,
+        [(5, "twin".to_string()), (6, "twin".to_string())]
+            .into_iter()
+            .collect()
+    );
+    assert!(dependents.names.is_empty());
+}
+
 fn assert_ref(row: &StoredRef, target_qualified: Option<&str>, confidence: &str) {
     assert_eq!(row.target_qualified.as_deref(), target_qualified);
     assert_eq!(row.confidence, confidence);
