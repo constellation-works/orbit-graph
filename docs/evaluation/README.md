@@ -121,3 +121,18 @@ paired each old file with one of its split parts. Upgrading the
 existing v3 index copied its 200 deliveries and derived lineage in 2.1 s on
 first open. The box was shared with concurrent builds during these runs, so
 compare CPU times, or re-measure on an idle host, before quoting wall times.
+
+The remaining fixed cost, parsing every target blob on every call, is removed
+by the target symbol cache (ORB-13091). Same clone and query, load average
+27–30:
+
+| Call | Wall time | User CPU |
+| --- | --- | --- |
+| Cold (parse, then write a 6.8 MB cache entry), empty history scope | 9.6 s | 6.4 s |
+| Warm, empty history scope | 0.21–0.25 s | 0.15–0.18 s |
+| Warm, 200 indexed commits | 0.41–0.60 s | 0.25–0.29 s |
+| Warm, `--level symbol`, empty history scope | 0.34 s | — |
+
+Warm output is identical to cold output and to the uncached build. This holds
+for the file-level query both with and without history, and for the
+symbol-level query.
