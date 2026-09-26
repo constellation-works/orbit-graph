@@ -38,8 +38,10 @@ boundaries are documented in [the terminal-interface design](design/terminal-int
 
 Synchronization is explicit. Query commands never refresh the index; run
 `orbit-graph sync` after source changes. Incremental sync compares metadata and
-content hashes. `orbit-graph sync --full` rehashes and re-extracts every
-supported file.
+content hashes, re-extracts the changed files, and re-resolves references in
+other files that name a definition the changed or removed files added, removed
+or renamed, so its references match what a full rebuild stores.
+`orbit-graph sync --full` rehashes and re-extracts every supported file.
 
 Each worktree stores scratch state under `.orbit-graph/` in its root. Attached
 branches use `.orbit-graph/<sanitized-branch>.<extractor-version>.db`; detached

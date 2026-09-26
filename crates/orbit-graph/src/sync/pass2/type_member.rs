@@ -428,6 +428,44 @@ fn impl_type_and_trait(qualified: &str) -> Option<(String, String)> {
     Some((last(self_type), last(trait_path)))
 }
 
+/// The trait an impl block implements (`Greet` for `<a::Foo as b::Greet>`),
+/// or `None` for an inherent impl or anything else.
+pub(super) fn impl_trait_name(qualified: &str) -> Option<String> {
+    impl_type_and_trait(qualified).map(|(_, trait_name)| trait_name)
+}
+
+/// Names of the members every trait whose last path segment is `trait_name`
+/// declares (`hi` for `Greet::hi`). A superset is harmless: an incremental
+/// sync re-resolves the refs with these names and keeps any that did not
+/// change.
+pub(super) fn trait_member_names(
+    tx: &Transaction<'_>,
+    trait_name: &str,
+) -> Result<BTreeSet<String>, GraphError> {
+    let mut stmt = tx
+        .prepare_cached(
+            "SELECT DISTINCT name, qualified FROM symbols
+             WHERE kind <> 'impl' AND instr(qualified, ?1) > 0",
+        )
+        .map_err(|source| GraphError::sqlite("prepare trait member lookup", source))?;
+    let rows = stmt
+        .query_map([format!("{trait_name}::")], |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+        })
+        .map_err(|source| GraphError::sqlite("query trait members", source))?;
+    let mut names = BTreeSet::new();
+    for row in rows {
+        let (name, qualified) =
+            row.map_err(|source| GraphError::sqlite("read trait member", source))?;
+        if MemberTarget::parse(&qualified)
+            .is_some_and(|member| !member.bracketed && member.type_name == trait_name)
+        {
+            names.insert(name);
+        }
+    }
+    Ok(names)
+}
+
 /// Every Rust trait impl block (`<T as Trait>`).
 fn trait_impl_symbols(tx: &Transaction<'_>) -> Result<Vec<SymbolCandidate>, GraphError> {
     let mut stmt = tx

@@ -10,8 +10,24 @@
 //! included, is final, except that a receiver or `self` call whose type has
 //! no indexed member and no written path continues down the ladder. All refs
 //! for the files refreshed by the current sync are rewritten in one SQLite
-//! transaction; unchanged files' refs are not touched during incremental
-//! syncs.
+//! transaction.
+//!
+//! An unchanged file's ref can still depend on a changed file. Apart from
+//! trait impl blocks (below), the ladder only considers candidates named like
+//! the ref, and it reads from a candidate's
+//! file only the `(name, qualified, kind)` of its symbols (the file's module
+//! prefixes derive from every symbol in it). So a ref outside the changed
+//! files can resolve differently after the change only if its `target_name`
+//! names a symbol of a changed or removed file whose definitions under that
+//! name differ, before versus after, or any symbol of a changed file whose
+//! module prefixes differ, or any member of a trait whose impl blocks a
+//! changed file adds or removes (the type-member rung resolves `<T>::m` to a
+//! trait's default body through `impl Trait for T`, which is not named `m`).
+//! Its stored `target_symbol_hint` also goes stale if
+//! it points at a symbol row the rewrite replaced. An incremental sync
+//! re-resolves exactly those refs in the same transaction, from the resolution
+//! inputs stored with each ref (`extracted_qualified`, `unresolved_receiver`,
+//! `spelled_path`), so every ref ends up as a full sync would store it.
 //!
 //! Two rungs match on the bare short name alone: the same-file rung and the
 //! same-module rung. A method call whose receiver type the extractor could not
@@ -47,10 +63,18 @@ const RUNTIME_INVOCATION_KIND: &str = "runtime_invocation";
 /// keeps the call count bounded while still moving visibly.
 const RESOLVE_PROGRESS_CADENCE: usize = 500;
 
+/// Rewrites the refs of the files Pass 1 wrote, then, in an incremental sync,
+/// re-resolves the refs elsewhere that depend on what those files define.
+///
+/// `before` holds what the modified and removed files defined before Pass 1
+/// rewrote them (see [`Definitions::load`]). A full sync rewrites every
+/// file's refs, so it passes [`Definitions::default`] and skips the second
+/// step.
 pub(crate) fn run(
     db_path: &Path,
     mode: SyncMode,
     refs_by_file: Vec<ExtractedFileRefs>,
+    before: &Definitions,
     observer: Option<&dyn SyncObserver>,
     files_seen: usize,
     current_path: Option<String>,
@@ -70,7 +94,9 @@ pub(crate) fn run(
     }
 
     let mut resolver = Resolver::new(&tx);
+    let mut rewritten_files = BTreeSet::new();
     for file_refs in refs_by_file {
+        rewritten_files.insert(file_refs.file_path.clone());
         delete_refs_for_file(&tx, &file_refs.file_path)?;
         let resolved = resolver.resolve_file(&file_refs.file_path, &file_refs.refs)?;
         for (raw_ref, resolved) in file_refs.refs.iter().zip(&resolved) {
@@ -90,6 +116,11 @@ pub(crate) fn run(
         }
     }
 
+    if mode == SyncMode::Auto {
+        let dependents = Dependents::between(&tx, before, &rewritten_files)?;
+        refresh_dependent_refs(&tx, &mut resolver, &dependents, &rewritten_files)?;
+    }
+
     if let Some(observer) = observer {
         report_resolving_progress(observer, files_seen, &current_path, units_done, units_total);
     }
@@ -98,6 +129,311 @@ pub(crate) fn run(
     tx.commit()
         .map_err(|source| GraphError::sqlite("commit pass2 refs transaction", source))?;
     Ok(())
+}
+
+/// What a set of files defines: each file's symbol rows. Captured before
+/// Pass 1 rewrites or removes the files, and compared with what they define
+/// afterwards. See [`run`].
+#[derive(Debug, Default)]
+pub(crate) struct Definitions {
+    by_file: BTreeMap<String, Vec<DefinedSymbol>>,
+}
+
+impl Definitions {
+    /// Reads the symbols `file_paths` define now.
+    pub(crate) fn load<'a>(
+        db_path: &Path,
+        file_paths: impl IntoIterator<Item = &'a str>,
+    ) -> Result<Self, GraphError> {
+        let conn =
+            crate::open_read_connection(db_path, "open graph database for prior definitions")?;
+        let mut by_file = BTreeMap::new();
+        for file_path in file_paths {
+            by_file.insert(file_path.to_string(), defined_symbols(&conn, file_path)?);
+        }
+        Ok(Self { by_file })
+    }
+}
+
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord)]
+struct DefinedSymbol {
+    name: String,
+    qualified: String,
+    kind: String,
+    id: i64,
+}
+
+fn defined_symbols(conn: &Connection, file_path: &str) -> Result<Vec<DefinedSymbol>, GraphError> {
+    let mut stmt = conn
+        .prepare_cached(
+            "SELECT name, qualified, kind, id FROM symbols
+             WHERE file_path = ?1
+             ORDER BY name, qualified, kind, id",
+        )
+        .map_err(|source| GraphError::sqlite("prepare defined symbol lookup", source))?;
+    let rows = stmt
+        .query_map(params![file_path], |row| {
+            Ok(DefinedSymbol {
+                name: row.get(0)?,
+                qualified: row.get(1)?,
+                kind: row.get(2)?,
+                id: row.get(3)?,
+            })
+        })
+        .map_err(|source| GraphError::sqlite("query defined symbols", source))?;
+    rows.collect::<Result<Vec<_>, _>>()
+        .map_err(|source| GraphError::sqlite("collect defined symbols", source))
+}
+
+/// The refs outside the rewritten files that an incremental sync must
+/// re-resolve: every ref whose `target_name` is in `names`, and every ref whose
+/// hint points at one of the `replaced` symbol rows.
+///
+/// The type-member rung also reads trait impl blocks (`impl Greet for Foo`)
+/// by their Self type, not by the ref's name: `foo.hi()` (`<Foo>::hi`)
+/// resolves to the default body `Greet::hi` only while such an impl exists.
+/// So when a trait impl block changes, every member its trait declares is
+/// added to `names`.
+#[derive(Debug, Default)]
+struct Dependents {
+    names: BTreeSet<String>,
+    replaced: HashMap<i64, String>,
+    /// Traits whose impl blocks changed; expanded into `names` by
+    /// [`Dependents::between`].
+    changed_impl_traits: BTreeSet<String>,
+}
+
+impl Dependents {
+    /// Compares what each changed or removed file defined before the sync
+    /// with what it defines now.
+    fn between(
+        tx: &Transaction<'_>,
+        before: &Definitions,
+        rewritten_files: &BTreeSet<String>,
+    ) -> Result<Self, GraphError> {
+        let mut dependents = Self::default();
+        let files = before
+            .by_file
+            .keys()
+            .chain(rewritten_files)
+            .collect::<BTreeSet<_>>();
+        for file_path in files {
+            let old = before
+                .by_file
+                .get(file_path)
+                .map(Vec::as_slice)
+                .unwrap_or_default();
+            let new = defined_symbols(tx, file_path)?;
+            dependents.add_file(file_path, old, &new);
+        }
+        for trait_name in std::mem::take(&mut dependents.changed_impl_traits) {
+            dependents
+                .names
+                .extend(type_member::trait_member_names(tx, &trait_name)?);
+        }
+        Ok(dependents)
+    }
+
+    fn add_file(&mut self, file_path: &str, old: &[DefinedSymbol], new: &[DefinedSymbol]) {
+        for symbol in old {
+            if !keeps_meaning(symbol, old, new) {
+                self.replaced.insert(symbol.id, symbol.name.clone());
+            }
+        }
+
+        // Every candidate in the file is matched against its module prefixes;
+        // if they moved, any ref naming any of its symbols may resolve anew.
+        let changed_names = if prefixes_of(file_path, old) != prefixes_of(file_path, new) {
+            old.iter()
+                .chain(new)
+                .map(|symbol| symbol.name.as_str())
+                .collect::<BTreeSet<_>>()
+        } else {
+            let old_by_name = definitions_by_name(old);
+            let new_by_name = definitions_by_name(new);
+            old_by_name
+                .keys()
+                .chain(new_by_name.keys())
+                .filter(|name| old_by_name.get(*name) != new_by_name.get(*name))
+                .copied()
+                .collect()
+        };
+        for symbol in old.iter().chain(new) {
+            if symbol.kind == "impl"
+                && changed_names.contains(symbol.name.as_str())
+                && let Some(trait_name) = type_member::impl_trait_name(&symbol.qualified)
+            {
+                self.changed_impl_traits.insert(trait_name);
+            }
+        }
+        self.names
+            .extend(changed_names.into_iter().map(str::to_string));
+    }
+}
+
+/// Whether a hint to the old row `symbol.id` still names the same definition
+/// after the file was rewritten.
+///
+/// pass1 deletes a rewritten file's symbol rows and inserts them again, and
+/// `symbols.id` is a plain rowid (no `AUTOINCREMENT`), so SQLite hands the
+/// freed ids out again: when the file held the highest ids, an unchanged
+/// definition can come back under a new id while its old id now names a
+/// different symbol. A hint is kept only when the row now holding its id is
+/// the same definition, `(name, qualified, kind)`, and no other definition in
+/// the file shares that `(name, qualified)`, since the ladder orders equal
+/// candidates by id.
+fn keeps_meaning(symbol: &DefinedSymbol, old: &[DefinedSymbol], new: &[DefinedSymbol]) -> bool {
+    let same_identity =
+        |other: &&DefinedSymbol| other.name == symbol.name && other.qualified == symbol.qualified;
+    let Some(now) = new.iter().find(|other| other.id == symbol.id) else {
+        return false;
+    };
+    now.name == symbol.name
+        && now.qualified == symbol.qualified
+        && now.kind == symbol.kind
+        && old.iter().filter(same_identity).count() == 1
+        && new.iter().filter(same_identity).count() == 1
+}
+
+/// A file's definitions grouped by name, as the ladder sees them: the
+/// qualified name and kind of each, without the row id.
+fn definitions_by_name(symbols: &[DefinedSymbol]) -> BTreeMap<&str, Vec<(&str, &str)>> {
+    let mut by_name: BTreeMap<&str, Vec<(&str, &str)>> = BTreeMap::new();
+    for symbol in symbols {
+        by_name
+            .entry(symbol.name.as_str())
+            .or_default()
+            .push((symbol.qualified.as_str(), symbol.kind.as_str()));
+    }
+    by_name
+}
+
+fn prefixes_of(file_path: &str, symbols: &[DefinedSymbol]) -> BTreeSet<String> {
+    module_prefixes(
+        file_path,
+        symbols
+            .iter()
+            .map(|symbol| (symbol.qualified.as_str(), symbol.name.as_str())),
+    )
+}
+
+/// Re-resolves the stored refs outside `rewritten_files` that `dependents`
+/// selects, and updates each row whose resolution changed. Returns the number
+/// of rows updated.
+fn refresh_dependent_refs(
+    tx: &Transaction<'_>,
+    resolver: &mut Resolver<'_, '_>,
+    dependents: &Dependents,
+    rewritten_files: &BTreeSet<String>,
+) -> Result<usize, GraphError> {
+    // A ref resolved to a symbol carries that symbol's name as its
+    // `target_name`, so the refs hinting at a replaced row are among the refs
+    // with the replaced symbols' names.
+    let lookup_names = dependents
+        .names
+        .iter()
+        .chain(dependents.replaced.values())
+        .collect::<BTreeSet<_>>();
+    let mut by_file: BTreeMap<String, Vec<StoredRef>> = BTreeMap::new();
+    {
+        let mut stmt = tx
+            .prepare_cached(
+                "SELECT id, from_file, from_span_start, from_span_end, target_name,
+                        extracted_qualified, kind, unresolved_receiver,
+                        target_qualified, target_symbol_hint, confidence, spelled_path
+                 FROM refs
+                 WHERE target_name = ?1
+                 ORDER BY id",
+            )
+            .map_err(|source| GraphError::sqlite("prepare dependent ref lookup", source))?;
+        for name in lookup_names {
+            let rows = stmt
+                .query_map(params![name], StoredRef::from_row)
+                .map_err(|source| GraphError::sqlite("query dependent refs", source))?;
+            for row in rows {
+                let stored =
+                    row.map_err(|source| GraphError::sqlite("read dependent ref", source))?;
+                let depends = dependents.names.contains(&stored.raw.target_name)
+                    || stored
+                        .target_symbol_hint
+                        .is_some_and(|hint| dependents.replaced.contains_key(&hint));
+                if depends && !rewritten_files.contains(&stored.raw.from_file) {
+                    by_file
+                        .entry(stored.raw.from_file.clone())
+                        .or_default()
+                        .push(stored);
+                }
+            }
+        }
+    }
+
+    let mut updated = 0;
+    for (from_file, stored) in by_file {
+        let raw_refs = stored.iter().map(|row| row.raw.clone()).collect::<Vec<_>>();
+        let resolved = resolver.resolve_file(&from_file, &raw_refs)?;
+        for (row, resolved) in stored.iter().zip(resolved) {
+            if row.target_qualified == resolved.target_qualified
+                && row.target_symbol_hint == resolved.target_symbol_hint
+                && row.confidence == resolved.confidence
+            {
+                continue;
+            }
+            tx.prepare_cached(
+                "UPDATE refs
+                 SET target_qualified = ?1, target_symbol_hint = ?2, confidence = ?3
+                 WHERE id = ?4",
+            )
+            .map_err(|source| GraphError::sqlite("prepare dependent ref update", source))?
+            .execute(params![
+                resolved.target_qualified,
+                resolved.target_symbol_hint,
+                resolved.confidence,
+                row.id
+            ])
+            .map_err(|source| GraphError::sqlite("update dependent ref", source))?;
+            updated += 1;
+        }
+    }
+    Ok(updated)
+}
+
+/// A stored ref read back for re-resolution: its resolution inputs as a
+/// [`RawRef`], plus the resolution currently stored.
+struct StoredRef {
+    id: i64,
+    raw: RawRef,
+    target_qualified: Option<String>,
+    target_symbol_hint: Option<i64>,
+    confidence: String,
+}
+
+impl StoredRef {
+    fn from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Self> {
+        let confidence: String = row.get(10)?;
+        Ok(Self {
+            id: row.get(0)?,
+            raw: RawRef {
+                from_file: row.get(1)?,
+                from_span_start: i64_to_usize(row.get(2)?),
+                from_span_end: i64_to_usize(row.get(3)?),
+                target_name: row.get(4)?,
+                target_qualified: row.get(5)?,
+                kind: row.get(6)?,
+                confidence: confidence.clone(),
+                unresolved_receiver: row.get(7)?,
+                spelled_path: row.get(11)?,
+            },
+            target_qualified: row.get(8)?,
+            target_symbol_hint: row.get(9)?,
+            confidence,
+        })
+    }
+}
+
+/// Span offsets are written from `usize`, so a negative value cannot occur;
+/// spans are not resolution inputs, so clamping one is harmless.
+fn i64_to_usize(value: i64) -> usize {
+    usize::try_from(value).unwrap_or_default()
 }
 
 fn report_resolving_progress(
@@ -141,8 +477,9 @@ fn insert_ref(
     tx.prepare_cached(
         "INSERT INTO refs (
             from_file, from_span_start, from_span_end, target_name, target_qualified,
-            target_symbol_hint, kind, confidence
-         ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+            target_symbol_hint, kind, confidence, extracted_qualified, unresolved_receiver,
+            spelled_path
+         ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
     )
     .map_err(|source| GraphError::sqlite("prepare pass2 ref insert", source))?
     .execute(params![
@@ -154,6 +491,9 @@ fn insert_ref(
         resolved.target_symbol_hint,
         raw_ref.kind,
         resolved.confidence,
+        raw_ref.target_qualified,
+        raw_ref.unresolved_receiver,
+        raw_ref.spelled_path,
     ])
     .map_err(|source| GraphError::sqlite("insert resolved ref row", source))?;
     Ok(())
@@ -171,7 +511,10 @@ fn insert_ref(
 /// check), and its `target_name` and `target_qualified` (every rung, the
 /// type-member rung, and [`import_module_for_ref`]). Two refs in one file with equal keys
 /// therefore resolve identically, so a file's refs are resolved once per
-/// distinct key. A new ladder input must be added here.
+/// distinct key. A new ladder input must be added here AND stored in `refs`
+/// ([`insert_ref`]) and read back by [`StoredRef::from_row`], because an
+/// incremental sync re-resolves refs in unchanged files from their stored
+/// rows alone.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 struct RefKey {
     is_runtime_invocation: bool,
@@ -211,6 +554,7 @@ struct Resolver<'a, 'conn> {
     candidates_by_name: HashMap<String, Rc<[NamedCandidate]>>,
     /// Trait impl blocks by Self type name, loaded on first use.
     trait_impls: Option<HashMap<String, TraitImpls>>,
+    qualified_matches: HashMap<(String, String), Option<SymbolCandidate>>,
 }
 
 impl<'a, 'conn> Resolver<'a, 'conn> {
@@ -220,6 +564,7 @@ impl<'a, 'conn> Resolver<'a, 'conn> {
             file_prefixes: HashMap::new(),
             candidates_by_name: HashMap::new(),
             trait_impls: None,
+            qualified_matches: HashMap::new(),
         }
     }
 
@@ -298,10 +643,26 @@ impl<'a, 'conn> Resolver<'a, 'conn> {
         if !target.contains("::") && !target.contains('.') {
             return Ok(None);
         }
-        let target = normalize_module_path(target);
+        let key = (raw_ref.target_name.clone(), normalize_module_path(target));
+        if let Some(known) = self.qualified_matches.get(&key) {
+            return Ok(known.clone());
+        }
+        let matched = self.unique_qualified_match(&key.0, &key.1)?;
+        self.qualified_matches.insert(key, matched.clone());
+        Ok(matched)
+    }
+
+    /// The one candidate named `name` that `target` (already normalized)
+    /// names, if exactly one does. Memoized per `(name, target)` by
+    /// [`Self::resolve_qualified`]: the answer depends on nothing else.
+    fn unique_qualified_match(
+        &mut self,
+        name: &str,
+        target: &str,
+    ) -> Result<Option<SymbolCandidate>, GraphError> {
         let mut matched = None;
-        for candidate in self.symbols_by_name(&raw_ref.target_name)?.iter() {
-            if self.candidate_matches_qualified(candidate, &target)? {
+        for candidate in self.symbols_by_name(name)?.iter() {
+            if self.candidate_matches_qualified(candidate, target)? {
                 if matched.is_some() {
                     return Ok(None);
                 }
@@ -423,11 +784,11 @@ impl<'a, 'conn> Resolver<'a, 'conn> {
         candidate: &NamedCandidate,
         target: &str,
     ) -> Result<bool, GraphError> {
-        let qualified = normalize_module_path(&candidate.symbol.qualified);
+        let qualified = candidate.normalized_qualified.as_str();
         if qualified == target {
             return Ok(true);
         }
-        let matches = |prefix: &str| join_module_symbol(prefix, &qualified) == target;
+        let matches = |prefix: &str| is_module_symbol(target, prefix, qualified);
         if candidate.own_prefix.as_deref().is_some_and(matches) {
             return Ok(true);
         }
@@ -444,8 +805,7 @@ impl<'a, 'conn> Resolver<'a, 'conn> {
         candidate: &NamedCandidate,
         module: &str,
     ) -> Result<bool, GraphError> {
-        let suffix = format!("::{module}");
-        let matches = |prefix: &str| prefix == module || prefix.ends_with(&suffix);
+        let matches = |prefix: &str| prefix == module || is_module_suffix(prefix, module);
         if candidate.own_prefix.as_deref().is_some_and(matches) {
             return Ok(true);
         }
@@ -570,16 +930,29 @@ fn module_prefixes_for_file(
     let symbols = rows
         .collect::<Result<Vec<_>, _>>()
         .map_err(|source| GraphError::sqlite("collect symbols for ref resolution", source))?;
+    Ok(module_prefixes(
+        from_file,
+        symbols
+            .iter()
+            .map(|symbol| (symbol.qualified.as_str(), symbol.name.as_str())),
+    ))
+}
+
+/// Module prefixes of a file defining symbols with these `(qualified, name)`
+/// pairs; see [`module_prefixes_for_file`].
+fn module_prefixes<'a>(
+    file_path: &str,
+    symbols: impl Iterator<Item = (&'a str, &'a str)>,
+) -> BTreeSet<String> {
     let mut prefixes = symbols
-        .iter()
-        .filter_map(|symbol| qualified_prefix_before_name(&symbol.qualified, &symbol.name))
+        .filter_map(|(qualified, name)| qualified_prefix_before_name(qualified, name))
         .map(|prefix| normalize_module_path(&prefix))
         .collect::<BTreeSet<_>>();
-    let file_parts = file_module_parts(from_file);
+    let file_parts = file_module_parts(file_path);
     for start in 0..file_parts.len() {
         prefixes.insert(file_parts[start..].join("::"));
     }
-    Ok(prefixes)
+    prefixes
 }
 
 fn imports_for_file(
@@ -686,6 +1059,25 @@ fn normalize_module_path(path: &str) -> String {
         .filter(|part| !part.is_empty())
         .collect::<Vec<_>>()
         .join("::")
+}
+
+/// Whether `target == join_module_symbol(module, symbol)`, without building
+/// the joined string.
+fn is_module_symbol(target: &str, module: &str, symbol: &str) -> bool {
+    if module.is_empty() {
+        return target == symbol;
+    }
+    target.len() == module.len() + 2 + symbol.len()
+        && target.starts_with(module)
+        && target[module.len()..].starts_with("::")
+        && target.ends_with(symbol)
+}
+
+/// Whether `path` ends with `::{module}`, without building the suffix.
+fn is_module_suffix(path: &str, module: &str) -> bool {
+    path.len() >= module.len() + 2
+        && path.ends_with(module)
+        && path[..path.len() - module.len()].ends_with("::")
 }
 
 fn join_module_symbol(module: &str, symbol: &str) -> String {
@@ -804,11 +1196,13 @@ struct SymbolCandidate {
     qualified: String,
 }
 
-/// A cross-file candidate with the module prefix of its own qualified name
-/// computed once, since the ladder tests it for every ref naming it.
+/// A cross-file candidate with its normalized qualified name and the module
+/// prefix of that name computed once, since the ladder tests them for every
+/// ref naming it.
 #[derive(Debug)]
 struct NamedCandidate {
     symbol: SymbolCandidate,
+    normalized_qualified: String,
     own_prefix: Option<String>,
 }
 
@@ -816,7 +1210,11 @@ impl NamedCandidate {
     fn new(symbol: SymbolCandidate) -> Self {
         let own_prefix = qualified_prefix_before_name(&symbol.qualified, &symbol.name)
             .map(|prefix| normalize_module_path(&prefix));
-        Self { symbol, own_prefix }
+        Self {
+            normalized_qualified: normalize_module_path(&symbol.qualified),
+            symbol,
+            own_prefix,
+        }
     }
 }
 
