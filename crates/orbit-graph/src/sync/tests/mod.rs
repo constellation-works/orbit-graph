@@ -9,10 +9,12 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use rusqlite::Connection;
 
-use crate::sync::{SyncLeaderGate, set_sync_after_scan_gate};
+use crate::sync::{
+    SyncLeaderGate, panic_next_sync_after_scan, set_sync_after_scan_gate, wait_for_sync_followers,
+};
 use crate::{
     EXTRACTOR_VERSION, Graph, SyncMode, SyncObserver, SyncOutcome, SyncPhase, SyncPolicy,
-    SyncProgress, resolve_db_path,
+    SyncProgress, SyncReport, resolve_db_path,
 };
 
 /// Records every [`SyncProgress`] event and cancels once `threshold` files
@@ -238,6 +240,101 @@ fn concurrent_syncs_hold_flock_across_scan_and_writes() {
     let conn = open_test_connection(worktree.path());
     assert_eq!(row_count(&conn, "files"), 1);
     assert_eq!(duplicate_file_row_groups(&conn), 0);
+}
+
+#[test]
+fn coalesced_follower_times_out_naming_the_leader() {
+    let worktree = TestWorktree::new("follower-timeout");
+    let db_path = worktree.path().join("graph.db");
+    let gate = Arc::new(SyncLeaderGate::new());
+    let leader_gate = Arc::clone(&gate);
+    let leader_db = db_path.clone();
+    let leader = thread::Builder::new()
+        .name("stuck-leader".to_string())
+        .spawn(move || {
+            super::coalesced(leader_db.as_path(), Duration::from_secs(30), || {
+                leader_gate.mark_started();
+                leader_gate.wait_released();
+                Ok(SyncReport {
+                    files_indexed: 0,
+                    files_changed: 0,
+                    files_removed: 0,
+                    duration: Duration::ZERO,
+                })
+            })
+        })
+        .expect("spawn leader");
+    assert!(gate.wait_started(Duration::from_secs(10)));
+
+    let timeout = Duration::from_millis(40);
+    let started = Instant::now();
+    let error = super::coalesced(db_path.as_path(), timeout, || {
+        panic!("a follower never runs the sync itself")
+    })
+    .expect_err("a follower behind a stuck leader times out");
+    let waited = started.elapsed();
+    gate.release();
+    leader
+        .join()
+        .expect("join leader")
+        .expect("leader finishes once released");
+
+    assert!(
+        waited >= timeout,
+        "returned before the deadline: {waited:?}"
+    );
+    assert!(
+        waited < Duration::from_secs(5),
+        "overran the deadline: {waited:?}"
+    );
+    let message = error.to_string();
+    assert!(message.contains("timed out after 40 ms"), "{message}");
+    assert!(
+        message.contains(&format!("pid {}", std::process::id())),
+        "{message}"
+    );
+    assert!(
+        message.contains("graph sync on thread stuck-leader"),
+        "{message}"
+    );
+}
+
+#[test]
+fn leader_panic_fails_followers_and_the_next_sync_completes() {
+    let worktree = TestWorktree::new("leader-panic");
+    worktree.write("src/lib.rs", "pub fn survives() {}\n");
+    let graph = Arc::new(Graph::open(worktree.path(), SyncPolicy::Manual).expect("open graph"));
+    let db_path = graph.db_path().path().to_path_buf();
+    let gate = Arc::new(SyncLeaderGate::new());
+    panic_next_sync_after_scan(db_path.as_path(), Arc::clone(&gate));
+
+    let leader_graph = Arc::clone(&graph);
+    let leader = thread::spawn(move || leader_graph.sync(SyncMode::Auto));
+    assert!(gate.wait_started(Duration::from_secs(10)));
+    let follower_graph = Arc::clone(&graph);
+    let follower = thread::spawn(move || follower_graph.sync(SyncMode::Auto));
+    assert!(wait_for_sync_followers(
+        db_path.as_path(),
+        1,
+        Duration::from_secs(10)
+    ));
+    gate.release();
+
+    assert!(
+        leader.join().is_err(),
+        "the injected fault panics the leader"
+    );
+    let error = follower
+        .join()
+        .expect("join follower")
+        .expect_err("the follower receives the leader's failure");
+    assert!(error.to_string().contains("panicked"), "{error}");
+
+    let report = graph
+        .sync(SyncMode::Auto)
+        .expect("the next sync on the same database runs to completion");
+    assert_eq!(report.files_changed, 1);
+    assert_eq!(report.files_indexed, 1);
 }
 
 #[cfg(unix)]

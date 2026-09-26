@@ -1,20 +1,24 @@
 //! Worktree scanner and file-table diffing.
 
 use std::collections::{BTreeMap, HashSet};
-use std::fs::{self, File, OpenOptions};
-use std::io::Write;
+use std::fs::{self, File};
+use std::io::Read;
 use std::path::{Path, PathBuf};
-use std::process::Command;
 use std::time::UNIX_EPOCH;
 
 use crate::extract::Extractor;
 use crate::extract::languages;
-use fs2::FileExt;
+use crate::lock::{self, FileLockGuard};
 use git2::Repository;
 use ignore::gitignore::{Gitignore, GitignoreBuilder};
 use rusqlite::{Connection, params};
 
 use crate::{GraphError, SyncMode};
+
+/// Largest file sync reads, hashes or extracts: the change explorer's 4 MiB
+/// blob cap. A larger file is skipped with a warning and gets no rows
+/// (`STD-03 §R22`).
+pub(crate) const MAX_FILE_BYTES: u64 = 4 * 1024 * 1024;
 
 const ORBITIGNORE_FILE_NAME: &str = ".orbitignore";
 
@@ -47,6 +51,9 @@ pub(crate) struct Diff {
     pub(crate) new: Vec<PathBuf>,
     /// Files present in `files` but absent from the filtered worktree scan.
     pub(crate) deleted: Vec<PathBuf>,
+    /// Supported files skipped because they exceed [`MAX_FILE_BYTES`]. A
+    /// previously indexed one is also listed in `deleted`, so its rows go.
+    pub(crate) oversize: Vec<PathBuf>,
 }
 
 impl Diff {
@@ -120,20 +127,33 @@ impl Scanner {
             if ignored.contains(&disk_file.path) {
                 continue;
             }
-            seen.insert(disk_file.path.clone());
-
-            let Some(existing) = rows.remove(&disk_file.path) else {
-                let _ = hash_file(self.worktree_root.as_path(), &disk_file.path, hasher)?;
-                diff.new.push(disk_file.path);
+            if disk_file.byte_len > MAX_FILE_BYTES {
+                skip_oversize(&mut diff, disk_file.path, disk_file.byte_len);
                 continue;
-            };
+            }
 
-            if mode == SyncMode::Auto && existing.mtime_ns == disk_file.mtime_ns {
+            let existing = rows.remove(&disk_file.path);
+            if let Some(existing) = existing.as_ref()
+                && mode == SyncMode::Auto
+                && existing.mtime_ns == disk_file.mtime_ns
+            {
+                seen.insert(disk_file.path.clone());
                 diff.unchanged.push(disk_file.path);
                 continue;
             }
 
-            let content_hash = hash_file(self.worktree_root.as_path(), &disk_file.path, hasher)?;
+            let Some(content_hash) =
+                hash_file(self.worktree_root.as_path(), &disk_file.path, hasher)?
+            else {
+                // The file grew past the cap after the walk measured it.
+                skip_oversize(&mut diff, disk_file.path, MAX_FILE_BYTES + 1);
+                continue;
+            };
+            seen.insert(disk_file.path.clone());
+            let Some(existing) = existing else {
+                diff.new.push(disk_file.path);
+                continue;
+            };
             if mode == SyncMode::Auto && content_hash == existing.content_hash {
                 touch_mtime(&conn, &disk_file.path, disk_file.mtime_ns)?;
                 diff.unchanged.push(disk_file.path);
@@ -150,25 +170,29 @@ impl Scanner {
 }
 
 pub(crate) struct DbLockGuard {
-    _file: File,
+    _lock: FileLockGuard,
 }
 
 impl DbLockGuard {
+    /// Takes the graph database's sync lock, waiting at most the configured
+    /// [`lock::lock_timeout`].
     pub(crate) fn acquire(db_path: &Path) -> Result<Self, GraphError> {
+        Self::acquire_within(db_path, lock::lock_timeout()?)
+    }
+
+    pub(crate) fn acquire_within(
+        db_path: &Path,
+        timeout: std::time::Duration,
+    ) -> Result<Self, GraphError> {
         // L-0048: lock a sidecar so SQLite can still read the DB while the RAII guard is held.
         let lock_path = lock_path_for(db_path);
-        let file = OpenOptions::new()
-            .create(true)
-            .truncate(false)
-            .read(true)
-            .write(true)
-            .open(lock_path.as_path())
-            .map_err(|source| {
-                GraphError::io("open graph database lock file", lock_path.as_path(), source)
-            })?;
-        file.lock_exclusive()
-            .map_err(|source| GraphError::io("lock graph database", lock_path, source))?;
-        Ok(Self { _file: file })
+        let lock = FileLockGuard::acquire(
+            lock_path.as_path(),
+            &lock::holder_label("graph sync"),
+            timeout,
+            "lock graph database",
+        )?;
+        Ok(Self { _lock: lock })
     }
 }
 
@@ -225,6 +249,7 @@ struct FileRow {
 struct DiskFile {
     path: PathBuf,
     mtime_ns: i64,
+    byte_len: u64,
 }
 
 struct OrbitIgnoreMatcher {
@@ -366,9 +391,13 @@ fn walk_dir(
                 if orbitignore.is_ignored(rel, false) || registry.language_for(rel).is_none() {
                     continue;
                 }
+                let metadata = fs::metadata(path.as_path()).map_err(|source| {
+                    GraphError::io("read file metadata", path.as_path(), source)
+                })?;
                 out.push(DiskFile {
                     path: rel.to_path_buf(),
-                    mtime_ns: mtime_ns(path.as_path())?,
+                    mtime_ns: metadata_mtime_ns(path.as_path(), &metadata)?,
+                    byte_len: metadata.len(),
                 });
             }
         }
@@ -416,72 +445,119 @@ fn collect_orbitignore_files(
     Ok(())
 }
 
-fn git_ignored_paths(repo_path: &Path, paths: &[DiskFile]) -> Result<HashSet<PathBuf>, GraphError> {
+/// Paths Git would ignore, matched in process with libgit2.
+///
+/// Matching follows `git check-ignore` without `--no-index`: nested
+/// `.gitignore` files, `info/exclude` and the configured excludes file apply,
+/// a file inside an ignored directory is ignored, and a tracked file is never
+/// ignored. No Git process is started, so repository-configured programs such
+/// as `core.fsmonitor` or hooks never run (`STD-05 §R10`).
+fn git_ignored_paths(
+    worktree_root: &Path,
+    paths: &[DiskFile],
+) -> Result<HashSet<PathBuf>, GraphError> {
     let mut ignored = HashSet::new();
-    // A directory outside a Git repository has no Git ignore rules to apply.
-    if paths.is_empty() || Repository::discover(repo_path).is_err() {
+    if paths.is_empty() {
         return Ok(ignored);
     }
+    // A directory outside a Git repository has no Git ignore rules to apply.
+    let Ok(repo) = Repository::discover(worktree_root) else {
+        return Ok(ignored);
+    };
+    let Some(workdir) = repo.workdir() else {
+        return Ok(ignored);
+    };
+    let prefix = worktree_prefix(workdir, worktree_root)?;
+    let index = repo
+        .index()
+        .map_err(|error| git_ignore_error("read the Git index", &error))?;
 
-    let stdin_data = paths
-        .iter()
-        .map(|file| file.path.to_string_lossy().into_owned())
-        .collect::<Vec<_>>()
-        .join("\n");
-
-    let mut child = Command::new("git")
-        .args(["check-ignore", "--stdin"])
-        .current_dir(repo_path)
-        .stdin(std::process::Stdio::piped())
-        .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::piped())
-        .spawn()
-        .map_err(|source| GraphError::io("start git check-ignore", repo_path, source))?;
-    child
-        .stdin
-        .take()
-        .ok_or_else(|| GraphError::invalid_data("run git check-ignore", "missing stdin pipe"))?
-        .write_all(stdin_data.as_bytes())
-        .map_err(|source| GraphError::io("write git check-ignore input", repo_path, source))?;
-    let output = child
-        .wait_with_output()
-        .map_err(|source| GraphError::io("wait for git check-ignore", repo_path, source))?;
-    if !matches!(output.status.code(), Some(0 | 1)) {
-        return Err(GraphError::invalid_data(
-            "run git check-ignore",
-            format!(
-                "git check-ignore exited with {}: {}",
-                output.status,
-                String::from_utf8_lossy(&output.stderr).trim()
-            ),
-        ));
-    }
-
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    for line in stdout.lines() {
-        let trimmed = line.trim();
-        if !trimmed.is_empty() {
-            ignored.insert(PathBuf::from(trimmed));
+    for file in paths {
+        let repo_path = prefix.join(&file.path);
+        if index.get_path(repo_path.as_path(), 0).is_some() {
+            continue;
+        }
+        if repo
+            .is_path_ignored(repo_path.as_path())
+            .map_err(|error| git_ignore_error("match Git ignore rules", &error))?
+        {
+            ignored.insert(file.path.clone());
         }
     }
 
     Ok(ignored)
 }
 
+/// Where `worktree_root` sits inside the repository's working directory.
+fn worktree_prefix(workdir: &Path, worktree_root: &Path) -> Result<PathBuf, GraphError> {
+    let canonical = |path: &Path| {
+        fs::canonicalize(path)
+            .map_err(|source| GraphError::io("resolve Git ignore root", path, source))
+    };
+    let workdir = canonical(workdir)?;
+    let root = canonical(worktree_root)?;
+    root.strip_prefix(workdir.as_path())
+        .map(Path::to_path_buf)
+        .map_err(|_| {
+            GraphError::invalid_data(
+                "match Git ignore rules",
+                format!(
+                    "{} is outside the Git working directory {}",
+                    root.display(),
+                    workdir.display()
+                ),
+            )
+        })
+}
+
+fn git_ignore_error(operation: &str, error: &git2::Error) -> GraphError {
+    GraphError::invalid_data("match Git ignore rules", format!("{operation}: {error}"))
+}
+
+fn skip_oversize(diff: &mut Diff, path: PathBuf, byte_len: u64) {
+    tracing::warn!(
+        path = %path.display(),
+        byte_len,
+        max_bytes = MAX_FILE_BYTES,
+        "skipping file larger than the graph sync byte cap"
+    );
+    diff.oversize.push(path);
+}
+
+/// Reads `path` whole, or returns `None` when it exceeds [`MAX_FILE_BYTES`].
+/// Never reads more than one byte past the cap.
+pub(crate) fn read_capped(path: &Path) -> std::io::Result<Option<Vec<u8>>> {
+    let mut bytes = Vec::new();
+    File::open(path)?
+        .take(MAX_FILE_BYTES + 1)
+        .read_to_end(&mut bytes)?;
+    if u64::try_from(bytes.len()).unwrap_or(u64::MAX) > MAX_FILE_BYTES {
+        return Ok(None);
+    }
+    Ok(Some(bytes))
+}
+
+/// Hashes a file, or returns `None` when it exceeds [`MAX_FILE_BYTES`].
 fn hash_file(
     root: &Path,
     rel_path: &Path,
     hasher: &dyn ContentHasher,
-) -> Result<Vec<u8>, GraphError> {
+) -> Result<Option<Vec<u8>>, GraphError> {
     let path = root.join(rel_path);
-    let bytes = fs::read(path.as_path())
+    let bytes = read_capped(path.as_path())
         .map_err(|source| GraphError::io("read file for content hash", path, source))?;
-    Ok(hasher.hash(rel_path, &bytes))
+    Ok(bytes.map(|bytes| hasher.hash(rel_path, &bytes)))
 }
 
 pub(crate) fn mtime_ns(path: &Path) -> Result<i64, GraphError> {
-    let modified = fs::metadata(path)
-        .and_then(|metadata| metadata.modified())
+    let metadata =
+        fs::metadata(path).map_err(|source| GraphError::io("read file mtime", path, source))?;
+    metadata_mtime_ns(path, &metadata)
+}
+
+fn metadata_mtime_ns(path: &Path, metadata: &fs::Metadata) -> Result<i64, GraphError> {
+    let modified = metadata
+        .modified()
         .map_err(|source| GraphError::io("read file mtime", path, source))?;
     let duration = modified.duration_since(UNIX_EPOCH).map_err(|error| {
         GraphError::invalid_data(
@@ -509,6 +585,7 @@ fn sort_diff(diff: &mut Diff) {
     diff.modified.sort();
     diff.new.sort();
     diff.deleted.sort();
+    diff.oversize.sort();
 }
 
 #[cfg(test)]

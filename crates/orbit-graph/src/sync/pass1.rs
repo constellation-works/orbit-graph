@@ -1,19 +1,24 @@
 //! Pass 1 extracts files in parallel, then serializes SQLite writes.
 //!
 //! Extraction is CPU-bound and independent per file, so this pass uses rayon to
-//! parse every new or modified file concurrently. SQLite remains a single-writer
-//! boundary, so the extracted rows are collected in memory and written in a
-//! deterministic serial loop. The collect-then-write strategy keeps transaction
-//! ownership simple: each file has one immediate SQLite transaction that deletes
-//! the prior row and inserts all Pass 1 rows, while `ExtractedFile::refs` stays
-//! in memory for Pass 2 instead of being staged in the frozen schema.
+//! parse new or modified files concurrently. SQLite remains a single-writer
+//! boundary, so extracted rows are written in a deterministic serial loop. The
+//! changed files are processed in bounded chunks ([`Pass1Limits`]): one chunk
+//! is extracted in parallel, then written, before the next is read, so pass 1
+//! holds at most one chunk of extracted rows (`STD-03 §R22`). Each file has one
+//! immediate SQLite transaction that deletes the prior row and inserts all
+//! Pass 1 rows, while `ExtractedFile::refs` and command rows stay in memory for
+//! Pass 2 and the final command transaction instead of being staged in the
+//! frozen schema.
 
+use std::cell::Cell;
 use std::collections::BTreeMap;
 use std::fmt::{Display, Formatter};
 use std::fs;
+use std::ops::Range;
 use std::path::{Path, PathBuf};
-use std::sync::{Mutex, MutexGuard, OnceLock};
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::sync::Once;
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use crate::extract::{
     ExtractedFile, RawCommand, RawConfig, RawImport, RawRef, RawRelation, RawString, RawSymbol,
@@ -22,8 +27,31 @@ use crate::extract::{
 use rayon::prelude::*;
 use rusqlite::{Connection, Transaction, TransactionBehavior, params};
 
-use super::scanner::{Diff, mtime_ns, normalize_path};
+use super::scanner::{Diff, MAX_FILE_BYTES, mtime_ns, normalize_path, read_capped};
 use crate::{GraphError, SyncMode, SyncObserver, SyncPhase, SyncProgress};
+
+/// Longest one file's tree-sitter parse may take before the file counts as
+/// an extraction failure (`STD-03 §R22`).
+pub(crate) const DEFAULT_PARSE_TIMEOUT: Duration = Duration::from_secs(10);
+
+/// Bounds on how much pass 1 extracts before writing it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct Pass1Limits {
+    /// Most files extracted in one chunk.
+    pub(crate) chunk_files: usize,
+    /// Most source bytes, by file size on disk, extracted in one chunk. A
+    /// single file above it still forms its own chunk; the byte cap bounds it.
+    pub(crate) chunk_bytes: u64,
+}
+
+impl Default for Pass1Limits {
+    fn default() -> Self {
+        Self {
+            chunk_files: 128,
+            chunk_bytes: 8 * MAX_FILE_BYTES,
+        }
+    }
+}
 
 pub(crate) struct Pass1Output {
     pub(crate) refs: Vec<ExtractedFileRefs>,
@@ -59,8 +87,9 @@ pub(crate) fn run(
         worktree_root,
         _mode,
         diff,
-        &DefaultExtractorBackend,
+        &DefaultExtractorBackend::default(),
         observer,
+        Pass1Limits::default(),
     )
 }
 
@@ -71,14 +100,16 @@ fn run_with_backend(
     diff: &Diff,
     backend: &dyn ExtractorBackend,
     observer: Option<&dyn SyncObserver>,
+    limits: Pass1Limits,
 ) -> Result<Pass1Output, GraphError> {
     let changed = changed_files(diff);
-    let mut extracted = extract_changed_files(worktree_root, &changed, backend);
-    extracted.sort_by(|left, right| left.path.cmp(&right.path));
+    let chunks = plan_chunks(worktree_root, &changed, limits);
 
     let mut conn = open_writer_connection(db_path)?;
 
-    let total_files = diff.deleted.len() + extracted.len();
+    // Files this sync will touch: every deletion plus every changed file,
+    // less each one whose extraction fails, as chunks reveal them.
+    let mut total_files = diff.deleted.len() + changed.len();
     let mut files_touched = 0usize;
     let mut last_touched_path = None;
     if let Some(observer) = observer {
@@ -118,7 +149,15 @@ fn run_with_backend(
     let mut refs = Vec::new();
     let mut commands = Vec::new();
     let mut files_written = 0;
-    if !cancelled {
+    for chunk in chunks {
+        if cancelled || observer.is_some_and(|observer| observer.is_cancelled()) {
+            cancelled = true;
+            break;
+        }
+        let chunk_len = chunk.len();
+        let mut extracted = extract_changed_files(worktree_root, &changed[chunk], backend);
+        total_files -= chunk_len - extracted.len();
+        extracted.sort_by(|left, right| left.path.cmp(&right.path));
         for mut file in extracted {
             if observer.is_some_and(|observer| observer.is_cancelled()) {
                 cancelled = true;
@@ -171,15 +210,45 @@ fn changed_files(diff: &Diff) -> Vec<PathBuf> {
     changed
 }
 
+/// Splits `changed` into consecutive chunks within `limits`, sized by each
+/// file's length on disk (an unreadable file counts as empty; its extraction
+/// fails on its own).
+fn plan_chunks(
+    worktree_root: &Path,
+    changed: &[PathBuf],
+    limits: Pass1Limits,
+) -> Vec<Range<usize>> {
+    let chunk_files = limits.chunk_files.max(1);
+    let mut chunks = Vec::new();
+    let mut start = 0;
+    let mut bytes = 0u64;
+    for (index, rel_path) in changed.iter().enumerate() {
+        let len = fs::metadata(worktree_root.join(rel_path)).map_or(0, |metadata| metadata.len());
+        if index > start
+            && (index - start >= chunk_files || bytes.saturating_add(len) > limits.chunk_bytes)
+        {
+            chunks.push(start..index);
+            start = index;
+            bytes = 0;
+        }
+        bytes = bytes.saturating_add(len);
+    }
+    if start < changed.len() {
+        chunks.push(start..changed.len());
+    }
+    chunks
+}
+
 fn extract_changed_files(
     worktree_root: &Path,
     changed: &[PathBuf],
     backend: &dyn ExtractorBackend,
 ) -> Vec<ExtractedSourceFile> {
-    let _panic_hook = SilentPanicHook::install();
+    install_silenceable_panic_hook();
     changed
         .par_iter()
         .filter_map(|rel_path| {
+            let _silenced = SilencedPanics::enter();
             match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
                 backend.extract(worktree_root, rel_path)
             })) {
@@ -203,39 +272,52 @@ fn extract_changed_files(
         .collect()
 }
 
-type PanicHook = Box<dyn Fn(&std::panic::PanicHookInfo<'_>) + Sync + Send + 'static>;
-
-struct SilentPanicHook {
-    previous: Option<PanicHook>,
-    _guard: MutexGuard<'static, ()>,
+thread_local! {
+    /// Whether this thread is inside an extraction whose panics are caught
+    /// and reported as warnings.
+    static SILENCE_PANICS: Cell<bool> = const { Cell::new(false) };
 }
 
-impl SilentPanicHook {
-    fn install() -> Self {
-        // L-0049: catch_unwind still runs the panic hook before we convert extractor panics to warns.
-        let guard = panic_hook_lock()
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
+/// Installs, once per process, a panic hook that stays quiet on a thread
+/// inside [`SilencedPanics`] and otherwise defers to the hook it replaced.
+///
+/// L-0049: `catch_unwind` still runs the panic hook before an extractor panic
+/// becomes a warning. The flag is per thread, so concurrent syncs do not
+/// serialize on the hook and panics on unrelated threads are still reported.
+fn install_silenceable_panic_hook() {
+    static INSTALL: Once = Once::new();
+    INSTALL.call_once(|| {
         let previous = std::panic::take_hook();
-        std::panic::set_hook(Box::new(|_| {}));
+        std::panic::set_hook(Box::new(move |info| {
+            if !panics_silenced() {
+                previous(info);
+            }
+        }));
+    });
+}
+
+fn panics_silenced() -> bool {
+    SILENCE_PANICS.try_with(Cell::get).unwrap_or(false)
+}
+
+/// Silences panics on the current thread until dropped.
+#[must_use = "panics are silenced only while the guard lives"]
+struct SilencedPanics {
+    previous: bool,
+}
+
+impl SilencedPanics {
+    fn enter() -> Self {
         Self {
-            previous: Some(previous),
-            _guard: guard,
+            previous: SILENCE_PANICS.replace(true),
         }
     }
 }
 
-impl Drop for SilentPanicHook {
+impl Drop for SilencedPanics {
     fn drop(&mut self) {
-        if let Some(previous) = self.previous.take() {
-            std::panic::set_hook(previous);
-        }
+        SILENCE_PANICS.set(self.previous);
     }
-}
-
-fn panic_hook_lock() -> &'static Mutex<()> {
-    static PANIC_HOOK_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
-    PANIC_HOOK_LOCK.get_or_init(|| Mutex::new(()))
 }
 
 fn warn_extraction_failure(path: &Path, error: String) {
@@ -264,7 +346,18 @@ trait ExtractorBackend: Sync {
     ) -> Result<ExtractedSourceFile, ExtractFileError>;
 }
 
-struct DefaultExtractorBackend;
+struct DefaultExtractorBackend {
+    /// Per-file tree-sitter parse deadline.
+    parse_timeout: Duration,
+}
+
+impl Default for DefaultExtractorBackend {
+    fn default() -> Self {
+        Self {
+            parse_timeout: DEFAULT_PARSE_TIMEOUT,
+        }
+    }
+}
 
 impl ExtractorBackend for DefaultExtractorBackend {
     fn extract(
@@ -273,9 +366,16 @@ impl ExtractorBackend for DefaultExtractorBackend {
         rel_path: &Path,
     ) -> Result<ExtractedSourceFile, ExtractFileError> {
         let path = worktree_root.join(rel_path);
-        let bytes = fs::read(path.as_path()).map_err(|source| {
-            ExtractFileError::new("read source file", format!("{}: {source}", path.display()))
-        })?;
+        let bytes = read_capped(path.as_path())
+            .map_err(|source| {
+                ExtractFileError::new("read source file", format!("{}: {source}", path.display()))
+            })?
+            .ok_or_else(|| {
+                ExtractFileError::new(
+                    "read source file",
+                    format!("{} exceeds the {MAX_FILE_BYTES}-byte cap", path.display()),
+                )
+            })?;
         let mtime_ns = mtime_ns(path.as_path())
             .map_err(|error| ExtractFileError::new("read source file mtime", error.to_string()))?;
         let extractors = languages::extractors();
@@ -288,7 +388,18 @@ impl ExtractorBackend for DefaultExtractorBackend {
                     format!("no registered extractor for {}", rel_path.display()),
                 )
             })?;
-        let rows = extractor.extract(rel_path, &bytes);
+        let (rows, deadline_exceeded) = languages::with_parse_timeout(self.parse_timeout, || {
+            extractor.extract(rel_path, &bytes)
+        });
+        if deadline_exceeded {
+            return Err(ExtractFileError::new(
+                "parse source file",
+                format!(
+                    "parse exceeded the {} ms deadline",
+                    self.parse_timeout.as_millis()
+                ),
+            ));
+        }
         Ok(ExtractedSourceFile {
             path: rel_path.to_path_buf(),
             file_path: normalize_path(rel_path),

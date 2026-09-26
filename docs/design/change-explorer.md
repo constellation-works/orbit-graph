@@ -153,9 +153,9 @@ snapshot tree at `<snapshot>/.orbit-graph/HEAD.<EXTRACTOR_VERSION>.db` (today
 `HEAD.4.db`). Nothing is written under the user repository's `.orbit-graph/`,
 and an integration test asserts both facts. An empty Git repository is
 initialized at the snapshot root — no remote, no commit, no templates, and
-therefore no hook — solely to anchor Git discovery and `git check-ignore` inside
-the snapshot so neither can escape to a repository that happens to contain the
-system temporary directory.
+therefore no hook — solely to anchor Git discovery and the sync scanner's
+in-process Git ignore matching inside the snapshot so neither can escape to a
+repository that happens to contain the system temporary directory.
 
 **Cleanup and staleness in v1.** Snapshot trees are owned by the comparison:
 dropping it removes the tree and the index inside it, and only those task-owned

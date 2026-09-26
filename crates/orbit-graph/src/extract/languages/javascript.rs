@@ -4,6 +4,8 @@ use std::path::Path;
 
 use tree_sitter::Parser;
 
+use super::common::parse_source;
+
 use crate::extract::{ExtractedFile, Extractor};
 
 use super::js_ts::{JsTsOptions, extract_file};
@@ -36,7 +38,7 @@ impl Extractor for JavaScriptExtractor {
             return ExtractedFile::default();
         }
 
-        let Some(tree) = parser.parse(source, None) else {
+        let Some(tree) = parse_source(&mut parser, source) else {
             return ExtractedFile::default();
         };
 

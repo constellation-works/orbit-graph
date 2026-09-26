@@ -8,10 +8,11 @@ pub(crate) mod watcher;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Condvar, Mutex, OnceLock};
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use rusqlite::Connection;
 
+use crate::lock::{self, LockHolder};
 use crate::{GraphError, SyncMode, SyncObserver, SyncOutcome, SyncReport};
 
 pub(crate) fn run(
@@ -19,19 +20,24 @@ pub(crate) fn run(
     worktree_root: &Path,
     mode: SyncMode,
 ) -> Result<SyncReport, GraphError> {
-    coalesced(db_path, || run_once(db_path, worktree_root, mode))
+    let timeout = lock::lock_timeout()?;
+    coalesced(db_path, timeout, || {
+        run_once(db_path, worktree_root, mode, timeout)
+    })
 }
 
 fn run_once(
     db_path: &Path,
     worktree_root: &Path,
     mode: SyncMode,
+    lock_timeout: Duration,
 ) -> Result<SyncReport, GraphError> {
     let started = Instant::now();
-    let _lock = scanner::DbLockGuard::acquire(db_path)?;
+    let _lock = scanner::DbLockGuard::acquire_within(db_path, lock_timeout)?;
     let diff = scanner::scan_diff_with_lock_held(db_path, worktree_root, mode)?;
     maybe_fail_after_scan(db_path)?;
     maybe_wait_after_scan(db_path);
+    maybe_panic_after_scan(db_path);
     if !diff.has_changes() {
         let duration = started.elapsed();
         return Ok(SyncReport {
@@ -147,9 +153,19 @@ type SyncResult = Result<SyncReport, GraphError>;
 struct InFlightSync {
     result: Mutex<Option<SyncResult>>,
     ready: Condvar,
+    /// The leader, named in a follower's timeout error.
+    leader: LockHolder,
 }
 
-fn coalesced<F>(db_path: &Path, run: F) -> SyncResult
+/// Runs `run` once per database at a time within this process.
+///
+/// The first caller for a database leads and runs `run`; callers arriving
+/// while it runs follow and share its result. A follower waits at most
+/// `timeout`, the same bound as the database lock, and then fails naming the
+/// leader (`STD-03 §R7`, `§R22`). The leader's [`LeaderGuard`] publishes a
+/// failure and clears the in-flight entry even when `run` panics, so neither
+/// followers nor later syncs wait on a dead leader (`STD-03 §R4`).
+fn coalesced<F>(db_path: &Path, timeout: Duration, run: F) -> SyncResult
 where
     F: FnOnce() -> SyncResult,
 {
@@ -164,6 +180,7 @@ where
             let state = Arc::new(InFlightSync {
                 result: Mutex::new(None),
                 ready: Condvar::new(),
+                leader: LockHolder::current(coalesced_leader_label()),
             });
             in_flight.insert(key.clone(), Arc::clone(&state));
             (state, true)
@@ -171,34 +188,89 @@ where
     };
 
     if leader {
+        let guard = LeaderGuard {
+            key: key.as_path(),
+            state: state.as_ref(),
+        };
         note_sync_leader_started(key.as_path());
         let result = run();
-        {
-            let mut slot = state
-                .result
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner);
-            *slot = Some(result.clone());
-            state.ready.notify_all();
-        }
-        let mut in_flight = in_flight_syncs()
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        in_flight.remove(&key);
+        guard.publish(result.clone());
         result
     } else {
-        let mut slot = state
+        note_sync_follower_waiting(key.as_path());
+        let slot = state
             .result
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
-        loop {
-            if let Some(result) = slot.as_ref() {
-                return result.clone();
-            }
-            slot = state
-                .ready
-                .wait(slot)
-                .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let (slot, _) = state
+            .ready
+            .wait_timeout_while(slot, timeout, |slot| slot.is_none())
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        slot.as_ref().map_or_else(
+            || {
+                Err(lock::timeout_error(
+                    "wait for in-flight graph sync",
+                    key.as_path(),
+                    timeout,
+                    Some(&state.leader),
+                ))
+            },
+            Clone::clone,
+        )
+    }
+}
+
+fn coalesced_leader_label() -> String {
+    let thread = std::thread::current();
+    lock::holder_label(&format!(
+        "graph sync on thread {}",
+        thread.name().unwrap_or("<unnamed>")
+    ))
+}
+
+/// Publishes the leader's outcome and clears its in-flight entry on drop.
+///
+/// Dropped without [`LeaderGuard::publish`], as when the leader panics, it
+/// publishes a failure, so it defaults to the failure outcome and never
+/// panics itself.
+#[must_use = "the guard publishes the leader's result when dropped"]
+struct LeaderGuard<'a> {
+    key: &'a Path,
+    state: &'a InFlightSync,
+}
+
+impl LeaderGuard<'_> {
+    fn publish(self, result: SyncResult) {
+        self.set_result(result);
+    }
+
+    fn set_result(&self, result: SyncResult) {
+        let mut slot = self
+            .state
+            .result
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        if slot.is_none() {
+            *slot = Some(result);
+        }
+        self.state.ready.notify_all();
+    }
+}
+
+impl Drop for LeaderGuard<'_> {
+    fn drop(&mut self) {
+        self.set_result(Err(GraphError::invalid_data(
+            "run graph sync",
+            "the coalesced sync leader panicked before publishing a result",
+        )));
+        let mut in_flight = in_flight_syncs()
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        if in_flight
+            .get(self.key)
+            .is_some_and(|entry| std::ptr::eq(entry.as_ref(), self.state))
+        {
+            in_flight.remove(self.key);
         }
     }
 }
@@ -247,6 +319,78 @@ fn maybe_wait_after_scan(db_path: &Path) {
 
 #[cfg(not(test))]
 fn maybe_wait_after_scan(_db_path: &Path) {}
+
+/// Fault hook: the next sync of a database registered with
+/// [`panic_next_sync_after_scan`] waits for its gate, then panics while it
+/// leads and holds the database lock.
+#[cfg(test)]
+fn maybe_panic_after_scan(db_path: &Path) {
+    let gate = panic_after_scan_gates()
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .remove(db_path);
+    if let Some(gate) = gate {
+        gate.mark_started();
+        gate.wait_released();
+        panic!("injected graph sync leader panic");
+    }
+}
+
+#[cfg(not(test))]
+fn maybe_panic_after_scan(_db_path: &Path) {}
+
+#[cfg(test)]
+pub(crate) fn panic_next_sync_after_scan(db_path: &Path, gate: Arc<SyncLeaderGate>) {
+    panic_after_scan_gates()
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .insert(db_path.to_path_buf(), gate);
+}
+
+#[cfg(test)]
+fn panic_after_scan_gates() -> &'static Mutex<HashMap<PathBuf, Arc<SyncLeaderGate>>> {
+    static PANIC_AFTER_SCAN: OnceLock<Mutex<HashMap<PathBuf, Arc<SyncLeaderGate>>>> =
+        OnceLock::new();
+    PANIC_AFTER_SCAN.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+#[cfg(test)]
+fn note_sync_follower_waiting(db_path: &Path) {
+    let (counts, changed) = sync_follower_counts();
+    let mut counts = counts
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    *counts.entry(db_path.to_path_buf()).or_insert(0) += 1;
+    changed.notify_all();
+}
+
+#[cfg(not(test))]
+fn note_sync_follower_waiting(_db_path: &Path) {}
+
+/// Waits until `count` followers have joined syncs of `db_path`.
+#[cfg(test)]
+pub(crate) fn wait_for_sync_followers(
+    db_path: &Path,
+    count: usize,
+    timeout: std::time::Duration,
+) -> bool {
+    let (counts, changed) = sync_follower_counts();
+    let counts = counts
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let (counts, _) = changed
+        .wait_timeout_while(counts, timeout, |counts| {
+            counts.get(db_path).copied().unwrap_or(0) < count
+        })
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    counts.get(db_path).copied().unwrap_or(0) >= count
+}
+
+#[cfg(test)]
+fn sync_follower_counts() -> &'static (Mutex<HashMap<PathBuf, usize>>, Condvar) {
+    static SYNC_FOLLOWERS: OnceLock<(Mutex<HashMap<PathBuf, usize>>, Condvar)> = OnceLock::new();
+    SYNC_FOLLOWERS.get_or_init(|| (Mutex::new(HashMap::new()), Condvar::new()))
+}
 
 #[cfg(test)]
 pub(crate) fn fail_next_sync_after_scan(db_path: &Path) {

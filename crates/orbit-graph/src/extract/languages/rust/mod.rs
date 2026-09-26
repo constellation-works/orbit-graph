@@ -5,7 +5,9 @@ use std::path::Path;
 
 use tree_sitter::{Node, Parser};
 
-use super::common::{dedup_imports, dedup_refs, dedup_relations, dedup_symbols, normalize_path};
+use super::common::{
+    dedup_imports, dedup_refs, dedup_relations, dedup_symbols, normalize_path, parse_source,
+};
 use crate::extract::{
     ExtractedFile, Extractor, RawCommand, RawImport, RawRef, RawRelation, RawSymbol,
 };
@@ -37,7 +39,7 @@ impl Extractor for RustExtractor {
             return ExtractedFile::default();
         }
 
-        let Some(tree) = parser.parse(source, None) else {
+        let Some(tree) = parse_source(&mut parser, source) else {
             return ExtractedFile::default();
         };
 
