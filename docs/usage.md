@@ -67,6 +67,9 @@ explicitly weaker first-parent Git sync evidence. It never reads task
 `context_files` or Orbit private state. Delivery, ingestion, task creation, and
 snapshot availability times remain distinct and carry explicit
 certainty/provenance. See [the design and v2 contract](design/change-recommendations.md).
+`recommend` also caches the symbols it extracts from a target revision beside
+that index, as `recommend-target.<extractor-version>.<tree-id>.json` (owner-only,
+a few recent entries kept). Deleting these files is always safe.
 
 ## Commands
 

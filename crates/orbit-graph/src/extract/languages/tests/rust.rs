@@ -712,3 +712,226 @@ fn dynamic(path: &str) {
 
     assert_eq!(runtime_invocations(&file), Vec::<(&str, &str)>::new());
 }
+
+fn macro_call_ref<'a>(
+    file: &'a crate::extract::ExtractedFile,
+    source: &str,
+    target_name: &str,
+    line: usize,
+) -> &'a crate::extract::RawRef {
+    let matches = file
+        .refs
+        .iter()
+        .filter(|reference| {
+            reference.kind == "call"
+                && reference.target_name == target_name
+                && source[..reference.from_span_start].matches('\n').count() == line
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(
+        matches.len(),
+        1,
+        "expected one call ref for {target_name} on line {line}, got {:?}",
+        file.refs
+    );
+    matches[0]
+}
+
+#[test]
+fn calls_inside_std_macro_arguments_are_recovered() {
+    let source = r#"
+fn checks(store: &Store, root: &Path) {
+    assert!(store.delete_bundle("ORB-1").expect("delete"));
+    assert!(!registry_has_task(&root, "ORB-1"));
+    assert_eq!(sanitize("a.b"), "a_b");
+    assert_ne!(first(&root), second(root));
+    let paths = vec![partition_path(root, "ws")];
+    println!("{}", render(describe(&root)));
+    let text = format!("{} {}", crate::util::label(1), Helper::name());
+    debug_assert!(matches!(parse::<u8>("1"), Ok(_)));
+}
+"#;
+    let file = extract(source);
+
+    let delete = macro_call_ref(&file, source, "delete_bundle", 2);
+    assert_eq!(delete.unresolved_receiver.as_deref(), Some("store"));
+    assert_eq!(delete.target_qualified, None);
+    assert_eq!(
+        macro_call_ref(&file, source, "expect", 2)
+            .unresolved_receiver
+            .as_deref(),
+        Some("store.delete_bundle(\"ORB-1\")")
+    );
+    let negated = macro_call_ref(&file, source, "registry_has_task", 3);
+    assert_eq!(negated.unresolved_receiver, None);
+    assert_eq!(
+        negated.target_qualified.as_deref(),
+        Some("registry_has_task")
+    );
+    macro_call_ref(&file, source, "sanitize", 4);
+    macro_call_ref(&file, source, "first", 5);
+    macro_call_ref(&file, source, "second", 5);
+    macro_call_ref(&file, source, "partition_path", 6);
+    // Nested calls in nested macro arguments.
+    macro_call_ref(&file, source, "render", 7);
+    macro_call_ref(&file, source, "describe", 7);
+    let label = macro_call_ref(&file, source, "label", 8);
+    assert_eq!(
+        label.target_qualified.as_deref(),
+        Some("crate::util::label")
+    );
+    assert_eq!(label.confidence, "import_resolved");
+    assert_eq!(
+        &source[label.from_span_start..label.from_span_end],
+        "crate::util::label"
+    );
+    assert_eq!(
+        macro_call_ref(&file, source, "name", 8)
+            .target_qualified
+            .as_deref(),
+        Some("Helper::name")
+    );
+    // Turbofish call inside a macro nested in another macro.
+    macro_call_ref(&file, source, "parse", 9);
+
+    // Macro names, string contents, and the macro's own delimiters are not calls.
+    for name in call_names(&file) {
+        assert!(
+            !matches!(
+                name,
+                "assert" | "assert_eq" | "vec" | "format" | "matches" | "println"
+            ),
+            "macro name leaked as a call: {name}"
+        );
+        assert!(
+            !name.contains(['(', '.', '"', ' ', '\n']),
+            "bad call name {name}"
+        );
+    }
+}
+
+#[test]
+fn self_method_calls_inside_macros_record_the_enclosing_impl_type() {
+    let source = r#"
+struct Worker;
+impl Worker {
+    fn run(&self) {
+        assert!(self.ready());
+        assert_eq!(Self::limit(), 3);
+    }
+}
+"#;
+    let file = extract(source);
+
+    let ready = macro_call_ref(&file, source, "ready", 4);
+    assert_eq!(ready.target_qualified.as_deref(), Some("<Worker>::ready"));
+    assert_eq!(ready.unresolved_receiver, None);
+    let limit = macro_call_ref(&file, source, "limit", 5);
+    assert_eq!(limit.target_qualified.as_deref(), Some("<Worker>::limit"));
+}
+
+#[test]
+fn declarations_and_keywords_inside_macros_are_not_calls() {
+    let source = r#"
+fn generate() {
+    quote! {
+        fn generated(value: u8) -> u8 { value }
+        struct Wrapper(u8);
+    };
+    let total = sum!(for x in (0..3) { x });
+    let _ = if_chain!(if ready (a) { b });
+}
+"#;
+    let file = extract(source);
+    let names = call_names(&file);
+
+    for absent in ["generated", "Wrapper", "in", "if"] {
+        assert!(
+            !names.contains(&absent),
+            "{absent} is not a call: {names:?}"
+        );
+    }
+}
+
+#[test]
+fn functions_passed_as_values_are_recorded_as_calls() {
+    let source = r#"
+fn skill_link_roots(root: &Path) -> Vec<PathBuf> { vec![] }
+
+impl Loader {
+    fn parse(text: &str) -> u8 { 0 }
+    fn load(&self, roots: Vec<PathBuf>, items: Vec<&str>) {
+        let links = roots.iter().map(skill_link_roots).collect::<Vec<_>>();
+        let parsed = items.into_iter().map(Self::parse);
+        let names = items.iter().map(ToString::to_string);
+        let wrapped = items.into_iter().map(Some);
+        run_step(helpers::normalize, roots);
+    }
+}
+"#;
+    let file = extract(source);
+
+    let value = macro_call_ref(&file, source, "skill_link_roots", 6);
+    assert_eq!(value.target_qualified.as_deref(), Some("skill_link_roots"));
+    assert_eq!(value.unresolved_receiver, None);
+    assert_eq!(
+        macro_call_ref(&file, source, "parse", 7)
+            .target_qualified
+            .as_deref(),
+        Some("<Loader>::parse")
+    );
+    assert_eq!(
+        macro_call_ref(&file, source, "to_string", 8)
+            .target_qualified
+            .as_deref(),
+        Some("ToString::to_string")
+    );
+    assert_eq!(
+        macro_call_ref(&file, source, "normalize", 10)
+            .target_qualified
+            .as_deref(),
+        Some("helpers::normalize")
+    );
+
+    // Locals, parameters, and capitalised constructors passed as values are
+    // not function refs.
+    let names = call_names(&file);
+    for absent in ["roots", "items", "Some"] {
+        assert!(
+            !names.contains(&absent),
+            "{absent} is not a call: {names:?}"
+        );
+    }
+}
+
+#[test]
+fn closure_and_pattern_bound_names_passed_as_values_are_not_calls() {
+    let source = r#"
+fn drive(input: Option<Handler>, handlers: Vec<Handler>) {
+    if let Some(handler) = input {
+        dispatch(handler);
+    }
+    for entry in handlers {
+        dispatch(entry);
+    }
+    let callback = |event| notify(event);
+    subscribe(callback);
+    match input {
+        Some(Handler { name, .. }) => report(name),
+        other => report(other),
+    }
+}
+"#;
+    let file = extract(source);
+    let names = call_names(&file);
+
+    for absent in ["handler", "entry", "event", "callback", "name", "other"] {
+        assert!(!names.contains(&absent), "{absent} is a local: {names:?}");
+    }
+    for present in ["dispatch", "notify", "subscribe", "report"] {
+        assert!(
+            names.contains(&present),
+            "missing call {present}: {names:?}"
+        );
+    }
+}

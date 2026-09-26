@@ -356,40 +356,29 @@ fn changed_test_does_not_implicate_the_untouched_source() {
         "only the test changed"
     );
 
-    // The known gap: a call written as a macro argument produces no reference,
-    // so `add` has no call-path candidate even though the test clearly
-    // exercises it. The naming heuristic discloses the link without inventing
-    // an edge.
-    let report = case.evidence(SnapshotSide::Head, "symbol:src/lib.rs#add:function");
-    assert!(report.resolved, "{report:?}");
-    assert!(
-        report.paths.is_empty(),
-        "a call inside a macro invocation must not produce an edge: {report:?}"
-    );
-    assert!(!report.no_path_reasons.is_empty(), "{report:?}");
-    assert!(
-        report
-            .no_path_reasons
-            .iter()
-            .any(|reason| reason.contains("macro")),
-        "{:?}",
-        report.no_path_reasons
-    );
+    // `add` is called only as an `assert_eq!` argument. The Rust extractor
+    // recovers calls from macro token trees (EXTRACTOR_VERSION 13), so the
+    // test is a call-path candidate on both sides.
+    for side in [SnapshotSide::Base, SnapshotSide::Head] {
+        let report = case.evidence(side, "symbol:src/lib.rs#add:function");
+        assert!(report.resolved, "{report:?}");
+        assert_edge(
+            &report,
+            "tests/add_test.rs",
+            2,
+            EvidenceCategory::ObservedReference,
+            "same_module",
+            "call",
+        );
+    }
 
     let candidates = case.candidate_tests(SnapshotSide::Head, "symbol:src/lib.rs#add:function");
     assert!(
         candidates
             .iter()
-            .all(|(source, _, _)| *source != CandidateSource::CallPath),
-        "{candidates:?}"
-    );
-    assert!(
-        candidates.iter().any(|(source, selector, category)| {
-            *source == CandidateSource::NamingHeuristic
-                && selector == "symbol:tests/add_test.rs#test_add:function"
-                && *category == EvidenceCategory::HeuristicMatch
-        }),
-        "the naming heuristic must disclose the link the extractor cannot see: {candidates:?}"
+            .any(|(source, selector, _)| *source == CandidateSource::CallPath
+                && selector == "symbol:tests/add_test.rs#test_add:function"),
+        "the macro-argument call must yield a call-path candidate: {candidates:?}"
     );
 }
 

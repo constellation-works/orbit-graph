@@ -363,6 +363,40 @@ Git trees up to the target revision and so reveals nothing the target
 revision does not already contain; in every mode the target tree must contain
 the resolved path.
 
+### Target-tree symbols and their cache
+
+Destinations are resolved against the immutable target tree, never the
+worktree. Walking the tree's blob paths is cheap; parsing every blob is the
+dominant fixed cost of a request, so symbols are loaded only when the request
+reads them (combined and graph-only lexical and structural evidence, or symbol
+level). File-level task-search-only and frequency requests, and file-selector
+liveness checks, never parse. The extracted symbol table is cached in the
+history index directory as
+`recommend-target.<EXTRACTOR_VERSION>.<target-tree-oid>.json`. The key is the
+tree, not the commit, so a commit that doesn't change the tree reuses the
+entry. The entry records its format, extractor version and tree, and a
+mismatch, parse failure or unreadable file is treated as a miss and
+re-extracted. It is published atomically (owner-only temp file, then rename),
+and a warm hit refreshes the entry's modification time to record its last use.
+Because the entry is exactly the extractor output for those Git
+objects, cached and uncached requests return identical results. The graph
+index is deliberately not used as a symbol source: it reflects the worktree,
+including uncommitted and ignored files, rather than the target tree.
+
+Each write then prunes the directory, which it shares with the history index
+and graph state, so deletion is scoped by ownership (STD-03 §R29): only names
+that parse exactly as `recommend-target.<extractor u32>.<40-hex tree>.json`, or
+that name plus `.tmp-<pid>`, are ever considered, and anything else is left
+alone. The grammar, rather than an owned-entries record, is the ownership
+proof: the name is fully determined by the cache key, so no other writer
+produces it by accident. Entries of *older* extractor versions are removed; a
+newer version's entries belong to a newer binary sharing the directory and are
+kept, so an old and a new binary never evict each other (STD-03 §R10). Temp
+files left by a crashed writer are removed once their pid is gone (after a 60 s
+grace; liveness is read from `/proc`, and where that is unavailable the file
+only ages out) or once they are an hour old. Of the current version's entries,
+the one just written and the three most recently used others are kept.
+
 ## Stage 3 Orbit adapter and plugin
 
 The shipped integration is an Orbit external tool, not a private control-plane
