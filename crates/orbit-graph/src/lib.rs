@@ -112,7 +112,10 @@ mod tests;
 /// `unresolved_receiver`, `spelled_path`), so an incremental sync can
 /// re-resolve refs in unchanged files whose target was defined, removed or
 /// renamed elsewhere.
-pub const EXTRACTOR_VERSION: u32 = 15;
+///
+/// Version 16 rebuilds stored refs so cross-file resolution only chooses
+/// symbols from the ref's language.
+pub const EXTRACTOR_VERSION: u32 = 16;
 
 /// SQLite schema version used by the graph store.
 ///

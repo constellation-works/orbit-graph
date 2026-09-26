@@ -38,6 +38,20 @@ fn caller() {
 }
 
 #[test]
+fn javascript_math_floor_does_not_resolve_to_rust_floor() {
+    let worktree = TestWorktree::new("cross-language-floor");
+    let graph = Graph::open(worktree.path(), SyncPolicy::Manual).expect("open graph");
+    worktree.write("app.js", "function render() { return Math.floor(1.5); }\n");
+    worktree.write("lib.rs", "fn floor() {}\n");
+
+    graph.sync(SyncMode::Full).expect("sync graph");
+
+    let conn = open_test_connection(worktree.path());
+    let row = call_ref(&conn, "app.js", "floor");
+    assert_ref(&row, None, super::CONFIDENCE_FUZZY_NAME);
+}
+
+#[test]
 fn import_resolved_resolution_uses_explicit_import() {
     let worktree = TestWorktree::new("import");
     let graph = Graph::open(worktree.path(), SyncPolicy::Manual).expect("open graph");
@@ -331,6 +345,56 @@ fn duplicate_import_targets_remain_fuzzy_and_unhinted() {
     assert_eq!(row.target_qualified, None);
     assert_eq!(row.confidence, super::CONFIDENCE_FUZZY_NAME);
     assert!(row.target_symbol_hint.is_none());
+}
+
+#[test]
+fn qualified_and_import_rungs_reject_symbols_from_another_language() {
+    let worktree = TestWorktree::new("cross-language-rungs");
+    let graph = Graph::open(worktree.path(), SyncPolicy::Manual).expect("open graph");
+    drop(graph);
+    let conn = open_test_connection(worktree.path());
+    insert_file(&conn, "src/qualified.rs");
+    insert_file(&conn, "src/imported.rs");
+    insert_file(&conn, "src/target.js");
+    conn.execute(
+        "UPDATE files SET lang = 'javascript' WHERE path = 'src/target.js'",
+        [],
+    )
+    .expect("set target language");
+    insert_symbol(&conn, "src/target.js", "floor", "shared::floor");
+    insert_import(&conn, "src/imported.rs", "shared", Some("floor"));
+    drop(conn);
+
+    let mut qualified = raw_ref("src/qualified.rs", "floor");
+    qualified.target_qualified = Some("shared::floor".to_string());
+    super::run(
+        graph_db_path(worktree.path()).as_path(),
+        SyncMode::Full,
+        vec![
+            ExtractedFileRefs {
+                file_path: "src/qualified.rs".to_string(),
+                refs: vec![qualified],
+            },
+            ExtractedFileRefs {
+                file_path: "src/imported.rs".to_string(),
+                refs: vec![raw_ref("src/imported.rs", "floor")],
+            },
+        ],
+        &super::Definitions::default(),
+        None,
+        0,
+        None,
+    )
+    .expect("run pass2");
+
+    let conn = open_test_connection(worktree.path());
+    for from_file in ["src/qualified.rs", "src/imported.rs"] {
+        assert_ref(
+            &call_ref(&conn, from_file, "floor"),
+            None,
+            super::CONFIDENCE_FUZZY_NAME,
+        );
+    }
 }
 
 #[test]

@@ -14,8 +14,8 @@
 //!
 //! An unchanged file's ref can still depend on a changed file. Apart from
 //! trait impl blocks (below), the ladder only considers candidates named like
-//! the ref, and it reads from a candidate's
-//! file only the `(name, qualified, kind)` of its symbols (the file's module
+//! the ref, and it reads from a candidate's file only its language and the
+//! `(name, qualified, kind)` of its symbols (the file's module
 //! prefixes derive from every symbol in it). So a ref outside the changed
 //! files can resolve differently after the change only if its `target_name`
 //! names a symbol of a changed or removed file whose definitions under that
@@ -554,7 +554,7 @@ struct Resolver<'a, 'conn> {
     candidates_by_name: HashMap<String, Rc<[NamedCandidate]>>,
     /// Trait impl blocks by Self type name, loaded on first use.
     trait_impls: Option<HashMap<String, TraitImpls>>,
-    qualified_matches: HashMap<(String, String), Option<SymbolCandidate>>,
+    qualified_matches: HashMap<(String, String, String), Option<SymbolCandidate>>,
 }
 
 impl<'a, 'conn> Resolver<'a, 'conn> {
@@ -574,6 +574,14 @@ impl<'a, 'conn> Resolver<'a, 'conn> {
         from_file: &str,
         refs: &[RawRef],
     ) -> Result<Vec<ResolvedRef>, GraphError> {
+        let language = self
+            .tx
+            .query_row(
+                "SELECT lang FROM files WHERE path = ?1",
+                params![from_file],
+                |row| row.get::<_, String>(0),
+            )
+            .map_err(|source| GraphError::sqlite("read ref file language", source))?;
         let imports = imports_for_file(self.tx, from_file)?;
         let mut memo: HashMap<RefKey, ResolvedRef> = HashMap::new();
         let mut resolved = Vec::with_capacity(refs.len());
@@ -583,7 +591,7 @@ impl<'a, 'conn> Resolver<'a, 'conn> {
                 resolved.push(known.clone());
                 continue;
             }
-            let result = self.resolve_ref(from_file, &imports, raw_ref)?;
+            let result = self.resolve_ref(from_file, &language, &imports, raw_ref)?;
             memo.insert(key, result.clone());
             resolved.push(result);
         }
@@ -593,6 +601,7 @@ impl<'a, 'conn> Resolver<'a, 'conn> {
     fn resolve_ref(
         &mut self,
         from_file: &str,
+        language: &str,
         imports: &[ImportCandidate],
         raw_ref: &RawRef,
     ) -> Result<ResolvedRef, GraphError> {
@@ -611,7 +620,7 @@ impl<'a, 'conn> Resolver<'a, 'conn> {
         if let Some(candidate) = resolve_exact(self.tx, from_file, raw_ref)? {
             return Ok(ResolvedRef::candidate(candidate, CONFIDENCE_EXACT));
         }
-        match self.resolve_import(from_file, imports, raw_ref)? {
+        match self.resolve_import(from_file, language, imports, raw_ref)? {
             ImportResolution::Unique(candidate) => {
                 return Ok(ResolvedRef::candidate(
                     candidate,
@@ -621,10 +630,10 @@ impl<'a, 'conn> Resolver<'a, 'conn> {
             ImportResolution::Ambiguous => return Ok(ResolvedRef::fuzzy()),
             ImportResolution::None => {}
         }
-        if let Some(candidate) = self.resolve_qualified(raw_ref)? {
+        if let Some(candidate) = self.resolve_qualified(language, raw_ref)? {
             return Ok(ResolvedRef::candidate(candidate, CONFIDENCE_EXACT));
         }
-        if let Some(candidate) = self.resolve_same_module(from_file, raw_ref)? {
+        if let Some(candidate) = self.resolve_same_module(from_file, language, raw_ref)? {
             return Ok(ResolvedRef::candidate(candidate, CONFIDENCE_SAME_MODULE));
         }
         Ok(ResolvedRef::fuzzy())
@@ -632,6 +641,7 @@ impl<'a, 'conn> Resolver<'a, 'conn> {
 
     fn resolve_qualified(
         &mut self,
+        language: &str,
         raw_ref: &RawRef,
     ) -> Result<Option<SymbolCandidate>, GraphError> {
         if raw_ref.kind == "use" {
@@ -643,26 +653,34 @@ impl<'a, 'conn> Resolver<'a, 'conn> {
         if !target.contains("::") && !target.contains('.') {
             return Ok(None);
         }
-        let key = (raw_ref.target_name.clone(), normalize_module_path(target));
+        let key = (
+            language.to_string(),
+            raw_ref.target_name.clone(),
+            normalize_module_path(target),
+        );
         if let Some(known) = self.qualified_matches.get(&key) {
             return Ok(known.clone());
         }
-        let matched = self.unique_qualified_match(&key.0, &key.1)?;
+        let matched = self.unique_qualified_match(&key.0, &key.1, &key.2)?;
         self.qualified_matches.insert(key, matched.clone());
         Ok(matched)
     }
 
     /// The one candidate named `name` that `target` (already normalized)
-    /// names, if exactly one does. Memoized per `(name, target)` by
+    /// names in `language`, if exactly one does. Memoized per
+    /// `(language, name, target)` by
     /// [`Self::resolve_qualified`]: the answer depends on nothing else.
     fn unique_qualified_match(
         &mut self,
+        language: &str,
         name: &str,
         target: &str,
     ) -> Result<Option<SymbolCandidate>, GraphError> {
         let mut matched = None;
         for candidate in self.symbols_by_name(name)?.iter() {
-            if self.candidate_matches_qualified(candidate, target)? {
+            if candidate.language == language
+                && self.candidate_matches_qualified(candidate, target)?
+            {
                 if matched.is_some() {
                     return Ok(None);
                 }
@@ -675,6 +693,7 @@ impl<'a, 'conn> Resolver<'a, 'conn> {
     fn resolve_import(
         &mut self,
         from_file: &str,
+        language: &str,
         imports: &[ImportCandidate],
         raw_ref: &RawRef,
     ) -> Result<ImportResolution, GraphError> {
@@ -689,7 +708,9 @@ impl<'a, 'conn> Resolver<'a, 'conn> {
                 };
                 let module = normalize_module_path(&module_path);
                 for candidate in self.symbols_by_name(&raw_ref.target_name)?.iter() {
-                    if free_item && is_member_symbol(&candidate.symbol.qualified) {
+                    if candidate.language != language
+                        || (free_item && is_member_symbol(&candidate.symbol.qualified))
+                    {
                         continue;
                     }
                     if self.candidate_matches_module(candidate, &module)? {
@@ -710,6 +731,7 @@ impl<'a, 'conn> Resolver<'a, 'conn> {
     fn resolve_same_module(
         &mut self,
         from_file: &str,
+        language: &str,
         raw_ref: &RawRef,
     ) -> Result<Option<SymbolCandidate>, GraphError> {
         if !resolves_by_name_only(raw_ref) {
@@ -724,7 +746,8 @@ impl<'a, 'conn> Resolver<'a, 'conn> {
         let qualifier = call_module_qualifier(from_file, raw_ref);
         let mut matched = None;
         for candidate in self.symbols_by_name(&raw_ref.target_name)?.iter() {
-            if candidate.symbol.file_path == from_file
+            if candidate.language != language
+                || candidate.symbol.file_path == from_file
                 || (free_item && is_member_symbol(&candidate.symbol.qualified))
             {
                 continue;
@@ -750,10 +773,7 @@ impl<'a, 'conn> Resolver<'a, 'conn> {
         if let Some(candidates) = self.candidates_by_name.get(name) {
             return Ok(Rc::clone(candidates));
         }
-        let candidates: Rc<[NamedCandidate]> = symbols_by_name(self.tx, name)?
-            .into_iter()
-            .map(NamedCandidate::new)
-            .collect();
+        let candidates: Rc<[NamedCandidate]> = symbols_by_name(self.tx, name)?.into();
         self.candidates_by_name
             .insert(name.to_string(), Rc::clone(&candidates));
         Ok(candidates)
@@ -896,16 +916,22 @@ fn symbols_in_file_by_name(
 
 /// Cross-file counterpart of [`symbols_in_file_by_name`]; applies the same
 /// `impl` exclusion.
-fn symbols_by_name(tx: &Transaction<'_>, name: &str) -> Result<Vec<SymbolCandidate>, GraphError> {
+fn symbols_by_name(tx: &Transaction<'_>, name: &str) -> Result<Vec<NamedCandidate>, GraphError> {
     let mut stmt = tx
         .prepare_cached(
-            "SELECT id, file_path, name, qualified FROM symbols
-             WHERE name = ?1 AND kind <> 'impl'
-             ORDER BY qualified, id",
+            "SELECT s.id, s.file_path, s.name, s.qualified, f.lang
+             FROM symbols s JOIN files f ON f.path = s.file_path
+             WHERE s.name = ?1 AND s.kind <> 'impl'
+             ORDER BY s.qualified, s.id",
         )
         .map_err(|source| GraphError::sqlite("prepare name symbol lookup", source))?;
     let rows = stmt
-        .query_map(params![name], symbol_candidate_from_row)
+        .query_map(params![name], |row| {
+            Ok(NamedCandidate::new(
+                symbol_candidate_from_row(row)?,
+                row.get(4)?,
+            ))
+        })
         .map_err(|source| GraphError::sqlite("query symbols for ref resolution", source))?;
     rows.collect::<Result<Vec<_>, _>>()
         .map_err(|source| GraphError::sqlite("collect symbols for ref resolution", source))
@@ -1202,17 +1228,19 @@ struct SymbolCandidate {
 #[derive(Debug)]
 struct NamedCandidate {
     symbol: SymbolCandidate,
+    language: String,
     normalized_qualified: String,
     own_prefix: Option<String>,
 }
 
 impl NamedCandidate {
-    fn new(symbol: SymbolCandidate) -> Self {
+    fn new(symbol: SymbolCandidate, language: String) -> Self {
         let own_prefix = qualified_prefix_before_name(&symbol.qualified, &symbol.name)
             .map(|prefix| normalize_module_path(&prefix));
         Self {
             normalized_qualified: normalize_module_path(&symbol.qualified),
             symbol,
+            language,
             own_prefix,
         }
     }
