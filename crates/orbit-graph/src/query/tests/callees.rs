@@ -119,6 +119,7 @@ fn options_filter_by_confidence_and_kind_without_changing_unfiltered_results() {
             &CalleeOpts {
                 confidence: RefConfidence::Exact,
                 kind: Some(RefKind::Call),
+                hide_unresolved: false,
             },
         )
         .expect("filtered callees");
@@ -130,10 +131,92 @@ fn options_filter_by_confidence_and_kind_without_changing_unfiltered_results() {
             &CalleeOpts {
                 confidence: RefConfidence::FuzzyName,
                 kind: Some(RefKind::Type),
+                hide_unresolved: false,
             },
         )
         .expect("kind-filtered callees");
     assert!(wrong_kind.is_empty());
+}
+
+#[test]
+fn hide_unresolved_omits_only_unresolved_calls_without_a_callable_definition() {
+    let worktree = TestWorktree::new("callees-hide-unresolved");
+    let source = "fn caller() {\n    resolved();\n    local_fn();\n    map_err();\n    Err();\n    map_err();\n}\n";
+    worktree.write("src/lib.rs", source);
+    let graph = open_graph(&worktree, SyncPolicy::Manual);
+    let conn = open_connection(&worktree);
+    seed_caller(&conn, source);
+    // `local_fn` has an indexed function of that name; `Err` only shares its
+    // name with an associated type alias, which is not a call target.
+    insert_symbol(
+        &conn,
+        "src/lib.rs",
+        "local_fn",
+        "crate::local_fn",
+        "function",
+        0,
+        1,
+    );
+    insert_symbol(
+        &conn,
+        "src/lib.rs",
+        "Err",
+        "<Parser>::Err",
+        "type_alias",
+        0,
+        1,
+    );
+    insert_call_ref(
+        &conn,
+        source.find("resolved").expect("resolved"),
+        "resolved",
+        Some("other::resolved"),
+        "import_resolved",
+    );
+    for name in ["local_fn", "map_err", "Err"] {
+        insert_call_ref(
+            &conn,
+            source.find(name).expect("call span"),
+            name,
+            None,
+            "fuzzy_name",
+        );
+    }
+    insert_call_ref(
+        &conn,
+        source.rfind("map_err").expect("second map_err"),
+        "map_err",
+        None,
+        "fuzzy_name",
+    );
+
+    let hidden = graph
+        .callees_report(
+            &caller_selector(),
+            &CalleeOpts {
+                hide_unresolved: true,
+                ..CalleeOpts::all()
+            },
+        )
+        .expect("filtered callees report");
+    let names = hidden
+        .callees
+        .iter()
+        .map(|edge| edge.target_name.as_str())
+        .collect::<Vec<_>>();
+    assert_eq!(names, ["resolved", "local_fn"]);
+    assert_eq!(hidden.hidden_unresolved, 3);
+
+    let all = graph
+        .callees_report(&caller_selector(), &CalleeOpts::all())
+        .expect("unfiltered callees report");
+    assert_eq!(all.callees.len(), 5);
+    assert_eq!(all.hidden_unresolved, 0);
+    assert_eq!(
+        graph.callees(&caller_selector()).expect("callees"),
+        all.callees,
+        "the unfiltered entry point is unchanged"
+    );
 }
 
 #[test]

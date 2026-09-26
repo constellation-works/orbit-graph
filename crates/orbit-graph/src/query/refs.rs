@@ -12,13 +12,19 @@ use crate::{
     RefTarget, RelationEntry,
 };
 
+/// Maximum characters kept in a reference's one-line [`RefEntry::snippet`].
+pub(crate) const REF_SNIPPET_MAX_CHARS: usize = 160;
+
 const CONFIDENCE_EXACT: &str = "exact";
 const CONFIDENCE_IMPORT_RESOLVED: &str = "import_resolved";
 const CONFIDENCE_SAME_MODULE: &str = "same_module";
 const CONFIDENCE_FUZZY_NAME: &str = "fuzzy_name";
 
 pub(crate) fn run(graph: &Graph, sel: &Selector, opts: &RefOpts) -> Result<RefResult, GraphError> {
-    let mut line_cache = LineCache::new(graph.worktree_root.as_path());
+    let mut rows = RowContext {
+        lines: LineCache::new(graph.worktree_root.as_path()),
+        enclosing: EnclosingSymbols::default(),
+    };
     graph.with_read_connection(|conn| {
         let target = resolve_target(conn, sel)?;
         let Some(qualified) = target.output.qualified.as_deref() else {
@@ -33,7 +39,7 @@ pub(crate) fn run(graph: &Graph, sel: &Selector, opts: &RefOpts) -> Result<RefRe
                 qualified,
                 target.output.name.as_str(),
                 opts,
-                &mut line_cache,
+                &mut rows,
                 &mut skipped_low_confidence,
             )?
         } else {
@@ -44,7 +50,7 @@ pub(crate) fn run(graph: &Graph, sel: &Selector, opts: &RefOpts) -> Result<RefRe
                 conn,
                 qualified,
                 opts,
-                &mut line_cache,
+                &mut rows.lines,
                 &mut skipped_low_confidence,
             )?
         } else {
@@ -58,7 +64,7 @@ pub(crate) fn run(graph: &Graph, sel: &Selector, opts: &RefOpts) -> Result<RefRe
             target.output.name.as_str(),
             opts,
             &refs,
-            &mut line_cache,
+            &mut rows,
         )?;
 
         Ok(RefResult {
@@ -66,6 +72,7 @@ pub(crate) fn run(graph: &Graph, sel: &Selector, opts: &RefOpts) -> Result<RefRe
             refs,
             relations,
             skipped_low_confidence,
+            fallback_used: fallback.is_some(),
             fallback,
         })
     })
@@ -85,7 +92,7 @@ fn maybe_fuzzy_fallback(
     target_name: &str,
     opts: &RefOpts,
     refs: &[RefEntry],
-    line_cache: &mut LineCache,
+    rows: &mut RowContext,
 ) -> Result<Option<RefFallback>, GraphError> {
     if !refs.is_empty()
         || opts.confidence == RefConfidence::FuzzyName
@@ -105,7 +112,7 @@ fn maybe_fuzzy_fallback(
         qualified,
         target_name,
         &fallback_opts,
-        line_cache,
+        rows,
         &mut skipped,
     )?;
     if fallback_refs.is_empty() {
@@ -185,6 +192,7 @@ fn empty_result(target: RefTarget) -> RefResult {
         refs: Vec::new(),
         relations: Vec::new(),
         skipped_low_confidence: 0,
+        fallback_used: false,
         fallback: None,
     }
 }
@@ -203,13 +211,13 @@ fn query_refs(
     qualified: &str,
     target_name: &str,
     opts: &RefOpts,
-    line_cache: &mut LineCache,
+    context: &mut RowContext,
     skipped_low_confidence: &mut usize,
 ) -> Result<Vec<RefEntry>, GraphError> {
     let include_fuzzy_name = opts.confidence == RefConfidence::FuzzyName;
     let sql = match (opts.kind, include_fuzzy_name) {
         (Some(_), true) => {
-            "SELECT from_file, from_span_start, kind, confidence
+            "SELECT from_file, from_span_start, from_span_end, kind, confidence
              FROM refs
              WHERE kind = ?3
                AND (
@@ -220,13 +228,13 @@ fn query_refs(
              ORDER BY from_file, from_span_start, id"
         }
         (Some(_), false) => {
-            "SELECT from_file, from_span_start, kind, confidence
+            "SELECT from_file, from_span_start, from_span_end, kind, confidence
              FROM refs
              WHERE (target_symbol_hint = ?1 OR (target_symbol_hint IS NULL AND target_qualified = ?2)) AND kind = ?3
              ORDER BY from_file, from_span_start, id"
         }
         (None, true) => {
-            "SELECT from_file, from_span_start, kind, confidence
+            "SELECT from_file, from_span_start, from_span_end, kind, confidence
              FROM refs
              WHERE target_symbol_hint = ?1
                 OR (target_symbol_hint IS NULL AND target_qualified = ?2)
@@ -235,7 +243,7 @@ fn query_refs(
              ORDER BY from_file, from_span_start, id"
         }
         (None, false) => {
-            "SELECT from_file, from_span_start, kind, confidence
+            "SELECT from_file, from_span_start, from_span_end, kind, confidence
              FROM refs
              WHERE target_symbol_hint = ?1 OR (target_symbol_hint IS NULL AND target_qualified = ?2)
              ORDER BY from_file, from_span_start, id"
@@ -275,11 +283,21 @@ fn query_refs(
             *skipped_low_confidence += 1;
             continue;
         }
+        let from_selector = context.enclosing.selector_for(
+            conn,
+            row.file.as_str(),
+            row.span_start,
+            row.span_end,
+        )?;
         entries.push(RefEntry {
-            line: line_cache.line_for(row.file.as_str(), row.span_start)?,
+            line: context.lines.line_for(row.file.as_str(), row.span_start)?,
+            snippet: context
+                .lines
+                .snippet_for(row.file.as_str(), row.span_start)?,
             file: row.file,
             kind,
             confidence,
+            from_selector,
         });
     }
     Ok(entries)
@@ -349,8 +367,9 @@ fn row_to_ref_row(row: &Row<'_>) -> rusqlite::Result<StoredRefRow> {
     Ok(StoredRefRow {
         file: row.get(0)?,
         span_start: row.get(1)?,
-        kind: row.get(2)?,
-        confidence: row.get(3)?,
+        span_end: row.get(2)?,
+        kind: row.get(3)?,
+        confidence: row.get(4)?,
     })
 }
 
@@ -433,6 +452,7 @@ impl RefKind {
 struct StoredRefRow {
     file: String,
     span_start: i64,
+    span_end: i64,
     kind: String,
     confidence: String,
 }
@@ -443,6 +463,71 @@ struct StoredRelationRow {
     file: String,
     span_start: i64,
     confidence: String,
+}
+
+/// Per-query caches that turn a stored reference row into a [`RefEntry`].
+struct RowContext<'a> {
+    lines: LineCache<'a>,
+    enclosing: EnclosingSymbols,
+}
+
+/// Per-file symbol spans, loaded once per file, for attributing a reference
+/// to the innermost symbol whose span encloses it.
+#[derive(Default)]
+struct EnclosingSymbols {
+    files: BTreeMap<String, Vec<SymbolSpanRow>>,
+}
+
+struct SymbolSpanRow {
+    qualified: String,
+    kind: String,
+    span_start: i64,
+    span_end: i64,
+}
+
+impl EnclosingSymbols {
+    /// Selector for the innermost symbol in `file` whose span contains
+    /// `[start, end)`, or `None` when the reference lies outside every symbol
+    /// (for example a top-level statement).
+    fn selector_for(
+        &mut self,
+        conn: &Connection,
+        file: &str,
+        start: i64,
+        end: i64,
+    ) -> Result<Option<String>, GraphError> {
+        if !self.files.contains_key(file) {
+            let mut stmt = conn
+                .prepare_cached(
+                    "SELECT qualified, kind, span_start, span_end FROM symbols
+                     WHERE file_path = ?1
+                     ORDER BY id",
+                )
+                .map_err(|source| GraphError::sqlite("prepare enclosing symbol lookup", source))?;
+            let rows = stmt
+                .query_map(params![file], |row| {
+                    Ok(SymbolSpanRow {
+                        qualified: row.get(0)?,
+                        kind: row.get(1)?,
+                        span_start: row.get(2)?,
+                        span_end: row.get(3)?,
+                    })
+                })
+                .map_err(|source| GraphError::sqlite("query enclosing symbols", source))?
+                .collect::<Result<Vec<_>, _>>()
+                .map_err(|source| GraphError::sqlite("collect enclosing symbols", source))?;
+            self.files.insert(file.to_string(), rows);
+        }
+        let innermost = self.files.get(file).and_then(|symbols| {
+            symbols
+                .iter()
+                .filter(|symbol| symbol.span_start <= start && symbol.span_end >= end)
+                .min_by_key(|symbol| symbol.span_end - symbol.span_start)
+        });
+        Ok(innermost.map(|symbol| {
+            super::symbol_selector(file, symbol.qualified.as_str(), symbol.kind.as_str())
+        }))
+    }
 }
 
 pub(crate) struct LineCache<'a> {
@@ -459,12 +544,22 @@ impl<'a> LineCache<'a> {
     }
 
     pub(crate) fn line_for(&mut self, file: &str, byte_offset: i64) -> Result<usize, GraphError> {
-        if byte_offset < 0 {
-            return Err(GraphError::invalid_data(
-                "compute graph ref line",
-                format!("negative byte offset {byte_offset} for {file}"),
-            ));
-        }
+        let offset = checked_offset(file, byte_offset)?;
+        Ok(self.index(file)?.line_for(offset))
+    }
+
+    /// The trimmed source line containing `byte_offset`, bounded to
+    /// [`REF_SNIPPET_MAX_CHARS`] characters with a trailing `…` when cut.
+    pub(crate) fn snippet_for(
+        &mut self,
+        file: &str,
+        byte_offset: i64,
+    ) -> Result<String, GraphError> {
+        let offset = checked_offset(file, byte_offset)?;
+        Ok(self.index(file)?.snippet_for(offset, REF_SNIPPET_MAX_CHARS))
+    }
+
+    fn index(&mut self, file: &str) -> Result<&LineIndex, GraphError> {
         if !self.files.contains_key(file) {
             let path = super::contained_worktree_source(self.worktree_root, file)?;
             let bytes = fs::read(path.as_path()).map_err(|source| {
@@ -472,21 +567,28 @@ impl<'a> LineCache<'a> {
             })?;
             self.files.insert(file.to_string(), LineIndex::new(bytes));
         }
-        let offset = usize::try_from(byte_offset).map_err(|source| {
-            GraphError::invalid_data("compute graph ref line", source.to_string())
-        })?;
-        let Some(index) = self.files.get(file) else {
-            return Err(GraphError::invalid_data(
+        self.files.get(file).ok_or_else(|| {
+            GraphError::invalid_data(
                 "compute graph ref line",
                 format!("line index missing for {file} after load"),
-            ));
-        };
-        Ok(index.line_for(offset))
+            )
+        })
     }
 }
 
+fn checked_offset(file: &str, byte_offset: i64) -> Result<usize, GraphError> {
+    if byte_offset < 0 {
+        return Err(GraphError::invalid_data(
+            "compute graph ref line",
+            format!("negative byte offset {byte_offset} for {file}"),
+        ));
+    }
+    usize::try_from(byte_offset)
+        .map_err(|source| GraphError::invalid_data("compute graph ref line", source.to_string()))
+}
+
 struct LineIndex {
-    byte_len: usize,
+    bytes: Vec<u8>,
     line_starts: Vec<usize>,
 }
 
@@ -498,15 +600,28 @@ impl LineIndex {
                 line_starts.push(index + 1);
             }
         }
-        Self {
-            byte_len: bytes.len(),
-            line_starts,
-        }
+        Self { bytes, line_starts }
     }
 
     fn line_for(&self, byte_offset: usize) -> usize {
-        let capped = byte_offset.min(self.byte_len);
+        let capped = byte_offset.min(self.bytes.len());
         self.line_starts
             .partition_point(|line_start| *line_start <= capped)
+    }
+
+    fn snippet_for(&self, byte_offset: usize, max_chars: usize) -> String {
+        let line = self.line_for(byte_offset);
+        let start = self.line_starts[line - 1];
+        let end = self
+            .line_starts
+            .get(line)
+            .map_or(self.bytes.len(), |next| next.saturating_sub(1));
+        let text = String::from_utf8_lossy(&self.bytes[start..end.max(start)]);
+        let text = text.trim();
+        let mut snippet: String = text.chars().take(max_chars).collect();
+        if text.chars().nth(max_chars).is_some() {
+            snippet.push('…');
+        }
+        snippet
     }
 }

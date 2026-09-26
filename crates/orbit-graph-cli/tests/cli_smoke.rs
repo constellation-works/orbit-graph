@@ -90,6 +90,205 @@ fn real_binary_indexes_and_queries_a_fixture() {
 }
 
 #[cfg(unix)]
+/// Agent-facing query fields (ORB-13099): every impacted node and every
+/// reference carries enough to open or `show` it, `refs` states whether it
+/// fell back, and `callees` hides unresolved calls with no indexed definition
+/// by default while counting them. Existing fields are asserted alongside so
+/// the additions stay additive.
+#[test]
+fn real_binary_query_output_carries_locations_context_and_callee_filtering() {
+    let fixture = agent_query_fixture();
+    let _ = run_json(fixture.path(), ["sync", "--full"]);
+
+    // impact: each touched entry has a selector, file, and line, and the
+    // selector round-trips through `show`.
+    let impact = run_json(
+        fixture.path(),
+        [
+            "impact",
+            "symbol:src/lib.rs#helper:function",
+            "--direction",
+            "inbound",
+        ],
+    );
+    assert_eq!(impact["fallback_used"], false);
+    let touched = impact["touched"].as_array().expect("impact touched");
+    let entry = touched
+        .iter()
+        .find(|node| node["qualified_name"] == "entry")
+        .expect("entry is impacted");
+    assert_eq!(entry["distance"], 1);
+    assert_eq!(entry["edge_kind"], "call");
+    assert_eq!(entry["selector"], "symbol:src/lib.rs#entry:function");
+    assert_eq!(entry["file"], "src/lib.rs");
+    assert_eq!(entry["line"], 5);
+    let caller = touched
+        .iter()
+        .find(|node| node["qualified_name"] == "caller")
+        .expect("caller is impacted");
+    assert_eq!(caller["distance"], 2);
+    assert_eq!(caller["line"], 10);
+    let shown = run_json(
+        fixture.path(),
+        ["show", entry["selector"].as_str().expect("selector string")],
+    );
+    assert_eq!(shown["metadata"]["name"], "entry");
+    assert_eq!(shown["metadata"]["file"], "src/lib.rs");
+    let impact_table = run(
+        fixture.path(),
+        [
+            "--format",
+            "table",
+            "impact",
+            "symbol:src/lib.rs#helper:function",
+        ],
+    );
+    let impact_table = String::from_utf8_lossy(&impact_table.stdout);
+    assert!(impact_table.contains("LOCATION"), "{impact_table}");
+    assert!(impact_table.contains("src/lib.rs:5"), "{impact_table}");
+
+    // refs: each row names its enclosing symbol and carries the source line;
+    // a top-level `use` has no enclosing symbol.
+    let refs = run_json(
+        fixture.path(),
+        ["refs", "symbol:src/lib.rs#helper:function"],
+    );
+    assert_eq!(refs["fallback_used"], false);
+    assert!(refs.get("fallback").is_none());
+    let reference = &refs["refs"][0];
+    assert_eq!(reference["file"], "src/lib.rs");
+    assert_eq!(reference["line"], 6);
+    assert_eq!(reference["kind"], "call");
+    assert_eq!(reference["confidence"], "exact");
+    assert_eq!(
+        reference["from_selector"],
+        "symbol:src/lib.rs#entry:function"
+    );
+    assert_eq!(reference["snippet"], "let value = helper();");
+    let exported = run_json(
+        fixture.path(),
+        ["refs", "symbol:src/lib.rs#exported:function"],
+    );
+    let exported_refs = exported["refs"].as_array().expect("exported refs");
+    let top_level_use = exported_refs
+        .iter()
+        .find(|row| row["kind"] == "use")
+        .expect("top-level use row");
+    assert!(top_level_use["from_selector"].is_null(), "{top_level_use}");
+    assert_eq!(top_level_use["snippet"], "use fixture::exported;");
+    let call = exported_refs
+        .iter()
+        .find(|row| row["kind"] == "call")
+        .expect("call row");
+    assert_eq!(call["from_selector"], "symbol:tools/run.rs#main:function");
+
+    // refs fallback: the precise floor finds nothing, so the name-only rows
+    // are under `fallback` and `fallback_used` says so explicitly.
+    let method = run_json(
+        fixture.path(),
+        ["refs", "symbol:src/widget.rs#render:method"],
+    );
+    assert_eq!(method["fallback_used"], true);
+    assert_eq!(method["refs"], serde_json::json!([]));
+    let fallback_row = &method["fallback"]["refs"][0];
+    assert_eq!(fallback_row["confidence"], "fuzzy_name");
+    assert_eq!(
+        fallback_row["from_selector"],
+        "symbol:tools/draw.rs#draw:function"
+    );
+    assert_eq!(fallback_row["snippet"], "w.render()");
+
+    // callees: unresolved calls with no indexed callable definition (`Some`,
+    // `map`) are hidden by default and counted; the flag restores them.
+    let selector = "symbol:src/lib.rs#entry:function";
+    let filtered = run_json(fixture.path(), ["callees", selector]);
+    let filtered_calls = filtered["callees"].as_array().expect("callees");
+    assert_eq!(filtered["hidden_unresolved"], 2);
+    assert_eq!(filtered_calls.len(), 1);
+    assert_eq!(filtered_calls[0]["target_name"], "helper");
+    assert_eq!(filtered_calls[0]["target_qualified"], "helper");
+    assert_eq!(filtered_calls[0]["line"], 6);
+    let everything = run_json(
+        fixture.path(),
+        ["callees", selector, "--include-unresolved"],
+    );
+    assert_eq!(everything["hidden_unresolved"], 0);
+    let names = everything["callees"]
+        .as_array()
+        .expect("unfiltered callees")
+        .iter()
+        .filter_map(|edge| edge["target_name"].as_str())
+        .collect::<Vec<_>>();
+    assert_eq!(names, ["helper", "Some", "map"]);
+
+    let plain = run(fixture.path(), ["callees", selector]);
+    assert!(plain.status.success());
+    assert_eq!(
+        String::from_utf8_lossy(&plain.stdout).lines().count(),
+        1,
+        "only the resolved call is listed"
+    );
+    let notice = String::from_utf8_lossy(&plain.stderr);
+    assert!(
+        notice.contains("2 unresolved call(s)") && notice.contains("--include-unresolved"),
+        "{notice}"
+    );
+    let ndjson = run(fixture.path(), ["--format", "ndjson", "callees", selector]);
+    assert!(ndjson.status.success());
+    assert_eq!(parse_ndjson(&ndjson.stdout), filtered_calls.clone());
+    let json_mode = run_explicit_json(fixture.path(), ["callees", selector]);
+    assert!(
+        json_mode.stderr.is_empty(),
+        "JSON mode carries the count in the document"
+    );
+
+    // Headerless redirected output is documented in help.
+    let help = run(fixture.path(), ["--help"]);
+    let help = String::from_utf8_lossy(&help.stdout);
+    assert!(help.contains("headerless tab-separated rows"), "{help}");
+    let command_help = run(fixture.path(), ["refs", "--help"]);
+    let command_help = String::from_utf8_lossy(&command_help.stdout);
+    assert!(
+        command_help.contains("headerless tab-separated rows"),
+        "{command_help}"
+    );
+}
+
+fn agent_query_fixture() -> TempDir {
+    let fixture = TempDir::new().expect("create agent query fixture");
+    run_git(fixture.path(), ["init", "-b", "main"]);
+    run_git(
+        fixture.path(),
+        ["config", "user.email", "graph@example.invalid"],
+    );
+    run_git(fixture.path(), ["config", "user.name", "Graph Test"]);
+    for (path, source) in [
+        (
+            "src/lib.rs",
+            "pub fn helper() -> i32 {\n    1\n}\n\npub fn entry() -> Option<i32> {\n    let value = helper();\n    Some(value).map(|v| v + 1)\n}\n\npub fn caller() -> Option<i32> {\n    entry()\n}\n\npub fn exported() -> i32 {\n    2\n}\n",
+        ),
+        (
+            "src/widget.rs",
+            "pub struct Widget;\n\nimpl Widget {\n    pub fn render(&self) -> i32 {\n        3\n    }\n}\n",
+        ),
+        (
+            "tools/run.rs",
+            "use fixture::exported;\n\nfn main() {\n    let _ = exported();\n}\n",
+        ),
+        (
+            "tools/draw.rs",
+            "fn draw(w: &dyn Paint) -> i32 {\n    w.render()\n}\n",
+        ),
+    ] {
+        let path = fixture.path().join(path);
+        fs::create_dir_all(path.parent().expect("fixture parent")).expect("create fixture dir");
+        fs::write(path, source).expect("write fixture source");
+    }
+    run_git(fixture.path(), ["add", "."]);
+    run_git(fixture.path(), ["commit", "-m", "fixture"]);
+    fixture
+}
+
 #[test]
 fn real_binary_does_not_index_ignored_source_when_git_probe_fails() {
     let fixture = fixture_repository();

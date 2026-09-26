@@ -390,6 +390,16 @@ impl Graph {
         sel: &Selector,
         opts: &CalleeOpts,
     ) -> Result<Vec<CalleeEdge>, GraphError> {
+        Ok(self.callees_report(sel, opts)?.callees)
+    }
+
+    /// Return outbound call edges from `sel` filtered by `opts`, with the
+    /// number of unresolved edges [`CalleeOpts::hide_unresolved`] omitted.
+    pub fn callees_report(
+        &self,
+        sel: &Selector,
+        opts: &CalleeOpts,
+    ) -> Result<CalleeReport, GraphError> {
         self.ensure_synced()?;
         query::callees::run(self, sel, opts)
     }
@@ -1267,6 +1277,11 @@ pub struct RefResult {
     pub relations: Vec<RelationEntry>,
     /// Number of candidate rows excluded by the confidence floor.
     pub skipped_low_confidence: usize,
+    /// Whether `fallback` is present: `true` means the requested floor found
+    /// no textual `refs` and the rows under `fallback.refs` are name-only
+    /// matches. Always serialized, so a reader never has to infer it from a
+    /// missing key.
+    pub fallback_used: bool,
     /// Lower-confidence references surfaced because the precise floor found no
     /// textual `refs`. Present only when the precise result was empty and a
     /// lower-confidence (`fuzzy_name`) match exists — see [`RefFallback`].
@@ -1312,6 +1327,13 @@ pub struct RefEntry {
     pub kind: RefKind,
     /// Resolution confidence for this reference.
     pub confidence: RefConfidence,
+    /// `symbol:` selector of the innermost indexed symbol enclosing the
+    /// reference (the caller, for a call), or `None` when the reference lies
+    /// outside every symbol span, such as a top-level statement.
+    pub from_selector: Option<String>,
+    /// The trimmed source line containing the reference, cut to at most 160
+    /// characters with a trailing `…`.
+    pub snippet: String,
 }
 
 /// Structural relation entry returned by [`Graph::refs`].
@@ -1365,6 +1387,7 @@ pub struct CalleeEdge {
 /// let opts = CalleeOpts {
 ///     confidence: Confidence::Exact,
 ///     kind: None,
+///     hide_unresolved: false,
 /// };
 /// let callees = graph.callees_with_options(&selector, &opts)?;
 /// assert_eq!(callees.len(), 1);
@@ -1378,6 +1401,12 @@ pub struct CalleeOpts {
     /// Optional edge-kind filter. Since this query returns calls, any non-call
     /// kind produces an empty result.
     pub kind: Option<RefKind>,
+    /// Omit unresolved call edges (no `target_qualified`) whose call name has
+    /// no indexed callable definition (a `function`, `method`, `class`, or
+    /// `struct` of that name) anywhere in the graph, such as standard-library
+    /// or prelude calls (`map_err`, `Ok`, `to_string`). They are counted in
+    /// [`CalleeReport::hidden_unresolved`] instead.
+    pub hide_unresolved: bool,
 }
 
 impl CalleeOpts {
@@ -1386,8 +1415,20 @@ impl CalleeOpts {
         Self {
             confidence: RefConfidence::FuzzyName,
             kind: None,
+            hide_unresolved: false,
         }
     }
+}
+
+/// Outbound call edges plus what [`CalleeOpts::hide_unresolved`] omitted,
+/// returned by [`Graph::callees_report`].
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
+pub struct CalleeReport {
+    /// Returned call edges, in call-site order.
+    pub callees: Vec<CalleeEdge>,
+    /// Unresolved edges with no indexed definition that were omitted; `0`
+    /// unless [`CalleeOpts::hide_unresolved`] is set.
+    pub hidden_unresolved: usize,
 }
 
 /// Bounded impact result returned by [`Graph::impact`].
@@ -1402,6 +1443,10 @@ pub struct ImpactResult {
     pub truncated: bool,
     /// Number of impacted symbols returned in `touched`.
     pub visited_nodes: usize,
+    /// Whether `fallback` is present: `true` means the requested floor reached
+    /// no node and `fallback.touched` holds name-only matches. Always
+    /// serialized.
+    pub fallback_used: bool,
     /// Lower-confidence impact surfaced because the precise floor found no
     /// touched nodes. Present only when a lower-confidence (`fuzzy_name`) match
     /// exists; see [`ImpactFallback`].
@@ -1441,6 +1486,16 @@ pub struct ImpactEntry {
     pub distance: usize,
     /// Edge kind used for the prior hop into this symbol.
     pub edge_kind: RefKind,
+    /// Selector that `show`, `refs`, `callees`, or `impact` accept for this
+    /// node: `symbol:<file>#<qualified>:<kind>` for an indexed symbol, or
+    /// `file:<file>` for a file-attributed call site. `None` when the name
+    /// has no indexed definition, such as a trait from another crate.
+    pub selector: Option<String>,
+    /// Workspace-relative file of the node, when indexed.
+    pub file: Option<String>,
+    /// One-based line: the symbol's definition line, or for a file-attributed
+    /// node the first call site that reached it.
+    pub line: Option<usize>,
 }
 
 /// Direction followed by an impact traversal.

@@ -21,6 +21,7 @@ fn refs_result_shape_matches_golden_fixture_and_skips_unresolved_qualified() {
         refs: Vec::new(),
         relations: Vec::new(),
         skipped_low_confidence: 0,
+        fallback_used: false,
         fallback: None,
     };
 
@@ -168,6 +169,80 @@ fn fuzzy_floor_includes_name_only_fuzzy_refs() {
 }
 
 #[test]
+fn refs_name_the_innermost_enclosing_symbol_and_carry_a_bounded_snippet() {
+    let worktree = TestWorktree::new("refs-context");
+    let graph = Graph::open(worktree.path(), SyncPolicy::Manual).expect("open graph");
+    let conn = open_test_connection(worktree.path());
+    seed_target(
+        &conn,
+        worktree.path(),
+        "src/target.rs",
+        "Target",
+        "crate::Target",
+    );
+    let long_line = format!("    let _ = Target::build(\"{}\");", "x".repeat(200));
+    let source =
+        format!("use crate::Target;\nmod outer {{\n    fn inner() {{\n{long_line}\n    }}\n}}\n");
+    seed_file(&conn, worktree.path(), "src/caller.rs", source.as_str());
+    let module_start = source.find("mod outer").expect("module span");
+    let inner_start = source.find("fn inner").expect("inner span");
+    for (name, qualified, kind, start) in [
+        ("outer", "crate::outer", "module", module_start),
+        ("inner", "crate::outer::inner", "function", inner_start),
+    ] {
+        conn.execute(
+            "INSERT INTO symbols (
+                file_path, name, qualified, kind, span_start, span_end, signature, parent_symbol
+             ) VALUES ('src/caller.rs', ?1, ?2, ?3, ?4, ?5, NULL, NULL)",
+            params![
+                name,
+                qualified,
+                kind,
+                i64::try_from(start).expect("span start fits"),
+                i64::try_from(source.len() - 1).expect("span end fits"),
+            ],
+        )
+        .expect("insert caller symbol");
+    }
+    let use_start = source.find("Target").expect("use site");
+    let call_start = source.find("Target::build").expect("call site");
+    for (start, kind) in [(use_start, "use"), (call_start, "call")] {
+        insert_ref(
+            &conn,
+            "src/caller.rs",
+            "Target",
+            Some("crate::Target"),
+            kind,
+            "exact",
+            i64::try_from(start).expect("offset fits"),
+        );
+    }
+
+    let result = graph
+        .refs(&target_selector(), &RefOpts::default())
+        .expect("query refs");
+
+    assert!(!result.fallback_used);
+    assert_eq!(result.refs.len(), 2);
+    let top_level = &result.refs[0];
+    assert_eq!(
+        top_level.from_selector, None,
+        "a top-level use has no caller"
+    );
+    assert_eq!(top_level.snippet, "use crate::Target;");
+    let call = &result.refs[1];
+    assert_eq!(
+        call.from_selector.as_deref(),
+        Some("symbol:src/caller.rs#crate::outer::inner:function"),
+        "the innermost enclosing symbol wins over the module"
+    );
+    assert_eq!(call.line, 4);
+    assert_eq!(call.snippet.chars().count(), 161, "{}", call.snippet);
+    assert!(call.snippet.starts_with("let _ = Target::build(\"xxx"));
+    assert!(call.snippet.ends_with('…'));
+}
+
+#[test]
 fn precise_floor_empty_falls_back_to_name_only_fuzzy_refs() {
     // Repro for ORB-00383: a public symbol whose only callers resolve at
     // `fuzzy_name` confidence (target_qualified = NULL) looks unreferenced at the
@@ -206,6 +281,7 @@ fn precise_floor_empty_falls_back_to_name_only_fuzzy_refs() {
         result.skipped_low_confidence, 0,
         "fuzzy rows are not counted"
     );
+    assert!(result.fallback_used);
     let fallback = result.fallback.expect("fallback populated");
     assert_eq!(fallback.confidence, RefConfidence::FuzzyName);
     assert_eq!(fallback.refs.len(), 1);

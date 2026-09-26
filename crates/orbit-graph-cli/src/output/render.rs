@@ -20,6 +20,22 @@ pub fn emit(
     stdout: &mut dyn Write,
     stderr: &mut dyn Write,
 ) -> Result<(), CliError> {
+    emit_records(output, sink, stdout, stderr)?;
+    if sink.mode() != OutputMode::Json {
+        for notice in &output.notices {
+            writeln!(stderr, "{notice}").map_err(CliError::Stderr)?;
+        }
+        stderr.flush().map_err(CliError::Stderr)?;
+    }
+    Ok(())
+}
+
+fn emit_records(
+    output: &CommandOutput,
+    sink: OutputSink,
+    stdout: &mut dyn Write,
+    stderr: &mut dyn Write,
+) -> Result<(), CliError> {
     match sink.mode() {
         OutputMode::Json => write_json(stdout, &output.document, sink.is_tty()),
         OutputMode::Ndjson => {

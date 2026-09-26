@@ -23,16 +23,23 @@ fn impact_result_shape_matches_golden_fixture() {
                 origin: ImpactOrigin::Symbol,
                 distance: 1,
                 edge_kind: RefKind::Call,
+                selector: Some("symbol:src/a.rs#crate::a:function".to_string()),
+                file: Some("src/a.rs".to_string()),
+                line: Some(3),
             },
             ImpactEntry {
                 qualified_name: "crate::Impl".to_string(),
                 origin: ImpactOrigin::Symbol,
                 distance: 2,
                 edge_kind: RefKind::Impl,
+                selector: None,
+                file: None,
+                line: None,
             },
         ],
         truncated: false,
         visited_nodes: 2,
+        fallback_used: false,
         fallback: None,
     };
 
@@ -311,6 +318,109 @@ fn inbound_ref_outside_any_symbol_span_is_attributed_to_source_file() {
     assert_eq!(entry.distance, 1);
     assert_eq!(entry.edge_kind, RefKind::Call);
     assert!(!result.truncated);
+}
+
+#[test]
+fn touched_entries_carry_a_selector_file_and_line_to_open_them() {
+    let worktree = TestWorktree::new("impact-locations");
+    let graph = open_graph(&worktree, SyncPolicy::Manual);
+    let conn = open_connection(&worktree);
+
+    let target = "pub fn target() {}\n";
+    // Two files define a symbol with the same short qualified name `run`;
+    // the caller of `target` is the one in src/caller.rs.
+    let caller = "// header\n\npub fn run() {\n    target();\n}\n";
+    let decoy = "pub fn run() {}\n";
+    let script = "target();\n";
+    for (path, content) in [
+        ("src/target.rs", target),
+        ("src/caller.rs", caller),
+        ("src/decoy.rs", decoy),
+        ("src/script.rs", script),
+    ] {
+        worktree.write(path, content);
+        insert_file(&conn, path, "rust", content);
+    }
+    insert_symbol(
+        &conn,
+        "src/decoy.rs",
+        "run",
+        "run",
+        "function",
+        0,
+        decoy.len(),
+    );
+    insert_symbol(
+        &conn,
+        "src/target.rs",
+        "target",
+        "target",
+        "function",
+        0,
+        target.len(),
+    );
+    let run_start = caller.find("pub fn run").expect("run span");
+    insert_symbol(
+        &conn,
+        "src/caller.rs",
+        "run",
+        "run",
+        "function",
+        run_start,
+        caller.len(),
+    );
+    let call = caller.find("target()").expect("call site");
+    insert_call_ref(
+        &conn,
+        "src/caller.rs",
+        call,
+        call + 6,
+        "target",
+        "target",
+        "exact",
+    );
+    insert_call_ref(&conn, "src/script.rs", 0, 6, "target", "target", "exact");
+    insert_relation(
+        &conn,
+        "src/target.rs",
+        "target",
+        "external::Trait",
+        "impl",
+        "exact",
+    );
+
+    let result = graph
+        .impact_with_direction(
+            &symbol_selector("src/target.rs", "target"),
+            1,
+            RefConfidence::Exact,
+            ImpactDirection::Both,
+        )
+        .expect("query impact locations");
+
+    assert!(!result.fallback_used);
+    let by_name = result
+        .touched
+        .iter()
+        .map(|entry| (entry.qualified_name.as_str(), entry))
+        .collect::<BTreeMap<_, _>>();
+    let run = by_name["run"];
+    assert_eq!(
+        run.selector.as_deref(),
+        Some("symbol:src/caller.rs#run:function"),
+        "the caller's own file wins over a same-named symbol elsewhere"
+    );
+    assert_eq!(run.file.as_deref(), Some("src/caller.rs"));
+    assert_eq!(run.line, Some(3));
+    let script_site = by_name["src/script.rs"];
+    assert_eq!(script_site.origin, ImpactOrigin::File);
+    assert_eq!(script_site.selector.as_deref(), Some("file:src/script.rs"));
+    assert_eq!(script_site.file.as_deref(), Some("src/script.rs"));
+    assert_eq!(script_site.line, Some(1));
+    let external = by_name["external::Trait"];
+    assert_eq!(external.selector, None, "no indexed definition to point at");
+    assert_eq!(external.file, None);
+    assert_eq!(external.line, None);
 }
 
 #[test]

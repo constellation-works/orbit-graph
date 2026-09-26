@@ -48,6 +48,9 @@ pub struct CommandOutput {
     pub(crate) document: Value,
     pub(crate) view: View,
     pub(crate) ndjson_records: Option<Vec<Value>>,
+    /// Diagnostics written to stderr after the records in every mode except
+    /// `json`, whose document already carries the same facts.
+    pub(crate) notices: Vec<String>,
 }
 
 impl CommandOutput {
@@ -61,6 +64,7 @@ impl CommandOutput {
             document,
             view: View::Document,
             ndjson_records: None,
+            notices: Vec::new(),
         }
     }
 
@@ -70,6 +74,7 @@ impl CommandOutput {
             document,
             view,
             ndjson_records: None,
+            notices: Vec::new(),
         }
     }
 
@@ -77,6 +82,15 @@ impl CommandOutput {
     #[must_use]
     pub fn with_ndjson_records(mut self, records: Vec<Value>) -> Self {
         self.ndjson_records = Some(records);
+        self
+    }
+
+    /// Add a stderr diagnostic for the human and NDJSON modes, such as how
+    /// many rows a default filter omitted. The JSON document must already
+    /// carry the same fact as a field.
+    #[must_use]
+    pub fn with_notice(mut self, notice: impl Into<String>) -> Self {
+        self.notices.push(notice.into());
         self
     }
 }

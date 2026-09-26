@@ -12,6 +12,12 @@ use clap::{Arg, ArgMatches, Command, ValueEnum};
 
 const FORMAT_ARG_ID: &str = "output-format";
 
+/// Help for the shared `--format` option. `auto` output that is redirected or
+/// piped has no header row, so the help says how to get field names.
+const FORMAT_HELP: &str = "Output mode: auto, table, json, or ndjson (default: auto). \
+auto prints a headed table on a terminal but headerless tab-separated rows when piped; \
+use table for a header or json/ndjson for named fields";
+
 /// A user-facing output mode before `auto` has been resolved against stdout.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, ValueEnum)]
 pub enum FormatArg {
@@ -151,7 +157,7 @@ pub fn install_format_argument(command: Command) -> Command {
                 .long("format")
                 .value_name("MODE")
                 .value_parser(clap::value_parser!(FormatArg))
-                .help("Output mode: auto, table, json, or ndjson (default: auto)"),
+                .help(FORMAT_HELP),
         )
     };
     for child in children {

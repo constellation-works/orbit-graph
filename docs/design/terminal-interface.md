@@ -24,6 +24,10 @@ command-line value is a usage error. `auto` becomes `table` when stdout is a
 TTY and plain output otherwise. Plain is the redirected form of a human table:
 it has no header, ANSI, borders, or truncation and separates fields with one
 tab. `--format table` requests the headed human view even when redirected.
+Because a piped reader cannot see column names, the top-level help has an
+`Output:` section and every command's `--format` help says that redirected
+`auto` output is headerless tab-separated rows and how to get a header or
+named fields.
 
 The sink has width zero when stdout is not a TTY, regardless of `COLUMNS`.
 Zero means no truncation. On a TTY, a positive `COLUMNS` value precedes the
@@ -112,17 +116,59 @@ The exploration and relationship commands use these views:
   one-based source line. `show` renders resolved metadata followed by source;
   non-UTF-8 source directs the reader to the byte-preserving JSON view.
 - `refs` combines textual references, structural relations, and explicitly
-  labelled fallback references without dropping any of the three sets.
+  labelled fallback references without dropping any of the three sets. A
+  reference row's `from` column is its enclosing symbol's selector (`-` at top
+  level), and a trailing `snippet` column shows the source line.
   `callees`, `implementors`, and `deps` render one row per returned edge or
-  implementation.
+  implementation. `callees` omits unresolved calls with no indexed
+  definition by default and says how many on stderr (see below).
 - `trace` flattens every node in preorder with its depth and complete ancestor
-  traversal. `impact` labels primary and fallback traversal sets and preserves
-  their breadth-first order.
+  traversal. `impact` labels primary and fallback traversal sets, preserves
+  their breadth-first order, and ends each row with a `location` column
+  (`file:line`, or `-` for a node with no indexed definition).
 
 Empty list results write a command-specific diagnostic to stderr and nothing to
 stdout. Full values for every potentially truncated field are available from
 the same invocation with `--format json`; source paths and symbol selectors can
 also be followed with `show file:PATH` or `show symbol:PATH#NAME:KIND`.
+
+### Agent-facing query fields
+
+`refs`, `callees`, and `impact` are the relationship queries an agent acts on,
+so their JSON rows say where to go next without a `show` per row. These fields
+were added without removing or renaming any existing field:
+
+- `impact`: every `touched[]` (and `fallback.touched[]`) entry has `selector`,
+  `file`, and `line`. For an indexed symbol the selector is
+  `symbol:<file>#<qualified>:<kind>`, which `show`, `refs`, `callees`, and
+  `impact` accept, and `line` is its definition line; the row chosen is the
+  symbol with that qualified name, preferring the file the edge was observed
+  in. A file-attributed node (`origin: "file"`) has `file:<file>` and the line
+  of the first call site that reached it. A node with no indexed definition,
+  such as a trait from another crate, has all three `null`.
+- `refs`: every reference row (in `refs[]` and `fallback.refs[]`) has
+  `from_selector`, the selector of the innermost indexed symbol enclosing the
+  site (the caller, for a call) or `null` outside every symbol, and `snippet`,
+  the trimmed source line cut to 160 characters with a trailing `…`. Snippets
+  are read from the worktree at query time.
+- `refs` and `impact` always carry a top-level `fallback_used` boolean. The
+  existing `fallback` object keeps its name and shape and is still present only
+  when used; the boolean exists so an agent that sees an empty `refs` or
+  `touched` list does not have to notice a missing key to learn that name-only
+  matches were returned instead.
+- `callees` returns `{"callees": [...], "hidden_unresolved": N}`. By default it
+  omits unresolved edges (`target_qualified: null`) whose call name has no
+  indexed `function`, `method`, `class`, or `struct` anywhere in the graph —
+  typically standard-library and prelude calls such as `map_err`, `Ok`, or
+  `to_string` — and counts them in `hidden_unresolved`. An unresolved call
+  whose name *is* defined somewhere stays listed. `--include-unresolved`
+  restores every edge and reports `0`.
+
+Commands can attach stderr notices to their output. They are written after the
+records in table, plain, and NDJSON modes and never in JSON mode, whose
+document carries the same fact as a field. `callees` uses one to report a
+non-zero `hidden_unresolved`, so the count is visible even where the record
+stream has no place for it.
 
 ## Shared table width and record safety
 
@@ -168,7 +214,8 @@ The commands with natural repeated records declare these boundaries:
 - `refs`: one `refs_context`, then the unchanged textual-reference and
   structural-relation records; an optional `refs_fallback_context` precedes the
   unchanged fallback-reference records.
-- `callees`: one unchanged callee edge per record.
+- `callees`: one unchanged callee edge per record, after the default
+  unresolved-call filter; the hidden count is a stderr notice.
 - `implementors`: one `implementors_context` carrying `trait_name`, followed by
   one complete `implementor` record per implementation.
 - `deps`: one `deps_context` carrying `scope`, followed by one complete
@@ -227,9 +274,9 @@ JSON stdin.
 | `evaluate` | Isolated chronological evaluation, human summary, JSON, and metric/case NDJSON records. |
 | `search` | Match, empty state, plain, table, JSON, and per-match NDJSON output. |
 | `show` | Resolved source/detail output, malformed-selector failure, JSON, and one detail record. |
-| `refs` | Filtered references, missing-argument failure, table, JSON, and context/reference NDJSON output. |
-| `callees` | Returned calls and empty-state behavior in all three output formats. |
-| `impact` | Bounded traversal in table, JSON, and context/impact NDJSON output. |
+| `refs` | Filtered references, missing-argument failure, table, JSON, and context/reference NDJSON output; `from_selector` (including a top-level `null`), `snippet`, and `fallback_used` on precise and fallback results. |
+| `callees` | Returned calls and empty-state behavior in all three output formats; default hiding of unresolved calls with the `hidden_unresolved` count, its stderr notice, and `--include-unresolved`. |
+| `impact` | Bounded traversal in table, JSON, and context/impact NDJSON output; `selector`/`file`/`line` on touched entries, with the selector accepted by `show`. |
 | `trace` | Discovered command traversal, missing-argument failure, and lossless root record. |
 | `overview` | Summary/full views and the root output-format versus local detail-format compatibility rule. |
 | `implementors` | Implementations and empty-state behavior in table, JSON, and NDJSON output. |
