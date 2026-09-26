@@ -14,9 +14,11 @@ use crate::{
 };
 
 mod adapter;
+mod code_index;
 mod error;
 
 use adapter::{OrbitAdapter, canonical_repository};
+use code_index::{Incomplete, IndexState};
 pub use error::{ToolError, ToolErrorCode};
 
 /// External tool name for recommendations and authoritative task lookup.
@@ -229,6 +231,7 @@ fn recommend(input: RecommendToolInput) -> Result<Value, ToolError> {
             repository.as_path(),
             input.branch.as_str(),
             index_dir,
+            IndexState::read(index_dir)?.structure_index(index_dir),
         )?,
         None => RecommendationEngine::open(repository.as_path(), input.branch.as_str())?,
     };
@@ -271,12 +274,16 @@ fn status(input: StatusToolInput) -> Result<Value, ToolError> {
     validate_schema(input.schema_version)?;
     let repository = routed_repository(input.repository.as_path())?;
     let index = open_history_index(repository.as_path(), input.branch.as_str())?;
-    Ok(json!({
+    let mut response = json!({
         "schema_version": PLUGIN_SCHEMA_VERSION,
         "operation": "status",
         "repository": repository,
         "status": index.status()?,
-    }))
+    });
+    if let Some(index_dir) = plugin_index_dir(repository.as_path())? {
+        response["code_index"] = code_index_status(repository.as_path(), index_dir.as_path())?;
+    }
+    Ok(response)
 }
 
 #[derive(Debug, Clone, Copy, Deserialize)]
@@ -285,6 +292,7 @@ enum MaintenanceOperation {
     HistorySync,
     Import,
     OrbitSync,
+    GraphSync,
 }
 
 #[derive(Debug, Deserialize)]
@@ -294,8 +302,9 @@ struct MaintainToolInput {
     schema_version: u32,
     operation: MaintenanceOperation,
     repository: PathBuf,
-    #[serde(default = "default_branch")]
-    branch: String,
+    /// Landing branch for history operations; `None` means `main`.
+    #[serde(default)]
+    branch: Option<String>,
     #[serde(default)]
     limit: Option<usize>,
     #[serde(default)]
@@ -308,10 +317,15 @@ struct MaintainToolInput {
     run_ids: Vec<String>,
     #[serde(default)]
     task_snapshots: Vec<TaskAssociation>,
+    #[serde(default)]
+    full: bool,
+    #[serde(default)]
+    budget_ms: Option<u64>,
 }
 
 fn maintain(input: MaintainToolInput) -> Result<Value, ToolError> {
     validate_schema(input.schema_version)?;
+    let mut budget_ms = code_index::DEFAULT_BUDGET_MS;
     match input.operation {
         MaintenanceOperation::HistorySync => {
             let limit = input.limit.unwrap_or(100);
@@ -339,13 +353,65 @@ fn maintain(input: MaintainToolInput) -> Result<Value, ToolError> {
                 ));
             }
         }
+        MaintenanceOperation::GraphSync => {
+            budget_ms = input.budget_ms.unwrap_or(budget_ms);
+            if !(code_index::MIN_BUDGET_MS..=code_index::MAX_BUDGET_MS).contains(&budget_ms) {
+                return Err(ToolError::invalid_request(
+                    "validate graph_sync budget",
+                    format!(
+                        "budget_ms must be between {} and {}",
+                        code_index::MIN_BUDGET_MS,
+                        code_index::MAX_BUDGET_MS
+                    ),
+                ));
+            }
+            let inapplicable = [
+                ("branch", input.branch.is_some()),
+                ("limit", input.limit.is_some()),
+                ("delivery", input.delivery.is_some()),
+                ("workspace", input.workspace.is_some()),
+                ("task_ids", !input.task_ids.is_empty()),
+                ("run_ids", !input.run_ids.is_empty()),
+                ("task_snapshots", !input.task_snapshots.is_empty()),
+            ]
+            .into_iter()
+            .filter_map(|(field, supplied)| supplied.then_some(field))
+            .collect::<Vec<_>>();
+            if !inapplicable.is_empty() {
+                // STD-01 R29: never accept a field and silently ignore it.
+                return Err(ToolError::invalid_request(
+                    "validate graph_sync input",
+                    format!(
+                        "operation=graph_sync does not use {}; it indexes the checkout as it is",
+                        inapplicable.join(", ")
+                    ),
+                ));
+            }
+            if env::var_os("ORBIT_PLUGIN_STATE").is_none_or(|state| state.is_empty()) {
+                return Err(ToolError::invalid_request(
+                    "validate graph_sync environment",
+                    "graph_sync maintains the plugin's code-graph index and needs \
+                     ORBIT_PLUGIN_STATE, which Orbit sets for plugin tools; outside Orbit, run \
+                     `orbit-graph sync` in the repository instead",
+                ));
+            }
+        }
+    }
+    if !matches!(input.operation, MaintenanceOperation::GraphSync)
+        && (input.full || input.budget_ms.is_some())
+    {
+        return Err(ToolError::invalid_request(
+            "validate plugin maintenance input",
+            "full and budget_ms apply only to operation=graph_sync",
+        ));
     }
     let repository = routed_repository(input.repository.as_path())?;
-    let index = open_history_index(repository.as_path(), input.branch.as_str())?;
+    let branch = input.branch.clone().unwrap_or_else(default_branch);
+    let history_index = || open_history_index(repository.as_path(), branch.as_str());
     match input.operation {
         MaintenanceOperation::HistorySync => {
             let limit = input.limit.unwrap_or(100);
-            let result = index.sync(Some(limit))?;
+            let result = history_index()?.sync(Some(limit))?;
             Ok(json!({
                 "schema_version": PLUGIN_SCHEMA_VERSION,
                 "operation": "history_sync",
@@ -373,13 +439,89 @@ fn maintain(input: MaintainToolInput) -> Result<Value, ToolError> {
                 "schema_version": PLUGIN_SCHEMA_VERSION,
                 "operation": "import",
                 "repository": repository,
-                "result": index.import(delivery)?,
+                "result": history_index()?.import(delivery)?,
             }))
         }
         MaintenanceOperation::OrbitSync => {
+            let index = history_index()?;
             sync_orbit(repository, index, input).map_err(ToolError::graph)
         }
+        MaintenanceOperation::GraphSync => graph_sync(repository, input.full, budget_ms),
     }
+}
+
+/// Build and publish the plugin's code-graph index within `budget_ms`.
+fn graph_sync(repository: PathBuf, full: bool, budget_ms: u64) -> Result<Value, ToolError> {
+    let index_dir = plugin_index_dir(repository.as_path())?.ok_or_else(|| {
+        ToolError::invalid_request(
+            "resolve code-graph index directory",
+            "graph_sync needs ORBIT_PLUGIN_STATE",
+        )
+    })?;
+    let result = code_index::sync(
+        repository.as_path(),
+        index_dir.as_path(),
+        code_index::SyncRequest {
+            full,
+            budget: std::time::Duration::from_millis(budget_ms),
+        },
+    )?;
+    let coverage = match result.incomplete {
+        None => json!({
+            "complete": true,
+            "kind": "code_graph",
+            "state": "published",
+            "note": "the new index is published; recommendations use it while the checkout stays at its revision",
+        }),
+        Some(incomplete) => json!({
+            "complete": false,
+            "kind": "code_graph",
+            "state": "budget_exhausted",
+            "phase": match incomplete {
+                Incomplete::ExtractionBudget => "extracting",
+                Incomplete::ResolutionBudget => "resolving",
+            },
+            "note": "the build did not finish inside budget_ms and was discarded; the previously published index, if any, is unchanged and no partial index is ever published",
+            "resume": if result.seeded {
+                "retry with a larger budget_ms (at most 110000); an incremental build only re-extracts files changed since the published index"
+            } else {
+                "retry with a larger budget_ms (at most 110000); a first or full build of a repository this size may not fit the plugin timeout, so keep using recommendations without structural evidence meanwhile"
+            },
+        }),
+    };
+    Ok(json!({
+        "schema_version": PLUGIN_SCHEMA_VERSION,
+        "operation": "graph_sync",
+        "repository": repository,
+        "coverage": coverage,
+        "result": {
+            "requested_full": full,
+            "seeded_from_published": result.seeded,
+            "budget_ms": budget_ms,
+            "files_indexed": result.files_indexed,
+            "files_changed": result.files_changed,
+            "files_removed": result.files_removed,
+            "timings": result.timings,
+        },
+        "code_index": code_index_status(repository.as_path(), index_dir.as_path())?,
+    }))
+}
+
+/// The published code-graph index and whether it matches the checkout.
+fn code_index_status(
+    repository: &std::path::Path,
+    index_dir: &std::path::Path,
+) -> Result<Value, GraphError> {
+    let state = IndexState::read(index_dir)?;
+    let head = code_index::checkout_revision(repository);
+    let mut value = state.to_json();
+    value["directory"] = json!(index_dir);
+    value["checkout_revision"] = json!(head);
+    value["fresh"] = json!(match &state {
+        IndexState::Ready(published) => published.revision.is_some() && published.revision == head,
+        IndexState::Missing | IndexState::Incompatible(_) => false,
+    });
+    Ok(value)
 }
 
 fn sync_orbit(
@@ -419,7 +561,7 @@ fn sync_orbit(
     for run_id in &run_ids {
         match adapter.delivery_from_run(
             run_id,
-            input.branch.as_str(),
+            input.branch.as_deref().unwrap_or("main"),
             &snapshots,
             index.repository(),
         ) {

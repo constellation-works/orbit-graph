@@ -10,12 +10,13 @@
       "const": 1
     },
     "operation": {
-      "description": "history_sync indexes bounded first-parent Git history; import stores one DeliveryImport v2 envelope; orbit_sync imports deliveries for explicit run or task ids through public Orbit tools.",
+      "description": "history_sync indexes bounded first-parent Git history; import stores one DeliveryImport v2 envelope; orbit_sync imports deliveries for explicit run or task ids through public Orbit tools; graph_sync builds the code-graph index recommendations read structure from, within budget_ms, and publishes it only when complete.",
       "type": "string",
       "enum": [
         "history_sync",
         "import",
-        "orbit_sync"
+        "orbit_sync",
+        "graph_sync"
       ]
     },
     "repository": {
@@ -24,28 +25,28 @@
       "minLength": 1
     },
     "branch": {
-      "description": "Landing branch whose history scope is maintained.",
+      "description": "Landing branch whose history scope is maintained (history_sync, import, orbit_sync; default main). Rejected for graph_sync.",
       "type": "string",
       "minLength": 1,
       "default": "main"
     },
     "limit": {
-      "description": "Per-call bound: commits for history_sync (1-1000, default 100) or runs for orbit_sync (1-100, default 25).",
+      "description": "Per-call bound: commits for history_sync (1-1000, default 100) or runs for orbit_sync (1-100, default 25). Rejected for graph_sync.",
       "type": "integer",
       "minimum": 1,
       "maximum": 1000
     },
     "delivery": {
-      "description": "DeliveryImport v2 envelope; required for operation=import.",
+      "description": "DeliveryImport v2 envelope; required for operation=import. Rejected for graph_sync.",
       "type": "object"
     },
     "workspace": {
-      "description": "Owning Orbit workspace (ws_* id or name); required for orbit_sync.",
+      "description": "Owning Orbit workspace (ws_* id or name); required for orbit_sync. Rejected for graph_sync.",
       "type": "string",
       "minLength": 1
     },
     "task_ids": {
-      "description": "orbit_sync: tasks whose current job_run_id is examined.",
+      "description": "orbit_sync: tasks whose current job_run_id is examined. Rejected for graph_sync.",
       "type": "array",
       "items": {
         "type": "string",
@@ -53,7 +54,7 @@
       }
     },
     "run_ids": {
-      "description": "orbit_sync: explicit workflow run ids to import.",
+      "description": "orbit_sync: explicit workflow run ids to import. Rejected for graph_sync.",
       "type": "array",
       "items": {
         "type": "string",
@@ -61,11 +62,23 @@
       }
     },
     "task_snapshots": {
-      "description": "orbit_sync: earlier public task snapshots used instead of live task text.",
+      "description": "orbit_sync: earlier public task snapshots used instead of live task text. Rejected for graph_sync.",
       "type": "array",
       "items": {
         "type": "object"
       }
+    },
+    "full": {
+      "description": "graph_sync only: re-extract every file instead of starting from the published index. Needed after an incompatible index or to rebuild from scratch.",
+      "type": "boolean",
+      "default": false
+    },
+    "budget_ms": {
+      "description": "graph_sync only: wall-clock budget in milliseconds (1000-110000, default 90000), kept under the plugin's 120 s backend timeout. A build that does not finish is discarded and reported as budget_exhausted.",
+      "type": "integer",
+      "minimum": 1000,
+      "maximum": 110000,
+      "default": 90000
     }
   },
   "additionalProperties": false

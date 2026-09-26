@@ -50,7 +50,7 @@ spec:
       cli:
         positional: [query]
     - name: maintain
-      description: Import or synchronize bounded verified change history.
+      description: Import or synchronize bounded verified change history, or refresh the code-graph index.
       execution_kind: mutating
       mcp_scope: workspace
       input_schema: {$ref: schemas/maintain.request.json}

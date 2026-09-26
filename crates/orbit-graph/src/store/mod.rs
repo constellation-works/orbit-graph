@@ -60,6 +60,26 @@ pub(crate) fn open_with_db_path(
     open_at_path(db_path, &git)
 }
 
+/// Describe an existing database for a read-only open: nothing is created,
+/// initialized, or migrated.
+pub(crate) fn existing_db_path(
+    worktree_root: &Path,
+    db_path: &Path,
+) -> Result<GraphDbPath, GraphError> {
+    if !db_path.is_file() {
+        return Err(GraphError::invalid_data(
+            "open graph database read-only",
+            format!("no graph database at {}", db_path.display()),
+        ));
+    }
+    let git = GitContext::for_worktree(worktree_root);
+    Ok(GraphDbPath::new(
+        db_path.to_path_buf(),
+        git.branch,
+        EXTRACTOR_VERSION,
+    ))
+}
+
 fn open_at_path(db_path: GraphDbPath, git: &GitContext) -> Result<OpenedGraph, GraphError> {
     if let Some(parent) = db_path.path().parent() {
         fs::create_dir_all(parent)

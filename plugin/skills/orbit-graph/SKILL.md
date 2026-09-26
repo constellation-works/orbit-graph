@@ -33,6 +33,9 @@ Maintenance is deliberate. `orbit.graph.maintain` supports:
 - `orbit_sync`: a bounded explicit list of run IDs and/or task IDs, using public
   `orbit.workspace.list`, `orbit.task.show`, `orbit.workflow.run.show`, and Git
   reachability checks.
+- `graph_sync`: build the code-graph index recommendations read structure from,
+  within `budget_ms` (1000-110000, default 90000), publishing it only when
+  complete; `full: true` re-extracts every file.
 
 For periodic Git-only synchronization, enable the plugin's seeded
 `.orbit/routines/graph-history-sync.yaml` after reviewing its daily cadence.

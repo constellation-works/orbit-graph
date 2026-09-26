@@ -1,0 +1,11 @@
+schemaVersion: 2
+kind: Job
+metadata:
+  name: graph_code_sync_pipeline
+spec:
+  state: enabled
+  kind: workflow
+  max_active_runs: 1
+  steps:
+    - id: code-sync
+      target: activity:graph_code_sync
