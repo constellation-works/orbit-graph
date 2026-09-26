@@ -45,7 +45,14 @@ Each worktree stores scratch state under `.orbit-graph/` in its root. Attached
 branches use `.orbit-graph/<sanitized-branch>.<extractor-version>.db`; detached
 worktrees use a commit-prefixed database name. SQLite WAL and lock sidecars
 live beside the database. This directory is independent of Orbit's `.orbit/`
-control-plane state and should not be committed. `orbit-graph db-path` prints
+control-plane state and should not be committed: orbit-graph writes a
+`.gitignore` containing `*` into it, so it never shows up in `git status`.
+Only two directories are marked this way: a real `.orbit-graph/` directory
+directly in the worktree root (not a symlink, and not one that resolves
+elsewhere), and orbit-graph's per-repository directory under
+`$ORBIT_PLUGIN_STATE`. A database directory passed by a library caller is
+never marked, and neither is any parent created on the way. An existing
+`.gitignore` is left as it is. `orbit-graph db-path` prints
 the exact path, and `orbit-graph clean` removes obsolete extractor versions and
 unreachable detached-commit indexes.
 
@@ -78,7 +85,7 @@ a few recent entries kept). Deleting these files is always safe.
 | `search <query> [--kind symbol|string|config] [--lang <id>] [--limit <n>]` | Full-text search indexed definitions, strings, or config keys. |
 | `show <selector> [--max-bytes <n>]` | Return metadata and a bounded source slice. |
 | `refs <symbol> [--confidence <level>] [--kind <kind>]` | Return inbound references and relations. |
-| `callees <symbol>` | Return calls made by a symbol. |
+| `callees <symbol> [--include-unresolved]` | Return calls made by a symbol. Unresolved calls whose name has no indexed definition (standard-library and prelude calls) are hidden by default, counted in `hidden_unresolved`, and noted on stderr. |
 | `impact <selector> [--depth <n>] [--confidence <level>] [--direction inbound\|outbound\|both]` | Traverse callers, callees, or both around a selector (default: both). |
 | `trace <command> [--depth <n>] [--confidence <level>]` | Trace a discovered CLI command handler and its calls. |
 | `overview [<file-or-dir-selector>] [--format summary|full]` | Summarize indexed files and symbols. |
@@ -103,6 +110,28 @@ it resolves only through an import or a qualified path, and otherwise reports
 `fuzzy`. A dispatcher's own same-named method is therefore not a match for the
 calls it dispatches. Receivers that name the enclosing definition (`self`,
 `Self`, `cls`) keep resolving within the defining file.
+
+Rust method calls resolve by type when the extractor can read the receiver's
+type: a parameter or `let` with a type annotation (`runtime: &OrbitRuntime`),
+a constructor (`T::new()`, `T::default()`, a `T { .. }` literal), or
+`self`/`Self`. `&T`, `Box`/`Arc`/`Rc<T>` and `use .. as Alias` names are seen
+through, and `dyn Trait`/`impl Trait` receivers resolve to the trait's
+declaration. A receiver typed by a type parameter (`x: T`) stays unknown. The
+type's member is found by first narrowing to the module the call names (a
+written path such as `crate::config::Config::load()`, or the import that
+brings `Config` into the file), then preferring an inherent method over a
+trait impl over a trait declaration, as Rust's method lookup does. A member
+the type gets from a trait's default body resolves to that trait's
+declaration. A type named through a path or import that the index does not
+contain (an external crate's `reqwest::Client`) reports `fuzzy`, never a local
+type of the same name.
+
+A written `Type::member(..)` path never falls back to a bare-name match: when
+no indexed type of that name has the member, it reports `fuzzy`. A free
+function call never resolves to a same-named method, and a module path outside
+the crate (`std::process::id()`) only matches a `same_module` item under that
+path; paths starting with `crate::`, `self::` or `super::` keep the plain
+same-module rule.
 
 Selectors use one of these forms:
 

@@ -1,7 +1,7 @@
 use clap::Args;
 use serde_json::Value;
 
-use orbit_graph::Selector;
+use orbit_graph::{CalleeOpts, Selector};
 
 use super::{CliError, CommandContext, json_value};
 use crate::output::{Column, CommandOutput, TableView, View, ViewBlock};
@@ -9,6 +9,13 @@ use crate::output::{Column, CommandOutput, TableView, View, ViewBlock};
 #[derive(Debug, Args)]
 pub struct CalleesCommand {
     symbol: String,
+    /// Also list unresolved calls whose name has no indexed definition.
+    ///
+    /// By default those calls (typically standard-library and prelude calls
+    /// such as `map_err`, `Ok`, or `to_string`) are omitted and counted in the
+    /// JSON `hidden_unresolved` field and a stderr note.
+    #[arg(long)]
+    include_unresolved: bool,
 }
 
 pub(crate) fn output(document: Value) -> CommandOutput {
@@ -32,21 +39,37 @@ pub(crate) fn output(document: Value) -> CommandOutput {
             super::display_value(&edge["line"]),
         ]);
     }
-    CommandOutput::with_view(
+    let hidden = document["hidden_unresolved"].as_u64().unwrap_or(0);
+    let empty_message = if hidden == 0 {
+        "symbol has no outbound calls".to_owned()
+    } else {
+        "symbol has no outbound calls with an indexed definition".to_owned()
+    };
+    let output = CommandOutput::with_view(
         document,
         View::Blocks(vec![ViewBlock::table(
-            table.with_empty_message("symbol has no outbound calls"),
+            table.with_empty_message(empty_message),
         )]),
     )
-    .with_ndjson_records(callees)
+    .with_ndjson_records(callees);
+    if hidden == 0 {
+        output
+    } else {
+        output.with_notice(format!(
+            "{hidden} unresolved call(s) with no indexed definition hidden; \
+             pass --include-unresolved to list them"
+        ))
+    }
 }
 
 impl CalleesCommand {
     pub(crate) fn run(&self, context: &CommandContext) -> Result<serde_json::Value, CliError> {
         let graph = context.open_graph()?;
         let selector = self.symbol.parse::<Selector>()?;
-        json_value(serde_json::json!({
-            "callees": graph.callees(&selector)?,
-        }))
+        let opts = CalleeOpts {
+            hide_unresolved: !self.include_unresolved,
+            ..CalleeOpts::all()
+        };
+        json_value(graph.callees_report(&selector, &opts)?)
     }
 }

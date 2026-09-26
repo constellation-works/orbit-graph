@@ -191,6 +191,7 @@ impl ExtractionState {
             kind: kind.to_string(),
             confidence: confidence.to_string(),
             unresolved_receiver,
+            spelled_path: false,
         });
     }
 

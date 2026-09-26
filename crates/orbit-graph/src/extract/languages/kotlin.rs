@@ -134,6 +134,7 @@ impl ExtractionState {
             // This extractor does not classify call receivers yet; see
             // `RawRef::unresolved_receiver`.
             unresolved_receiver: None,
+            spelled_path: false,
         });
     }
 }
