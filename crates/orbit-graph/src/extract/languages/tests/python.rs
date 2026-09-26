@@ -255,3 +255,115 @@ fn call_ref<'a>(
     );
     found
 }
+
+fn runtime_invocations(file: &crate::extract::ExtractedFile) -> Vec<(&str, &str)> {
+    file.refs
+        .iter()
+        .filter(|reference| reference.kind == "runtime_invocation")
+        .map(|reference| {
+            assert_eq!(reference.confidence, "fuzzy_name");
+            assert!(reference.target_qualified.is_none(), "{reference:?}");
+            let enclosing = file
+                .symbols
+                .iter()
+                .filter(|symbol| {
+                    symbol.span_start <= reference.from_span_start
+                        && reference.from_span_end <= symbol.span_end
+                })
+                .min_by_key(|symbol| symbol.span_end - symbol.span_start)
+                .map_or("<module>", |symbol| symbol.name.as_str());
+            (enclosing, reference.target_name.as_str())
+        })
+        .collect()
+}
+
+#[test]
+fn records_subprocess_invocations_by_program_name() {
+    let file = extract(
+        r#"
+import subprocess
+import sys
+
+RUNNER = ROOT / "scripts/runner.py"
+
+def test_list_form():
+    subprocess.run(["orrery-cli", "check", "--strict"], check=True)
+
+def test_tuple_form():
+    subprocess.call(("tool", "--version"))
+
+def test_check_call_and_output():
+    subprocess.check_call(["alpha"])
+    subprocess.check_output(["beta", "x"], text=True)
+
+def test_popen():
+    subprocess.Popen(["gamma", "serve"])
+
+def test_shell_string():
+    subprocess.run("delta --flag value", shell=True)
+
+def test_sh_dash_c():
+    subprocess.run(["bash", "-c", "epsilon run --fast"])
+
+def test_sys_executable_script():
+    subprocess.run([sys.executable, str(root / "scripts/research_records.py"), "check"])
+
+def test_python_literal_script():
+    subprocess.run(["python3", "tools/gen.py", "--out", "x"])
+
+def test_uv_run():
+    subprocess.run(["uv", "run", "zeta", "--help"])
+
+def test_uv_run_script():
+    subprocess.run(["uv", "run", "scripts/job.py"])
+
+def test_module_constant_script():
+    subprocess.run([sys.executable, str(RUNNER)])
+"#,
+    );
+
+    assert_eq!(
+        runtime_invocations(&file),
+        vec![
+            ("test_list_form", "orrery-cli"),
+            ("test_tuple_form", "tool"),
+            ("test_check_call_and_output", "alpha"),
+            ("test_check_call_and_output", "beta"),
+            ("test_popen", "gamma"),
+            ("test_shell_string", "delta"),
+            ("test_sh_dash_c", "epsilon"),
+            ("test_sys_executable_script", "scripts/research_records.py"),
+            ("test_python_literal_script", "tools/gen.py"),
+            ("test_uv_run", "zeta"),
+            ("test_uv_run_script", "scripts/job.py"),
+            ("test_module_constant_script", "scripts/runner.py"),
+        ]
+    );
+    // The `subprocess.run` call itself is still an ordinary call ref.
+    assert!(
+        file.refs
+            .iter()
+            .any(|reference| reference.kind == "call" && reference.target_name == "run")
+    );
+}
+
+#[test]
+fn skips_subprocess_calls_whose_program_the_syntax_does_not_name() {
+    let file = extract(
+        r#"
+import subprocess
+import sys
+
+def dynamic(argv):
+    subprocess.run(argv)
+    subprocess.run([*argv, "x"])
+    subprocess.run([sys.executable, "-m", "pkg.tool"])
+    subprocess.run([sys.executable, "-c", "print(1)"])
+    subprocess.run([f"{name}", "x"])
+    runner.run(["not-subprocess"])
+    subprocess.getoutput("ls")
+"#,
+    );
+
+    assert_eq!(runtime_invocations(&file), Vec::<(&str, &str)>::new());
+}

@@ -12,10 +12,12 @@
 //!   disclosed rules in [`ENTRY_POINT_RULES`], each carrying the rule that
 //!   fired and the shortest evidence path back to the queried symbol.
 //! - [`CandidateTests`] — tests with a defensible connection to the symbol,
-//!   from the three disclosed sources and never anything else: a call path from
-//!   a test-classified file, an import relationship from a test file, or a
-//!   naming/file heuristic. The three sources are computed independently, so a
-//!   heuristic candidate is never promoted to a call-path candidate.
+//!   from the four disclosed sources and never anything else: a call path from
+//!   a test-classified file, an import relationship from a test file, a
+//!   naming/file heuristic, or a runtime invocation of a program the symbol's
+//!   package ships, associated by program name only. The sources are computed
+//!   independently, so a heuristic candidate is never promoted to a call-path
+//!   candidate.
 //!
 //! Neither product is a claim about execution. Static reachability is
 //! *potential* impact: not proof of execution, not proof of coverage, and not a
@@ -47,8 +49,8 @@ use std::time::{Duration, Instant};
 
 use orbit_graph::{
     CalleeOpts, Confidence, DEFAULT_IMPACT_DEPTH, DEFAULT_SHOW_MAX_BYTES, IMPACT_NODE_CAP,
-    ImpactDirection, ImpactOrigin, OverviewFormat, RefConfidence, RefEntry, RefKind, RefOpts,
-    RelationEntry, Selector,
+    ImpactDirection, ImpactOrigin, OverviewFormat, ProgramName, ProgramNameSource, RefConfidence,
+    RefEntry, RefKind, RefOpts, RelationEntry, RuntimeInvocation, Selector,
 };
 use serde::Serialize;
 use thiserror::Error;
@@ -158,6 +160,11 @@ pub enum EvidenceCategory {
     /// result and every fallback block. Weak: may be a different symbol that
     /// happens to share a name.
     HeuristicMatch,
+    /// A test starts a program (`subprocess.run`, `Command::new`,
+    /// `cargo_bin`) whose name matches a binary or script the symbol's package
+    /// ships. Associated by program name only: no call edge exists, and the
+    /// program is not shown to execute the symbol.
+    RuntimeInvocation,
 }
 
 impl EvidenceCategory {
@@ -168,6 +175,7 @@ impl EvidenceCategory {
             Self::ObservedReference => "observed_reference",
             Self::ImportRelationship => "import_relationship",
             Self::HeuristicMatch => "heuristic_match",
+            Self::RuntimeInvocation => "runtime_invocation",
         }
     }
 }
@@ -656,6 +664,9 @@ pub enum CandidateSource {
     ImportRelationship,
     /// A naming or file-location signal only.
     NamingHeuristic,
+    /// A test starts a program whose name matches one the symbol's package
+    /// ships; associated by program name only.
+    RuntimeInvocation,
 }
 
 impl CandidateSource {
@@ -665,6 +676,7 @@ impl CandidateSource {
             Self::CallPath => "call_path",
             Self::ImportRelationship => "import_relationship",
             Self::NamingHeuristic => "naming_heuristic",
+            Self::RuntimeInvocation => "runtime_invocation",
         }
     }
 
@@ -675,6 +687,7 @@ impl CandidateSource {
             Self::CallPath => "call-path",
             Self::ImportRelationship => "import",
             Self::NamingHeuristic => "naming-heuristic",
+            Self::RuntimeInvocation => "runtime-invocation",
         }
     }
 }
@@ -1946,7 +1959,7 @@ impl<'a> EvidenceCollector<'a> {
             .map(|symbol| symbol.qualified.clone())
     }
 
-    /// Candidate tests for `selector` from the three disclosed sources.
+    /// Candidate tests for `selector` from the four disclosed sources.
     ///
     /// Each source is computed independently: a test reached by a naming
     /// heuristic is emitted as a `naming_heuristic` candidate whether or not it
@@ -1980,6 +1993,9 @@ impl<'a> EvidenceCollector<'a> {
             symbol_path.as_str(),
             symbol_name.as_str(),
         ));
+        let runtime = self.runtime_invocation_candidates(selector, symbol_path.as_str(), query)?;
+        let truncated = truncated || runtime.1;
+        candidates.extend(runtime.0);
 
         candidates.sort_by(|left, right| {
             left.source
@@ -2215,6 +2231,223 @@ impl<'a> EvidenceCollector<'a> {
             }
         }
         candidates
+    }
+
+    /// Source 4: a test starts a program the symbol's package ships.
+    ///
+    /// A recorded `runtime_invocation` (`subprocess.run(["prog", ...])`,
+    /// `Command::new(env!("CARGO_BIN_EXE_prog"))`, `cargo_bin("prog")`)
+    /// matches when its program's basename is a name from the same-language
+    /// manifest nearest the symbol's file
+    /// ([`orbit_graph::Graph::program_names`]), or when a
+    /// `.py` script target names the symbol's own file. Only invocations inside
+    /// test-classified files count. An invoking test is listed itself; a helper
+    /// is replaced by the tests reaching it along call-only inbound evidence
+    /// paths with no `heuristic_match` hop (a name-only hop stacked on a
+    /// by-name program association would be a guess on a guess), and listed
+    /// itself when none does. A test that both invokes the program and reaches
+    /// a helper that does is listed once, as the direct invocation. Every row
+    /// says the association is by program name only: no edge ties the program
+    /// to the symbol.
+    fn runtime_invocation_candidates(
+        &mut self,
+        selector: &str,
+        symbol_path: &str,
+        query: &EvidenceQuery<'_>,
+    ) -> Result<(Vec<CandidateTest>, bool), EvidenceError> {
+        if symbol_path.is_empty() {
+            return Ok((Vec::new(), false));
+        }
+        let invocations: Vec<RuntimeInvocation> = self
+            .snapshot()
+            .graph()
+            .runtime_invocations()
+            .map_err(|error| EvidenceError::Query {
+                operation: "list runtime invocations",
+                side: self.side,
+                reason: error.to_string(),
+            })?
+            .into_iter()
+            .filter(|invocation| is_test_path(invocation.file.as_str()))
+            .collect();
+        if invocations.is_empty() {
+            return Ok((Vec::new(), false));
+        }
+        let program_names =
+            self.snapshot()
+                .graph()
+                .program_names(symbol_path)
+                .map_err(|error| EvidenceError::Query {
+                    operation: "read program names",
+                    side: self.side,
+                    reason: error.to_string(),
+                })?;
+
+        let side_label = self.side_label();
+        let inbound = EvidenceQuery {
+            direction: EvidenceDirection::Inbound,
+            ..query.clone()
+        };
+        let mut candidates = Vec::new();
+        let mut via_helpers = Vec::new();
+        let mut truncated = false;
+        for invocation in &invocations {
+            let Some(association) =
+                self.program_association(invocation, symbol_path, &program_names)
+            else {
+                continue;
+            };
+            let site = format!(
+                "runs `{}` at {}:{}",
+                invocation.program, invocation.file, invocation.line
+            );
+            let disclosure = format!(
+                "associated with {symbol_path} by program name only ({association}); no call \
+                 edge exists, and the program is not shown to execute this symbol"
+            );
+            let candidate = |test: EndpointRef, note: String| CandidateTest {
+                test,
+                source: CandidateSource::RuntimeInvocation,
+                label: CandidateSource::RuntimeInvocation
+                    .corpus_label()
+                    .to_string(),
+                category: EvidenceCategory::RuntimeInvocation,
+                path_id: None,
+                changed_symbols: vec![selector.to_string()],
+                truncated: false,
+                note: Some(note),
+            };
+
+            let Some(invoker) = invocation.symbol.as_ref() else {
+                candidates.push(candidate(
+                    EndpointRef {
+                        selector: format!("file:{}", invocation.file),
+                        snapshot: side_label.clone(),
+                        label: invocation.file.clone(),
+                        origin: origin_label(ImpactOrigin::File).to_string(),
+                    },
+                    format!("{site}; {disclosure}"),
+                ));
+                continue;
+            };
+            let invoker_selector = format!(
+                "symbol:{}#{}:{}",
+                invocation.file, invoker.name, invoker.kind
+            );
+            let invoker_ref = EndpointRef::symbol(
+                invoker_selector.as_str(),
+                side_label.as_str(),
+                format!("{}#{}", invocation.file, invoker.name).as_str(),
+            );
+            if is_test_symbol(invoker.name.as_str(), invoker.kind.as_str()) {
+                candidates.push(candidate(invoker_ref, format!("{site}; {disclosure}")));
+                continue;
+            }
+
+            let report = self.evidence(invoker_selector.as_str(), &inbound)?;
+            truncated |= report.truncated;
+            let mut reached = false;
+            for path in &report.paths {
+                let Some(test) = symbol_address(path.from.selector.as_str()) else {
+                    continue;
+                };
+                if !is_test_path(test.path.as_str())
+                    || !is_test_symbol(test.name.as_str(), test.kind.as_str())
+                    || path.category == EvidenceCategory::HeuristicMatch
+                    || path
+                        .edges
+                        .iter()
+                        .any(|edge| edge.relationship != kind_label(RefKind::Call))
+                {
+                    continue;
+                }
+                reached = true;
+                let mut row = candidate(
+                    path.from.clone(),
+                    format!(
+                        "calls helper `{}` ({} call hop(s), {} evidence), which {site}; \
+                         {disclosure}",
+                        invoker.name,
+                        path.distance,
+                        path.category.label(),
+                    ),
+                );
+                row.truncated = report.truncated;
+                via_helpers.push(row);
+            }
+            if !reached {
+                let mut row = candidate(
+                    invoker_ref,
+                    format!(
+                        "helper {site}; no test was found calling it within the bounds; \
+                         {disclosure}"
+                    ),
+                );
+                row.truncated = report.truncated;
+                via_helpers.push(row);
+            }
+        }
+        // Direct invocations first: the caller's stable sort and dedup keep the
+        // first row per test.
+        candidates.extend(via_helpers);
+        Ok((candidates, truncated))
+    }
+
+    /// Why `invocation` names a program `symbol_path` ships, or `None`.
+    ///
+    /// A `.py` script target must name `symbol_path` by path suffix, and when
+    /// several indexed files share that suffix the ones nearest the invoking
+    /// file win. Any other target matches by basename against
+    /// `program_names`, counting Cargo names only for a Rust file and
+    /// `pyproject.toml` scripts only for a Python one.
+    fn program_association(
+        &self,
+        invocation: &RuntimeInvocation,
+        symbol_path: &str,
+        program_names: &[ProgramName],
+    ) -> Option<String> {
+        let program = invocation.program.as_str();
+        if program.ends_with(".py") {
+            let script = program.trim_start_matches("./").trim_start_matches('/');
+            let matches: Vec<&String> = self
+                .indexed_files
+                .iter()
+                .filter(|file| {
+                    file.as_str() == script || file.ends_with(format!("/{script}").as_str())
+                })
+                .collect();
+            let nearest = matches
+                .iter()
+                .map(|file| shared_directory_depth(file, invocation.file.as_str()))
+                .max()?;
+            return matches
+                .iter()
+                .any(|file| {
+                    file.as_str() == symbol_path
+                        && shared_directory_depth(file, invocation.file.as_str()) == nearest
+                })
+                .then(|| format!("script path `{program}` names this file"));
+        }
+        let base = program.rsplit(['/', '\\']).next().unwrap_or(program);
+        let language = language_of(symbol_path);
+        let name = program_names.iter().find(|name| {
+            name.name == base
+                && match name.source {
+                    ProgramNameSource::CargoPackage | ProgramNameSource::CargoBin => {
+                        language == Some("rust")
+                    }
+                    ProgramNameSource::PyprojectScript => language == Some("python"),
+                }
+        })?;
+        Some(format!(
+            "`{base}` is {} in {}",
+            match name.source {
+                ProgramNameSource::CargoPackage => "the `[package]` name",
+                ProgramNameSource::CargoBin => "a Cargo binary target",
+                ProgramNameSource::PyprojectScript => "a `pyproject.toml` script",
+            },
+            name.manifest
+        ))
     }
 
     fn no_path_reasons(
@@ -2680,6 +2913,26 @@ pub fn is_test_path(path: &str) -> bool {
         || stem.ends_with("spec")
 }
 
+/// Whether a symbol is itself a test: a Rust `#[test]` function, or a name
+/// the xUnit/pytest conventions mark (`test_*`, `Test*`).
+fn is_test_symbol(name: &str, kind: &str) -> bool {
+    kind == "test" || name.starts_with("test") || name.starts_with("Test")
+}
+
+/// Number of leading directory segments two paths share.
+fn shared_directory_depth(left: &str, right: &str) -> usize {
+    let directories = |path: &str| -> Vec<String> {
+        let mut segments: Vec<String> = path.split('/').map(str::to_string).collect();
+        segments.pop();
+        segments
+    };
+    directories(left)
+        .iter()
+        .zip(directories(right).iter())
+        .take_while(|(left, right)| left == right)
+        .count()
+}
+
 /// Strip the conventional `test`/`spec` affixes from a name.
 fn normalize_test_name(name: &str) -> String {
     let mut current = name;
@@ -2792,6 +3045,10 @@ mod tests {
             "import_relationship"
         );
         assert_eq!(EvidenceCategory::HeuristicMatch.label(), "heuristic_match");
+        assert_eq!(
+            EvidenceCategory::RuntimeInvocation.label(),
+            "runtime_invocation"
+        );
     }
 
     #[test]
@@ -2807,6 +3064,14 @@ mod tests {
         assert_eq!(
             CandidateSource::NamingHeuristic.corpus_label(),
             "naming-heuristic"
+        );
+        assert_eq!(
+            CandidateSource::RuntimeInvocation.label(),
+            "runtime_invocation"
+        );
+        assert_eq!(
+            CandidateSource::RuntimeInvocation.corpus_label(),
+            "runtime-invocation"
         );
     }
 

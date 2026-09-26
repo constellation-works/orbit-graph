@@ -517,6 +517,52 @@ fn no_absolute_host_path_unless_opted_in() {
     );
 }
 
+#[test]
+fn runtime_invocation_candidates_are_exported_with_their_disclosure() {
+    let fixture = common::build_runtime_invocation_fixture();
+    let out = tempfile::tempdir().expect("create output directory");
+    let output = Command::new(env!("CARGO_BIN_EXE_orbit-graph-explorer"))
+        .args([
+            "report",
+            "--repo",
+            fixture.path().to_str().expect("utf8 repository path"),
+            "--base",
+            fixture.base.as_str(),
+            "--head",
+            fixture.head.as_str(),
+            "--out",
+            out.path().to_str().expect("utf8 output path"),
+            "--name",
+            "report",
+            "--generated-at",
+            GENERATED_AT,
+        ])
+        .output()
+        .expect("run orbit-graph-explorer report");
+    assert!(output.status.success(), "{output:?}");
+
+    let json = read_json(out.path(), "report");
+    let row = json["candidate_tests"]["candidates"]
+        .as_array()
+        .expect("candidates array")
+        .iter()
+        .find(|candidate| candidate["source"] == "runtime_invocation")
+        .unwrap_or_else(|| panic!("the export carries the runtime_invocation row: {json}"));
+    assert_eq!(row["category"], "runtime_invocation", "{row}");
+    assert_eq!(row["label"], "runtime-invocation", "{row}");
+    assert!(
+        row["note"]
+            .as_str()
+            .unwrap_or_default()
+            .contains("by program name only"),
+        "{row}"
+    );
+
+    let html = read_html(out.path(), "report");
+    assert!(html.contains("runtime-invocation"), "{html}");
+    assert!(html.contains("by program name only"), "{html}");
+}
+
 fn run_report(case: &corpus::CorpusCase, out: &Path, name: &str, extra: &[&str]) -> Output {
     let mut args: Vec<&str> = vec![
         "report",

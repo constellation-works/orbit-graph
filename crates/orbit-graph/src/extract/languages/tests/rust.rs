@@ -620,3 +620,95 @@ impl TraceCommand {
 
     assert!(file.commands.is_empty());
 }
+
+fn runtime_invocations(file: &crate::extract::ExtractedFile) -> Vec<(&str, &str)> {
+    file.refs
+        .iter()
+        .filter(|reference| reference.kind == "runtime_invocation")
+        .map(|reference| {
+            assert_eq!(reference.confidence, "fuzzy_name");
+            assert!(reference.target_qualified.is_none(), "{reference:?}");
+            let enclosing = file
+                .symbols
+                .iter()
+                .filter(|symbol| {
+                    symbol.span_start <= reference.from_span_start
+                        && reference.from_span_end <= symbol.span_end
+                })
+                .min_by_key(|symbol| symbol.span_end - symbol.span_start)
+                .map_or("<module>", |symbol| symbol.name.as_str());
+            (enclosing, reference.target_name.as_str())
+        })
+        .collect()
+}
+
+#[test]
+fn records_command_invocations_by_program_name() {
+    let file = extract_at(
+        "tests/cli.rs",
+        r##"
+use std::process::Command;
+
+#[test]
+fn literal_program() {
+    Command::new("git").arg("status").output().unwrap();
+}
+
+#[test]
+fn qualified_literal_program() {
+    std::process::Command::new(r#"cargo"#).status().unwrap();
+}
+
+#[test]
+fn cargo_bin_exe() {
+    Command::new(env!("CARGO_BIN_EXE_orbit-graph")).arg("--help");
+}
+
+#[test]
+fn assert_cmd_cargo_bin() {
+    assert_cmd::Command::cargo_bin("orbit-graph-explorer").unwrap().assert();
+}
+
+fn helper() -> Command {
+    Command::cargo_bin("tool").unwrap()
+}
+"##,
+    );
+
+    assert_eq!(
+        runtime_invocations(&file),
+        vec![
+            ("literal_program", "git"),
+            ("qualified_literal_program", "cargo"),
+            ("cargo_bin_exe", "orbit-graph"),
+            ("assert_cmd_cargo_bin", "orbit-graph-explorer"),
+            ("helper", "tool"),
+        ]
+    );
+    // `Command::new` itself is still an ordinary call ref.
+    assert!(
+        file.refs
+            .iter()
+            .any(|reference| reference.kind == "call" && reference.target_name == "new")
+    );
+}
+
+#[test]
+fn skips_command_calls_whose_program_the_syntax_does_not_name() {
+    let file = extract_at(
+        "tests/cli.rs",
+        r#"
+use std::process::Command;
+
+fn dynamic(path: &str) {
+    Command::new(path);
+    Command::new(bin_path());
+    Command::new(env!("CARGO_PKG_NAME"));
+    Builder::new("not-a-command");
+    Command::cargo_bin(env!("CARGO_PKG_NAME"));
+}
+"#,
+    );
+
+    assert_eq!(runtime_invocations(&file), Vec::<(&str, &str)>::new());
+}

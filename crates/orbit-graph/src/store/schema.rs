@@ -58,7 +58,9 @@ CREATE TABLE refs (
     target_name         TEXT NOT NULL,      -- short name; fallback for fuzzy
     target_qualified    TEXT,               -- best-effort qualified name (authoritative)
     target_symbol_hint  INTEGER,            -- non-authoritative; no FK
-    kind                TEXT NOT NULL,      -- "call" | "type" | "use" | "trait_bound"
+    kind                TEXT NOT NULL,      -- "call" | "type" | "use" | "trait_bound" |
+                                            -- "runtime_invocation" (target_name is an
+                                            -- opaque program string, never resolved)
     confidence          TEXT NOT NULL       -- see §11
 ) STRICT;
 

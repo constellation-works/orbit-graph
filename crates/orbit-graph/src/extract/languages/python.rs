@@ -1,5 +1,6 @@
 //! Python tree-sitter extraction.
 
+use std::collections::BTreeMap;
 use std::ops::Range;
 use std::path::Path;
 
@@ -39,6 +40,7 @@ impl Extractor for PythonExtractor {
         };
 
         let mut state = ExtractionState::new(path);
+        state.script_constants = module_script_constants(tree.root_node(), source);
         extract_children(tree.root_node(), source, None, false, None, &mut state);
         state.finish()
     }
@@ -51,6 +53,10 @@ struct ExtractionState {
     relations: Vec<RawRelation>,
     imports: Vec<RawImport>,
     commands: Vec<RawCommand>,
+    /// Module-level names bound to an expression containing a `.py` path
+    /// literal (`RUNNER = ROOT / "run.py"`), so an interpreter launch that
+    /// names the script through the constant still records it.
+    script_constants: BTreeMap<String, String>,
 }
 
 impl ExtractionState {
@@ -62,6 +68,7 @@ impl ExtractionState {
             relations: Vec::new(),
             imports: Vec::new(),
             commands: Vec::new(),
+            script_constants: BTreeMap::new(),
         }
     }
 
@@ -680,6 +687,7 @@ fn collect_call_ref(
             );
         }
         "attribute" => {
+            collect_runtime_invocation(node, function, source, state);
             let receiver = function
                 .child_by_field_name("object")
                 .and_then(|object| unresolved_receiver_text(object, source));
@@ -702,6 +710,229 @@ fn collect_call_ref(
         }
         _ => collect_expression_refs(function, source, parent_symbol, state),
     }
+}
+
+/// `subprocess` functions whose first positional argument names the program
+/// they start.
+const SUBPROCESS_FUNCTIONS: &[&str] = &["run", "call", "check_call", "check_output", "Popen"];
+
+/// Shells whose `-c` argument is itself a command line.
+const SHELL_PROGRAMS: &[&str] = &["sh", "bash"];
+
+/// Interpreters whose program is the script they are given.
+const PYTHON_LAUNCHERS: &[&str] = &["python", "python3"];
+
+/// One argv element of a `subprocess` call, as far as the syntax shows it.
+enum ArgvItem<'tree> {
+    /// A plain string literal, or one whitespace token of a shell string.
+    Literal(String),
+    /// `sys.executable`: the running Python interpreter.
+    Interpreter,
+    /// Any other expression, such as `str(root / "run.py")` or `*args`.
+    Expression(Node<'tree>),
+}
+
+/// Records a `runtime_invocation` ref for a `subprocess.run/call/check_call/
+/// check_output/Popen` call whose program the syntax names.
+///
+/// The target is the program string exactly as written — the first argv
+/// element, the first token of a single-string shell command (or of an
+/// `sh`/`bash -c` command), or, for an interpreter launch (`sys.executable`,
+/// `python`, `python3`, `uv run`), the `.py` script it runs. It is never
+/// resolved to a symbol: a consumer may only associate it with a program by
+/// name. The ref is anchored at the whole call, so its span lies inside the
+/// enclosing function.
+fn collect_runtime_invocation(
+    call: Node,
+    function: Node,
+    source: &str,
+    state: &mut ExtractionState,
+) {
+    let callee = normalize_qualified_name(&node_text(function, source));
+    let Some(("subprocess", name)) = callee.rsplit_once('.') else {
+        return;
+    };
+    if !SUBPROCESS_FUNCTIONS.contains(&name) {
+        return;
+    }
+    let Some(arguments) = call.child_by_field_name("arguments") else {
+        return;
+    };
+    let mut cursor = arguments.walk();
+    let Some(first) = arguments.named_children(&mut cursor).find(|argument| {
+        !matches!(
+            argument.kind(),
+            "keyword_argument" | "comment" | "list_splat" | "dictionary_splat"
+        )
+    }) else {
+        return;
+    };
+    let argv = match first.kind() {
+        "string" => shell_argv(&node_text(first, source)),
+        "list" | "tuple" => {
+            let mut cursor = first.walk();
+            first
+                .named_children(&mut cursor)
+                .filter(|element| element.kind() != "comment")
+                .map(|element| argv_item(element, source))
+                .collect()
+        }
+        _ => return,
+    };
+    if let Some(program) = program_from_argv(&argv, source, &state.script_constants, true) {
+        state.push_ref_row(
+            call.start_byte()..call.end_byte(),
+            program,
+            None,
+            "runtime_invocation",
+            "fuzzy_name",
+            None,
+        );
+    }
+}
+
+fn argv_item<'tree>(node: Node<'tree>, source: &str) -> ArgvItem<'tree> {
+    if node.kind() == "string"
+        && let Some(literal) = python_string_literal_value(&node_text(node, source))
+    {
+        return ArgvItem::Literal(literal);
+    }
+    if normalize_qualified_name(&node_text(node, source)) == "sys.executable" {
+        return ArgvItem::Interpreter;
+    }
+    ArgvItem::Expression(node)
+}
+
+/// Whitespace tokens of a single-string (`shell=True`-style) command line.
+fn shell_argv<'tree>(literal: &str) -> Vec<ArgvItem<'tree>> {
+    python_string_literal_value(literal)
+        .map(|command| {
+            command
+                .split_whitespace()
+                .map(|token| ArgvItem::Literal(token.to_string()))
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+fn program_from_argv(
+    argv: &[ArgvItem<'_>],
+    source: &str,
+    script_constants: &BTreeMap<String, String>,
+    allow_shell: bool,
+) -> Option<String> {
+    let rest = argv.get(1..).unwrap_or_default();
+    match argv.first()? {
+        ArgvItem::Interpreter => launched_script(rest, source, script_constants),
+        ArgvItem::Literal(program) => {
+            let base = program.rsplit('/').next().unwrap_or(program.as_str());
+            if allow_shell
+                && SHELL_PROGRAMS.contains(&base)
+                && let [ArgvItem::Literal(flag), ArgvItem::Literal(command), ..] = rest
+                && flag == "-c"
+            {
+                let inner = command
+                    .split_whitespace()
+                    .map(|token| ArgvItem::Literal(token.to_string()))
+                    .collect::<Vec<_>>();
+                return program_from_argv(&inner, source, script_constants, false);
+            }
+            if PYTHON_LAUNCHERS.contains(&base) {
+                return launched_script(rest, source, script_constants);
+            }
+            if base == "uv"
+                && let [ArgvItem::Literal(subcommand), after @ ..] = rest
+                && subcommand == "run"
+            {
+                return match after.iter().find(
+                    |item| !matches!(item, ArgvItem::Literal(flag) if flag.starts_with('-')),
+                )? {
+                    ArgvItem::Literal(program) if !program.ends_with(".py") => {
+                        Some(program.clone())
+                    }
+                    _ => launched_script(after, source, script_constants),
+                };
+            }
+            (!program.is_empty()).then(|| program.clone())
+        }
+        ArgvItem::Expression(_) => None,
+    }
+}
+
+/// The `.py` script an interpreter launch runs: its first positional argument
+/// when that is, or contains, a `.py` path literal or a module-level constant
+/// bound to one. `-c` and `-m` launches name no script file.
+fn launched_script(
+    rest: &[ArgvItem<'_>],
+    source: &str,
+    script_constants: &BTreeMap<String, String>,
+) -> Option<String> {
+    for item in rest {
+        match item {
+            ArgvItem::Literal(flag) if flag == "-c" || flag == "-m" => return None,
+            ArgvItem::Literal(flag) if flag.starts_with('-') => continue,
+            ArgvItem::Literal(script) => {
+                return script.ends_with(".py").then(|| script.clone());
+            }
+            ArgvItem::Interpreter => return None,
+            ArgvItem::Expression(node) => {
+                return last_script_reference(*node, source, script_constants);
+            }
+        }
+    }
+    None
+}
+
+/// The last `.py` path literal, or module-level constant bound to one, inside
+/// `node`, in source order.
+fn last_script_reference(
+    node: Node,
+    source: &str,
+    script_constants: &BTreeMap<String, String>,
+) -> Option<String> {
+    let found = match node.kind() {
+        "string" => python_string_literal_value(&node_text(node, source))
+            .filter(|literal| literal.ends_with(".py")),
+        "identifier" => script_constants.get(&node_text(node, source)).cloned(),
+        _ => None,
+    };
+    let mut cursor = node.walk();
+    let nested = node
+        .named_children(&mut cursor)
+        .filter_map(|child| last_script_reference(child, source, script_constants))
+        .last();
+    nested.or(found)
+}
+
+/// Module-level `NAME = <expression>` bindings whose expression contains a
+/// `.py` path literal, mapped to that literal.
+fn module_script_constants(root: Node, source: &str) -> BTreeMap<String, String> {
+    let mut constants = BTreeMap::new();
+    let mut cursor = root.walk();
+    for statement in root.named_children(&mut cursor) {
+        if statement.kind() != "expression_statement" {
+            continue;
+        }
+        let mut statement_cursor = statement.walk();
+        for assignment in statement.named_children(&mut statement_cursor) {
+            if assignment.kind() != "assignment" {
+                continue;
+            }
+            let (Some(left), Some(right)) = (
+                assignment.child_by_field_name("left"),
+                assignment.child_by_field_name("right"),
+            ) else {
+                continue;
+            };
+            if left.kind() != "identifier" {
+                continue;
+            }
+            if let Some(script) = last_script_reference(right, source, &constants) {
+                constants.insert(node_text(left, source), script);
+            }
+        }
+    }
+    constants
 }
 
 /// Receiver text to record on an attribute-call ref, or `None` when the

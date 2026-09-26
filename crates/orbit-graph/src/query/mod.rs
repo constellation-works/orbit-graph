@@ -10,6 +10,7 @@ pub(crate) mod impact;
 pub(crate) mod implementors;
 pub(crate) mod overview;
 pub(crate) mod refs;
+pub(crate) mod runtime;
 pub(crate) mod search;
 pub(crate) mod show;
 pub(crate) mod trace;

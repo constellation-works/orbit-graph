@@ -740,6 +740,71 @@ fn assert_data_contract(case_id: &str) {
     );
 }
 
+/// A `runtime_invocation` candidate reaches the page with the fields it
+/// renders and the by-name disclosure, the page renders its badge for that
+/// exact `source` value, and the exported report carries the same row.
+#[test]
+fn runtime_invocation_candidates_reach_the_page_and_the_export() {
+    let fixture = common::build_runtime_invocation_fixture();
+    let (path, base, head) = (
+        fixture.path().to_path_buf(),
+        fixture.base.clone(),
+        fixture.head.clone(),
+    );
+    let service = Service::launch_at(path, base, head, Box::new(fixture));
+    service.wait_until_ready();
+
+    let selector = percent_encode("symbol:src/lib.rs#run:function");
+    let candidates = service
+        .authorized(
+            "GET",
+            format!("/api/candidate-tests?selector={selector}&side=head").as_str(),
+            &[],
+        )
+        .json();
+    let runtime: Vec<&Value> = candidates["candidates"]
+        .as_array()
+        .expect("candidates array")
+        .iter()
+        .filter(|candidate| candidate["source"] == "runtime_invocation")
+        .collect();
+    assert_eq!(runtime.len(), 1, "{candidates}");
+    let row = runtime[0];
+    assert_eq!(
+        row["test"]["selector"], "symbol:tests/cli.rs#runs_the_binary:test",
+        "{row}"
+    );
+    assert_eq!(row["category"], "runtime_invocation", "{row}");
+    assert_eq!(row["label"], "runtime-invocation", "{row}");
+    assert!(
+        row["note"]
+            .as_str()
+            .unwrap_or_default()
+            .contains("by program name only"),
+        "{row}"
+    );
+    assert!(
+        APP_JS.contains("candidate.source === \"runtime_invocation\"")
+            && APP_JS.contains("\"by program name only\""),
+        "app.js must badge runtime_invocation candidate rows"
+    );
+
+    let report = service.authorized_with_body("POST", "/api/report", &[], b"");
+    assert_eq!(report.status, 200, "{report:?}");
+    let export = report.json();
+    let exported = export["candidate_tests"]["candidates"]
+        .as_array()
+        .expect("exported candidates")
+        .iter()
+        .find(|candidate| candidate["source"] == "runtime_invocation")
+        .unwrap_or_else(|| panic!("export carries the runtime_invocation row: {export}"));
+    assert_eq!(exported["category"], "runtime_invocation", "{exported}");
+    assert_eq!(
+        exported["test"]["selector"], "symbol:tests/cli.rs#runs_the_binary:test",
+        "{exported}"
+    );
+}
+
 /// The bare symbol name out of a canonical `symbol:<path>#<name>:<kind>`
 /// selector, the same identity `app.js`'s `parseSelector` extracts — used
 /// here as a search term guaranteed to be indexed for the fixture it came

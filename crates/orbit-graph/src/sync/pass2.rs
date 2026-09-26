@@ -31,6 +31,7 @@ const CONFIDENCE_EXACT: &str = "exact";
 const CONFIDENCE_IMPORT_RESOLVED: &str = "import_resolved";
 const CONFIDENCE_SAME_MODULE: &str = "same_module";
 const CONFIDENCE_FUZZY_NAME: &str = "fuzzy_name";
+const RUNTIME_INVOCATION_KIND: &str = "runtime_invocation";
 
 /// How many refs pass 2 resolves between progress reports. Reporting per ref
 /// would call the observer far too often on a large corpus; this cadence
@@ -154,6 +155,17 @@ fn resolve_ref(
     from_file: &str,
     raw_ref: &RawRef,
 ) -> Result<ResolvedRef, GraphError> {
+    // A runtime invocation names a program, not a symbol: it is stored as the
+    // opaque program string and never climbs the resolution ladder, so a
+    // program named like a function (`["git", ...]` beside `def git`) is not
+    // mistaken for a call to it.
+    if raw_ref.kind == RUNTIME_INVOCATION_KIND {
+        return Ok(ResolvedRef {
+            target_qualified: None,
+            target_symbol_hint: None,
+            confidence: CONFIDENCE_FUZZY_NAME,
+        });
+    }
     if let Some(candidate) = resolve_exact(tx, from_file, raw_ref)? {
         return Ok(ResolvedRef::candidate(candidate, CONFIDENCE_EXACT));
     }

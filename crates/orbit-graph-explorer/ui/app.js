@@ -59,7 +59,8 @@
 //                no_entry_point_reasons
 //   candidate-tests: candidates[].test.selector, candidates[].source,
 //                candidates[].category, candidates[].note,
-//                candidates[].truncated
+//                candidates[].truncated (a `runtime_invocation` source
+//                carries a "by program name only" badge beside its note)
 //   source:      selector, snapshot, commit_sha, span.start, span.end,
 //                encoding, bytes_or_text, truncated, truncated_by,
 //                source_max_bytes, error.code, error.message
@@ -1613,6 +1614,9 @@ function renderEntryPointRow(entry) {
   return el("li", null, children);
 }
 
+/** Disclosure badge on every `runtime_invocation` candidate-test row. */
+const RUNTIME_INVOCATION_BADGE = "by program name only";
+
 function renderCandidateTests(candidates) {
   const container = document.getElementById("candidate-tests");
   clear(container);
@@ -1629,6 +1633,11 @@ function renderCandidateTests(candidates) {
       badge(candidate.source.replace(/_/g, " ")),
       badge(candidate.category.replace(/_/g, " ")),
     ];
+    if (candidate.source === "runtime_invocation") {
+      // The test starts a program the changed symbol's package ships; nothing
+      // ties that program to the symbol but its name.
+      line.push(badge(RUNTIME_INVOCATION_BADGE));
+    }
     if (candidate.truncated) {
       line.push(el("span", { className: "truncation-marker", text: "[truncated]" }));
     }

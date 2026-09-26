@@ -250,7 +250,7 @@ fn launchers_reject_stale_path_binary_and_honor_explicit_binary() {
             response["error"]["message"]
                 .as_str()
                 .expect("message")
-                .contains("extractor_version=10")
+                .contains("extractor_version=11")
         );
         assert!(
             rejected.stderr.is_empty(),
@@ -269,7 +269,7 @@ fn launchers_reject_stale_path_binary_and_honor_explicit_binary() {
         let response: Value = serde_json::from_slice(&selected.stdout).expect("version envelope");
         assert_eq!(response["ok"], true);
         assert_eq!(response["output"]["plugin_schema_version"], 1);
-        assert_eq!(response["output"]["extractor_version"], 10);
+        assert_eq!(response["output"]["extractor_version"], 11);
     }
 }
 

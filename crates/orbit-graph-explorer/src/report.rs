@@ -1594,8 +1594,15 @@ pub fn render_html(report: &ExportedReport) -> String {
         if !tests.is_empty() {
             html.push_str("<h4>Candidate tests</h4>\n<ul>\n");
             for candidate in tests {
+                // A runtime invocation is associated by program name only;
+                // the tag says so beside the row, not only in its note.
+                let disclosure = if candidate.source == CandidateSource::RuntimeInvocation {
+                    " <span class=\"tag\">by program name only</span>"
+                } else {
+                    ""
+                };
                 html.push_str(&format!(
-                    "<li><code>{}</code> <span class=\"tag\">{}</span>{}{}</li>\n",
+                    "<li><code>{}</code> <span class=\"tag\">{}</span>{disclosure}{}{}</li>\n",
                     escape_html(candidate.test.label.as_str()),
                     escape_html(candidate.label.as_str()),
                     candidate

@@ -230,7 +230,8 @@ fn query_refs(
              FROM refs
              WHERE target_symbol_hint = ?1
                 OR (target_symbol_hint IS NULL AND target_qualified = ?2)
-                OR (confidence = 'fuzzy_name' AND target_name = ?3)
+                OR (confidence = 'fuzzy_name' AND target_name = ?3
+                    AND kind <> 'runtime_invocation')
              ORDER BY from_file, from_span_start, id"
         }
         (None, false) => {
@@ -444,20 +445,20 @@ struct StoredRelationRow {
     confidence: String,
 }
 
-struct LineCache<'a> {
+pub(crate) struct LineCache<'a> {
     worktree_root: &'a Path,
     files: BTreeMap<String, LineIndex>,
 }
 
 impl<'a> LineCache<'a> {
-    fn new(worktree_root: &'a Path) -> Self {
+    pub(crate) fn new(worktree_root: &'a Path) -> Self {
         Self {
             worktree_root,
             files: BTreeMap::new(),
         }
     }
 
-    fn line_for(&mut self, file: &str, byte_offset: i64) -> Result<usize, GraphError> {
+    pub(crate) fn line_for(&mut self, file: &str, byte_offset: i64) -> Result<usize, GraphError> {
         if byte_offset < 0 {
             return Err(GraphError::invalid_data(
                 "compute graph ref line",

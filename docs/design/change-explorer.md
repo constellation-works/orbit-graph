@@ -90,7 +90,10 @@ labels are `exact`, `import_resolved`, `same_module`, `fuzzy_name` (CLI
 spellings `exact`,
 `import`, `same_module`, `fuzzy`); the floor admits its own level and every
 stricter level. Reference kinds are textual (`call`, `type`, `use`,
-`trait_bound`) or structural (`impl`, `extends`, `implements`).
+`trait_bound`) or structural (`impl`, `extends`, `implements`). A stored
+`runtime_invocation` ref is neither: its target is an opaque program string,
+it is never resolved or returned by `refs`/`impact`, and only
+`runtime_invocations` reads it.
 
 | Operation | Input selector forms | Confidence | Kinds | Bounds | What the result does not claim |
 | --- | --- | --- | --- | --- | --- |
@@ -103,6 +106,7 @@ stricter level. Reference kinds are textual (`call`, `type`, `use`,
 | `trace(command, depth, min_confidence)` | a command name, with or without the `command:` prefix | floor, default `same_module` | call edges only | `depth` default 5 (`DEFAULT_TRACE_DEPTH`), `TRACE_NODE_CAP` 200 nodes, `truncated` flag | Resolves only commands the extractor discovered into the `commands` table with a handler symbol; an unknown command yields `root: None`, which is not evidence that the command does not exist. Nodes whose `qualified_name` is `None` were not resolved and are expanded no further. |
 | `deps(Selector)` | `file:` or `dir:` only; other forms fail with `InvalidData` | n/a | import/module edges | none | Direct source-level import edges declared by in-scope files. Not a transitive closure and not the Cargo/package dependency graph. `target_path` is a language-specific opaque specifier, not a resolved file. |
 | `overview(Option<Selector>, format)` | `None`, `file:`, or `dir:`; other forms fail with `InvalidData` | n/a | n/a | `summary` returns top files with empty `symbols`; `full` returns every in-scope file | Counts of indexed rows, so unsupported languages and skipped files are invisible in the totals rather than reported as gaps. |
+| `runtime_invocations()` / `program_names(path)` | none (whole index) / a worktree-relative file path; a path leaving the worktree is refused | every invocation is stored at `fuzzy_name` and never resolved | `runtime_invocation` refs only: Python `subprocess.run/call/check_call/check_output/Popen` with a list/tuple first-literal program, a single-string shell command's first token, an `sh`/`bash -c` command's first token, or the `.py` script an interpreter launch (`sys.executable`, `python`, `python3`, `uv run`) runs; Rust `Command::new("<prog>")`, `Command::new(env!("CARGO_BIN_EXE_<name>"))`, `Command::cargo_bin("<name>")` | none | Each invocation's `program` is the string as written, and `symbol` is the innermost enclosing symbol. A program built at run time (`argv` variables, f-strings, `-m module`) is not recorded. `program_names` reads the nearest `Cargo.toml` with a `[package]` (package name, `[[bin]]` names, `src/bin` targets) and the nearest `pyproject.toml` (`[project.scripts]`, `[tool.poetry.scripts]`) at query time; it does not prove a program runs any particular code. |
 | `implementors(Selector)` | `symbol:` or `module:` (trailing `::` segment is the trait name); `file:`/`dir:`/`command:` return an empty list | recorded per relation | `impl`, `implements` | none | Matches a trait by **short name**, so same-named traits from other modules or crates can appear. Absence is not proof that no implementation exists, particularly across languages without an explicit implements relation. |
 
 Repository-wide caveats that apply to every row: the index is a static,
@@ -240,17 +244,30 @@ category survives into the UI and the export:
 | `resolved_call` | A call edge whose target resolved to a qualified symbol (`exact` or `import_resolved`). | Observed plus resolved. |
 | `import_relationship` | A module/import edge between files (`deps`). | Observed, file-level only. |
 | `heuristic_match` | A name-only or same-module association, including every `fuzzy_name` result and fallback block. | Weak; may be a different symbol with the same name. |
+| `runtime_invocation` | A test starts a program (`subprocess.run`, `Command::new`, `cargo_bin`) whose name matches a binary or script the changed symbol's package ships. Candidate tests only; never an edge. | By program name only; no call edge exists and the program is not shown to execute the symbol. |
 | `user_selected` | An association a person asserted in the UI. | Asserted, not derived. |
 
 Consequences that must be stated wherever impact is shown:
 
 - Static reachability is **potential** impact. It is not proof of execution, not
   proof of coverage, and not a severity judgment.
-- Candidate tests come from three disclosed sources, and the source is always
+- Candidate tests come from four disclosed sources, and the source is always
   shown: a call path from a test symbol to a changed symbol; an import
-  relationship from a test file to a changed file; or a naming/file heuristic
-  (for example `foo.rs` ↔ `foo_test.rs`, `tests/` siblings). A heuristic
-  candidate is never promoted to a call-path candidate.
+  relationship from a test file to a changed file; a naming/file heuristic
+  (for example `foo.rs` ↔ `foo_test.rs`, `tests/` siblings); or a runtime
+  invocation, where a test starts a program the changed symbol's package
+  ships. A heuristic candidate is never promoted to a call-path candidate.
+- A `runtime_invocation` candidate matches when a recorded invocation inside
+  a test-classified file names a program by the basename of a name from the
+  manifest nearest the changed symbol's file — Cargo package/binary names for
+  a Rust file, `pyproject.toml` scripts for a Python file — or when a `.py`
+  script target names the changed file by path suffix (the nearest match to
+  the invoking file wins). An invoking test is listed itself; a helper is
+  replaced by the tests reaching it along call-only inbound evidence paths
+  with no `heuristic_match` hop, and listed itself when none does. Every row
+  carries `category: runtime_invocation` and a note stating that the
+  association is by program name only. Everything else the index cannot see
+  stays under `unsupported_scope` exactly as before.
 - "No path found" means **no path in the indexed evidence**, and it is always
   reported together with the reasons a path could be missing: unsupported
   languages in the relevant files, unresolved or name-only symbols, excluded
@@ -456,9 +473,25 @@ reach the queried symbol, not what it reaches.
 }
 ```
 
-`source` is `call_path`, `import_relationship`, or `naming_heuristic`. A
-candidate is never presented as coverage, and the list is never described as
-"the tests for this change".
+`source` is `call_path`, `import_relationship`, `naming_heuristic`, or
+`runtime_invocation` (corpus labels `call-path`, `import`, `naming-heuristic`,
+`runtime-invocation`). A `runtime_invocation` row always has
+`category: runtime_invocation`, `path_id: null`, and a note naming the
+invocation site and the manifest entry it matched, for example:
+
+```json
+{
+  "test": {"selector": "symbol:tests/cli.rs#runs_the_binary:test", "snapshot": "head"},
+  "source": "runtime_invocation",
+  "label": "runtime-invocation",
+  "category": "runtime_invocation",
+  "path_id": null,
+  "note": "runs `tool` at tests/cli.rs:5; associated with src/lib.rs by program name only (`tool` is the `[package]` name in Cargo.toml); no call edge exists, and the program is not shown to execute this symbol"
+}
+```
+
+A candidate is never presented as coverage, and the list is never described
+as "the tests for this change".
 
 ### Exported change report
 
@@ -828,7 +861,8 @@ ORB-12416/ORB-12417; read that document directly rather than a copy of it.
   [the evaluation's limitations](../evaluation/change-explorer/README.md#limitations-handoff)
   for the current, evolving list — Rust cross-file resolution degrading to
   name-only matching, intra-file renames with body edits never paired, nested functions
-  invisible to the graph, runtime/subprocess invocation unseen, and the
+  invisible to the graph, runtime/subprocess invocation associated by program
+  name only (and unseen when the program is built at run time), and the
   languages actually exercised across the five studies (Rust, Python,
   JavaScript).
 - **Bounds default to the values in [Bounds and truncation](#bounds-and-truncation)
@@ -907,7 +941,7 @@ endpoint in one place.
 | `GET /api/changed-symbols` | none | `schema_version`, `symbols[]`, `out_of_scope[]` | above, plus `changed_symbols_failed`, `side_not_ready` | none |
 | `GET /api/evidence` | `selector` **required**, `side` (default `head`), `depth` (default `EVIDENCE_DEPTH`, ≤ `MAX_EVIDENCE_DEPTH`), `confidence` (default `same_module`), `direction` (`inbound` default \| `outbound`), `language`, `change_kind`, `scope` | `schema_version`, `target`, `commit_sha`, `query_options`, `resolved`, `resolved_qualified`, `skipped_low_confidence`, `truncated`, `truncated_by`, `no_path_reasons`, evidence-path array | `missing_selector`, `invalid_side`, `unsupported_depth`, `invalid_confidence`, `invalid_direction`, `not_in_snapshot`, `evidence_failed`, `side_not_ready` | `depth` ≤ `MAX_EVIDENCE_DEPTH`; node cap and time budget from launch scope |
 | `GET /api/entry-points` | `selector` **required**, `side` (default `head`), `depth`, `confidence`, `language`, `change_kind`, `scope` (inbound only; no `direction`) | Entry-point payload; each row carries a top-level `category` (the weakest evidence category on its path) | `missing_selector`, `invalid_side`, `unsupported_depth`, `invalid_confidence`, `not_in_snapshot`, `entry_points_failed`, `side_not_ready` | same as `/api/evidence` |
-| `GET /api/candidate-tests` | `selector` **required**, `side` (default `head`), `confidence`, `depth`, `language`, `change_kind`, `scope` | `schema_version`, `candidates[]`, `unsupported_scope[]` | `missing_selector`, `invalid_side`, `invalid_confidence`, `candidate_tests_failed`, `side_not_ready` | same as `/api/evidence` |
+| `GET /api/candidate-tests` | `selector` **required**, `side` (default `head`), `confidence`, `depth`, `language`, `change_kind`, `scope` | `schema_version`, `candidates[]` (each `source` is `call_path`, `import_relationship`, `naming_heuristic`, or `runtime_invocation`; each `category` is an evidence category, `runtime_invocation` for a by-program-name row), `unsupported_scope[]` | `missing_selector`, `invalid_side`, `invalid_confidence`, `candidate_tests_failed`, `side_not_ready` | same as `/api/evidence` |
 | `GET /api/source` | `selector` **required**, `side` (default `head`) | `schema_version`, `scope`, `selector`, `snapshot`, `commit_sha`, `file`, `span.start`, `span.end`, `kind`, `name`, `qualified`, `encoding`, `bytes_or_text`, `truncated`, `truncated_by`, `source_max_bytes` | `missing_selector`, `invalid_side`, `invalid_selector`, `not_in_snapshot`, `source_failed` | `source_max_bytes` = `DEFAULT_SHOW_MAX_BYTES` |
 | `GET /api/search` | `q`, `side` (default `head`), `kind` (`symbol`\|`string`\|`config`), `lang`, `limit` (default `DEFAULT_SEARCH_LIMIT`, ≤ `MAX_SEARCH_LIMIT`) | `schema_version`, `scope`, `snapshot`, `q`, `limit`, `truncated`, `truncated_by`, `matches[]` | `invalid_kind`, `invalid_limit`, `unsupported_limit`, `invalid_query` | `limit` ≤ `MAX_SEARCH_LIMIT` (200), refused above rather than clamped |
 | `GET /api/status` | none | `{"indexing":{"base":{...},"head":{...}}}` | `unauthorized`, `host_mismatch`, `origin_mismatch`, `repository_out_of_scope` | none |
@@ -959,6 +993,7 @@ The explorer's public dependency on `orbit_graph` is the surface named in
 sync-progress types the service and CLI use directly:
 `Graph::open_with_db_path`, `Graph::open_with_revision`,
 `Graph::impact_with_direction`, `CalleeOpts`, `Graph::sync_with_observer` (with
-`SyncObserver`, `SyncProgress`, `SyncPhase`, `SyncOutcome`), and
-`STORE_SCHEMA_VERSION`. Each carries a compiling rustdoc example exercised by
+`SyncObserver`, `SyncProgress`, `SyncPhase`, `SyncOutcome`),
+`Graph::runtime_invocations` (with `RuntimeInvocation`), `Graph::program_names`
+(with `ProgramName`, `ProgramNameSource`), and `STORE_SCHEMA_VERSION`. Each carries a compiling rustdoc example exercised by
 `cargo test --doc -p orbit-graph`.
