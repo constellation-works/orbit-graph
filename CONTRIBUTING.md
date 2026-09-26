@@ -10,6 +10,11 @@ Before opening a pull request, run:
 
 ```sh
 sh docs/standards/check.sh
+scripts/check-dependency-direction.sh
+scripts/check-terminal-guard.sh
+scripts/check-orphan-modules.sh
+scripts/test-repo-gates.sh
+cargo deny --locked check
 cargo fmt --all --check
 cargo clippy --workspace --all-targets --locked -- -D warnings
 cargo test --workspace --locked
@@ -17,6 +22,16 @@ RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps --locked
 cargo build --workspace --locked
 git diff --check
 ```
+
+`make ci` runs the same sequence. `cargo deny` needs cargo-deny 0.19.9
+(`cargo install cargo-deny --version 0.19.9 --locked`); CI installs that
+release from a SHA-256-pinned download. The layer model and what each
+`scripts/check-*.sh` gate enforces are in [ARCHITECTURE.md](ARCHITECTURE.md):
+a new crate or internal edge changes that file and
+`scripts/check-dependency-direction.sh` together, and a new stream writer
+outside an output layer needs an allow-list entry in
+`scripts/check-terminal-guard.sh` with its reason and the task that removes
+it.
 
 Changes must follow the constellation standards vendored in
 [`docs/standards/`](docs/standards/README.md); cite a rule as `STD-nn §Rn`.

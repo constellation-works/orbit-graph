@@ -1,4 +1,9 @@
-#![allow(missing_docs)]
+//! Argument declarations and dispatch for every `orbit-graph` subcommand.
+//!
+//! [`Cli`] is the parsed command line. Each subcommand lives in its own
+//! module, parses its arguments, makes one library call through a
+//! [`CommandContext`] and returns a JSON payload; `crate::output` renders it.
+//! [`CliError`] is the CLI's one surface error type.
 
 use std::env;
 use std::path::PathBuf;
@@ -85,6 +90,8 @@ pub struct Cli {
 }
 
 impl Cli {
+    /// Run the parsed subcommand and pair its JSON payload with the renderer
+    /// the output layer uses for it.
     pub fn run(&self) -> Result<CommandOutput, CliError> {
         let document = self.command.run()?;
         Ok(self.command.output(document))
@@ -183,6 +190,7 @@ pub enum Command {
     Version(version::VersionCommand),
 }
 
+/// The worktree a subcommand runs against.
 pub(crate) struct CommandContext {
     worktree_root: PathBuf,
 }
@@ -228,29 +236,41 @@ pub(crate) fn display_value(value: &Value) -> String {
     }
 }
 
+/// Every failure the CLI reports; [`CliError::code`] is its stable
+/// machine-readable name.
 #[derive(Debug, Error)]
 pub enum CliError {
+    /// clap rejected the command line.
     #[error(transparent)]
     Clap(clap::Error),
+    /// The process working directory could not be read.
     #[error("failed to determine current directory: {0}")]
     CurrentDir(std::io::Error),
+    /// Standard input could not be read.
     #[error("failed to read stdin: {0}")]
     Stdin(std::io::Error),
+    /// The graph library failed.
     #[error(transparent)]
     Graph(#[from] GraphError),
+    /// An Orbit plugin tool request failed.
     #[error(transparent)]
     Tool(orbit_graph::plugin::ToolError),
+    /// A graph selector argument did not parse.
     #[error(transparent)]
     Selector(#[from] SelectorParseError),
+    /// A payload could not be serialized to JSON.
     #[error("failed to serialize JSON: {0}")]
     Json(serde_json::Error),
+    /// Writing to stdout failed.
     #[error("failed to write JSON to stdout: {0}")]
     Stdout(std::io::Error),
+    /// Writing to stderr failed.
     #[error("failed to write diagnostics to stderr: {0}")]
     Stderr(std::io::Error),
 }
 
 impl CliError {
+    /// The stable error code written to the JSON error payload.
     pub fn code(&self) -> &'static str {
         match self {
             Self::Clap(_) => "argument_error",
@@ -265,6 +285,8 @@ impl CliError {
         }
     }
 
+    /// The underlying reason, when the error carries one worth reporting
+    /// separately from the message.
     pub fn details(&self) -> Option<&str> {
         match self {
             Self::Graph(GraphError::InvalidData { reason, .. }) => Some(reason.as_str()),

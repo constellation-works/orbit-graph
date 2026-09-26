@@ -1,0 +1,49 @@
+# cargo-deny policy: the supply-chain gate (STD-02 §R23, STD-05 §R23/§R24).
+#
+# `make deny` and CI run `cargo deny --locked check` against this file. Every
+# exception carries a reason and a re-review date; today there are none.
+
+[graph]
+# Check every platform the lockfile resolves for, not only the host.
+all-features = true
+
+[advisories]
+# Open RustSec advisories fail the check. A yanked crate can change under the
+# locked graph without anyone editing code.
+yanked = "deny"
+ignore = [
+    # { id = "RUSTSEC-YYYY-NNNN", reason = "<why it does not apply>. Re-review YYYY-MM-DD." },
+]
+
+[licenses]
+# Only what the tree needs today. Add a license with a comment naming the
+# crate that brought it.
+allow = [
+    # Most of the tree, including tree-sitter and every tree-sitter grammar
+    # (tree-sitter-c, -c-sharp, -go, -java, -javascript, -kotlin-ng, -python,
+    # -ruby, -rust, -typescript), clap, serde, rusqlite, git2, tiny_http.
+    "MIT",
+    "Apache-2.0",
+    # unicode-ident: (MIT OR Apache-2.0) AND Unicode-3.0.
+    "Unicode-3.0",
+    # inotify, inotify-sys (through notify, the file watcher).
+    "ISC",
+    # foldhash (through hashbrown).
+    "Zlib",
+    # notify (the file watcher).
+    "CC0-1.0",
+]
+confidence-threshold = 0.9
+
+[bans]
+multiple-versions = "allow"
+wildcards = "deny"
+# Workspace members depend on each other by path.
+allow-wildcard-paths = true
+
+[sources]
+# crates.io only: no other registry and no git dependency.
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]
+allow-git = []

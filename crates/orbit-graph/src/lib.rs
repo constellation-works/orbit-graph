@@ -1,3 +1,5 @@
+// A library prints nothing: diagnostics go through `tracing` (STD-02 §R15).
+#![deny(clippy::print_stderr, clippy::print_stdout)]
 #![cfg_attr(test, allow(clippy::expect_used, clippy::unwrap_used))]
 
 //! SQLite-backed source-code graph store and query API.

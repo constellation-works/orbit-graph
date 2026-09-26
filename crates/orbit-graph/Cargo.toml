@@ -13,7 +13,7 @@ categories = ["development-tools"]
 workspace = true
 
 [dependencies]
-blake3 = "1"
+blake3.workspace = true
 fs2 = "0.4"
 git2.workspace = true
 ignore = "0.4.25"
