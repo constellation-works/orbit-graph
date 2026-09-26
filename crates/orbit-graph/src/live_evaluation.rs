@@ -12,8 +12,8 @@ use std::path::Path;
 use std::time::Instant;
 
 use git2::{ObjectType, Oid, Repository};
+use orbit_graph_extract::history::branch_tip;
 
-use crate::extract::history::branch_tip;
 use crate::recommend::{
     COMMIT_TEXT_EXPONENT, COMMIT_TEXT_WEIGHT, MAX_RECOMMENDATION_LIMIT, subject_cites_task_id,
 };

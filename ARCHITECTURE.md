@@ -9,21 +9,28 @@ script fails when the crate table below and its policy disagree.
 
 | Tier | Unit | Owns | May depend on |
 |------|------|------|---------------|
-| 1. Domain | `orbit-graph` (library) | Extraction contracts and language extractors (`extract`), the SQLite store and its schema (`store`), sync and the file watcher (`sync`), queries (`query`), recommendations (`recommend`), evaluation (`evaluation`), and the Orbit plugin tool contract (`plugin`). Embeddable; it prints nothing (`#![deny(clippy::print_stdout, clippy::print_stderr)]`). | nothing internal |
-| 2. Explorer domain | `orbit-graph-explorer` (library) | Snapshots of two revisions, the snapshot cache, changed-symbol pairing, evidence paths, filters, the exported report and the loopback HTTP service, built on the public `orbit-graph` API only (`docs/design/change-explorer.md` D1). | `orbit-graph` |
-| 3. Surfaces | `orbit-graph-cli` (binary `orbit-graph`); `orbit-graph-explorer`'s `src/main.rs` (binary `orbit-graph-explorer`) | Argument parsing, one library call per command, rendering and the process exit code. These are the output layers: the CLI's `src/output/` and the explorer's `src/main.rs` are the only code that writes to stdout or stderr or checks for a TTY (`scripts/check-terminal-guard.sh`, which lists the temporary exceptions). | tier 1; the explorer binary also its own library (tier 2) |
+| 1. Extraction | `orbit-graph-extract` (library) | Extraction contracts (`ExtractedFile`, the raw rows, `Selector`), the `Extractor` trait and every tree-sitter language extractor (`languages`), and the Git-tree change extraction behind the history index (`history`). A leaf: it knows nothing of the store, sync or queries, and prints nothing. | nothing internal |
+| 2. Domain | `orbit-graph` (library) | The SQLite store and its schema (`store`), sync and the file watcher (`sync`), queries (`query`), recommendations (`recommend`), evaluation (`evaluation`), and the Orbit plugin tool contract (`plugin`), built on tier 1; it re-exports the extraction types its public API names. Embeddable; it prints nothing (`#![deny(clippy::print_stdout, clippy::print_stderr)]`). | tier 1 |
+| 3. Explorer domain | `orbit-graph-explorer` (library) | Snapshots of two revisions, the snapshot cache, changed-symbol pairing, evidence paths, filters, the exported report and the loopback HTTP service, built on the public `orbit-graph` API only (`docs/design/change-explorer.md` D1). | `orbit-graph` |
+| 4. Surfaces | `orbit-graph-cli` (binary `orbit-graph`); `orbit-graph-explorer`'s `src/main.rs` (binary `orbit-graph-explorer`) | Argument parsing, one library call per command, rendering and the process exit code. These are the output layers: the CLI's `src/output/` and the explorer's `src/main.rs` are the only code that writes to stdout or stderr or checks for a TTY (`scripts/check-terminal-guard.sh`, which lists the temporary exceptions). | tier 2; the explorer binary also its own library (tier 3) |
 
-The CLI and the explorer are siblings: neither depends on the other.
+The CLI and the explorer are siblings: neither depends on the other, and
+neither depends on `orbit-graph-extract` directly; they reach extraction types
+through `orbit-graph`'s re-exports. `orbit-graph-extract` is its own crate for
+compile-graph isolation and an enforceable edge (STD-02 §R7): it owns every
+tree-sitter grammar, so a change to the store, sync or queries does not
+recompile extraction, and the direction check keeps the leaf free of them.
 
 ## Crates
 
 | Crate | Kind | Internal dependencies | Banned |
 |-------|------|-----------------------|--------|
-| `orbit-graph` | library | — | `clap`, `tracing-subscriber`, `tiny_http`, `unicode-width` |
+| `orbit-graph-extract` | library | — | `clap`, `tracing-subscriber`, `tiny_http`, `unicode-width` |
+| `orbit-graph` | library | `orbit-graph-extract` | `clap`, `tracing-subscriber`, `tiny_http`, `unicode-width` |
 | `orbit-graph-cli` | binary `orbit-graph` | `orbit-graph` | — |
 | `orbit-graph-explorer` | library and binary `orbit-graph-explorer` | `orbit-graph` | — |
 
-"Banned" lists external crates the domain library must not depend on: argument
+"Banned" lists external crates the libraries must not depend on: argument
 parsing, log subscribers, HTTP serving and terminal layout belong to surfaces
 (STD-02 §R7). Dev-dependencies are exempt. A third-party dependency that more
 than one member uses is declared once in `[workspace.dependencies]`

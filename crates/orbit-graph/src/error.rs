@@ -103,3 +103,25 @@ impl Display for GraphError {
 }
 
 impl std::error::Error for GraphError {}
+
+/// The one translator from extraction failures into the graph error surface
+/// (STD-02 §R12). Each variant keeps the message text it had before extraction
+/// moved into its own crate.
+impl From<orbit_graph_extract::ExtractError> for GraphError {
+    fn from(error: orbit_graph_extract::ExtractError) -> Self {
+        use orbit_graph_extract::ExtractError;
+        match error {
+            ExtractError::InvalidData { operation, reason } => {
+                Self::invalid_data(operation, reason)
+            }
+            ExtractError::Io {
+                operation,
+                path,
+                source,
+            } => Self::io(operation, path, source),
+            ExtractError::Git { operation, source } => {
+                Self::invalid_data(operation, source.to_string())
+            }
+        }
+    }
+}

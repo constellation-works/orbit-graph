@@ -2,6 +2,7 @@
 members = [
   "crates/orbit-graph",
   "crates/orbit-graph-cli",
+  "crates/orbit-graph-extract",
   "crates/orbit-graph-explorer",
 ]
 resolver = "3"
@@ -20,11 +21,13 @@ blake3 = "1"
 git2 = { version = "0.21", default-features = false }
 libc = "0.2"
 orbit-graph = { path = "crates/orbit-graph", version = "0.10.0" }
+orbit-graph-extract = { path = "crates/orbit-graph-extract", version = "0.10.0" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 serde_norway = "0.9"
 tempfile = "3"
 thiserror = "2"
+toml = "1.1"
 
 [workspace.lints.clippy]
 await_holding_lock = "deny"

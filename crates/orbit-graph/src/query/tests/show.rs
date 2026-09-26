@@ -1,7 +1,7 @@
 use std::fs;
 use std::path::PathBuf;
 
-use crate::extract::Selector;
+use orbit_graph_extract::Selector;
 use rusqlite::{Connection, params};
 use serde_json::json;
 

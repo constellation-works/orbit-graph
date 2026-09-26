@@ -2,7 +2,7 @@
 
 use std::collections::{HashSet, VecDeque};
 
-use crate::extract::Selector;
+use orbit_graph_extract::Selector;
 use rusqlite::{Connection, OptionalExtension, params};
 
 use crate::query::callees;

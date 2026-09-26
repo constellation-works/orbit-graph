@@ -54,7 +54,7 @@ use std::path::Path;
 use std::rc::Rc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use crate::extract::RawRef;
+use orbit_graph_extract::RawRef;
 use rusqlite::{Connection, Transaction, TransactionBehavior, params};
 
 use super::pass1::ExtractedFileRefs;

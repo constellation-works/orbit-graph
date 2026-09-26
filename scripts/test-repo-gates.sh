@@ -82,12 +82,18 @@ fresh_copy; add_dep orbit-graph 'tiny_http = "0.12"'
 expect fail $G "tiny_http in the domain library" 'orbit-graph must not depend on tiny_http'
 fresh_copy; add_dep orbit-graph 'orbit-graph-cli = { path = "../orbit-graph-cli" }'
 expect fail $G "the library depending on the CLI" 'orbit-graph must not depend on internal crate orbit-graph-cli'
+fresh_copy; add_dep orbit-graph-extract 'orbit-graph = { path = "../orbit-graph" }'
+expect fail $G "the extraction leaf depending on the domain library" 'orbit-graph-extract must not depend on internal crate orbit-graph'
+fresh_copy; add_dep orbit-graph-extract 'clap = "4.5"'
+expect fail $G "clap in the extraction leaf" 'orbit-graph-extract must not depend on clap'
+fresh_copy; add_dep orbit-graph-cli 'orbit-graph-extract = { path = "../orbit-graph-extract" }'
+expect fail $G "a surface depending on the extraction leaf directly" 'orbit-graph-cli must not depend on internal crate orbit-graph-extract'
 fresh_copy; add_dep orbit-graph-cli 'orbit-graph-explorer = { path = "../orbit-graph-explorer" }'
 expect fail $G "an unlisted internal edge between surfaces" 'orbit-graph-cli must not depend on internal crate orbit-graph-explorer'
 fresh_copy; mkdir -p "$case_dir/crates/orbit-graph-new"
 printf '[package]\nname = "orbit-graph-new"\n\n[dependencies]\n' >"$case_dir/crates/orbit-graph-new/Cargo.toml"
 expect fail $G "a crate with no policy" "crate 'orbit-graph-new' .* has no policy"
-fresh_copy; sed -i.bak 's/^| `orbit-graph` | library | — | .*$/| `orbit-graph` | library | — | `clap` |/' "$case_dir/ARCHITECTURE.md"
+fresh_copy; sed -i.bak 's/^| `orbit-graph` | library | `orbit-graph-extract` | .*$/| `orbit-graph` | library | — | `clap` |/' "$case_dir/ARCHITECTURE.md"
 expect fail $G "ARCHITECTURE.md disagreeing with the policy" 'ARCHITECTURE.md has no crate row matching'
 fresh_copy; rm "$case_dir/ARCHITECTURE.md"
 expect fail $G "a missing ARCHITECTURE.md" 'ARCHITECTURE.md is missing'
@@ -125,7 +131,7 @@ fresh_copy; add_dep orbit-graph 'clap = "4.5"'; edit crates/orbit-graph/Cargo.to
 expect fail $G "a dependency header with a trailing comment" 'orbit-graph must not depend on clap'
 fresh_copy; m="$case_dir/crates/orbit-graph-explorer/Cargo.toml"
 awk '!done && $0 == "tempfile.workspace = true" { print "tempfile = \"3.1\""; done = 1; next } { print }' "$m" >"$m.new" && mv "$m.new" "$m"
-expect fail $G "one member declaring a shared dependency locally (§R9)" 'tempfile is used by 3 members but declared locally by orbit-graph-explorer'
+expect fail $G "one member declaring a shared dependency locally (§R9)" 'tempfile is used by 4 members but declared locally by orbit-graph-explorer'
 fresh_copy; rm -rf "$case_dir"/crates/*
 expect fail $G "an empty tree" 'nothing was checked'
 
@@ -134,6 +140,8 @@ G=check-terminal-guard.sh
 fresh_copy; expect pass $G "the current tree"
 fresh_copy; append crates/orbit-graph/src/evaluation.rs 'fn seeded() { println!("x"); }'
 expect fail $G "println! in the domain library" 'crates/orbit-graph/src/evaluation.rs:[0-9]+:'
+fresh_copy; append crates/orbit-graph-extract/src/history.rs 'fn seeded() { eprintln!("x"); }'
+expect fail $G "eprintln! in the extraction leaf" 'crates/orbit-graph-extract/src/history.rs:[0-9]+:'
 fresh_copy; append crates/orbit-graph-explorer/src/cache.rs 'fn seeded() { let _ = std::io::stderr(); }'
 expect fail $G "io::stderr in the explorer library" 'crates/orbit-graph-explorer/src/cache.rs:[0-9]+:'
 fresh_copy; append crates/orbit-graph-cli/src/command/search.rs 'fn seeded() -> bool { std::io::IsTerminal::is_terminal(&std::io::stdout()) }'
@@ -169,9 +177,9 @@ G=check-orphan-modules.sh
 fresh_copy; expect pass $G "the current tree"
 fresh_copy; printf '#[test]\nfn seeded() {}\n' >"$case_dir/crates/orbit-graph-cli/src/tests/seeded.rs"
 expect fail $G "an undeclared test file" 'src/tests/seeded.rs is not declared'
-fresh_copy; sed -i.bak '/^mod rust;$/d' "$case_dir/crates/orbit-graph/src/extract/languages/tests/mod.rs"
+fresh_copy; sed -i.bak '/^mod rust;$/d' "$case_dir/crates/orbit-graph-extract/src/languages/tests/mod.rs"
 expect fail $G "a test file whose mod line was removed" 'languages/tests/rust.rs is not declared'
-fresh_copy; sed -i.bak '/^#\[path = "tests\/java.rs"\]$/d' "$case_dir/crates/orbit-graph/src/extract/languages/java.rs"
+fresh_copy; sed -i.bak '/^#\[path = "tests\/java.rs"\]$/d' "$case_dir/crates/orbit-graph-extract/src/languages/java.rs"
 expect fail $G "a #[path] test file whose attribute was removed" 'languages/tests/java.rs is not declared'
 fresh_copy; sed -i.bak '/^mod tests;$/d' "$case_dir/crates/orbit-graph-cli/src/main.rs"
 expect fail $G "a tests/ directory its crate root does not declare" 'orbit-graph-cli/src/tests is not declared by its parent'

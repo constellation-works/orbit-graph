@@ -5,7 +5,7 @@
 # directory's `mod.rs`, which the parent module declares with `mod tests;`.
 # A test file may instead be declared by its sibling source file,
 # `<module>/<name>.rs`, as `#[path = "tests/<name>.rs"] mod tests;` (the form
-# most of `crates/orbit-graph` uses today); that compiles it just the same.
+# most of `crates/orbit-graph-extract` uses today); that compiles it just the same.
 # An undeclared file or directory compiles to nothing, so its tests silently
 # never run. This fails on:
 #   - a `.rs` file under `crates/*/src/**/tests/` that its `mod.rs` does not

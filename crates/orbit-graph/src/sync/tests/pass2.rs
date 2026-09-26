@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 use std::str::FromStr;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-use crate::extract::RawRef;
+use orbit_graph_extract::RawRef;
 use rusqlite::{Connection, params};
 
 use crate::sync::pass1::ExtractedFileRefs;

@@ -6,11 +6,11 @@ use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::time::UNIX_EPOCH;
 
-use crate::extract::Extractor;
-use crate::extract::languages;
 use crate::lock::{self, FileLockGuard};
 use git2::Repository;
 use ignore::gitignore::{Gitignore, GitignoreBuilder};
+use orbit_graph_extract::Extractor;
+use orbit_graph_extract::languages;
 use rusqlite::{Connection, params};
 
 use super::{graph_failure, io_failure};
