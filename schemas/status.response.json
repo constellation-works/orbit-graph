@@ -1,11 +1,28 @@
 {
   "type": "object",
-  "required": ["schema_version", "operation", "repository", "status"],
+  "required": [
+    "schema_version",
+    "operation",
+    "repository",
+    "status"
+  ],
   "properties": {
-    "schema_version": {"type": "integer", "const": 1},
-    "operation": {"type": "string", "const": "status"},
-    "repository": {"type": "string"},
+    "schema_version": {
+      "description": "Response contract version.",
+      "type": "integer",
+      "const": 1
+    },
+    "operation": {
+      "description": "Always \"status\".",
+      "type": "string",
+      "const": "status"
+    },
+    "repository": {
+      "description": "Canonical path of the routed repository.",
+      "type": "string"
+    },
     "status": {
+      "description": "Change-history index state for the requested landing branch.",
       "type": "object",
       "required": [
         "repository",
@@ -20,19 +37,67 @@
         "task_associations"
       ],
       "properties": {
-        "repository": {"type": "string"},
-        "landing_branch": {"type": "string"},
-        "database_path": {"type": "string"},
-        "schema_version": {"type": "integer"},
-        "extractor_version": {"type": "integer"},
-        "cursor": {"type": ["string", "null"]},
-        "bootstrap_tip": {"type": ["string", "null"]},
-        "bootstrap_resume_from": {"type": ["string", "null"]},
-        "complete": {"type": "boolean"},
-        "deliveries": {"type": "integer"},
-        "verified_deliveries": {"type": "integer"},
-        "git_only_deliveries": {"type": "integer"},
-        "task_associations": {"type": "integer"}
+        "repository": {
+          "description": "Stable repository identity recorded in the index.",
+          "type": "string"
+        },
+        "landing_branch": {
+          "description": "First-parent landing branch scope.",
+          "type": "string"
+        },
+        "database_path": {
+          "description": "Path of the rebuildable change-history SQLite database.",
+          "type": "string"
+        },
+        "schema_version": {
+          "description": "Active change-history schema version.",
+          "type": "integer"
+        },
+        "extractor_version": {
+          "description": "Active historical change-extractor version.",
+          "type": "integer"
+        },
+        "cursor": {
+          "description": "Last landing-branch tip indexed atomically, or null before the first complete sync.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "bootstrap_tip": {
+          "description": "Frozen tip of an in-progress bounded bootstrap, or null.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "bootstrap_resume_from": {
+          "description": "Oldest not-yet-visited commit the next bounded history_sync resumes from, or null.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "complete": {
+          "description": "False while only a newest-first suffix of the frozen first-parent history is indexed.",
+          "type": "boolean"
+        },
+        "deliveries": {
+          "description": "Delivery rows in this scope.",
+          "type": "integer"
+        },
+        "verified_deliveries": {
+          "description": "Deliveries backed by verified public delivery evidence.",
+          "type": "integer"
+        },
+        "git_only_deliveries": {
+          "description": "Deliveries inferred only from first-parent Git history.",
+          "type": "integer"
+        },
+        "task_associations": {
+          "description": "Task memberships across deliveries; one delivery may associate several tasks.",
+          "type": "integer"
+        }
       },
       "additionalProperties": false
     }

@@ -1,0 +1,45 @@
+# See status.yaml: the conformance workspace is an empty non-Git directory.
+schemaVersion: 1
+kind: PluginTest
+tests:
+  - name: recommend_query_requires_a_git_repository
+    tool: recommend
+    input:
+      schema_version: 1
+      repository: "{{workspace}}"
+      query: repair parser cache
+      level: file
+    expect:
+      error:
+        code: repository_unavailable
+  - name: recommend_requires_exactly_one_intent
+    tool: recommend
+    input:
+      schema_version: 1
+      repository: "{{workspace}}"
+      query: repair parser cache
+      task_id: ORB-1
+    expect:
+      error:
+        code: invalid_request
+  - name: recommend_bounds_the_hybrid_search_limit
+    tool: recommend
+    input:
+      schema_version: 1
+      repository: "{{workspace}}"
+      query: repair parser cache
+      hybrid: true
+      hybrid_limit: 101
+    expect:
+      error:
+        code: invalid_request
+  - name: recommend_rejects_unknown_fields
+    tool: recommend
+    input:
+      schema_version: 1
+      repository: "{{workspace}}"
+      query: repair parser cache
+      variant: graph_only
+    expect:
+      error:
+        code: invalid_request

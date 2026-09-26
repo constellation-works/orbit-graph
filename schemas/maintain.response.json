@@ -1,15 +1,52 @@
 {
   "type": "object",
-  "required": ["schema_version", "operation", "repository"],
+  "required": [
+    "schema_version",
+    "operation",
+    "repository"
+  ],
   "properties": {
-    "schema_version": {"type": "integer", "const": 1},
-    "operation": {"type": "string", "enum": ["history_sync", "import", "orbit_sync"]},
-    "repository": {"type": "string"},
-    "authority": {"type": "object"},
-    "coverage": {"type": "object"},
-    "result": {"type": "object"},
-    "outcomes": {"type": "array", "items": {"type": "object"}},
-    "status": {"type": "object"}
+    "schema_version": {
+      "description": "Response contract version.",
+      "type": "integer",
+      "const": 1
+    },
+    "operation": {
+      "description": "The maintenance operation that ran.",
+      "type": "string",
+      "enum": [
+        "history_sync",
+        "import",
+        "orbit_sync"
+      ]
+    },
+    "repository": {
+      "description": "Canonical path of the routed repository.",
+      "type": "string"
+    },
+    "authority": {
+      "description": "orbit_sync: the workspace and public interfaces the adapter used.",
+      "type": "object"
+    },
+    "coverage": {
+      "description": "What this call covered and how to resume a partial result.",
+      "type": "object"
+    },
+    "result": {
+      "description": "Operation report: the history sync or import outcome.",
+      "type": "object"
+    },
+    "outcomes": {
+      "description": "orbit_sync: per-run outcome (inserted, already_indexed, or excluded with a reason).",
+      "type": "array",
+      "items": {
+        "type": "object"
+      }
+    },
+    "status": {
+      "description": "orbit_sync: change-history status after the call.",
+      "type": "object"
+    }
   },
   "additionalProperties": false
 }

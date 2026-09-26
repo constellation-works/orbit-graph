@@ -6,7 +6,7 @@ tests:
     input: {}
     expect:
       output:
-        crate_version: 0.9.2
+        crate_version: 0.10.0
         extractor_version: 11
         store_schema_version: 1
         history_schema_version: 3

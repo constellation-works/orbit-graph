@@ -5,6 +5,13 @@ description: Query leakage-safe file or symbol recommendations from verified del
 
 # Orbit graph recommendations
 
+Tool names: a verified first-party install (`orbit plugin add
+git+https://github.com/constellation-works/orbit-graph#<tag>`) registers
+`orbit.graph.*` (MCP `orbit_graph_*`, CLI `orbit graph <verb>`). A copy
+installed from any other source registers bare `graph.*` (MCP `graph_*`)
+instead; use whichever spelling your tool list shows. The names below use the
+first-party spelling.
+
 Call `orbit.graph.status` first when freshness matters. Always pass an explicit
 absolute `repository`; never treat tool cwd or `ORBIT_TOOL_WORKSPACE_ROOT` as an
 authority selector. Pass the owning Orbit `workspace` for task-ID lookup,
@@ -25,6 +32,12 @@ and cutoff is eligible. Live supplied snapshots still trigger public authority,
 workspace, task, and repository verification. `hybrid: true` asks the configured
 public `orbit.search` surface for ranked task hits. If it is unavailable, the
 response labels the deterministic lexical fallback.
+
+A failed call returns `error.code` `invalid_request` (fix the request: unknown
+field, unsupported `schema_version`, out-of-range bound, missing required
+field), `repository_unavailable` (the routed `repository` is missing or not a
+Git repository), or `graph_error` (an index, Git, or callback failure; read the
+message).
 
 Maintenance is deliberate. `orbit.graph.maintain` supports:
 

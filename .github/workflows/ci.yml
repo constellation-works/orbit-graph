@@ -27,6 +27,9 @@ jobs:
       - run: cargo clippy --workspace --all-targets --locked -- -D warnings
       - run: cargo test --workspace --locked
       - run: cargo test -p orbit-graph-cli --test plugin_integration --locked
+      # Launcher/installer pins, goldens, manifest versions, released-contract
+      # ledger, and schema property descriptions agree with the crate.
+      - run: cargo test -p orbit-graph-cli --test plugin_contract --locked
       - run: cargo build --workspace --locked
       - run: cargo doc --workspace --no-deps --locked
         env:
@@ -58,11 +61,14 @@ jobs:
           git -C "$RUNNER_TEMP/graph-conformance" init -b main
           cd "$RUNNER_TEMP/graph-conformance"
           "$RUNNER_TEMP/orbit" workspace init --name graph-conformance --root "$RUNNER_TEMP/graph-conformance/.orbit"
+      # The manifest claims `origin: orbit`, which Orbit honours only for a
+      # verified constellation-works source; --first-party checks this
+      # checkout as it would be after `orbit plugin add git+…`.
       - name: Validate and test plugin
         shell: bash
         run: |
-          "$RUNNER_TEMP/orbit" plugin validate .
-          PATH="$PWD/target/debug:$PATH" "$RUNNER_TEMP/orbit" plugin test \
+          "$RUNNER_TEMP/orbit" plugin validate --first-party .
+          PATH="$PWD/target/debug:$PATH" "$RUNNER_TEMP/orbit" plugin test --first-party \
             --root "$RUNNER_TEMP/graph-conformance/.orbit" --workspace graph-conformance .
 
   portability:

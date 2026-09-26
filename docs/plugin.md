@@ -5,42 +5,81 @@ leakage-safe change recommendations and history maintenance as Orbit tools.
 
 ## Install
 
-The v2 Orbit plugin installs from a tagged repository release. The launcher
-selects `bin/orbit-graph.bin` beside itself when a release bundles one, then
-`ORBIT_GRAPH_BIN`, and finally the first `orbit-graph` on the caller's `PATH`.
-It probes the selected executable with a v2 version envelope before forwarding
-the request. A stale or incompatible binary returns an `incompatible_binary`
-JSON error that names its path. Install the executable first:
+The v2 Orbit plugin installs from a tagged repository release. Its manifest
+declares `publisher: constellation-works` and `origin: orbit`, which Orbit
+honours only for a verified first-party source: installed with
+`orbit plugin add git+https://github.com/constellation-works/orbit-graph#<tag>`,
+the tools register as `orbit.graph.version`, `orbit.graph.status`,
+`orbit.graph.recommend`, and `orbit.graph.maintain` (MCP `orbit_graph_*`) with
+the derived `orbit graph <verb>` command group. Orbit refuses the `origin`
+claim from any other source (a local directory, an archive, a fork); such a
+copy must drop `origin: orbit` and then registers bare `graph.*` names. The
+executable accepts both spellings.
+
+The launcher `bin/orbit-graph` selects the executable in this order and probes
+it with a v2 version envelope before forwarding the request:
+
+1. `bin/orbit-graph.bin` beside the launcher, when present;
+2. the first `orbit-graph` on the backend's `PATH`.
+
+A stale or incompatible executable returns an `incompatible_binary` JSON error
+that names its path. Orbit runs plugin backends with a cleared environment and
+this plugin requests no `env_pass`, so no environment variable can redirect the
+launcher; a service's `PATH` is whatever that service was started with (for
+example, `orbit web serve` under systemd often lacks `~/.cargo/bin`).
+
+The preferred release path bundles the executable, so every Orbit service on
+the host runs the binary built from the installed tag regardless of its `PATH`:
 
 ```sh
-cargo install --path crates/orbit-graph-cli --locked
+cargo install --git https://github.com/constellation-works/orbit-graph --tag <tag> --locked orbit-graph-cli
 orbit plugin add git+https://github.com/constellation-works/orbit-graph#<tag> --enable --grant fs,orbit_tools
+# Copy (never link) that executable into the installed tree as bin/orbit-graph.bin.
+plugin_root=$(orbit plugin show graph | sed -n 's/^Install path: //p')
+sh "$plugin_root/scripts/bundle-plugin-binary.sh" --binary "$HOME/.cargo/bin/orbit-graph"
+orbit plugin test "$plugin_root"   # certifies the installed digest
 orbit plugin show graph
 ```
 
-For a service whose `PATH` puts an older `~/.orbit/bin/orbit-graph` before
-`~/.cargo/bin`, set `ORBIT_GRAPH_BIN` to the absolute current executable path
-in that service's environment (for example, `$HOME/.cargo/bin/orbit-graph`).
-An interactive shell's environment does not configure `orbit web serve`.
-Until a release bundles `bin/orbit-graph.bin`, a service with no override uses
-its own `PATH`; an incompatible selection fails with a structured error.
+`scripts/bundle-plugin-binary.sh` probes the candidate against the launcher's
+pinned `extractor_version` and `plugin_schema_version` and refuses an
+incompatible one. `orbit plugin add` and `orbit plugin upgrade` replace the
+whole installed tree, so repeat the bundle step after each. Without a bundled
+executable the plugin falls back to `PATH`, which must then resolve to the same
+tagged build in every service that calls the plugin. The `fs` and
+`orbit_tools` grants are required for the requested workspace/index access and
+bounded callbacks; the plugin requests no network access.
 
-Enabling the plugin provides `graph.version`, `graph.status`,
-`graph.recommend`, and `graph.maintain`, plus the derived
-`orbit graph` command group. The `fs` and `orbit_tools` grants are required for
-the requested workspace/index access and bounded callbacks; the plugin requests
-no network access.
+For a checkout, `make plugin-check` builds the executable and runs
+`orbit plugin validate --first-party .` and `orbit plugin test --first-party .`
+with the fresh build first on `PATH` (`--first-party` checks the checkout as it
+would load after a verified `git+` install); `make plugin-bundle` bundles a
+release build as the git-ignored `bin/orbit-graph.bin` instead.
 
 The older `orbit tool add` installation path and
 `scripts/install-orbit-plugin.sh` / `scripts/uninstall-orbit-plugin.sh` are
 deprecated and remain available for one compatibility release. They register
 only the three v1 sidecars. The installer uses the bundled executable when
-present, then `--binary` (or `ORBIT_GRAPH_BIN` when `--binary` is absent), then
-`PATH`, and verifies the v2 envelope before registration. Pass
-`--binary /absolute/path/to/orbit-graph` for a development build and
+present, then `--binary` (or `ORBIT_GRAPH_BIN` in the installing shell when
+`--binary` is absent), then `PATH`, and verifies the v2 envelope before
+registration. Pass `--binary /absolute/path/to/orbit-graph` for a development
+build and
 `--orbit-root /absolute/path/to/.orbit` for a non-default Orbit authority.
 Removing either the plugin or the legacy registrations deliberately retains
 derived `.orbit-graph/` indexes.
+
+### Plugin versions
+
+`metadata.version` always equals the crate version that `orbit.graph.version`
+reports. Bump both (the workspace `version` in `Cargo.toml` and both manifests)
+whenever the launcher's pinned `extractor_version` or `plugin_schema_version`
+changes after a release; a host that installed the previous version keeps its
+own launcher pin, so reusing a version would mix incompatible trees. Released
+contracts are recorded in `tests/plugin-releases.json` (append an entry when a
+version is tagged or installed), and
+`crates/orbit-graph-cli/tests/plugin_contract.rs` fails in CI when the launcher,
+installer, goldens, or manifests disagree with the crate, or when a released
+version's contract changes.
 
 ## Usage
 
@@ -49,7 +88,7 @@ Every plugin request requires `schema_version: 1` and an explicit absolute
 the adapter never infers authority from cwd or `ORBIT_TOOL_WORKSPACE_ROOT`.
 
 ```sh
-orbit tool run graph.recommend --input '{
+orbit tool run orbit.graph.recommend --input '{
   "schema_version":1,
   "repository":"/work/widgets",
   "workspace":"ws_widgets",
@@ -59,14 +98,14 @@ orbit tool run graph.recommend --input '{
   "limit":10
 }' --full
 
-orbit tool run graph.recommend --input '{
+orbit tool run orbit.graph.recommend --input '{
   "schema_version":1,
   "repository":"/work/widgets",
   "query":"repair parser cache",
   "level":"file"
 }' --full
 
-orbit tool run graph.status --input '{
+orbit tool run orbit.graph.status --input '{
   "schema_version":1,
   "repository":"/work/widgets",
   "branch":"main"
@@ -94,7 +133,7 @@ hits.
 Maintenance is deliberately separate from querying:
 
 ```sh
-orbit tool run graph.maintain --input '{
+orbit tool run orbit.graph.maintain --input '{
   "schema_version":1,
   "operation":"orbit_sync",
   "repository":"/work/widgets",
@@ -132,6 +171,12 @@ resumable newest-first Git-only bootstrap: partial responses expose a frozen
 `snapshot_tip` and `resume_from`, keep the complete cursor unchanged, and reach
 a no-op caught-up state after repeated calls. `import` accepts one public
 DeliveryImport v2 envelope.
+
+Failed calls return a stable `error.code`: `invalid_request` when the request
+is refused before any repository is read (unknown tool or field, unsupported
+`schema_version`, out-of-range bound, missing required field),
+`repository_unavailable` when the routed `repository` is missing or not a Git
+repository, and `graph_error` for every other index, Git, or callback failure.
 
 
 The bundled agent guidance is in

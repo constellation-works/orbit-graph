@@ -1,5 +1,5 @@
 .DEFAULT_GOAL := help
-.PHONY: help build release run dev check test fmt fmt-check clippy doc tree ci ci-fast ci-lint install uninstall clean watch
+.PHONY: help build release run dev check test fmt fmt-check clippy doc tree ci ci-fast ci-lint install uninstall clean watch plugin-bundle plugin-check
 
 CARGO ?= cargo
 BINARY := orbit-graph
@@ -7,6 +7,7 @@ BINARY_PACKAGE := orbit-graph-cli
 PROFILE ?= debug
 INSTALL_PROFILE ?= release
 INSTALL_BIN_DIR ?= $(HOME)/.cargo/bin
+ORBIT ?= orbit
 CARGO_TARGET_DIR ?= target
 export CARGO_TARGET_DIR
 
@@ -43,6 +44,8 @@ help:
 	@echo "  make uninstall    Remove binary from INSTALL_BIN_DIR"
 	@echo "  make clean        Clean build artifacts"
 	@echo "  make watch        Continuous check + test (requires cargo-watch)"
+	@echo "  make plugin-bundle Build release binary and bundle it as bin/orbit-graph.bin"
+	@echo "  make plugin-check Validate and run the plugin goldens with a fresh build"
 
 build:
 	$(CARGO) build --workspace --locked $(CARGO_PROFILE) --target-dir "$(CARGO_TARGET_DIR)"
@@ -104,3 +107,16 @@ clean:
 
 watch:
 	$(CARGO) watch -x "check --workspace --locked" -x "test --workspace --locked"
+
+# Bundle a freshly built release executable beside the plugin launcher
+# (bin/orbit-graph.bin, git-ignored), where it wins over PATH.
+plugin-bundle: release
+	scripts/bundle-plugin-binary.sh --binary "$(CARGO_TARGET_DIR)/release/$(BINARY)" .
+
+# Validate the manifest and run its conformance goldens as a verified
+# first-party checkout. A freshly built debug executable is put first on PATH;
+# a bundled bin/orbit-graph.bin, when present, still takes precedence.
+plugin-check:
+	$(CARGO) build -p $(BINARY_PACKAGE) --bin $(BINARY) --locked --target-dir "$(CARGO_TARGET_DIR)"
+	$(ORBIT) plugin validate --first-party .
+	PATH="$(abspath $(CARGO_TARGET_DIR))/debug:$$PATH" $(ORBIT) plugin test --first-party .

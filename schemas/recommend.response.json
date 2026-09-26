@@ -1,22 +1,64 @@
 {
   "type": "object",
-  "required": ["schema_version", "operation", "repository", "adapter", "result"],
+  "required": [
+    "schema_version",
+    "operation",
+    "repository",
+    "adapter",
+    "result"
+  ],
   "properties": {
-    "schema_version": {"type": "integer", "const": 1},
-    "operation": {"type": "string", "const": "recommend"},
-    "repository": {"type": "string"},
+    "schema_version": {
+      "description": "Response contract version.",
+      "type": "integer",
+      "const": 1
+    },
+    "operation": {
+      "description": "Always \"recommend\".",
+      "type": "string",
+      "const": "recommend"
+    },
+    "repository": {
+      "description": "Canonical path of the routed repository.",
+      "type": "string"
+    },
     "adapter": {
+      "description": "How the Orbit adapter obtained task text and search hits.",
       "type": "object",
-      "required": ["workspace", "task_text", "hybrid_search", "warnings"],
+      "required": [
+        "workspace",
+        "task_text",
+        "hybrid_search",
+        "warnings"
+      ],
       "properties": {
-        "workspace": {"type": ["string", "null"]},
-        "task_text": {"type": "string"},
-        "hybrid_search": {"type": "string"},
-        "warnings": {"type": "array", "items": {"type": "string"}}
+        "workspace": {
+          "description": "Workspace the request named, or null.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "task_text": {
+          "description": "Source of the ranked text, such as request_query or orbit.task.show_public_observation.",
+          "type": "string"
+        },
+        "hybrid_search": {
+          "description": "Source of task-similarity hits, such as local_lexical or orbit.search_hybrid.",
+          "type": "string"
+        },
+        "warnings": {
+          "description": "Degradations the adapter applied, such as a lexical fallback after an orbit.search failure.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
       },
       "additionalProperties": false
     },
     "result": {
+      "description": "Ranked recommendations with their evidence and freshness.",
       "type": "object",
       "required": [
         "input",
@@ -30,15 +72,52 @@
         "recommendations"
       ],
       "properties": {
-        "input": {"type": "object"},
-        "level": {"type": "string", "enum": ["file", "symbol"]},
-        "variant": {"type": "string"},
-        "resolved_target_revision": {"type": "string"},
-        "effective_cutoff": {"type": "string"},
-        "source_freshness": {"type": "object"},
-        "structure_applied": {"type": "boolean"},
-        "fallbacks": {"type": "array", "items": {"type": "object"}},
-        "recommendations": {"type": "array", "items": {"type": "object"}}
+        "input": {
+          "description": "Echo of the intent: the query or the task id.",
+          "type": "object"
+        },
+        "level": {
+          "description": "Granularity of the recommendations.",
+          "type": "string",
+          "enum": [
+            "file",
+            "symbol"
+          ]
+        },
+        "variant": {
+          "description": "Ranking strategy applied; the plugin always uses the combined variant.",
+          "type": "string"
+        },
+        "resolved_target_revision": {
+          "description": "Full commit id the recommendations were resolved against.",
+          "type": "string"
+        },
+        "effective_cutoff": {
+          "description": "Explicit cutoff, or the request observation time when none was sent.",
+          "type": "string"
+        },
+        "source_freshness": {
+          "description": "Freshness of the history evidence relative to the target revision.",
+          "type": "object"
+        },
+        "structure_applied": {
+          "description": "Whether code-graph structural evidence contributed to the ranking.",
+          "type": "boolean"
+        },
+        "fallbacks": {
+          "description": "Evidence limitations and fallbacks applied to this response, such as structure_unavailable.",
+          "type": "array",
+          "items": {
+            "type": "object"
+          }
+        },
+        "recommendations": {
+          "description": "Ranked destinations with scores, reasons, and supporting task and delivery ids.",
+          "type": "array",
+          "items": {
+            "type": "object"
+          }
+        }
       },
       "additionalProperties": false
     }

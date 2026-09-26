@@ -8,11 +8,26 @@
     "plugin_schema_version"
   ],
   "properties": {
-    "crate_version": {"type": "string"},
-    "extractor_version": {"type": "integer"},
-    "store_schema_version": {"type": "integer"},
-    "history_schema_version": {"type": "integer"},
-    "plugin_schema_version": {"type": "integer"}
+    "crate_version": {
+      "description": "orbit-graph crate version that served the request; equals the plugin's metadata.version.",
+      "type": "string"
+    },
+    "extractor_version": {
+      "description": "Code-graph extractor version; an index built by another version is not reused.",
+      "type": "integer"
+    },
+    "store_schema_version": {
+      "description": "SQLite schema version of the code-graph index.",
+      "type": "integer"
+    },
+    "history_schema_version": {
+      "description": "SQLite schema version of the change-history index.",
+      "type": "integer"
+    },
+    "plugin_schema_version": {
+      "description": "Version of the plugin request/response contract; requests must send the same schema_version.",
+      "type": "integer"
+    }
   },
   "additionalProperties": false
 }

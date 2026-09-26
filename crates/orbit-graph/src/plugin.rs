@@ -14,8 +14,10 @@ use crate::{
 };
 
 mod adapter;
+mod error;
 
 use adapter::{OrbitAdapter, canonical_repository};
+pub use error::{ToolError, ToolErrorCode};
 
 /// External tool name for recommendations and authoritative task lookup.
 pub const RECOMMEND_TOOL_NAME: &str = "orbit.graph.recommend";
@@ -49,32 +51,35 @@ pub fn recognizes_tool(name: &str) -> bool {
 }
 
 /// Execute one no-argv Orbit external-tool request from JSON stdin bytes.
-pub fn execute_external_tool(name: &str, input: &[u8]) -> Result<Value, GraphError> {
+///
+/// Failures carry a stable [`ToolErrorCode`]: a request the tool refuses
+/// before touching any repository is [`ToolErrorCode::InvalidRequest`], a
+/// routed repository that cannot be opened is
+/// [`ToolErrorCode::RepositoryUnavailable`], and every other failure is
+/// [`ToolErrorCode::GraphError`].
+pub fn execute_external_tool(name: &str, input: &[u8]) -> Result<Value, ToolError> {
     match name {
-        RECOMMEND_TOOL_NAME | V2_RECOMMEND_TOOL_NAME => {
-            recommend(serde_json::from_slice(input).map_err(json_error)?)
-        }
-        STATUS_TOOL_NAME | V2_STATUS_TOOL_NAME => {
-            status(serde_json::from_slice(input).map_err(json_error)?)
-        }
-        MAINTAIN_TOOL_NAME | V2_MAINTAIN_TOOL_NAME => {
-            maintain(serde_json::from_slice(input).map_err(json_error)?)
-        }
-        VERSION_TOOL_NAME | V2_VERSION_TOOL_NAME => {
-            version(serde_json::from_slice(input).map_err(json_error)?)
-        }
-        _ => Err(GraphError::invalid_data(
+        RECOMMEND_TOOL_NAME | V2_RECOMMEND_TOOL_NAME => recommend(decode_input(input)?),
+        STATUS_TOOL_NAME | V2_STATUS_TOOL_NAME => status(decode_input(input)?),
+        MAINTAIN_TOOL_NAME | V2_MAINTAIN_TOOL_NAME => maintain(decode_input(input)?),
+        VERSION_TOOL_NAME | V2_VERSION_TOOL_NAME => version(decode_input(input)?),
+        _ => Err(ToolError::invalid_request(
             "dispatch Orbit external tool",
             format!("unsupported ORBIT_TOOL_NAME {name:?}"),
         )),
     }
 }
 
+fn decode_input<T: serde::de::DeserializeOwned>(input: &[u8]) -> Result<T, ToolError> {
+    serde_json::from_slice(input)
+        .map_err(|error| ToolError::invalid_request("decode plugin tool input", error.to_string()))
+}
+
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct VersionToolInput {}
 
-fn version(_input: VersionToolInput) -> Result<Value, GraphError> {
+fn version(_input: VersionToolInput) -> Result<Value, ToolError> {
     Ok(json!({
         "crate_version": env!("CARGO_PKG_VERSION"),
         "extractor_version": EXTRACTOR_VERSION,
@@ -141,9 +146,14 @@ struct AdapterEvidence {
     warnings: Vec<String>,
 }
 
-fn recommend(input: RecommendToolInput) -> Result<Value, GraphError> {
+fn recommend(input: RecommendToolInput) -> Result<Value, ToolError> {
     validate_schema(input.schema_version)?;
-    let repository = canonical_repository(input.repository.as_path())?;
+    if input.hybrid && (input.hybrid_limit == 0 || input.hybrid_limit > 100) {
+        return Err(ToolError::invalid_request(
+            "validate hybrid search bound",
+            "hybrid_limit must be between 1 and 100",
+        ));
+    }
     let (intent, mut snapshot, mut task_text_source) = match (input.query, input.task_id) {
         (Some(query), None) if !query.trim().is_empty() => (
             RecommendationInput::Query(query),
@@ -156,12 +166,13 @@ fn recommend(input: RecommendToolInput) -> Result<Value, GraphError> {
             "supplied_snapshot".to_string(),
         ),
         _ => {
-            return Err(GraphError::invalid_data(
+            return Err(ToolError::invalid_request(
                 "validate plugin recommendation intent",
                 "exactly one non-empty query or task_id is required",
             ));
         }
     };
+    let repository = routed_repository(input.repository.as_path())?;
     let adapter = OrbitAdapter::new(repository.as_path(), input.workspace.as_deref());
     if let RecommendationInput::TaskId(task_id) = &intent {
         if input.cutoff.is_none() {
@@ -170,10 +181,10 @@ fn recommend(input: RecommendToolInput) -> Result<Value, GraphError> {
                 .as_ref()
                 .is_some_and(|value| value.task_id != observed.task_id)
             {
-                return Err(GraphError::invalid_data(
+                return Err(ToolError::graph(GraphError::invalid_data(
                     "verify supplied task snapshot",
                     "supplied task ID does not match the selected public workspace task",
-                ));
+                )));
             }
             if snapshot.is_none() {
                 snapshot = Some(observed);
@@ -194,12 +205,6 @@ fn recommend(input: RecommendToolInput) -> Result<Value, GraphError> {
     let mut warnings = Vec::new();
     let mut hybrid_hits = input.hybrid_hits;
     let hybrid_source = if input.hybrid {
-        if input.hybrid_limit == 0 || input.hybrid_limit > 100 {
-            return Err(GraphError::invalid_data(
-                "validate hybrid search bound",
-                "hybrid_limit must be between 1 and 100",
-            ));
-        }
         match adapter.hybrid_search(query_text.as_str(), input.hybrid_limit) {
             Ok(mut hits) => {
                 hits.append(&mut hybrid_hits);
@@ -249,7 +254,7 @@ fn recommend(input: RecommendToolInput) -> Result<Value, GraphError> {
         },
         "result": result,
     }))
-    .map_err(json_error)
+    .map_err(|error| ToolError::graph(json_error(error)))
 }
 
 #[derive(Debug, Deserialize)]
@@ -262,9 +267,9 @@ struct StatusToolInput {
     branch: String,
 }
 
-fn status(input: StatusToolInput) -> Result<Value, GraphError> {
+fn status(input: StatusToolInput) -> Result<Value, ToolError> {
     validate_schema(input.schema_version)?;
-    let repository = canonical_repository(input.repository.as_path())?;
+    let repository = routed_repository(input.repository.as_path())?;
     let index = open_history_index(repository.as_path(), input.branch.as_str())?;
     Ok(json!({
         "schema_version": PLUGIN_SCHEMA_VERSION,
@@ -305,19 +310,41 @@ struct MaintainToolInput {
     task_snapshots: Vec<TaskAssociation>,
 }
 
-fn maintain(input: MaintainToolInput) -> Result<Value, GraphError> {
+fn maintain(input: MaintainToolInput) -> Result<Value, ToolError> {
     validate_schema(input.schema_version)?;
-    let repository = canonical_repository(input.repository.as_path())?;
-    let index = open_history_index(repository.as_path(), input.branch.as_str())?;
     match input.operation {
         MaintenanceOperation::HistorySync => {
             let limit = input.limit.unwrap_or(100);
             if limit == 0 || limit > 1_000 {
-                return Err(GraphError::invalid_data(
+                return Err(ToolError::invalid_request(
                     "validate plugin history sync bound",
                     "limit must be between 1 and 1000",
                 ));
             }
+        }
+        MaintenanceOperation::Import => {
+            if input.delivery.is_none() {
+                return Err(ToolError::invalid_request(
+                    "validate plugin import",
+                    "delivery is required for operation=import",
+                ));
+            }
+        }
+        MaintenanceOperation::OrbitSync => {
+            let bound = input.limit.unwrap_or(25);
+            if bound == 0 || bound > 100 {
+                return Err(ToolError::invalid_request(
+                    "validate Orbit adapter sync bound",
+                    "limit must be between 1 and 100",
+                ));
+            }
+        }
+    }
+    let repository = routed_repository(input.repository.as_path())?;
+    let index = open_history_index(repository.as_path(), input.branch.as_str())?;
+    match input.operation {
+        MaintenanceOperation::HistorySync => {
+            let limit = input.limit.unwrap_or(100);
             let result = index.sync(Some(limit))?;
             Ok(json!({
                 "schema_version": PLUGIN_SCHEMA_VERSION,
@@ -337,7 +364,7 @@ fn maintain(input: MaintainToolInput) -> Result<Value, GraphError> {
         }
         MaintenanceOperation::Import => {
             let delivery = input.delivery.ok_or_else(|| {
-                GraphError::invalid_data(
+                ToolError::invalid_request(
                     "validate plugin import",
                     "delivery is required for operation=import",
                 )
@@ -349,7 +376,9 @@ fn maintain(input: MaintainToolInput) -> Result<Value, GraphError> {
                 "result": index.import(delivery)?,
             }))
         }
-        MaintenanceOperation::OrbitSync => sync_orbit(repository, index, input),
+        MaintenanceOperation::OrbitSync => {
+            sync_orbit(repository, index, input).map_err(ToolError::graph)
+        }
     }
 }
 
@@ -359,12 +388,6 @@ fn sync_orbit(
     input: MaintainToolInput,
 ) -> Result<Value, GraphError> {
     let bound = input.limit.unwrap_or(25);
-    if bound == 0 || bound > 100 {
-        return Err(GraphError::invalid_data(
-            "validate Orbit adapter sync bound",
-            "limit must be between 1 and 100",
-        ));
-    }
     let adapter = OrbitAdapter::new(repository.as_path(), input.workspace.as_deref());
     let explicit_run_count = input.run_ids.len();
     let task_count = input.task_ids.len();
@@ -467,15 +490,21 @@ fn sync_orbit(
     }))
 }
 
-fn validate_schema(version: u32) -> Result<(), GraphError> {
+fn validate_schema(version: u32) -> Result<(), ToolError> {
     if version == PLUGIN_SCHEMA_VERSION {
         Ok(())
     } else {
-        Err(GraphError::invalid_data(
+        Err(ToolError::invalid_request(
             "validate Orbit plugin schema",
             format!("expected schema_version {PLUGIN_SCHEMA_VERSION}, got {version}"),
         ))
     }
+}
+
+/// Canonicalize and open the explicitly routed repository, reporting a
+/// missing or non-Git path as [`ToolErrorCode::RepositoryUnavailable`].
+fn routed_repository(path: &std::path::Path) -> Result<PathBuf, ToolError> {
+    canonical_repository(path).map_err(ToolError::repository_unavailable)
 }
 
 fn task_text(task: &TaskAssociation) -> String {

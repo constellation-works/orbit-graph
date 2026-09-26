@@ -239,6 +239,8 @@ pub enum CliError {
     #[error(transparent)]
     Graph(#[from] GraphError),
     #[error(transparent)]
+    Tool(orbit_graph::plugin::ToolError),
+    #[error(transparent)]
     Selector(#[from] SelectorParseError),
     #[error("failed to serialize JSON: {0}")]
     Json(serde_json::Error),
@@ -255,6 +257,7 @@ impl CliError {
             Self::CurrentDir(_) => "current_dir_error",
             Self::Stdin(_) => "stdin_error",
             Self::Graph(_) => "graph_error",
+            Self::Tool(error) => error.code().as_str(),
             Self::Selector(_) => "selector_parse_error",
             Self::Json(_) => "json_error",
             Self::Stdout(_) => "stdout_error",
