@@ -28,6 +28,8 @@ pub use ruby::RubyExtractor;
 pub use rust::RustExtractor;
 pub use typescript::TypeScriptExtractor;
 
+pub(crate) use common::with_parse_timeout;
+
 use crate::extract::Extractor;
 
 /// Returns the language extractors registered in this crate.

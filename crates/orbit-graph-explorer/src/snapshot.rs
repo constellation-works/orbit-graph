@@ -1597,7 +1597,7 @@ fn is_safe_entry_name(name: &str) -> bool {
 /// Initialize an empty repository at the snapshot root.
 ///
 /// This anchors Git discovery inside the snapshot so neither `orbit_graph` nor
-/// the `git check-ignore` call in its scanner can reach a repository that
+/// the Git ignore matching in its scanner can reach a repository that
 /// happens to contain the system temporary directory. The repository has no
 /// remote, no commit, and no templates, so no hook or template script is ever
 /// installed.

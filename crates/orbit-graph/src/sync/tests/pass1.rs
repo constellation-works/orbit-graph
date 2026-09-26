@@ -1,12 +1,21 @@
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::time::{Instant, SystemTime, UNIX_EPOCH};
+use std::sync::Arc;
+use std::sync::Mutex;
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::thread;
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use rusqlite::{Connection, params};
 
-use super::{DefaultExtractorBackend, ExtractFileError, ExtractedSourceFile, ExtractorBackend};
-use crate::sync::scanner::Diff;
-use crate::{EXTRACTOR_VERSION, Graph, SyncMode, SyncPolicy, resolve_db_path};
+use super::{
+    DefaultExtractorBackend, ExtractFileError, ExtractedSourceFile, ExtractorBackend, Pass1Limits,
+    SilencedPanics, install_silenceable_panic_hook, panics_silenced,
+};
+use crate::sync::scanner::{Diff, MAX_FILE_BYTES};
+use crate::{
+    EXTRACTOR_VERSION, Graph, SyncMode, SyncObserver, SyncPolicy, SyncProgress, resolve_db_path,
+};
 
 #[test]
 fn panicking_extractor_skips_file_and_preserves_other_writes() {
@@ -27,6 +36,7 @@ fn panicking_extractor_skips_file_and_preserves_other_writes() {
         &diff,
         &PanickingBackend,
         None,
+        Pass1Limits::default(),
     )
     .expect("pass1 skips panicking file");
 
@@ -272,6 +282,193 @@ fn cold_sync_100_rust_file_performance_smoke_prints_elapsed_ms() {
     );
 }
 
+#[test]
+fn pass1_holds_one_bounded_chunk_of_extracted_files_at_a_time() {
+    let content = "pub fn chunked() {}\n";
+    // By file count, and by source bytes: both limits make chunks of two.
+    for limits in [
+        Pass1Limits {
+            chunk_files: 2,
+            chunk_bytes: u64::MAX,
+        },
+        Pass1Limits {
+            chunk_files: usize::MAX,
+            chunk_bytes: 2 * content.len() as u64,
+        },
+    ] {
+        let worktree = TestWorktree::new("bounded-chunks");
+        drop(Graph::open(worktree.path(), SyncPolicy::Manual).expect("open graph"));
+        let paths = (0..6)
+            .map(|index| {
+                let rel = format!("src/f{index}.rs");
+                worktree.write(&rel, content);
+                PathBuf::from(rel)
+            })
+            .collect::<Vec<_>>();
+        let diff = Diff {
+            new: paths.clone(),
+            ..Diff::default()
+        };
+        let written = Arc::new(AtomicUsize::new(0));
+        let observer = WrittenCounter(Arc::clone(&written));
+        let backend = RecordingBackend {
+            written,
+            extracted: Mutex::new(Vec::new()),
+        };
+
+        let output = super::run_with_backend(
+            graph_db_path(worktree.path()).as_path(),
+            worktree.path(),
+            SyncMode::Auto,
+            &diff,
+            &backend,
+            Some(&observer),
+            limits,
+        )
+        .expect("chunked pass1 succeeds");
+
+        assert_eq!(output.files_written, 6);
+        assert_eq!(output.total_files, 6);
+        let mut extracted = backend
+            .extracted
+            .into_inner()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        extracted.sort();
+        // Each file is extracted only after every earlier chunk was written,
+        // so at most one chunk of extracted rows is held: {limits:?}.
+        let files_written_before_extraction = extracted
+            .iter()
+            .map(|(_, written)| *written)
+            .collect::<Vec<_>>();
+        assert_eq!(
+            files_written_before_extraction,
+            vec![0, 0, 2, 2, 4, 4],
+            "{limits:?}"
+        );
+    }
+}
+
+#[test]
+fn parse_past_its_deadline_is_an_extraction_failure() {
+    let worktree = TestWorktree::new("parse-deadline");
+    drop(Graph::open(worktree.path(), SyncPolicy::Manual).expect("open graph"));
+    let python = (0..200)
+        .map(|index| format!("def handler_{index}(value):\n    return value + {index}\n"))
+        .collect::<String>();
+    worktree.write("src/slow.py", &python);
+    worktree.write("docs/notes.md", "# Notes\n\nNo tree-sitter parse here.\n");
+    let diff = Diff {
+        new: vec![PathBuf::from("docs/notes.md"), PathBuf::from("src/slow.py")],
+        ..Diff::default()
+    };
+
+    let output = super::run_with_backend(
+        graph_db_path(worktree.path()).as_path(),
+        worktree.path(),
+        SyncMode::Auto,
+        &diff,
+        &DefaultExtractorBackend {
+            parse_timeout: Duration::ZERO,
+        },
+        None,
+        Pass1Limits::default(),
+    )
+    .expect("pass1 skips the file whose parse expired");
+
+    let conn = open_test_connection(worktree.path());
+    assert_eq!(output.files_written, 1);
+    assert_eq!(file_count(&conn, "src/slow.py"), 0, "no rows for it");
+    assert_eq!(file_count(&conn, "docs/notes.md"), 1);
+    drop(conn);
+
+    // Control: the same file indexes within the default deadline.
+    let output = super::run_with_backend(
+        graph_db_path(worktree.path()).as_path(),
+        worktree.path(),
+        SyncMode::Auto,
+        &Diff {
+            new: vec![PathBuf::from("src/slow.py")],
+            ..Diff::default()
+        },
+        &DefaultExtractorBackend::default(),
+        None,
+        Pass1Limits::default(),
+    )
+    .expect("pass1 indexes within the default deadline");
+    assert_eq!(output.files_written, 1);
+    let conn = open_test_connection(worktree.path());
+    assert_eq!(
+        row_count_for_file(&conn, "symbols", "file_path", "src/slow.py"),
+        200
+    );
+}
+
+#[test]
+fn extraction_refuses_a_file_that_grew_past_the_byte_cap() {
+    let worktree = TestWorktree::new("extract-byte-cap");
+    let oversize = "a".repeat(usize::try_from(MAX_FILE_BYTES).expect("cap fits usize") + 1);
+    worktree.write("big.md", &oversize);
+
+    let error =
+        match DefaultExtractorBackend::default().extract(worktree.path(), Path::new("big.md")) {
+            Ok(_) => panic!("an oversize file must not be extracted"),
+            Err(error) => error,
+        };
+    assert!(error.to_string().contains("byte cap"), "{error}");
+}
+
+#[test]
+fn silenced_panics_are_scoped_to_the_extracting_thread() {
+    install_silenceable_panic_hook();
+    assert!(!panics_silenced());
+    let silenced = SilencedPanics::enter();
+    assert!(panics_silenced());
+    let other_thread = thread::spawn(panics_silenced)
+        .join()
+        .expect("join other thread");
+    assert!(
+        !other_thread,
+        "an unrelated thread's panics must still reach the previous hook"
+    );
+    drop(silenced);
+    assert!(!panics_silenced());
+}
+
+/// Counts files pass 1 reports as touched.
+struct WrittenCounter(Arc<AtomicUsize>);
+
+impl SyncObserver for WrittenCounter {
+    fn on_progress(&self, progress: &SyncProgress) {
+        if progress.current_path.is_some() {
+            self.0.fetch_add(1, Ordering::SeqCst);
+        }
+    }
+
+    fn is_cancelled(&self) -> bool {
+        false
+    }
+}
+
+/// Records, for each extracted file, how many files were already written.
+struct RecordingBackend {
+    written: Arc<AtomicUsize>,
+    extracted: Mutex<Vec<(PathBuf, usize)>>,
+}
+
+impl ExtractorBackend for RecordingBackend {
+    fn extract(
+        &self,
+        worktree_root: &Path,
+        rel_path: &Path,
+    ) -> Result<ExtractedSourceFile, ExtractFileError> {
+        self.extracted
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .push((rel_path.to_path_buf(), self.written.load(Ordering::SeqCst)));
+        DefaultExtractorBackend::default().extract(worktree_root, rel_path)
+    }
+}
+
 struct PanickingBackend;
 
 impl ExtractorBackend for PanickingBackend {
@@ -283,7 +480,7 @@ impl ExtractorBackend for PanickingBackend {
         if rel_path == Path::new("src/bad.rs") {
             panic!("intentional extractor panic");
         }
-        DefaultExtractorBackend.extract(worktree_root, rel_path)
+        DefaultExtractorBackend::default().extract(worktree_root, rel_path)
     }
 }
 

@@ -9,8 +9,8 @@ use ignore::gitignore::GitignoreBuilder;
 use rusqlite::{Connection, params};
 
 use super::{
-    ContentHasher, DbLockGuard, OrbitIgnoreMatcher, Scanner, add_default_orbitignore_patterns,
-    collect_orbitignore_files, mtime_ns, scan_count, scan_diff,
+    ContentHasher, DbLockGuard, MAX_FILE_BYTES, OrbitIgnoreMatcher, Scanner,
+    add_default_orbitignore_patterns, collect_orbitignore_files, mtime_ns, scan_count, scan_diff,
 };
 use crate::sync::{SyncLeaderGate, set_sync_leader_gate, sync_leader_count};
 use crate::{EXTRACTOR_VERSION, Graph, SyncMode, SyncPolicy, resolve_db_path};
@@ -307,6 +307,92 @@ fn empty_change_scan_1000_file_performance_smoke_prints_elapsed_ms() {
         println!("empty_change_scan_1000_files_ms={}", elapsed.as_millis());
     }
     assert_eq!(diff.unchanged.len(), 1000);
+}
+
+#[test]
+fn git_ignore_rules_match_in_process_like_check_ignore() {
+    let worktree = TestWorktree::new("git-ignore-semantics");
+    let repo = git2::Repository::init(worktree.path()).expect("init repository");
+    let global_ignore = worktree.path().join("global-ignore");
+    fs::write(&global_ignore, "global.rs\n").expect("write excludes file");
+    repo.config()
+        .expect("repository config")
+        .set_str(
+            "core.excludesFile",
+            global_ignore.to_str().expect("UTF-8 path"),
+        )
+        .expect("configure excludes file");
+    worktree.write(".gitignore", "env/\n*.gen.rs\n");
+    worktree.write("pkg/.gitignore", "local.rs\n");
+    worktree.write(".git/info/exclude", "excluded.rs\n");
+    for rel in [
+        "src/kept.rs",
+        "env/deep/module.py",
+        "src/types.gen.rs",
+        "pkg/local.rs",
+        "pkg/other.rs",
+        "excluded.rs",
+        "global.rs",
+        "tracked.gen.rs",
+    ] {
+        worktree.write(rel, "pub fn marker() {}\n");
+    }
+    // A tracked file is not subject to exclude rules.
+    let mut index = repo.index().expect("repository index");
+    index
+        .add_path(Path::new("tracked.gen.rs"))
+        .expect("track ignored-pattern file");
+    index.write().expect("write index");
+    drop(Graph::open(worktree.path(), SyncPolicy::Manual).expect("open graph"));
+
+    let diff = scan_diff(
+        graph_db_path(worktree.path()).as_path(),
+        worktree.path(),
+        SyncMode::Auto,
+    )
+    .expect("scan");
+    assert_eq!(
+        diff.new,
+        ["pkg/other.rs", "src/kept.rs", "tracked.gen.rs"].map(PathBuf::from)
+    );
+
+    // A worktree root below the repository root applies the same rules.
+    let nested = worktree.path().join("pkg");
+    drop(Graph::open(nested.as_path(), SyncPolicy::Manual).expect("open nested graph"));
+    let diff = scan_diff(
+        graph_db_path(nested.as_path()).as_path(),
+        nested.as_path(),
+        SyncMode::Auto,
+    )
+    .expect("scan nested root");
+    assert_eq!(diff.new, [PathBuf::from("other.rs")]);
+}
+
+#[test]
+fn file_above_the_byte_cap_is_skipped_and_loses_its_rows() {
+    let worktree = TestWorktree::new("byte-cap");
+    let graph = Graph::open(worktree.path(), SyncPolicy::Manual).expect("open graph");
+    worktree.write("src/small.rs", "pub fn small() {}\n");
+    let oversize = "a".repeat(usize::try_from(MAX_FILE_BYTES).expect("cap fits usize") + 1);
+    worktree.write("data/big.json", &oversize);
+    worktree.write("data/at_cap.json", &oversize[1..]);
+    let conn = open_test_connection(worktree.path());
+    insert_file_row(&conn, worktree.path(), "data/big.json", "{}", None);
+    drop(conn);
+    drop(graph);
+
+    let hasher = CountingHasher::default();
+    let scanner = Scanner::new(graph_db_path(worktree.path()).as_path(), worktree.path())
+        .expect("create scanner");
+    let diff = scanner.scan(SyncMode::Auto, &hasher).expect("scan");
+
+    assert_eq!(diff.oversize, [PathBuf::from("data/big.json")]);
+    assert_eq!(diff.deleted, [PathBuf::from("data/big.json")]);
+    assert_eq!(
+        diff.new,
+        ["data/at_cap.json", "src/small.rs"].map(PathBuf::from)
+    );
+    assert_eq!(hasher.calls(), 2, "the oversize file is never read");
 }
 
 #[derive(Default)]

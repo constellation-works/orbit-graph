@@ -60,7 +60,37 @@ unreachable detached-commit indexes.
 
 The scanner respects Git ignore rules and optional `.orbitignore` files. The
 latter is a source-scanning ignore format retained for compatibility; it is not
-an Orbit runtime configuration dependency.
+an Orbit runtime configuration dependency. Git ignore rules (nested
+`.gitignore` files, `.git/info/exclude` and `core.excludesFile`) are matched
+in process through libgit2, as `git check-ignore` would match them: tracked
+files are always indexed. Sync starts no Git process, so repository-configured
+programs such as `core.fsmonitor` or hooks never run.
+
+### Sync bounds
+
+A sync finishes or fails within stated bounds:
+
+- **Lock wait.** One sync at a time holds a database's `.lock` sidecar. A
+  second sync waits at most 30 seconds, then fails with an error naming the
+  holder's PID, the time it took the lock and its label. Set
+  `ORBIT_GRAPH_LOCK_TIMEOUT_MS` (whole milliseconds; `0` tries once) to change
+  the wait. Concurrent syncs of one database inside a process share one run,
+  and a caller joining it waits for the same bound. If that run panics, its
+  waiters get an error and the next sync starts afresh.
+- **File size.** A supported file larger than 4 MiB (the change explorer's
+  blob cap) is skipped with a warning, visible with `RUST_LOG=warn`, and gets
+  no rows; a file that grows past the cap loses its rows at the next sync.
+- **Memory.** Pass 1 extracts and writes changed files in chunks of at most
+  128 files or 32 MiB of source, so it holds one chunk of extracted rows at a
+  time. References and command rows still wait in memory for pass 2.
+- **Parse time.** Each file's tree-sitter parse has a 10-second deadline. A
+  file that exceeds it counts as an extraction failure and is skipped with a
+  warning, like a file whose extractor panics.
+- **Watcher.** A watching `Graph` buffers at most 1,024 file events. When the
+  buffer is full, further events are dropped and counted, and the watcher
+  schedules a sync, which rescans the whole worktree, so no change is lost.
+  Dropping the graph waits up to 5 seconds for the watcher thread, then
+  detaches it with a warning.
 
 Delivered-change history is a separate rebuildable index at
 `.orbit-graph/change-history.<schema-version>.sqlite3`. It learns only from

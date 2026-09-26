@@ -7,7 +7,7 @@ use std::fs;
 use std::io::Read;
 use std::path::Path;
 use std::process::{Command, Output, Stdio};
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 #[cfg(unix)]
 use std::os::fd::{FromRawFd, OwnedFd};
@@ -396,7 +396,7 @@ fn agent_query_fixture() -> TempDir {
 }
 
 #[test]
-fn real_binary_does_not_index_ignored_source_when_git_probe_fails() {
+fn real_binary_applies_git_ignore_rules_without_a_git_executable() {
     let fixture = fixture_repository();
     fs::write(fixture.path().join(".gitignore"), "secret.md\n").expect("write .gitignore");
     let marker = "SENSITIVE_MARKER_4821";
@@ -415,6 +415,8 @@ fn real_binary_does_not_index_ignored_source_when_git_probe_fails() {
     fs::set_permissions(&fake_git, fs::Permissions::from_mode(0o700))
         .expect("make fake Git executable");
 
+    // Ignore rules are matched in process, so a missing or broken `git` on
+    // PATH neither aborts the sync nor lets ignored source in.
     for path in [&missing_path, &failed_path] {
         let output = run_with_env(
             fixture.path(),
@@ -422,37 +424,206 @@ fn real_binary_does_not_index_ignored_source_when_git_probe_fails() {
             &[("PATH", path.to_str().expect("UTF-8 fixture path"))],
         );
         assert!(
-            !output.status.success(),
-            "Git probe failure must abort sync"
+            output.status.success(),
+            "sync must not depend on a git executable: {}",
+            String::from_utf8_lossy(&output.stderr)
         );
-        let error: Value = serde_json::from_slice(&output.stderr).expect("JSON sync error");
-        assert_eq!(error["error"]["code"], "graph_error");
-        assert!(
-            error["error"]["message"]
-                .as_str()
-                .is_some_and(|message| message.contains("git check-ignore")),
-            "{error}"
-        );
+        let matches = run_json(fixture.path(), ["search", marker]);
+        assert_eq!(matches["matches"], serde_json::json!([]));
+    }
+}
 
-        let db_path = run_json(fixture.path(), ["db-path"]);
-        let db_path = db_path["path"].as_str().expect("database path");
-        let db_bytes = fs::read(db_path).expect("read graph database");
-        assert!(
-            !db_bytes
-                .windows(marker.len())
-                .any(|bytes| bytes == marker.as_bytes()),
-            "failed sync leaked ignored source into graph database"
-        );
+#[cfg(unix)]
+#[test]
+fn real_binary_sync_finishes_with_thousands_of_gitignored_files() {
+    // Regression: `git check-ignore --stdin` deadlocked once the ignored
+    // paths it echoed filled its stdout pipe while sync was still writing
+    // the path list, and hung every later sync behind the database lock.
+    let fixture = fixture_repository();
+    fs::write(fixture.path().join(".gitignore"), "env/\n").expect("write .gitignore");
+    let site_packages = fixture.path().join("env/lib/python3/site-packages");
+    fs::create_dir_all(&site_packages).expect("create ignored directory");
+    for index in 0..4_000 {
+        fs::write(
+            site_packages.join(format!("vendored_module_with_a_long_name_{index:04}.py")),
+            "VALUE = 1\n",
+        )
+        .expect("write ignored module");
     }
 
-    let sync = run_json(fixture.path(), ["sync", "--full"]);
-    assert!(
-        sync["files_indexed"]
-            .as_u64()
-            .is_some_and(|count| count > 0)
+    let output = run_with_deadline(
+        fixture.path(),
+        &["--format", "json", "sync"],
+        &[],
+        Duration::from_secs(120),
     );
-    let matches = run_json(fixture.path(), ["search", marker]);
+    assert!(
+        output.status.success(),
+        "sync failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let sync: Value = serde_json::from_slice(&output.stdout).expect("JSON sync output");
+    assert_eq!(sync["files_indexed"], 3, "only the tracked fixture sources");
+}
+
+#[cfg(unix)]
+#[test]
+fn real_binary_sync_never_runs_the_repository_fsmonitor() {
+    let fixture = fixture_repository();
+    let hook_dir = TempDir::new().expect("create hook directory");
+    let marker = hook_dir.path().join("fsmonitor-ran");
+    let hook = hook_dir.path().join("fsmonitor-hook");
+    fs::write(
+        &hook,
+        format!("#!/bin/sh\ntouch '{}'\nexit 1\n", marker.display()),
+    )
+    .expect("write fsmonitor hook");
+    fs::set_permissions(&hook, fs::Permissions::from_mode(0o700)).expect("make hook executable");
+    run_git(
+        fixture.path(),
+        [
+            "config",
+            "core.fsmonitor",
+            hook.to_str().expect("UTF-8 hook path"),
+        ],
+    );
+    fs::write(fixture.path().join(".gitignore"), "ignored.rs\n").expect("write .gitignore");
+    fs::write(fixture.path().join("ignored.rs"), "pub fn hidden() {}\n").expect("write source");
+    fs::write(fixture.path().join("untracked.rs"), "pub fn fresh() {}\n").expect("write source");
+
+    let sync = run_json(fixture.path(), ["sync", "--full"]);
+    assert_eq!(sync["files_indexed"], 4, "{sync}");
+    assert!(
+        !marker.exists(),
+        "sync executed the repository-configured core.fsmonitor command"
+    );
+
+    // Control: the fixture is armed, so Git itself does run the hook.
+    let _ = Command::new("git")
+        .current_dir(fixture.path())
+        .args(["status", "--porcelain"])
+        .output()
+        .expect("run git status");
+    assert!(marker.exists(), "git status should run the fsmonitor hook");
+}
+
+#[cfg(unix)]
+#[test]
+fn real_binary_sync_times_out_naming_the_lock_holder() {
+    let fixture = fixture_repository();
+    let _ = run_json(fixture.path(), ["sync"]);
+    let db_path = run_json(fixture.path(), ["db-path"]);
+    let lock_path = format!("{}.lock", db_path["path"].as_str().expect("database path"));
+
+    let holder = fs::OpenOptions::new()
+        .create(true)
+        .truncate(false)
+        .read(true)
+        .write(true)
+        .open(&lock_path)
+        .expect("open graph lock file");
+    holder.lock().expect("hold the graph database lock");
+    let acquired_at = "2026-09-26T12:34:56.000000000Z";
+    fs::write(
+        &lock_path,
+        serde_json::json!({
+            "pid": std::process::id(),
+            "acquired_at": acquired_at,
+            "label": "fixture lock holder",
+        })
+        .to_string(),
+    )
+    .expect("write holder record");
+
+    let started = Instant::now();
+    let output = run_with_deadline(
+        fixture.path(),
+        &["--format", "json", "sync"],
+        &[("ORBIT_GRAPH_LOCK_TIMEOUT_MS", "300")],
+        Duration::from_secs(60),
+    );
+    let waited = started.elapsed();
+    drop(holder);
+
+    assert!(!output.status.success(), "a held lock must fail the sync");
+    assert!(
+        waited >= Duration::from_millis(300),
+        "failed before the deadline"
+    );
+    let error: Value = serde_json::from_slice(&output.stderr).expect("JSON sync error");
+    assert_eq!(error["error"]["code"], "graph_error");
+    let message = error["error"]["message"].as_str().expect("error message");
+    assert!(message.contains("timed out after 300 ms"), "{message}");
+    assert!(
+        message.contains(&format!("pid {}", std::process::id())),
+        "{message}"
+    );
+    assert!(message.contains(acquired_at), "{message}");
+    assert!(message.contains("fixture lock holder"), "{message}");
+
+    // Released, the next sync proceeds.
+    let _ = run_json(fixture.path(), ["sync"]);
+}
+
+#[cfg(unix)]
+#[test]
+fn real_binary_skips_a_file_above_the_byte_cap_with_a_warning() {
+    let fixture = fixture_repository();
+    fs::create_dir_all(fixture.path().join("data")).expect("create data directory");
+    let filler = "a".repeat(4 * 1024 * 1024);
+    fs::write(
+        fixture.path().join("data/huge.json"),
+        format!("{{\"HUGE_MARKER_KEY\": \"{filler}\"}}\n"),
+    )
+    .expect("write oversize config");
+
+    let output = run_with_env(
+        fixture.path(),
+        ["--format", "json", "sync"],
+        &[("RUST_LOG", "warn")],
+    );
+    assert!(
+        output.status.success(),
+        "sync failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("byte cap") && stderr.contains("data/huge.json"),
+        "{stderr}"
+    );
+    let sync: Value = serde_json::from_slice(&output.stdout).expect("JSON sync output");
+    assert_eq!(sync["files_indexed"], 3, "the oversize file gets no row");
+    let matches = run_json(fixture.path(), ["search", "HUGE_MARKER_KEY"]);
     assert_eq!(matches["matches"], serde_json::json!([]));
+}
+
+#[cfg(unix)]
+#[test]
+fn real_binary_indexes_every_file_across_bounded_pass1_chunks() {
+    let fixture = fixture_repository();
+    let generated = fixture.path().join("src/generated");
+    fs::create_dir_all(&generated).expect("create generated directory");
+    for index in 0..300 {
+        fs::write(
+            generated.join(format!("unit_{index:03}.rs")),
+            format!("pub fn chunked_unit_{index:03}() {{}}\n"),
+        )
+        .expect("write generated source");
+    }
+
+    let sync = run_json(fixture.path(), ["sync"]);
+    assert_eq!(sync["files_indexed"], 303);
+    assert_eq!(sync["files_changed"], 303);
+    for name in ["chunked_unit_000", "chunked_unit_299"] {
+        let matches = run_json(fixture.path(), ["search", name, "--kind", "symbol"]);
+        assert!(
+            matches["matches"]
+                .as_array()
+                .is_some_and(|matches| !matches.is_empty()),
+            "{name} missing: {matches}"
+        );
+    }
 }
 
 #[cfg(unix)]
@@ -2279,6 +2450,56 @@ fn run_with_env<const N: usize>(cwd: &Path, args: [&str; N], env: &[(&str, &str)
         command.env(key, value);
     }
     command.output().expect("run orbit-graph")
+}
+
+/// Runs the binary with its output in files (no pipe to fill) and waits for
+/// it in process until `deadline`; the guard kills and reaps it on timeout
+/// or panic (`STD-03 §R17`, `§R18`).
+#[cfg(unix)]
+fn run_with_deadline(
+    cwd: &Path,
+    args: &[&str],
+    env: &[(&str, &str)],
+    deadline: Duration,
+) -> Output {
+    struct ChildGuard(std::process::Child);
+    impl Drop for ChildGuard {
+        fn drop(&mut self) {
+            let _ = self.0.kill();
+            let _ = self.0.wait();
+        }
+    }
+
+    let capture = TempDir::new().expect("create capture directory");
+    let stdout_path = capture.path().join("stdout");
+    let stderr_path = capture.path().join("stderr");
+    let mut command = Command::new(env!("CARGO_BIN_EXE_orbit-graph"));
+    command
+        .current_dir(cwd)
+        .args(args)
+        .stdin(Stdio::null())
+        .stdout(fs::File::create(&stdout_path).expect("create stdout capture"))
+        .stderr(fs::File::create(&stderr_path).expect("create stderr capture"));
+    for (key, value) in env {
+        command.env(key, value);
+    }
+    let mut child = ChildGuard(command.spawn().expect("spawn orbit-graph"));
+    let started = Instant::now();
+    let status = loop {
+        if let Some(status) = child.0.try_wait().expect("poll orbit-graph") {
+            break status;
+        }
+        assert!(
+            started.elapsed() < deadline,
+            "orbit-graph {args:?} did not finish within {deadline:?}"
+        );
+        std::thread::sleep(Duration::from_millis(20));
+    };
+    Output {
+        status,
+        stdout: fs::read(&stdout_path).expect("read stdout capture"),
+        stderr: fs::read(&stderr_path).expect("read stderr capture"),
+    }
 }
 
 fn fixture_repository() -> TempDir {

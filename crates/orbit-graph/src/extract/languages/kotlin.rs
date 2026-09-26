@@ -4,6 +4,8 @@ use std::path::Path;
 
 use tree_sitter::{Node, Parser};
 
+use super::common::parse_source;
+
 use crate::extract::{ExtractedFile, Extractor, RawImport, RawRef, RawRelation, RawSymbol};
 
 /// Extracts Kotlin source files into raw graph rows.
@@ -38,7 +40,7 @@ impl Extractor for KotlinExtractor {
             return ExtractedFile::default();
         }
 
-        let Some(tree) = parser.parse(source, None) else {
+        let Some(tree) = parse_source(&mut parser, source) else {
             return ExtractedFile::default();
         };
 

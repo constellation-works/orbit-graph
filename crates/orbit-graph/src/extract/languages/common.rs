@@ -2,9 +2,84 @@
 //! Moved from rust.rs to avoid intra-crate duplication >50 LOC across c/markdown/config.
 //! See task ORB-00305 comments for rationale.
 
+use std::cell::Cell;
+use std::ops::ControlFlow;
 use std::path::Path;
+use std::time::{Duration, Instant};
+
+use tree_sitter::{ParseOptions, Parser, Tree};
 
 use crate::extract::{RawImport, RawRef, RawRelation, RawSymbol};
+
+thread_local! {
+    /// Deadline for tree-sitter parses on this thread, set by
+    /// [`with_parse_timeout`].
+    static PARSE_DEADLINE: Cell<Option<Instant>> = const { Cell::new(None) };
+    /// Whether a parse on this thread was cancelled by [`PARSE_DEADLINE`].
+    static PARSE_DEADLINE_EXCEEDED: Cell<bool> = const { Cell::new(false) };
+}
+
+/// Runs `extract` with every tree-sitter parse on this thread bounded by
+/// `timeout`, and reports whether any parse was cancelled by it.
+///
+/// A cancelled parse yields no tree, so the extractor returns empty rows; the
+/// caller must treat an exceeded deadline as an extraction failure rather
+/// than store those rows.
+pub(crate) fn with_parse_timeout<T>(timeout: Duration, extract: impl FnOnce() -> T) -> (T, bool) {
+    let _scope = ParseDeadlineScope::enter(Instant::now().checked_add(timeout));
+    let value = extract();
+    (value, PARSE_DEADLINE_EXCEEDED.get())
+}
+
+/// Restores the thread's previous deadline state on drop, including unwind.
+struct ParseDeadlineScope {
+    deadline: Option<Instant>,
+    exceeded: bool,
+}
+
+impl ParseDeadlineScope {
+    fn enter(deadline: Option<Instant>) -> Self {
+        Self {
+            deadline: PARSE_DEADLINE.replace(deadline),
+            exceeded: PARSE_DEADLINE_EXCEEDED.replace(false),
+        }
+    }
+}
+
+impl Drop for ParseDeadlineScope {
+    fn drop(&mut self) {
+        PARSE_DEADLINE.set(self.deadline);
+        PARSE_DEADLINE_EXCEEDED.set(self.exceeded);
+    }
+}
+
+/// Parses `source`, cancelling the parse once the thread's parse deadline
+/// passes. tree-sitter checks progress every hundred or so parse operations.
+pub(crate) fn parse_source(parser: &mut Parser, source: &str) -> Option<Tree> {
+    let Some(deadline) = PARSE_DEADLINE.get() else {
+        return parser.parse(source, None);
+    };
+    let bytes = source.as_bytes();
+    let mut cancelled = false;
+    let mut progress = |_: &tree_sitter::ParseState| {
+        if Instant::now() >= deadline {
+            cancelled = true;
+            ControlFlow::Break(())
+        } else {
+            ControlFlow::Continue(())
+        }
+    };
+    let tree = parser.parse_with_options(
+        &mut |offset, _| bytes.get(offset..).unwrap_or_default(),
+        None,
+        Some(ParseOptions::new().progress_callback(&mut progress)),
+    );
+    if cancelled {
+        PARSE_DEADLINE_EXCEEDED.set(true);
+        return None;
+    }
+    tree
+}
 
 pub(crate) fn normalize_path(path: &Path) -> String {
     path.to_string_lossy().replace('\\', "/")

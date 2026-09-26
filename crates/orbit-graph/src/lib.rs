@@ -20,6 +20,7 @@ use serde::Serialize;
 mod evaluation;
 /// Pure extraction contracts and language-specific extractors.
 mod extract;
+mod lock;
 pub mod plugin;
 mod query;
 mod recommend;
@@ -115,7 +116,10 @@ mod tests;
 ///
 /// Version 16 rebuilds stored refs so cross-file resolution only chooses
 /// symbols from the ref's language.
-pub const EXTRACTOR_VERSION: u32 = 16;
+///
+/// Version 17 skips files larger than 4 MiB and files whose tree-sitter parse
+/// exceeds its per-file deadline, so neither gets rows.
+pub const EXTRACTOR_VERSION: u32 = 17;
 
 /// SQLite schema version used by the graph store.
 ///
@@ -920,8 +924,11 @@ impl SyncPhase {
 pub struct SyncProgress {
     /// Phase this report describes.
     pub phase: SyncPhase,
-    /// Total files this sync will touch, written or removed. Frozen at pass
-    /// 1's final count once `phase` is [`SyncPhase::Resolving`].
+    /// Total files this sync will touch, written or removed. Pass 1 extracts
+    /// in bounded chunks, so during [`SyncPhase::Extracting`] this starts as
+    /// every changed or removed file and drops by each file whose extraction
+    /// fails as its chunk is extracted. Frozen at pass 1's final count once
+    /// `phase` is [`SyncPhase::Resolving`].
     pub files_seen: usize,
     /// Files this sync has processed so far; increases monotonically up to
     /// `files_seen`. Frozen at pass 1's final count once `phase` is
