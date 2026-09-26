@@ -25,6 +25,10 @@ use common::corpus;
 const SAMPLE_GENERATED_AT: &str = "2026-09-13T00:00:00Z";
 const SAMPLE_NAME: &str = "direct-call";
 
+/// The command that regenerates both artifacts, quoted in every failure.
+const REGENERATE: &str =
+    "UPDATE_GOLDENS=1 cargo test -p orbit-graph-explorer --test derived_artifacts --locked";
+
 const FLAGS_HEADING: &str = "## Every flag";
 const TEXT_FENCE: &str = "```text\n";
 const CLOSING_FENCE: &str = "\n```\n";
@@ -94,7 +98,7 @@ fn readme_every_flag_block_is_the_binary_help_output() {
         panic!(
             "crates/orbit-graph-explorer/README.md \"Every flag\" block differs from \
              `orbit-graph-explorer --help` at {first_difference}\n\
-             Regenerate with UPDATE_GOLDENS=1 (see this file's header)."
+             Regenerate it, then review the diff:\n  {REGENERATE}"
         );
     }
 }
@@ -143,7 +147,8 @@ fn committed_direct_call_sample_is_a_fresh_regeneration() {
     assert!(
         stale.is_empty(),
         "docs/evaluation/change-explorer/samples/{{{}}} differ from a fresh `report` of the \
-         direct-call fixture; regenerate with UPDATE_GOLDENS=1 (see this file's header)",
+         direct-call fixture (an EXTRACTOR_VERSION, crate version or report change?). \
+         Regenerate them, then review the diff:\n  {REGENERATE}",
         stale.join(",")
     );
 }
