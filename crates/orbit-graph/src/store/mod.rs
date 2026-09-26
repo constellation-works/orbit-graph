@@ -3,10 +3,8 @@
 pub(crate) mod history;
 pub(crate) mod schema;
 
-use std::ffi::OsStr;
 use std::fs;
-use std::io::Write;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 #[cfg(unix)]
 use std::{io::ErrorKind, os::unix::fs::OpenOptionsExt};
 
@@ -27,7 +25,7 @@ pub(crate) fn open(worktree_root: &Path, _policy: SyncPolicy) -> Result<OpenedGr
         git.commit_sha.as_str(),
         EXTRACTOR_VERSION,
     );
-    open_at_path(db_path, &git)
+    open_at_path(db_path, &git, IndexDirOwner::Scratch { worktree_root })
 }
 
 pub(crate) fn open_for_revision(
@@ -44,12 +42,13 @@ pub(crate) fn open_for_revision(
         git.commit_sha.as_str(),
         EXTRACTOR_VERSION,
     );
-    open_at_path(db_path, &git)
+    open_at_path(db_path, &git, IndexDirOwner::Scratch { worktree_root })
 }
 
 pub(crate) fn open_with_db_path(
     worktree_root: &Path,
     db_path: &Path,
+    owner: IndexDirOwner<'_>,
 ) -> Result<OpenedGraph, GraphError> {
     if db_path.is_dir() || db_path.file_name().is_none() {
         return Err(GraphError::invalid_data(
@@ -59,12 +58,16 @@ pub(crate) fn open_with_db_path(
     }
     let git = GitContext::for_worktree(worktree_root);
     let db_path = GraphDbPath::new(db_path.to_path_buf(), git.branch.clone(), EXTRACTOR_VERSION);
-    open_at_path(db_path, &git)
+    open_at_path(db_path, &git, owner)
 }
 
-fn open_at_path(db_path: GraphDbPath, git: &GitContext) -> Result<OpenedGraph, GraphError> {
+fn open_at_path(
+    db_path: GraphDbPath,
+    git: &GitContext,
+    owner: IndexDirOwner<'_>,
+) -> Result<OpenedGraph, GraphError> {
     if let Some(parent) = db_path.path().parent() {
-        create_owned_dir(parent, "create graph database directory")?;
+        create_index_dir(parent, owner, "create graph database directory")?;
     }
 
     // SQLite's default creation mode can expose indexed source text. Create
@@ -162,61 +165,163 @@ const SCRATCH_DIR_NAME: &str = ".orbit-graph";
 const OWNED_DIR_GITIGNORE: &str =
     "# Written by orbit-graph: this directory holds local, rebuildable indexes.\n*\n";
 
-/// Creates `dir`, with any missing parents, to hold orbit-graph's own files,
-/// and keeps the directories orbit-graph owns out of `git status`.
+/// Who owns an index directory, which decides whether orbit-graph may mark it
+/// with a `.gitignore`.
+#[derive(Clone, Copy, Debug)]
+pub(crate) enum IndexDirOwner<'a> {
+    /// The default layout: `<worktree_root>/.orbit-graph`.
+    Scratch {
+        /// The worktree whose scratch directory this is.
+        worktree_root: &'a Path,
+    },
+    /// orbit-graph's own per-repository directory under `$ORBIT_PLUGIN_STATE`.
+    PluginState,
+    /// A directory the caller chose, such as the parent of a library caller's
+    /// database path. orbit-graph creates it when missing but never writes
+    /// into it.
+    Caller,
+}
+
+/// Creates `dir`, with any missing parents, to hold an index, and marks it
+/// with a `.gitignore` containing `*` when orbit-graph owns it.
 ///
-/// orbit-graph owns the directories this call creates, and any
-/// `.orbit-graph` scratch directory on the path, including one that already
-/// exists. The topmost of each gets a `.gitignore` containing `*`, so
-/// databases, WAL files and locks are never offered for commit. An existing
-/// `.gitignore` is never touched, and a directory the caller supplied that
-/// already exists (a custom `--db` parent, say) gets nothing. Failing to write
-/// the file is logged, not fatal: the index works without it.
-pub(crate) fn create_owned_dir(dir: &Path, operation: &'static str) -> Result<(), GraphError> {
-    let created = topmost_missing_ancestor(dir);
+/// orbit-graph owns exactly two kinds of directory: the canonical
+/// `<worktree>/.orbit-graph` scratch directory and its own per-repository
+/// directory under `$ORBIT_PLUGIN_STATE`. A caller-chosen directory
+/// ([`IndexDirOwner::Caller`]) and the parents created on the way to any
+/// directory are never marked, so a `.gitignore` cannot land in a directory
+/// that holds the user's files.
+///
+/// The scratch rule is decided on the physical path (STD-05 §R6): the
+/// directory must be a real directory that canonicalizes to
+/// `<canonical worktree>/.orbit-graph`. The write itself never follows a
+/// symlink in the directory's own name and never replaces an existing
+/// `.gitignore` (STD-05 §R7; see [`write_new_gitignore`]). Failing to mark
+/// the directory is logged, not fatal: the index works without it.
+pub(crate) fn create_index_dir(
+    dir: &Path,
+    owner: IndexDirOwner<'_>,
+    operation: &'static str,
+) -> Result<(), GraphError> {
     fs::create_dir_all(dir).map_err(|source| GraphError::io(operation, dir, source))?;
-    let scratch = dir
-        .ancestors()
-        .find(|ancestor| ancestor.file_name() == Some(OsStr::new(SCRATCH_DIR_NAME)));
-    for owned in created.as_deref().into_iter().chain(scratch) {
-        write_owned_dir_gitignore(owned);
+    let owned = match owner {
+        IndexDirOwner::Scratch { worktree_root } => is_canonical_scratch_dir(dir, worktree_root),
+        IndexDirOwner::PluginState => true,
+        IndexDirOwner::Caller => false,
+    };
+    if owned && let Err(error) = write_new_gitignore(dir, OWNED_DIR_GITIGNORE.as_bytes()) {
+        tracing::warn!(
+            path = %dir.join(".gitignore").display(),
+            error = %error,
+            "could not write .gitignore for orbit-graph index directory"
+        );
     }
     Ok(())
 }
 
-/// The outermost ancestor of `dir` (or `dir` itself) that does not exist yet.
-fn topmost_missing_ancestor(dir: &Path) -> Option<PathBuf> {
-    let mut missing = None;
-    for ancestor in dir.ancestors() {
-        if ancestor.as_os_str().is_empty() {
-            break;
-        }
-        match fs::symlink_metadata(ancestor) {
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
-                missing = Some(ancestor.to_path_buf());
-            }
-            _ => break,
-        }
+/// Whether `dir` is, physically, the `.orbit-graph` directory directly under
+/// `worktree_root`. A `.orbit-graph` that is a symlink, or that resolves
+/// anywhere else, is not.
+fn is_canonical_scratch_dir(dir: &Path, worktree_root: &Path) -> bool {
+    let is_real_dir = fs::symlink_metadata(dir).is_ok_and(|metadata| metadata.is_dir());
+    let physical = dir.canonicalize();
+    let expected = worktree_root
+        .canonicalize()
+        .map(|root| root.join(SCRATCH_DIR_NAME));
+    let owned = is_real_dir
+        && matches!((&physical, &expected), (Ok(physical), Ok(expected)) if physical == expected);
+    if !owned {
+        tracing::warn!(
+            path = %dir.display(),
+            "not marking the orbit-graph scratch directory: it is not a real directory directly under the worktree"
+        );
     }
-    missing
+    owned
 }
 
-fn write_owned_dir_gitignore(dir: &Path) {
-    let path = dir.join(".gitignore");
-    let written = fs::OpenOptions::new()
-        .write(true)
-        .create_new(true)
-        .open(path.as_path())
-        .and_then(|mut file| file.write_all(OWNED_DIR_GITIGNORE.as_bytes()));
-    match written {
-        Ok(()) => {}
-        Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {}
-        Err(error) => tracing::warn!(
-            path = %path.display(),
-            error = %error,
-            "could not write .gitignore for orbit-graph index directory"
-        ),
+/// Atomically creates `<dir>/.gitignore` holding `contents`, unless an entry
+/// named `.gitignore` already exists there, in which case it is kept and
+/// `Ok(false)` is returned.
+///
+/// `dir` is opened once with `O_NOFOLLOW | O_DIRECTORY`, so a symlink in its
+/// final component is refused, and every later step is relative to that open
+/// directory. The contents go to a temp file that is flushed and then
+/// hard-linked to `.gitignore`; `linkat` never replaces an existing entry, so
+/// this is STD-03 §R5's temp-and-rename with no-replace semantics. A crash or
+/// a full disk leaves at most a stray temp file, never an empty `.gitignore`
+/// that would later count as the user's.
+#[cfg(unix)]
+pub(crate) fn write_new_gitignore(dir: &Path, contents: &[u8]) -> std::io::Result<bool> {
+    use std::ffi::{CStr, CString};
+    use std::io::Write;
+    use std::os::fd::{AsRawFd, FromRawFd};
+    use std::sync::atomic::{AtomicU64, Ordering};
+
+    static TEMP_COUNTER: AtomicU64 = AtomicU64::new(0);
+    const TARGET: &CStr = c".gitignore";
+
+    let directory = fs::OpenOptions::new()
+        .read(true)
+        .custom_flags(libc::O_DIRECTORY | libc::O_NOFOLLOW)
+        .open(dir)?;
+    let dir_fd = directory.as_raw_fd();
+    let temp_name = CString::new(format!(
+        ".gitignore.orbit-graph-{}-{}.tmp",
+        std::process::id(),
+        TEMP_COUNTER.fetch_add(1, Ordering::Relaxed)
+    ))
+    .map_err(std::io::Error::other)?;
+
+    // SAFETY: `dir_fd` is an open directory descriptor owned by `directory`,
+    // which outlives this call, and `temp_name` is NUL-terminated.
+    let temp_fd = unsafe {
+        libc::openat(
+            dir_fd,
+            temp_name.as_ptr(),
+            libc::O_WRONLY | libc::O_CREAT | libc::O_EXCL | libc::O_NOFOLLOW | libc::O_CLOEXEC,
+            0o644 as libc::c_uint,
+        )
+    };
+    if temp_fd < 0 {
+        return Err(std::io::Error::last_os_error());
     }
+    // SAFETY: `openat` returned a fresh descriptor that nothing else owns.
+    let mut temp = unsafe { fs::File::from_raw_fd(temp_fd) };
+    let linked = temp
+        .write_all(contents)
+        .and_then(|()| temp.sync_all())
+        .and_then(|()| {
+            // SAFETY: both descriptors are the open directory above and both
+            // names are NUL-terminated; flags 0 means the source is not
+            // followed if it is a symlink, and an existing target fails.
+            let status =
+                unsafe { libc::linkat(dir_fd, temp_name.as_ptr(), dir_fd, TARGET.as_ptr(), 0) };
+            if status == 0 {
+                Ok(())
+            } else {
+                Err(std::io::Error::last_os_error())
+            }
+        });
+    drop(temp);
+    // SAFETY: as above; this removes only the temp entry this call created.
+    unsafe {
+        libc::unlinkat(dir_fd, temp_name.as_ptr(), 0);
+    }
+    match linked {
+        Ok(()) => {
+            directory.sync_all()?;
+            Ok(true)
+        }
+        Err(error) if error.kind() == ErrorKind::AlreadyExists => Ok(false),
+        Err(error) => Err(error),
+    }
+}
+
+/// Non-Unix platforms lack the descriptor-relative calls the Unix version
+/// relies on, so orbit-graph leaves the directory unmarked there.
+#[cfg(not(unix))]
+pub(crate) fn write_new_gitignore(_dir: &Path, _contents: &[u8]) -> std::io::Result<bool> {
+    Ok(false)
 }
 
 struct GitContext {

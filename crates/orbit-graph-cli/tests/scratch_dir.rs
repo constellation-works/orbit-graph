@@ -65,6 +65,49 @@ fn sync_keeps_an_existing_scratch_gitignore() {
     );
 }
 
+/// A `.orbit-graph` symlink that points out of the repository is never written
+/// through: a `.gitignore` with `*` in the umbrella repository's root would hide
+/// every untracked file there. Where the index itself lands is ORB-13162.
+#[cfg(unix)]
+#[test]
+fn sync_never_writes_a_gitignore_through_a_symlinked_scratch_dir() {
+    let umbrella = committed_repository();
+    fs::write(
+        umbrella.path().join("notes.txt"),
+        "untracked umbrella file\n",
+    )
+    .expect("write untracked file");
+    let child = umbrella.path().join("child");
+    fs::create_dir(&child).expect("create child repository");
+    git(&child, &["init", "-q", "-b", "main"]);
+    git(&child, &["config", "user.email", "graph@example.invalid"]);
+    git(&child, &["config", "user.name", "Graph Test"]);
+    fs::write(child.join("lib.rs"), "pub fn child() {}\n").expect("write child source");
+    git(&child, &["add", "."]);
+    git(&child, &["commit", "-q", "-m", "child"]);
+    std::os::unix::fs::symlink("..", child.join(".orbit-graph")).expect("symlink scratch dir");
+
+    let sync = run(&child, ["sync"]);
+    assert!(
+        sync.status.success(),
+        "{}",
+        String::from_utf8_lossy(&sync.stderr)
+    );
+
+    assert!(
+        !umbrella.path().join(".gitignore").exists(),
+        "a .gitignore was written outside the child repository"
+    );
+    let status = git_stdout(
+        umbrella.path(),
+        &["status", "--porcelain", "--untracked-files=all"],
+    );
+    assert!(
+        status.lines().any(|line| line == "?? notes.txt"),
+        "umbrella untracked files must stay visible: {status}"
+    );
+}
+
 fn committed_repository() -> TempDir {
     let repo = TempDir::new().expect("create repository");
     git(repo.path(), &["init", "-q", "-b", "main"]);
