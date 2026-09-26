@@ -26,7 +26,10 @@ OUTPUT_LAYERS=(
   crates/orbit-graph-explorer/src/main.rs
 )
 
-ALLOW=$(cat <<'EOF'
+# A plain here-document, not $(cat <<EOF): bash 3.2 (macOS) mis-parses a
+# quote inside a here-document within command substitution.
+ALLOW=""
+read -r -d '' ALLOW <<'EOF' || true
 crates/orbit-graph-cli/src/main.rs|1|\.with_writer\(io::stderr\)$|The log subscriber's writer; STD-02 §R15 permits the one place that installs it to hand it io::stderr. Permanent.
 crates/orbit-graph-cli/src/main.rs|1|^use std::io::\{self, IsTerminal, Read, Write\};$|Import for the stdin TTY probe below. Temporary: ORB-13164 moves the probe to src/output/ and removes this entry.
 crates/orbit-graph-cli/src/main.rs|1|!io::stdin\(\)\.is_terminal\(\)|The bare-invocation stdin TTY probe. Temporary: ORB-13164 moves it to src/output/ and removes this entry.
@@ -35,7 +38,6 @@ crates/orbit-graph-cli/src/main.rs|2|^[[:space:]]*let mut stdout = io::stdout\(\
 crates/orbit-graph-cli/src/main.rs|1|^[[:space:]]*let mut stderr = io::stderr\(\)\.lock\(\);$|emit_to_process. Temporary: ORB-13164 moves it to src/output/ and removes this entry.
 crates/orbit-graph-explorer/src/service.rs|1|^[[:space:]]*let mut stderr = io::stderr\(\)\.lock\(\);$|print_launch_banner writes the launch banner and token from the library. Temporary: ORB-13168 moves it to the explorer binary and removes this entry.
 EOF
-)
 
 PATTERN='io::stdout|io::stderr|\bstd(out|err)\(\)|\bprintln!|\beprintln!|\bprint!|\beprint!|\bdbg!|is_terminal|IsTerminal'
 
