@@ -904,6 +904,48 @@ fn check_schema(value: &Value, schema: &Value, at: &str, errors: &mut Vec<String
     }
 }
 
+/// `graph_sync` reports the paths its build could not read and the files it
+/// skipped, in the shape of the CLI `sync` output (STD-02 §R32).
+#[cfg(unix)]
+#[test]
+fn graph_sync_reports_failed_and_skipped_paths() {
+    if skip_as_root("graph_sync_reports_failed_and_skipped_paths") {
+        return;
+    }
+    let fixture = evaluation_fixture();
+    let state = TempDir::new().expect("plugin state");
+    let locked = fixture.path().join("src/locked.rs");
+    fs::write(&locked, "pub fn locked() {}\n").expect("write unreadable file");
+    fs::write(
+        fixture.path().join("src/huge.json"),
+        format!("{{\"k\": \"{}\"}}\n", "a".repeat(4 * 1024 * 1024)),
+    )
+    .expect("write oversize file");
+    fs::set_permissions(&locked, fs::Permissions::from_mode(0o000)).expect("chmod 000");
+
+    let output = plugin_output_with_env(
+        fixture.path(),
+        MAINTAIN_TOOL_NAME,
+        json!({"operation": "graph_sync"}),
+        &[("ORBIT_PLUGIN_STATE", state.path().as_os_str())],
+    );
+    fs::set_permissions(&locked, fs::Permissions::from_mode(0o644)).expect("restore mode");
+    let synced = plugin_success(&output);
+
+    assert_eq!(synced["coverage"]["state"], "published", "{synced}");
+    assert_eq!(synced["result"]["files_indexed"], 2, "{synced}");
+    assert_eq!(synced["result"]["failed"]["count"], 1, "{synced}");
+    let failure = &synced["result"]["failed"]["entries"][0];
+    assert_eq!(failure["path"], "src/locked.rs");
+    assert_eq!(failure["operation"], "read file for content hash");
+    assert_eq!(failure["error_kind"], "permission_denied");
+    assert_eq!(
+        synced["result"]["skipped"],
+        json!({"count": 1, "entries": [{"path": "src/huge.json", "reason": "oversize"}]})
+    );
+    assert_matches_schema(&synced, "schemas/maintain.response.json");
+}
+
 #[test]
 fn graph_sync_publishes_structure_that_recommend_applies_at_its_revision() {
     let fixture = evaluation_fixture();
@@ -962,6 +1004,14 @@ fn graph_sync_publishes_structure_that_recommend_applies_at_its_revision() {
     assert_eq!(synced["result"]["seeded_from_published"], false);
     assert_eq!(synced["result"]["budget_ms"], 90_000);
     assert_eq!(synced["result"]["files_indexed"], 2);
+    assert_eq!(
+        synced["result"]["failed"],
+        json!({"count": 0, "entries": []})
+    );
+    assert_eq!(
+        synced["result"]["skipped"],
+        json!({"count": 0, "entries": []})
+    );
     assert_eq!(synced["code_index"]["state"], "ready");
     assert_eq!(synced["code_index"]["fresh"], true);
     assert_eq!(synced["code_index"]["published"]["revision"], head.as_str());
@@ -2745,4 +2795,21 @@ fn case_exclusions(report: &Value, index: usize) -> Vec<&str> {
         .iter()
         .filter_map(Value::as_str)
         .collect()
+}
+
+/// Whether the test process runs as root, for whom `chmod 000` restricts
+/// nothing. A permission test then skips, naming the missing capability on
+/// stderr (STD-04 §R8); CI runs it as a regular user.
+#[cfg(unix)]
+fn skip_as_root(test: &str) -> bool {
+    use std::io::Write as _;
+    // SAFETY: geteuid has no preconditions and cannot fail.
+    if unsafe { libc::geteuid() } != 0 {
+        return false;
+    }
+    let _ = writeln!(
+        std::io::stderr(),
+        "skipping {test}: chmod 000 does not restrict root"
+    );
+    true
 }

@@ -182,15 +182,15 @@ fn cancel_between_files_leaves_the_store_consistent_and_the_next_sync_completes(
     );
     drop(conn);
 
-    // Incremental mode reports only what its diff scan finds: the file
-    // already indexed before cancellation looks unchanged, and the two never
-    // touched still look new.
+    // Pass 2 never ran, so the file pass 1 wrote before cancellation is not
+    // current: the next incremental sync extracts it again along with the
+    // two never touched.
     let report = graph
         .sync(SyncMode::Auto)
         .expect("next sync completes fully after a cancellation");
     assert_eq!(
-        report.files_changed, 2,
-        "the two untouched files are indexed now"
+        report.files_changed, 3,
+        "the cancelled file is re-extracted and the two untouched files are indexed now"
     );
 
     let conn = open_test_connection(worktree.path());
@@ -260,6 +260,10 @@ fn coalesced_follower_times_out_naming_the_leader() {
                     files_changed: 0,
                     files_removed: 0,
                     duration: Duration::ZERO,
+                    failed: Vec::new(),
+                    skipped: Vec::new(),
+                    database_path: PathBuf::new(),
+                    branch: String::new(),
                 })
             })
         })

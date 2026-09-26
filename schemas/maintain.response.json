@@ -34,7 +34,7 @@
       "type": "object"
     },
     "result": {
-      "description": "Operation report: the history sync or import outcome, or for graph_sync the requested mode, budget, file counts, and per-phase timings.",
+      "description": "Operation report: the history sync or import outcome, or for graph_sync the requested mode, budget, file counts, per-phase timings, and the failed and skipped paths (each a count and its entries, as in the CLI sync output; null when the budget ran out before the build reported them).",
       "type": "object"
     },
     "outcomes": {

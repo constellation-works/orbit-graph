@@ -29,6 +29,15 @@
 //! inputs stored with each ref (`extracted_qualified`, `unresolved_receiver`,
 //! `spelled_path`), so every ref ends up as a full sync would store it.
 //!
+//! This transaction is also the single point where the files pass 1 wrote
+//! become current (`STD-03 §R8`): it stamps their real content hash and mtime,
+//! clears the database's unfinished-sync marker, and records the sync time.
+//! When a sync starts and finds that marker, an earlier sync stopped between
+//! pass 1 and this commit, and what the files it rewrote or removed defined
+//! beforehand is lost. So that sync re-resolves every stored ref outside the
+//! files it rewrites ([`Reresolve::All`]) instead of only the dependents, and
+//! finishes the recovery before anything else is committed (`STD-03 §R9`).
+//!
 //! Two rungs match on the bare short name alone: the same-file rung and the
 //! same-module rung. A method call whose receiver type the extractor could not
 //! determine (`args.execute()`, recorded with
@@ -63,18 +72,26 @@ const RUNTIME_INVOCATION_KIND: &str = "runtime_invocation";
 /// keeps the call count bounded while still moving visibly.
 const RESOLVE_PROGRESS_CADENCE: usize = 500;
 
-/// Rewrites the refs of the files Pass 1 wrote, then, in an incremental sync,
-/// re-resolves the refs elsewhere that depend on what those files define.
-///
-/// `before` holds what the modified and removed files defined before Pass 1
-/// rewrote them (see [`Definitions::load`]). A full sync rewrites every
-/// file's refs, so it passes [`Definitions::default`] and skips the second
-/// step.
+/// Which stored refs outside the rewritten files pass 2 re-resolves.
+#[derive(Debug)]
+pub(crate) enum Reresolve<'a> {
+    /// The refs that depend on what the modified and removed files defined
+    /// before pass 1 rewrote them (see [`Definitions::load`]) compared with
+    /// what they define now.
+    Dependents(&'a Definitions),
+    /// Every stored ref: what an interrupted sync's files defined before is
+    /// unknown. A full sync also uses it; it rewrites every readable file, so
+    /// only the refs of files it could not read remain to re-resolve.
+    All,
+}
+
+/// Rewrites the refs of the files Pass 1 wrote and makes those files current,
+/// then re-resolves the refs elsewhere that `reresolve` selects.
 pub(crate) fn run(
     db_path: &Path,
     mode: SyncMode,
     refs_by_file: Vec<ExtractedFileRefs>,
-    before: &Definitions,
+    reresolve: Reresolve<'_>,
     observer: Option<&dyn SyncObserver>,
     files_seen: usize,
     current_path: Option<String>,
@@ -95,9 +112,14 @@ pub(crate) fn run(
 
     let mut resolver = Resolver::new(&tx);
     let mut rewritten_files = BTreeSet::new();
-    for file_refs in refs_by_file {
+    let midway = refs_by_file.len() / 2;
+    for (index, file_refs) in refs_by_file.into_iter().enumerate() {
+        if index == midway && index > 0 {
+            super::inject_fault(super::FaultPoint::MidPass2);
+        }
         rewritten_files.insert(file_refs.file_path.clone());
         delete_refs_for_file(&tx, &file_refs.file_path)?;
+        mark_current(&tx, &file_refs)?;
         let resolved = resolver.resolve_file(&file_refs.file_path, &file_refs.refs)?;
         for (raw_ref, resolved) in file_refs.refs.iter().zip(&resolved) {
             insert_ref(&tx, &file_refs.file_path, raw_ref, resolved)?;
@@ -116,9 +138,14 @@ pub(crate) fn run(
         }
     }
 
-    if mode == SyncMode::Auto {
-        let dependents = Dependents::between(&tx, before, &rewritten_files)?;
-        refresh_dependent_refs(&tx, &mut resolver, &dependents, &rewritten_files)?;
+    match reresolve {
+        Reresolve::Dependents(before) => {
+            let dependents = Dependents::between(&tx, before, &rewritten_files)?;
+            refresh_dependent_refs(&tx, &mut resolver, &dependents, &rewritten_files)?;
+        }
+        Reresolve::All => {
+            refresh_all_refs(&tx, &mut resolver, &rewritten_files)?;
+        }
     }
 
     if let Some(observer) = observer {
@@ -126,6 +153,7 @@ pub(crate) fn run(
     }
 
     update_sync_meta(&tx, mode)?;
+    super::clear_sync_pending(&tx)?;
     tx.commit()
         .map_err(|source| GraphError::sqlite("commit pass2 refs transaction", source))?;
     Ok(())
@@ -369,30 +397,86 @@ fn refresh_dependent_refs(
 
     let mut updated = 0;
     for (from_file, stored) in by_file {
-        let raw_refs = stored.iter().map(|row| row.raw.clone()).collect::<Vec<_>>();
-        let resolved = resolver.resolve_file(&from_file, &raw_refs)?;
-        for (row, resolved) in stored.iter().zip(resolved) {
-            if row.target_qualified == resolved.target_qualified
-                && row.target_symbol_hint == resolved.target_symbol_hint
-                && row.confidence == resolved.confidence
-            {
-                continue;
-            }
-            tx.prepare_cached(
-                "UPDATE refs
-                 SET target_qualified = ?1, target_symbol_hint = ?2, confidence = ?3
-                 WHERE id = ?4",
-            )
-            .map_err(|source| GraphError::sqlite("prepare dependent ref update", source))?
-            .execute(params![
-                resolved.target_qualified,
-                resolved.target_symbol_hint,
-                resolved.confidence,
-                row.id
-            ])
-            .map_err(|source| GraphError::sqlite("update dependent ref", source))?;
-            updated += 1;
+        updated += re_resolve_stored(tx, resolver, &from_file, &stored)?;
+    }
+    Ok(updated)
+}
+
+/// Re-resolves every stored ref outside `rewritten_files`, one source file at
+/// a time, and updates each row whose resolution changed. Returns the number
+/// of rows updated.
+fn refresh_all_refs(
+    tx: &Transaction<'_>,
+    resolver: &mut Resolver<'_, '_>,
+    rewritten_files: &BTreeSet<String>,
+) -> Result<usize, GraphError> {
+    let from_files = {
+        let mut stmt = tx
+            .prepare("SELECT DISTINCT from_file FROM refs ORDER BY from_file")
+            .map_err(|source| GraphError::sqlite("prepare stored ref file lookup", source))?;
+        stmt.query_map([], |row| row.get::<_, String>(0))
+            .map_err(|source| GraphError::sqlite("query stored ref files", source))?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|source| GraphError::sqlite("collect stored ref files", source))?
+    };
+    let mut updated = 0;
+    for from_file in from_files {
+        if rewritten_files.contains(&from_file) {
+            continue;
         }
+        let stored = {
+            let mut stmt = tx
+                .prepare_cached(
+                    "SELECT id, from_file, from_span_start, from_span_end, target_name,
+                            extracted_qualified, kind, unresolved_receiver,
+                            target_qualified, target_symbol_hint, confidence, spelled_path
+                     FROM refs
+                     WHERE from_file = ?1
+                     ORDER BY id",
+                )
+                .map_err(|source| GraphError::sqlite("prepare stored ref lookup", source))?;
+            stmt.query_map(params![from_file], StoredRef::from_row)
+                .map_err(|source| GraphError::sqlite("query stored refs", source))?
+                .collect::<Result<Vec<_>, _>>()
+                .map_err(|source| GraphError::sqlite("read stored ref", source))?
+        };
+        updated += re_resolve_stored(tx, resolver, &from_file, &stored)?;
+    }
+    Ok(updated)
+}
+
+/// Re-resolves `stored`, refs of `from_file`, and updates each row whose
+/// resolution changed. Returns the number of rows updated.
+fn re_resolve_stored(
+    tx: &Transaction<'_>,
+    resolver: &mut Resolver<'_, '_>,
+    from_file: &str,
+    stored: &[StoredRef],
+) -> Result<usize, GraphError> {
+    let raw_refs = stored.iter().map(|row| row.raw.clone()).collect::<Vec<_>>();
+    let resolved = resolver.resolve_file(from_file, &raw_refs)?;
+    let mut updated = 0;
+    for (row, resolved) in stored.iter().zip(resolved) {
+        if row.target_qualified == resolved.target_qualified
+            && row.target_symbol_hint == resolved.target_symbol_hint
+            && row.confidence == resolved.confidence
+        {
+            continue;
+        }
+        tx.prepare_cached(
+            "UPDATE refs
+             SET target_qualified = ?1, target_symbol_hint = ?2, confidence = ?3
+             WHERE id = ?4",
+        )
+        .map_err(|source| GraphError::sqlite("prepare dependent ref update", source))?
+        .execute(params![
+            resolved.target_qualified,
+            resolved.target_symbol_hint,
+            resolved.confidence,
+            row.id
+        ])
+        .map_err(|source| GraphError::sqlite("update dependent ref", source))?;
+        updated += 1;
     }
     Ok(updated)
 }
@@ -458,6 +542,16 @@ fn open_writer_connection(db_path: &Path) -> Result<Connection, GraphError> {
         .map_err(|source| GraphError::sqlite("open graph database for pass2 writes", source))?;
     crate::store::configure_sync_writer(&conn, "configure graph database for pass2 writes")?;
     Ok(conn)
+}
+
+/// Stamps the real content hash and mtime on a file pass 1 wrote with its
+/// pending sentinels, making it current once this transaction commits.
+fn mark_current(tx: &Transaction<'_>, file: &ExtractedFileRefs) -> Result<(), GraphError> {
+    tx.prepare_cached("UPDATE files SET content_hash = ?1, mtime_ns = ?2 WHERE path = ?3")
+        .map_err(|source| GraphError::sqlite("prepare graph file stamp", source))?
+        .execute(params![file.content_hash, file.mtime_ns, file.file_path])
+        .map_err(|source| GraphError::sqlite("stamp graph file current", source))?;
+    Ok(())
 }
 
 fn delete_refs_for_file(tx: &Transaction<'_>, from_file: &str) -> Result<(), GraphError> {

@@ -179,6 +179,10 @@ it runs past the budget the call still answers at the budget with
 `budget_exhausted` and the unfinished build is discarded. `graph_sync` indexes the checkout as it is
 and rejects the history fields (`branch`, `limit`, `delivery`, `workspace`,
 `task_ids`, `run_ids`, `task_snapshots`) rather than ignoring them.
+`result.failed` and `result.skipped` have the same shape as the CLI `sync`
+output: a `count` and one entry per path the build could not read or extract,
+or deliberately left out (see [usage](usage.md#index-lifecycle-and-location)).
+They are `null` when the budget ran out before the build reported them.
 
 Readers only ever see a complete index. Each build writes a new generation
 database that nothing references yet, and a finished build publishes it by

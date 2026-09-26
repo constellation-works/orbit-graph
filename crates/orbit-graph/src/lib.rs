@@ -119,7 +119,12 @@ mod tests;
 ///
 /// Version 17 skips files larger than 4 MiB and files whose tree-sitter parse
 /// exceeds its per-file deadline, so neither gets rows.
-pub const EXTRACTOR_VERSION: u32 = 17;
+///
+/// Version 18 makes pass 2's commit the only point where a file becomes
+/// current, so an interrupted sync is repaired by the next one. It also
+/// rebuilds indexes that earlier interrupted syncs left with files marked
+/// current but missing their refs.
+pub const EXTRACTOR_VERSION: u32 = 18;
 
 /// SQLite schema version used by the graph store.
 ///
@@ -307,12 +312,24 @@ impl Graph {
     }
 
     /// Synchronize indexed rows with files on disk.
+    ///
+    /// A path that cannot be read or extracted does not fail the sync: it is
+    /// listed in [`SyncReport::failed`] and everything else is indexed. A
+    /// sync interrupted by a crash, a kill, an error or a cancellation is
+    /// repaired by the next sync, incremental or full.
     pub fn sync(&self, mode: SyncMode) -> Result<SyncReport, GraphError> {
-        let report = sync::run(self.db_path.path(), self.worktree_root.as_path(), mode)?;
+        let mut report = sync::run(self.db_path.path(), self.worktree_root.as_path(), mode)?;
         if mode == SyncMode::Auto {
             self.record_auto_sync_now()?;
         }
+        self.name_target(&mut report);
         Ok(report)
+    }
+
+    /// Names the database and branch this handle writes in `report`.
+    fn name_target(&self, report: &mut SyncReport) {
+        report.database_path = self.db_path.path().to_path_buf();
+        report.branch = self.db_path.branch().to_string();
     }
 
     /// Synchronize like [`Graph::sync`], but report per-file progress to
@@ -360,7 +377,7 @@ impl Graph {
         mode: SyncMode,
         observer: &dyn SyncObserver,
     ) -> Result<SyncOutcome, GraphError> {
-        let outcome = sync::run_with_observer(
+        let mut outcome = sync::run_with_observer(
             self.db_path.path(),
             self.worktree_root.as_path(),
             mode,
@@ -368,6 +385,11 @@ impl Graph {
         )?;
         if mode == SyncMode::Auto && matches!(outcome, SyncOutcome::Completed(_)) {
             self.record_auto_sync_now()?;
+        }
+        match &mut outcome {
+            SyncOutcome::Completed(report) | SyncOutcome::Cancelled(report) => {
+                self.name_target(report);
+            }
         }
         Ok(outcome)
     }
@@ -891,6 +913,41 @@ pub struct SyncReport {
     pub files_removed: usize,
     /// Wall-clock duration spent syncing.
     pub duration: Duration,
+    /// Paths this sync could not read or extract, one entry each. The sync
+    /// isolated them and indexed everything else; an already indexed path
+    /// among them keeps its previous rows.
+    pub failed: Vec<SyncFailure>,
+    /// Paths this sync deliberately did not index, such as files larger than
+    /// the 4 MiB byte cap.
+    pub skipped: Vec<SyncSkip>,
+    /// The graph database this sync wrote.
+    pub database_path: PathBuf,
+    /// The branch the graph database indexes.
+    pub branch: String,
+}
+
+/// A path a sync could not read or extract. See [`SyncReport::failed`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SyncFailure {
+    /// Worktree-relative path, `/`-separated.
+    pub path: String,
+    /// What the sync was doing, such as `scan directory` or
+    /// `read file for content hash`.
+    pub operation: String,
+    /// Stable class of the error: `permission_denied`, `not_found`, `io`,
+    /// `invalid_data`, `parse_timeout`, `unsupported` or `panic`.
+    pub error_kind: String,
+    /// The error as reported, for diagnosis.
+    pub message: String,
+}
+
+/// A path a sync deliberately did not index. See [`SyncReport::skipped`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SyncSkip {
+    /// Worktree-relative path, `/`-separated.
+    pub path: String,
+    /// Why it was skipped; `oversize` for a file above the byte cap.
+    pub reason: String,
 }
 
 /// Phase of [`Graph::sync_with_observer`] a [`SyncProgress`] report describes.
@@ -947,11 +1004,12 @@ pub struct SyncProgress {
 /// Observes progress across both passes of [`Graph::sync_with_observer`] and
 /// can request cancellation of pass 1.
 ///
-/// The cancel check runs only between files during pass 1 (extraction), so a
-/// cancelled sync always leaves the store consistent: every file fully
-/// written before cancellation is indexed as normal, and every file not yet
-/// touched still looks unsynced to the next sync, incremental or full, which
-/// then indexes it and resolves its references in the ordinary way.
+/// The cancel check runs only between files during pass 1 (extraction). A
+/// file becomes current only when pass 2 commits its references, so a
+/// cancelled sync, which skips pass 2, leaves every file it touched looking
+/// unsynced: the next sync, incremental or full, extracts those files again,
+/// resolves their references, and re-resolves the references elsewhere that
+/// the interrupted sync may have affected.
 ///
 /// Pass 2 (reference resolution) is not cancellable: once pass 1 completes
 /// without cancellation, pass 2 resolves every collected ref to completion
@@ -976,7 +1034,8 @@ pub enum SyncOutcome {
     /// The sync processed every file it found.
     Completed(SyncReport),
     /// The observer requested cancellation; the report covers exactly the
-    /// files processed before that point.
+    /// files pass 1 processed before that point. None of them is current
+    /// until a later sync completes (see [`SyncObserver`]).
     Cancelled(SyncReport),
 }
 
