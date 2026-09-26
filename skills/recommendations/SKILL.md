@@ -111,8 +111,10 @@ Maintenance is deliberate. `orbit.graph.maintain` supports:
 does not expose a cursor-paginated detailed delivery feed. Resume by resubmitting
 omitted IDs. Repeated Git sync calls follow `resume_from` until `complete:true`,
 then become a no-op; the complete cursor does not advance during partial
-bootstrap. Do not call `history rebuild` casually: verified envelopes must be
-replayed afterward.
+bootstrap. `history rebuild --branch <name>` previews the scope and its verified
+delivery count without changing it. Add `--confirm` to rebuild; verified
+deliveries are preserved and re-extracted by default. `--discard-verified`
+requires `--confirm` and explicitly removes them.
 
 The calling activity must allow the callback tools it uses:
 `orbit.workspace.list`, `orbit.task.show`, `orbit.search`, and

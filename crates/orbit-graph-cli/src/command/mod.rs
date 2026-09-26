@@ -292,6 +292,7 @@ impl CliError {
             Self::Stdin(_) => "stdin_error",
             Self::Graph(GraphError::IndexMissing { .. }) => "index_missing",
             Self::Graph(GraphError::IndexIncompatible { .. }) => "index_incompatible",
+            Self::Graph(GraphError::VersionMismatch(_)) => "version_mismatch",
             Self::Graph(_) => "graph_error",
             Self::Tool(error) => error.code().as_str(),
             Self::Selector(_) => "selector_parse_error",
@@ -308,9 +309,11 @@ impl CliError {
             Self::Graph(GraphError::InvalidData { reason, .. }) => Some(reason.as_str()),
             Self::Graph(GraphError::Io { reason, .. }) => Some(reason.as_str()),
             Self::Graph(GraphError::Sqlite { reason, .. }) => Some(reason.as_str()),
-            Self::Graph(GraphError::IndexMissing { .. } | GraphError::IndexIncompatible { .. }) => {
-                None
-            }
+            Self::Graph(
+                GraphError::IndexMissing { .. }
+                | GraphError::IndexIncompatible { .. }
+                | GraphError::VersionMismatch(_),
+            ) => None,
             Self::Graph(GraphError::Unimplemented) => None,
             _ => None,
         }

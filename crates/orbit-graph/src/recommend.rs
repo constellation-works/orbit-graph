@@ -27,6 +27,11 @@ use crate::{Graph, GraphError, HistoryIndex};
 
 /// Default number of ranked destinations returned by recommendation queries.
 pub const DEFAULT_RECOMMENDATION_LIMIT: usize = 10;
+#[cfg(test)]
+thread_local! {
+    static RECOMMEND_AFTER_TARGET: std::cell::RefCell<Option<Box<dyn FnOnce()>>> =
+        std::cell::RefCell::new(None);
+}
 pub(crate) const MAX_RECOMMENDATION_LIMIT: usize = 100;
 
 /// Granularity of requested recommendation destinations.
@@ -321,7 +326,25 @@ impl RecommendationEngine {
         let repo = Repository::open(self.repo_root.as_path()).map_err(|error| {
             GraphError::invalid_data("open repository for recommendations", error.to_string())
         })?;
-        let target = resolve_target(&repo, request.target_revision.as_deref())?;
+        let observed_head = repo.head().and_then(|head| {
+            let branch = if head.is_branch() {
+                head.shorthand().unwrap_or("HEAD").to_string()
+            } else {
+                "HEAD".to_string()
+            };
+            head.peel_to_commit().map(|commit| (branch, commit.id()))
+        });
+        let (checkout_branch, checkout_head, head_error) = match observed_head {
+            Ok((branch, oid)) => (branch, Some(oid), None),
+            Err(error) => ("HEAD".to_string(), None, Some(error.to_string())),
+        };
+        let target = resolve_target(&repo, request.target_revision.as_deref(), checkout_head)?;
+        #[cfg(test)]
+        RECOMMEND_AFTER_TARGET.with(|hook| {
+            if let Some(hook) = hook.borrow_mut().take() {
+                hook();
+            }
+        });
         let effective_cutoff = request
             .cutoff
             .clone()
@@ -418,11 +441,6 @@ impl RecommendationEngine {
         ) {
             add_lexical_baseline(&resolver, query.as_str(), request.level, &mut scored);
         }
-        let checkout_head = repo
-            .head()
-            .ok()
-            .and_then(|head| head.peel_to_commit().ok())
-            .map(|c| c.id());
         let uses_structure = matches!(
             request.variant,
             RecommendationVariant::Combined | RecommendationVariant::GraphOnly
@@ -431,7 +449,11 @@ impl RecommendationEngine {
         let structure = if checkout_head == Some(target) && uses_structure {
             match &self.structure_index {
                 StructureIndex::RepositoryLocal => {
-                    match Graph::open_existing_read_only(self.repo_root.as_path()) {
+                    match Graph::open_existing_for_pinned_target(
+                        self.repo_root.as_path(),
+                        checkout_branch.as_str(),
+                        target.to_string().as_str(),
+                    ) {
                         Ok(graph) => {
                             add_current_structure(&graph, request.level, &resolver, &mut scored)?
                         }
@@ -478,6 +500,11 @@ impl RecommendationEngine {
         if uses_structure {
             if let Some(fallback) = structure_fallback {
                 fallbacks.push(fallback);
+            } else if let Some(error) = &head_error {
+                fallbacks.push(RecommendationFallback {
+                    kind: "structure_head_unknown".to_string(),
+                    reason: format!("bounded structural expansion was skipped because checkout HEAD is unknown: {error}"),
+                });
             } else if checkout_head != Some(target) {
                 fallbacks.push(RecommendationFallback {
                     kind: "structure_unavailable_for_revision".to_string(),
@@ -629,15 +656,23 @@ fn validate_request(request: &RecommendationRequest) -> Result<(), GraphError> {
     Ok(())
 }
 
-fn resolve_target(repo: &Repository, revision: Option<&str>) -> Result<Oid, GraphError> {
+fn resolve_target(
+    repo: &Repository,
+    revision: Option<&str>,
+    checkout_head: Option<Oid>,
+) -> Result<Oid, GraphError> {
     let object = match revision {
         Some(revision) => repo
             .revparse_single(revision)
             .map_err(git_error("resolve requested recommendation revision"))?,
-        None => repo
-            .head()
-            .and_then(|head| head.peel(ObjectType::Commit))
-            .map_err(git_error("resolve current checkout revision"))?,
+        None => {
+            return checkout_head.ok_or_else(|| {
+                GraphError::invalid_data(
+                    "resolve current checkout revision",
+                    "checkout HEAD is unknown; cannot resolve recommendation target",
+                )
+            });
+        }
     };
     object
         .peel_to_commit()
@@ -659,13 +694,19 @@ fn freshness(repo: &Repository, cursor: Option<String>, target: Oid) -> Recommen
     } else {
         RecommendationFreshnessStatus::Stale
     };
-    let relation = parsed.and_then(|oid| repo.graph_descendant_of(target, oid).ok());
+    let relation = parsed.map(|oid| repo.graph_descendant_of(target, oid));
     let reason = match (status, relation) {
         (RecommendationFreshnessStatus::Current, _) => {
             "history cursor equals the resolved target revision".to_string()
         }
-        (_, Some(true)) => "history cursor is behind the resolved target revision".to_string(),
-        _ => "history cursor differs from the resolved target revision or is off its ancestry"
+        (_, Some(Ok(true))) => "history cursor is behind the resolved target revision".to_string(),
+        (_, Some(Ok(false))) => {
+            "history cursor is off the resolved target revision ancestry".to_string()
+        }
+        (_, Some(Err(error))) => {
+            format!("history cursor ancestry is unknown because Git failed: {error}")
+        }
+        (_, None) => "history cursor ancestry is unknown because its revision could not be parsed"
             .to_string(),
     };
     RecommendationFreshness {
@@ -956,7 +997,7 @@ fn score_history(
         if locations.is_empty() {
             continue;
         }
-        let distance = lineage.distance(repo, after);
+        let distance = lineage.distance(repo, after)?;
         let commit_text = (request.commit_text.enabled
             && similarity <= 0.0
             && request.free_text_query
@@ -1630,17 +1671,21 @@ fn artifact_discount(selector: &str) -> f64 {
     }
 }
 
-fn commit_distance(repo: &Repository, from: Oid, to: Oid) -> usize {
+fn commit_distance(repo: &Repository, from: Oid, to: Oid) -> Result<usize, GraphError> {
     if from == to {
-        return 0;
+        return Ok(0);
     }
-    let Ok(mut walk) = repo.revwalk() else {
-        return 100;
-    };
-    if walk.push(to).is_err() || walk.hide(from).is_err() {
-        return 100;
-    }
-    walk.filter_map(Result::ok).count()
+    let mut walk = repo
+        .revwalk()
+        .map_err(git_error("compute commit distance: distance unknown"))?;
+    walk.push(to)
+        .map_err(git_error("compute commit distance: distance unknown"))?;
+    walk.hide(from)
+        .map_err(git_error("compute commit distance: distance unknown"))?;
+    walk.try_fold(0usize, |count, step| {
+        step.map(|_| count + 1)
+            .map_err(git_error("compute commit distance: distance unknown"))
+    })
 }
 
 /// Largest number of added or deleted files for which the single gap diff runs
@@ -1715,7 +1760,7 @@ impl PathLineage {
                 .iter()
                 .map(|delivery| delivery.after_revision)
                 .collect(),
-        );
+        )?;
         let visible_ids = visible
             .iter()
             .map(|delivery| (delivery.delivery_id.as_str(), delivery.after_revision))
@@ -1737,14 +1782,14 @@ impl PathLineage {
                 .entry(step.old_path)
                 .or_insert(step.new_path);
         }
-        let mut ordered = by_revision
-            .into_iter()
-            .map(|(revision, renames)| (lineage.distance(repo, revision), renames))
-            .collect::<Vec<_>>();
+        let mut ordered = Vec::new();
+        for (revision, renames) in by_revision {
+            ordered.push((lineage.distance(repo, revision)?, renames));
+        }
         ordered.sort_by_key(|(distance, _)| std::cmp::Reverse(*distance));
         lineage.steps = ordered;
         for delivery in visible {
-            let distance = lineage.distance(repo, delivery.after_revision);
+            let distance = lineage.distance(repo, delivery.after_revision)?;
             if lineage
                 .newest
                 .is_none_or(|(_, newest_distance)| distance < newest_distance)
@@ -1775,36 +1820,44 @@ impl PathLineage {
     /// costs one step per chain commit instead of one revwalk per delivery.
     /// The walk stops once every wanted revision is seen or the root is reached;
     /// revisions off the chain fall back to [`commit_distance`] on demand.
-    fn index_first_parent_distances(&mut self, repo: &Repository, mut wanted: BTreeSet<Oid>) {
-        let Ok(mut current) = repo.find_commit(self.target) else {
-            return;
-        };
+    fn index_first_parent_distances(
+        &mut self,
+        repo: &Repository,
+        mut wanted: BTreeSet<Oid>,
+    ) -> Result<(), GraphError> {
+        let mut current = repo
+            .find_commit(self.target)
+            .map_err(git_error("index first-parent distances: distance unknown"))?;
         let mut distance = 0;
         loop {
             self.distances.insert(current.id(), distance);
             wanted.remove(&current.id());
             if wanted.is_empty() {
-                return;
+                return Ok(());
             }
-            let Ok(parent) = current.parent(0) else {
-                return;
-            };
+            if current.parent_count() == 0 {
+                return Ok(());
+            }
+            let parent = current
+                .parent(0)
+                .map_err(git_error("index first-parent distances: distance unknown"))?;
             distance += if current.parent_count() == 1 {
                 1
             } else {
-                commit_distance(repo, parent.id(), current.id())
+                commit_distance(repo, parent.id(), current.id())?
             };
             current = parent;
         }
     }
 
     /// Commits reachable from the target but not from `revision`, memoized.
-    fn distance(&mut self, repo: &Repository, revision: Oid) -> usize {
-        let target = self.target;
-        *self
-            .distances
-            .entry(revision)
-            .or_insert_with(|| commit_distance(repo, revision, target))
+    fn distance(&mut self, repo: &Repository, revision: Oid) -> Result<usize, GraphError> {
+        if let Some(distance) = self.distances.get(&revision) {
+            return Ok(*distance);
+        }
+        let distance = commit_distance(repo, revision, self.target)?;
+        self.distances.insert(revision, distance);
+        Ok(distance)
     }
 
     /// Map `path` as it existed at `after_revision` to its live descendant in
@@ -1819,7 +1872,7 @@ impl PathLineage {
         if tree.files.contains_key(path) {
             return Ok(Some(path.to_string()));
         }
-        let origin = self.distance(repo, after_revision);
+        let origin = self.distance(repo, after_revision)?;
         let mut current = path.to_string();
         for (distance, renames) in &self.steps {
             if *distance >= origin {
@@ -2989,7 +3042,9 @@ mod tests {
             .expect("side")
             .id();
         let mut lineage = PathLineage::new(&repo, target, &[], Vec::new()).expect("lineage");
-        lineage.index_first_parent_distances(&repo, chain.iter().copied().collect());
+        lineage
+            .index_first_parent_distances(&repo, chain.iter().copied().collect())
+            .expect("index distances");
         for oid in chain.iter().copied().chain([side_tip]) {
             assert_eq!(
                 lineage.distance(&repo, oid),
@@ -2997,6 +3052,67 @@ mod tests {
                 "distance mismatch for {oid}"
             );
         }
+    }
+
+    #[test]
+    fn commit_distance_names_an_unknown_distance_when_git_cannot_walk() {
+        let fixture = TempDir::new().expect("fixture");
+        git(fixture.path(), &["init", "-b", "main"]);
+        git(
+            fixture.path(),
+            &["config", "user.email", "test@example.invalid"],
+        );
+        git(fixture.path(), &["config", "user.name", "Test"]);
+        fs::write(fixture.path().join("a.rs"), "fn value() {}\n").expect("write");
+        commit_all(fixture.path(), "root");
+        let repo = Repository::open(fixture.path()).expect("repo");
+        let target = Oid::from_str(head(fixture.path()).as_str()).expect("target");
+        let missing = Oid::from_str("0000000000000000000000000000000000000000").expect("oid");
+        let error = commit_distance(&repo, missing, target).expect_err("missing commit");
+        assert!(error.to_string().contains("distance unknown"), "{error}");
+    }
+
+    #[test]
+    fn recommendation_keeps_pinned_target_and_graph_family_after_checkout_moves() {
+        let fixture = fixture_repo();
+        fs::write(
+            fixture.path().join("src/lib.rs"),
+            "pub fn value() -> i32 { 1 }\n",
+        )
+        .expect("write root");
+        commit_all(fixture.path(), "root");
+        let earlier = head(fixture.path());
+        fs::write(
+            fixture.path().join("src/lib.rs"),
+            "pub fn value() -> i32 { 2 }\n",
+        )
+        .expect("write target");
+        commit_all(fixture.path(), "target");
+        let target = head(fixture.path());
+        HistoryIndex::open(fixture.path(), "main").expect("history");
+        Graph::open(fixture.path(), crate::SyncPolicy::Manual)
+            .expect("graph")
+            .sync(crate::SyncMode::Full)
+            .expect("sync graph");
+        let moved = fixture.path().to_path_buf();
+        RECOMMEND_AFTER_TARGET.with(|slot| {
+            *slot.borrow_mut() = Some(Box::new(move || {
+                git(&moved, &["checkout", "--detach", earlier.as_str()]);
+            }));
+        });
+        let engine = RecommendationEngine::open(fixture.path(), "main").expect("engine");
+        let mut request = query_request("value", target.as_str(), None);
+        request.target_revision = None;
+        let result = engine.recommend(&request).expect("recommend pinned target");
+        assert_eq!(result.resolved_target_revision, target);
+        assert!(
+            result.fallbacks.iter().all(|fallback| {
+                fallback.kind != "structure_unavailable_for_revision"
+                    && fallback.kind != "structure_index_missing"
+            }),
+            "{:?}",
+            result.fallbacks
+        );
     }
 
     #[test]
