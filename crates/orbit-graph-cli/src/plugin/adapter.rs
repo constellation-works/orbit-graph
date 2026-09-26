@@ -13,8 +13,8 @@ use std::os::unix::process::CommandExt;
 use git2::{Oid, Repository};
 use serde_json::{Value, json};
 
-use crate::recommend::current_observation_cutoff;
-use crate::{
+use orbit_graph::current_observation_cutoff;
+use orbit_graph::{
     DeliveryEvidence, DeliveryImport, GraphError, HybridTaskHit, Provenance, TaskAssociation,
     TaskTextAvailability, TemporalFact, TemporalStatus,
 };
@@ -216,7 +216,7 @@ impl<'a> OrbitAdapter<'a> {
             .and_then(Value::as_str)
             .map(str::to_string);
         Ok(DeliveryImport {
-            schema_version: crate::DELIVERY_IMPORT_SCHEMA_VERSION,
+            schema_version: orbit_graph::DELIVERY_IMPORT_SCHEMA_VERSION,
             repository: repository_identity.to_string(),
             landing_branch: branch.to_string(),
             before_revision: before.to_string(),

@@ -9,10 +9,10 @@
 
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::process::Command;
 
 use serde_json::{Value, json};
 
-use orbit_graph::plugin::PLUGIN_SCHEMA_VERSION;
 use orbit_graph::{EXTRACTOR_VERSION, HISTORY_INDEX_SCHEMA_VERSION, STORE_SCHEMA_VERSION};
 
 const CRATE_VERSION: &str = env!("CARGO_PKG_VERSION");
@@ -45,7 +45,7 @@ fn launchers_and_installer_pin_the_crate_contract() {
         let text = read(path);
         for (field, expected) in [
             ("extractor_version", EXTRACTOR_VERSION),
-            ("plugin_schema_version", PLUGIN_SCHEMA_VERSION),
+            ("plugin_schema_version", plugin_schema_version()),
         ] {
             let pins = pinned_numbers(&text, field);
             assert!(!pins.is_empty(), "{path} does not pin {field}");
@@ -168,8 +168,23 @@ fn current_contract() -> Value {
         "extractor_version": EXTRACTOR_VERSION,
         "store_schema_version": STORE_SCHEMA_VERSION,
         "history_schema_version": HISTORY_INDEX_SCHEMA_VERSION,
-        "plugin_schema_version": PLUGIN_SCHEMA_VERSION,
+        "plugin_schema_version": plugin_schema_version(),
     })
+}
+
+/// The plugin envelope version the executable reports. The protocol lives in
+/// the `orbit-graph` binary, which has no library target to import it from.
+fn plugin_schema_version() -> u32 {
+    let output = Command::new(env!("CARGO_BIN_EXE_orbit-graph"))
+        .args(["version", "--format", "json"])
+        .output()
+        .expect("run orbit-graph version");
+    assert!(output.status.success(), "orbit-graph version: {output:?}");
+    let document: Value = serde_json::from_slice(&output.stdout).expect("parse version output");
+    document["plugin_schema_version"]
+        .as_u64()
+        .and_then(|version| u32::try_from(version).ok())
+        .unwrap_or_else(|| panic!("no plugin_schema_version in {document}"))
 }
 
 /// Every number written after `field` as `field=N` or `"field":N`.

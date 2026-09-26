@@ -621,10 +621,13 @@ dependencies = [
 name = "orbit-graph-cli"
 version = "0.10.0"
 dependencies = [
+ "blake3",
  "clap",
+ "fs2",
  "git2",
  "libc",
  "orbit-graph",
+ "rusqlite",
  "serde",
  "serde_json",
  "serde_norway",

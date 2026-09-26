@@ -84,6 +84,12 @@ version is tagged or installed), and
 installer, goldens, or manifests disagree with the crate, or when a released
 version's contract changes.
 
+The protocol lives in the executable's crate, `crates/orbit-graph-cli`
+(`src/plugin.rs` and `src/plugin/`): tool names, envelopes, dispatch, error
+codes, the Orbit subprocess adapter and the plugin-state code-graph index. The
+`orbit-graph` library has no plugin API and reads neither `ORBIT_PLUGIN_STATE`
+nor `GRAPH_ORBIT_TIMEOUT_SECONDS`.
+
 ## Usage
 
 Every plugin request requires `schema_version: 1` and an explicit absolute

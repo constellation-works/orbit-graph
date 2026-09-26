@@ -268,7 +268,7 @@ pub enum CliError {
     Graph(#[from] GraphError),
     /// An Orbit plugin tool request failed.
     #[error(transparent)]
-    Tool(orbit_graph::plugin::ToolError),
+    Tool(crate::plugin::ToolError),
     /// A graph selector argument did not parse.
     #[error(transparent)]
     Selector(#[from] SelectorParseError),

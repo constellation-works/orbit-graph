@@ -7,7 +7,7 @@ use std::path::PathBuf;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
-use crate::{
+use orbit_graph::{
     DeliveryImport, EXTRACTOR_VERSION, GraphError, HISTORY_INDEX_SCHEMA_VERSION, HistoryIndex,
     HybridTaskHit, RecommendationEngine, RecommendationInput, RecommendationLevel,
     RecommendationRequest, RecommendationVariant, STORE_SCHEMA_VERSION, TaskAssociation,
@@ -20,7 +20,7 @@ mod query;
 
 use adapter::{OrbitAdapter, canonical_repository};
 use code_index::{Incomplete, IndexState};
-pub use error::{ToolError, ToolErrorCode};
+pub use error::ToolError;
 use query::QueryTool;
 
 /// External tool name for recommendations and authoritative task lookup.
@@ -38,12 +38,6 @@ const V2_RECOMMEND_TOOL_NAME: &str = "graph.recommend";
 const V2_STATUS_TOOL_NAME: &str = "graph.status";
 const V2_MAINTAIN_TOOL_NAME: &str = "graph.maintain";
 const V2_VERSION_TOOL_NAME: &str = "graph.version";
-
-/// Read-only code-graph query tool verbs, registered as `orbit.graph.<verb>`
-/// (verified first-party install) or `graph.<verb>`.
-pub const QUERY_TOOL_VERBS: [&str; 8] = [
-    "search", "show", "refs", "callees", "impact", "trace", "deps", "overview",
-];
 
 /// Whether `name` selects one of this package's no-argv external tools.
 pub fn recognizes_tool(name: &str) -> bool {
@@ -63,13 +57,13 @@ pub fn recognizes_tool(name: &str) -> bool {
 
 /// Execute one no-argv Orbit external-tool request from JSON stdin bytes.
 ///
-/// Failures carry a stable [`ToolErrorCode`]: a request the tool refuses
-/// before touching any repository is [`ToolErrorCode::InvalidRequest`], a
+/// Failures carry a stable [`error::ToolErrorCode`]: a request the tool refuses
+/// before touching any repository is [`error::ToolErrorCode::InvalidRequest`], a
 /// routed repository that cannot be opened is
-/// [`ToolErrorCode::RepositoryUnavailable`], a query tool without a usable
-/// code-graph index is [`ToolErrorCode::IndexMissing`] or
-/// [`ToolErrorCode::IndexIncompatible`], and every other failure is
-/// [`ToolErrorCode::GraphError`].
+/// [`error::ToolErrorCode::RepositoryUnavailable`], a query tool without a usable
+/// code-graph index is [`error::ToolErrorCode::IndexMissing`] or
+/// [`error::ToolErrorCode::IndexIncompatible`], and every other failure is
+/// [`error::ToolErrorCode::GraphError`].
 pub fn execute_external_tool(name: &str, input: &[u8]) -> Result<Value, ToolError> {
     if let Some(tool) = QueryTool::from_tool_name(name) {
         return query::execute(tool, name, input);
@@ -537,7 +531,7 @@ fn graph_sync(repository: PathBuf, full: bool, budget_ms: u64) -> Result<Value, 
 
 /// `graph_sync`'s `failed` field: the CLI `sync` shape, a count and its
 /// entries.
-fn failed_json(failed: &[crate::SyncFailure]) -> Value {
+fn failed_json(failed: &[orbit_graph::SyncFailure]) -> Value {
     json!({
         "count": failed.len(),
         "entries": failed
@@ -554,7 +548,7 @@ fn failed_json(failed: &[crate::SyncFailure]) -> Value {
 
 /// `graph_sync`'s `skipped` field: the CLI `sync` shape, a count and its
 /// entries.
-fn skipped_json(skipped: &[crate::SyncSkip]) -> Value {
+fn skipped_json(skipped: &[orbit_graph::SyncSkip]) -> Value {
     json!({
         "count": skipped.len(),
         "entries": skipped
@@ -701,7 +695,7 @@ fn validate_schema(version: u32) -> Result<(), ToolError> {
 }
 
 /// Canonicalize and open the explicitly routed repository, reporting a
-/// missing or non-Git path as [`ToolErrorCode::RepositoryUnavailable`].
+/// missing or non-Git path as [`error::ToolErrorCode::RepositoryUnavailable`].
 fn routed_repository(path: &std::path::Path) -> Result<PathBuf, ToolError> {
     canonical_repository(path).map_err(ToolError::repository_unavailable)
 }

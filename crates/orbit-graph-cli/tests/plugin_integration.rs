@@ -18,10 +18,17 @@ use serde_json::{Value, json};
 use tempfile::TempDir;
 
 use orbit_graph::EXTRACTOR_VERSION;
-use orbit_graph::plugin::{
-    MAINTAIN_TOOL_NAME, PLUGIN_SCHEMA_VERSION, RECOMMEND_TOOL_NAME, STATUS_TOOL_NAME,
-    VERSION_TOOL_NAME,
-};
+
+// The plugin contract's tool names and envelope version. The protocol lives in
+// the `orbit-graph` binary, which has no library target to import them from;
+// `plugin_contract` ties the envelope version to the executable's report.
+const RECOMMEND_TOOL_NAME: &str = "orbit.graph.recommend";
+const STATUS_TOOL_NAME: &str = "orbit.graph.status";
+const MAINTAIN_TOOL_NAME: &str = "orbit.graph.maintain";
+const VERSION_TOOL_NAME: &str = "orbit.graph.version";
+const PLUGIN_SCHEMA_VERSION: u32 = 1;
+/// Tools of the root manifest that are not read-only code-graph queries.
+const NON_QUERY_TOOLS: [&str; 4] = ["version", "status", "recommend", "maintain"];
 
 #[test]
 fn no_argv_plugin_supports_status_and_query_and_task_id_both_levels() {
@@ -670,8 +677,8 @@ fn query_tools_answer_from_the_published_index_and_name_missing_and_stale_indexe
         ("overview", json!({})),
     ];
     assert_eq!(
-        requests.clone().map(|(verb, _)| verb),
-        orbit_graph::plugin::QUERY_TOOL_VERBS
+        requests.clone().map(|(verb, _)| verb).to_vec(),
+        manifest_query_verbs()
     );
 
     // No index yet: every tool fails with a code and names the call that
@@ -2275,6 +2282,23 @@ fn isolated_tool_run(
         .arg(orbit_root)
         .output()
         .expect("invoke isolated Orbit tool")
+}
+
+/// The read-only code-graph query verbs the root `plugin.yaml` registers, in
+/// manifest order.
+fn manifest_query_verbs() -> Vec<String> {
+    let manifest: Value = serde_norway::from_slice(
+        &fs::read(repository_root().join("plugin.yaml")).expect("read plugin.yaml"),
+    )
+    .expect("parse plugin.yaml");
+    manifest["spec"]["tools"]
+        .as_array()
+        .expect("plugin.yaml tools")
+        .iter()
+        .filter_map(|tool| tool["name"].as_str())
+        .filter(|name| !NON_QUERY_TOOLS.contains(name))
+        .map(str::to_string)
+        .collect()
 }
 
 /// The repository root, which owns `plugin/` and `scripts/` while this crate

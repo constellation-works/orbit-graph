@@ -16,7 +16,7 @@ impl VersionCommand {
             extractor_version: EXTRACTOR_VERSION,
             store_schema_version: STORE_SCHEMA_VERSION,
             history_schema_version: HISTORY_INDEX_SCHEMA_VERSION,
-            plugin_schema_version: orbit_graph::plugin::PLUGIN_SCHEMA_VERSION,
+            plugin_schema_version: crate::plugin::PLUGIN_SCHEMA_VERSION,
         })
     }
 }

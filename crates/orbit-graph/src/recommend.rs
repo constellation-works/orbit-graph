@@ -245,8 +245,13 @@ pub struct RecommendationEngine {
 }
 
 /// Where combined and graph-only ranking read current code structure from.
+///
+/// Public only for the `orbit-graph` CLI's plugin protocol, which builds the
+/// published variants for [`RecommendationEngine::open_with_index_dir`]; it is
+/// not part of the documented library surface.
+#[doc(hidden)]
 #[derive(Debug, Clone)]
-pub(crate) enum StructureIndex {
+pub enum StructureIndex {
     /// The repository-local database selected by branch and commit, as the
     /// command-line interface maintains it with `orbit-graph sync`.
     RepositoryLocal,
@@ -286,7 +291,12 @@ impl RecommendationEngine {
 
     /// Open an engine whose history index lives in `index_dir` and whose
     /// structural evidence comes from `structure_index`.
-    pub(crate) fn open_with_index_dir(
+    ///
+    /// Public only for the `orbit-graph` CLI's plugin protocol, which keeps its
+    /// indexes in its own state directory; library callers use
+    /// [`RecommendationEngine::open`].
+    #[doc(hidden)]
+    pub fn open_with_index_dir(
         repo_root: &Path,
         landing_branch: &str,
         index_dir: &Path,
@@ -518,7 +528,23 @@ impl RecommendationEngine {
     }
 }
 
-pub(crate) fn current_observation_cutoff() -> Result<String, GraphError> {
+/// The current time as an RFC 3339 UTC timestamp with nanosecond precision
+/// (`YYYY-MM-DDTHH:MM:SS.nnnnnnnnnZ`), the form recommendations record as
+/// their effective cutoff when a request names none.
+///
+/// # Errors
+///
+/// [`GraphError::InvalidData`] when the system clock is before the Unix epoch
+/// or too far past it to represent.
+///
+/// # Examples
+///
+/// ```
+/// let now = orbit_graph::current_observation_cutoff()?;
+/// assert!(now.ends_with('Z'));
+/// # Ok::<(), orbit_graph::GraphError>(())
+/// ```
+pub fn current_observation_cutoff() -> Result<String, GraphError> {
     let elapsed = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map_err(|error| {

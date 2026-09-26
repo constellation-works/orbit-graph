@@ -49,6 +49,12 @@ with `crates/orbit-graph/tests/fixtures/selector_corpus.txt` alongside it. The
 move rewrote only module paths, visibility and the history extraction's error
 type; extraction behavior is unchanged.
 
+On 2026-09-26 (ORB-13254) the Orbit plugin protocol,
+`crates/orbit-graph/src/plugin.rs` and `crates/orbit-graph/src/plugin/**`, moved
+to `crates/orbit-graph-cli/src/plugin.rs` and `crates/orbit-graph-cli/src/plugin/**`.
+The move rewrote only module paths and the visibility of the library helpers
+the protocol calls; plugin behavior is unchanged.
+
 ## Standalone adaptation boundary
 
 The recovery intentionally changes only repository packaging and dependencies:
