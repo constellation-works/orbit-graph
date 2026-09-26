@@ -781,7 +781,7 @@ impl BuildJob {
 
     fn build(&self) -> Result<(SyncOutcome, u64, u64), GraphError> {
         let outcome = {
-            let graph = Graph::open_with_db_path(
+            let graph = Graph::open_in_plugin_state(
                 self.repository.as_path(),
                 self.generation.as_path(),
                 SyncPolicy::Manual,
@@ -901,19 +901,15 @@ fn sidecar(generation: &Path, suffix: &str) -> PathBuf {
     PathBuf::from(name)
 }
 
-/// Create `index_dir` (and missing parents) owner-only, and refuse a final
-/// component that is not a real directory (STD-05 R7/R8).
+/// Create `index_dir`, orbit-graph's own directory under `$ORBIT_PLUGIN_STATE`,
+/// owner-only (`0700`) and marked with its self-ignoring `.gitignore`, and
+/// refuse a final component that is not a real directory (STD-05 R7/R8).
 fn create_private_dir(index_dir: &Path) -> Result<(), GraphError> {
-    let mut builder = fs::DirBuilder::new();
-    builder.recursive(true);
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::DirBuilderExt;
-        builder.mode(0o700);
-    }
-    builder
-        .create(index_dir)
-        .map_err(|source| GraphError::io("create code-graph index directory", index_dir, source))?;
+    crate::store::create_index_dir(
+        index_dir,
+        crate::store::IndexDirOwner::PluginState,
+        "create code-graph index directory",
+    )?;
     let is_dir = fs::symlink_metadata(index_dir)
         .map_err(|source| GraphError::io("inspect code-graph index directory", index_dir, source))?
         .is_dir();

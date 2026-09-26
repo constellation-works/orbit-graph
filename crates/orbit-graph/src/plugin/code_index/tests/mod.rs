@@ -266,6 +266,8 @@ fn index_files_are_owner_only_whatever_the_umask() {
     sync(repo.path(), &state, request(true)).expect("second build");
     assert_eq!(mode(&root.path().join("nested")), 0o700);
     assert_eq!(mode(&state), 0o700);
+    // The plugin-state directory carries #87's self-ignoring marker.
+    assert!(state.join(".gitignore").is_file());
     for entry in fs::read_dir(&state).expect("list") {
         let path = entry.expect("entry").path();
         assert_eq!(mode(&path), 0o600, "{}", path.display());

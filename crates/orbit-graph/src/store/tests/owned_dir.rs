@@ -170,3 +170,35 @@ fn gitignore_write_refuses_a_symlinked_directory_and_keeps_any_existing_entry() 
     assert_eq!(gitignore(&fresh).as_deref(), Some("*\n"));
     assert_eq!(entries(&fresh), [".gitignore"]);
 }
+
+#[cfg(unix)]
+#[test]
+fn owned_dirs_and_their_marker_are_owner_only_but_caller_dirs_keep_the_default() {
+    use std::os::unix::fs::PermissionsExt;
+    let mode = |path: &Path| {
+        fs::symlink_metadata(path)
+            .expect("metadata")
+            .permissions()
+            .mode()
+            & 0o777
+    };
+    let root = tempfile::tempdir().expect("tempdir");
+    let plugin = root.path().join("state/0123abcd");
+    create_index_dir(&plugin, IndexDirOwner::PluginState, "create test directory").expect("create");
+    assert_eq!(mode(&root.path().join("state")), 0o700);
+    assert_eq!(mode(&plugin), 0o700);
+    assert_eq!(mode(&plugin.join(".gitignore")), 0o600);
+
+    let scratch_dir = root.path().join(".orbit-graph");
+    create_index_dir(&scratch_dir, scratch(root.path()), "create test directory").expect("create");
+    assert_eq!(mode(&scratch_dir), 0o700);
+
+    let caller = root.path().join("caller");
+    let umask_default = {
+        let probe = root.path().join("probe");
+        fs::create_dir(&probe).expect("probe");
+        mode(&probe)
+    };
+    create_index_dir(&caller, IndexDirOwner::Caller, "create test directory").expect("create");
+    assert_eq!(mode(&caller), umask_default);
+}
