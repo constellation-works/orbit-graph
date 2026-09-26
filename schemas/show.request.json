@@ -1,0 +1,31 @@
+{
+  "type": "object",
+  "required": [
+    "selector"
+  ],
+  "properties": {
+    "schema_version": {
+      "description": "Request contract version; must be 1 when present.",
+      "type": "integer",
+      "const": 1
+    },
+    "repository": {
+      "description": "Absolute path of the Git repository to query. Defaults to the caller's workspace root; never inferred from the tool cwd.",
+      "type": "string",
+      "minLength": 1
+    },
+    "selector": {
+      "description": "Selector of the node to query, as search and other results print it: symbol:<path>#<qualified>:<kind>, file:<path>, or dir:<path>.",
+      "type": "string",
+      "minLength": 1
+    },
+    "max_bytes": {
+      "description": "Maximum source bytes returned; 1-65536, default 16384. metadata.truncated reports a cut.",
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 65536,
+      "default": 16384
+    }
+  },
+  "additionalProperties": false
+}

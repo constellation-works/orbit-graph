@@ -1,7 +1,8 @@
 # Orbit plugin
 
-orbit-graph ships an Orbit v2 plugin (`plugin.yaml`) that exposes
-leakage-safe change recommendations and history maintenance as Orbit tools.
+orbit-graph ships an Orbit v2 plugin (`plugin.yaml`) that exposes read-only
+code-graph queries, leakage-safe change recommendations, and index maintenance
+as Orbit tools.
 
 ## Install
 
@@ -10,8 +11,10 @@ declares `publisher: constellation-works` and `origin: orbit`, which Orbit
 honours only for a verified first-party source: installed with
 `orbit plugin add git+https://github.com/constellation-works/orbit-graph#<tag>`,
 the tools register as `orbit.graph.version`, `orbit.graph.status`,
-`orbit.graph.recommend`, and `orbit.graph.maintain` (MCP `orbit_graph_*`) with
-the derived `orbit graph <verb>` command group. Orbit refuses the `origin`
+`orbit.graph.recommend`, `orbit.graph.maintain`, and the query tools
+`orbit.graph.search`, `show`, `refs`, `callees`, `impact`, `trace`, `deps`, and
+`overview` (MCP `orbit_graph_*`) with the derived `orbit graph <verb>` command
+group. Orbit refuses the `origin`
 claim from any other source (a local directory, an archive, a fork); such a
 copy must drop `origin: orbit` and then registers bare `graph.*` names. The
 executable accepts both spellings.
@@ -203,6 +206,54 @@ evidence, sets `structure_applied: false`, and names the fix in `fallbacks`:
 | `structure_index_incompatible` | Built by another extractor or schema version | Run `graph_sync` with `"full": true` |
 | `structure_unavailable_for_revision` | Target is not the checkout `HEAD` | Recommend for `HEAD`, or accept no structure |
 
+## Code-graph queries
+
+Eight `read_only` tools answer the orbit-graph library's queries from the
+published code-graph index: `search`, `show`, `refs`, `callees`, `impact`,
+`trace`, `deps`, and `overview`. Their inputs mirror the CLI commands of the
+same names (see [usage](usage.md)); `schemas/<verb>.request.json` describes
+every field, enum, and default. The derived CLI takes the main argument
+positionally:
+
+```sh
+orbit graph search parse
+orbit graph refs 'symbol:src/parser.rs#helper:function'
+orbit tool run orbit.graph.impact --input '{
+  "schema_version":1,
+  "repository":"/work/widgets",
+  "selector":"symbol:src/parser.rs#helper:function",
+  "direction":"inbound",
+  "depth":2
+}' --full
+```
+
+Each response has this shape:
+
+| Field | Contents |
+|---|---|
+| `result` | The library result, unshaped, so fields the library adds reach callers unchanged. |
+| `index` | `revision`, `checkout_revision`, `fresh`, `worktree_dirty`, `synced_at`, and `files`. |
+| `index.stale` | Present only when `fresh` is false: the reason, and a structured `fix` (`{"tool":"orbit.graph.maintain","input":{"operation":"graph_sync"}}`). Stale results are still returned. |
+| `truncated` / `truncation` | `limit` (1–500, default 50; search 20) caps every top-level result array, and a 256 KiB ceiling tightens the cap further. `truncation` reports `{returned, total}` for each cut field. |
+
+`show` returns at most `max_bytes` (default 16384, at most 65536) of source,
+and `result` is null when the selector names nothing. `impact` and `trace`
+accept `depth` 1–10 and keep the library's 200-node cap.
+
+A query never builds or migrates an index, and it creates no files, so it works
+against a read-only state directory. A query fails with a stable code instead
+of returning an empty result:
+
+| Code | Cause | Fix |
+|---|---|---|
+| `index_missing` | Nothing has been published | Run `graph_sync` |
+| `index_incompatible` | Another extractor built the index | Run `graph_sync` with `"full": true` |
+
+The error message names the exact call, in the caller's own tool spelling. The
+query tools use the existing `fs` read grant and request no new permissions.
+The deprecated `plugin/` compatibility tree and its v1 sidecars do not
+advertise them.
+
 ## Scheduled history synchronization
 
 The plugin also ships a disabled `history-sync` routine. Enabling the plugin
@@ -242,7 +293,9 @@ Failed calls return a stable `error.code`: `invalid_request` when the request
 is refused before any repository is read (unknown tool or field, unsupported
 `schema_version`, out-of-range bound, missing required field),
 `repository_unavailable` when the routed `repository` is missing or not a Git
-repository, and `graph_error` for every other index, Git, or callback failure.
+repository, `index_missing` or `index_incompatible` when a query tool has no
+usable code-graph index, and `graph_error` for every other index, Git, or
+callback failure.
 
 
 The bundled agent guidance is in

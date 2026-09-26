@@ -1,0 +1,45 @@
+{
+  "type": "object",
+  "required": [
+    "query"
+  ],
+  "properties": {
+    "schema_version": {
+      "description": "Request contract version; must be 1 when present.",
+      "type": "integer",
+      "const": 1
+    },
+    "repository": {
+      "description": "Absolute path of the Git repository to query. Defaults to the caller's workspace root; never inferred from the tool cwd.",
+      "type": "string",
+      "minLength": 1
+    },
+    "query": {
+      "description": "Search text (SQLite FTS5 syntax); must not be blank.",
+      "type": "string",
+      "minLength": 1
+    },
+    "kind": {
+      "description": "Restrict matches to one kind.",
+      "type": "string",
+      "enum": [
+        "symbol",
+        "string",
+        "config"
+      ]
+    },
+    "lang": {
+      "description": "Restrict matches to files of this language, as overview reports it (for example rust, python).",
+      "type": "string",
+      "minLength": 1
+    },
+    "limit": {
+      "description": "Maximum matches; 1-500, default 20.",
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 500,
+      "default": 20
+    }
+  },
+  "additionalProperties": false
+}

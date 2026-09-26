@@ -1,0 +1,59 @@
+{
+  "type": "object",
+  "required": [
+    "selector"
+  ],
+  "properties": {
+    "schema_version": {
+      "description": "Request contract version; must be 1 when present.",
+      "type": "integer",
+      "const": 1
+    },
+    "repository": {
+      "description": "Absolute path of the Git repository to query. Defaults to the caller's workspace root; never inferred from the tool cwd.",
+      "type": "string",
+      "minLength": 1
+    },
+    "selector": {
+      "description": "Selector of the node to query, as search and other results print it: symbol:<path>#<qualified>:<kind>, file:<path>, or dir:<path>.",
+      "type": "string",
+      "minLength": 1
+    },
+    "depth": {
+      "description": "Traversal depth in edges; 1-10, default 3. The library also stops at 200 nodes and sets truncated.",
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 10,
+      "default": 3
+    },
+    "direction": {
+      "description": "Traverse inbound (callers), outbound (callees), or both (default).",
+      "type": "string",
+      "enum": [
+        "both",
+        "inbound",
+        "outbound"
+      ],
+      "default": "both"
+    },
+    "confidence": {
+      "description": "Minimum resolution confidence: exact, import_resolved, same_module, or fuzzy_name (name-only matches, which include cross-crate callers through re-exports). Default same_module.",
+      "type": "string",
+      "enum": [
+        "exact",
+        "import_resolved",
+        "same_module",
+        "fuzzy_name"
+      ],
+      "default": "same_module"
+    },
+    "limit": {
+      "description": "Cap on each top-level result array (touched); 1-500, default 50. Cut arrays are reported in truncation.",
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 500,
+      "default": 50
+    }
+  },
+  "additionalProperties": false
+}

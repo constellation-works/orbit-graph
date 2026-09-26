@@ -580,6 +580,287 @@ fn plugin_state_contains_every_index_file() {
     }
 }
 
+/// A repository with a call chain and an import for the query tools.
+fn query_fixture() -> TempDir {
+    let fixture = TempDir::new().expect("create query fixture");
+    run_git(fixture.path(), ["init", "-b", "main"]);
+    run_git(
+        fixture.path(),
+        ["config", "user.email", "graph@example.invalid"],
+    );
+    run_git(fixture.path(), ["config", "user.name", "Graph Test"]);
+    fs::create_dir_all(fixture.path().join("src")).expect("create src");
+    fs::write(
+        fixture.path().join("src/parser.rs"),
+        "pub fn parse() -> bool { helper() }\npub fn helper() -> bool { true }\n",
+    )
+    .expect("write parser");
+    fs::write(
+        fixture.path().join("src/lib.rs"),
+        "mod parser;\nuse crate::parser::parse;\npub fn parser_test() -> bool { parse() }\n",
+    )
+    .expect("write lib");
+    run_git(fixture.path(), ["add", "."]);
+    run_git(fixture.path(), ["commit", "-m", "base"]);
+    fixture
+}
+
+#[test]
+fn query_tools_answer_from_the_published_index_and_name_missing_and_stale_indexes() {
+    let fixture = query_fixture();
+    let state = TempDir::new().expect("plugin state");
+    let environment = [("ORBIT_PLUGIN_STATE", state.path().as_os_str())];
+    let output = |tool: &str, input: Value| {
+        plugin_output_with_env(fixture.path(), tool, input, &environment)
+    };
+    let call = |verb: &str, input: Value| {
+        let response = plugin_success(&output(&format!("orbit.graph.{verb}"), input));
+        assert_matches_schema(&response, &format!("schemas/{verb}.response.json"));
+        assert_eq!(response["operation"], verb, "{response}");
+        response
+    };
+    let parse = "symbol:src/parser.rs#parse:function";
+    let helper = "symbol:src/parser.rs#helper:function";
+    let requests = [
+        ("search", json!({"query": "parse"})),
+        ("show", json!({"selector": parse})),
+        ("refs", json!({"selector": helper})),
+        ("callees", json!({"selector": parse})),
+        (
+            "impact",
+            json!({"selector": helper, "direction": "inbound"}),
+        ),
+        ("trace", json!({"command": "parse"})),
+        ("deps", json!({"selector": "file:src/lib.rs"})),
+        ("overview", json!({})),
+    ];
+    assert_eq!(
+        requests.clone().map(|(verb, _)| verb),
+        orbit_graph::plugin::QUERY_TOOL_VERBS
+    );
+
+    // No index yet: every tool fails with a code and names the call that
+    // builds one, in the spelling the caller used.
+    for (verb, input) in &requests {
+        for (prefix, maintain) in [
+            ("orbit.graph.", "orbit.graph.maintain"),
+            ("graph.", "graph.maintain"),
+        ] {
+            let tool = format!("{prefix}{verb}");
+            let response = assert_plugin_error(&output(&tool, input.clone()), &tool);
+            assert_eq!(response["error"]["code"], "index_missing", "{tool}");
+            let message = response["error"]["message"].as_str().expect("message");
+            assert!(
+                message.contains(maintain) && message.contains("graph_sync"),
+                "{tool}: {message}"
+            );
+        }
+    }
+
+    let synced = plugin_success(&output(
+        MAINTAIN_TOOL_NAME,
+        json!({"operation": "graph_sync"}),
+    ));
+    assert_matches_schema(&synced, "schemas/maintain.response.json");
+    let index_dir = PathBuf::from(
+        synced["code_index"]["directory"]
+            .as_str()
+            .expect("index directory"),
+    );
+    let state_files = || {
+        fs::read_dir(&index_dir)
+            .expect("list index directory")
+            .map(|entry| {
+                entry
+                    .expect("index entry")
+                    .file_name()
+                    .to_string_lossy()
+                    .into_owned()
+            })
+            .collect::<std::collections::BTreeSet<_>>()
+    };
+    let published_files = state_files();
+    let head = git_stdout(fixture.path(), ["rev-parse", "HEAD"]);
+
+    for (verb, input) in &requests {
+        let response = call(verb, input.clone());
+        assert_eq!(response["index"]["fresh"], true, "{response}");
+        assert_eq!(response["index"]["revision"], head.as_str());
+        assert!(response["index"].get("stale").is_none(), "{response}");
+        assert_eq!(response["truncated"], false, "{response}");
+    }
+    let names = |items: &Value, field: &str| {
+        items
+            .as_array()
+            .expect("result array")
+            .iter()
+            .filter_map(|item| item[field].as_str().map(str::to_string))
+            .collect::<Vec<_>>()
+    };
+    let search = call("search", json!({"query": "parse", "kind": "symbol"}));
+    assert!(names(&search["result"]["matches"], "name").contains(&"parse".to_string()));
+    let show = call("show", json!({"selector": parse, "max_bytes": 1024}));
+    assert_eq!(show["result"]["metadata"]["name"], "parse");
+    assert!(
+        show["result"]["source"]
+            .as_str()
+            .is_some_and(|source| source.contains("helper()")),
+        "{show}"
+    );
+    let missing = call(
+        "show",
+        json!({"selector": "symbol:src/parser.rs#nope:function"}),
+    );
+    assert!(missing["result"].is_null(), "{missing}");
+    let refs = call("refs", json!({"selector": helper, "confidence": "exact"}));
+    assert!(!refs["result"]["refs"].as_array().expect("refs").is_empty());
+    let callees = call("callees", json!({"selector": parse}));
+    assert_eq!(
+        names(&callees["result"]["callees"], "target_name"),
+        ["helper"]
+    );
+    let impact = call(
+        "impact",
+        json!({"selector": helper, "direction": "inbound", "depth": 2}),
+    );
+    let touched = names(&impact["result"]["touched"], "qualified_name");
+    assert!(touched.contains(&"parse".to_string()), "{impact}");
+    let trace = call("trace", json!({"command": "command:parse", "depth": 2}));
+    assert!(trace["result"]["visited_nodes"].is_number(), "{trace}");
+    let deps = call("deps", json!({"selector": "file:src/lib.rs"}));
+    assert_eq!(deps["result"]["scope"], "file:src/lib.rs");
+    let overview = call("overview", json!({"format": "full"}));
+    assert_eq!(overview["result"]["total_files"], 2);
+    // Filters reach the library.
+    let python = call("search", json!({"query": "parse", "lang": "python"}));
+    assert_eq!(python["result"]["matches"], json!([]), "{python}");
+    let type_refs = call("refs", json!({"selector": helper, "kind": "type"}));
+    assert_eq!(type_refs["result"]["refs"], json!([]), "{type_refs}");
+    let scoped = call("overview", json!({"selector": "dir:src"}));
+    assert_eq!(scoped["result"]["scope"], "src", "{scoped}");
+
+    // Outputs are bounded, and every cut is reported.
+    let bounded = call("overview", json!({"format": "full", "limit": 1}));
+    assert_eq!(bounded["truncated"], true);
+    assert_eq!(
+        bounded["truncation"],
+        json!({"files": {"returned": 1, "total": 2}})
+    );
+    assert_eq!(bounded["result"]["files"].as_array().map(Vec::len), Some(1));
+
+    // Queries only read the published index (STD-01 R31).
+    assert_eq!(state_files(), published_files);
+
+    // A new commit leaves the index stale: results still come back, marked
+    // with the revision they describe and the call that refreshes them.
+    fs::write(
+        fixture.path().join("src/extra.rs"),
+        "pub fn extra() -> bool { true }\n",
+    )
+    .expect("write extra");
+    run_git(fixture.path(), ["add", "."]);
+    run_git(fixture.path(), ["commit", "-m", "extra"]);
+    let stale = call("search", json!({"query": "parse"}));
+    assert_eq!(stale["index"]["fresh"], false, "{stale}");
+    assert_eq!(stale["index"]["revision"], head.as_str());
+    assert_eq!(
+        stale["index"]["stale"]["fix"],
+        json!({"tool": "orbit.graph.maintain", "input": {"operation": "graph_sync"}})
+    );
+    let stale_bare = plugin_success(&output("graph.overview", json!({})));
+    assert_eq!(
+        stale_bare["index"]["stale"]["fix"]["tool"], "graph.maintain",
+        "{stale_bare}"
+    );
+
+    // An index from another extractor is refused with the full-rebuild fix.
+    let pointer_path = index_dir.join("graph.current.json");
+    let mut pointer: Value =
+        serde_json::from_str(&fs::read_to_string(&pointer_path).expect("read pointer"))
+            .expect("parse pointer");
+    pointer["extractor_version"] = json!(1);
+    fs::write(&pointer_path, pointer.to_string()).expect("write pointer");
+    let incompatible = assert_plugin_error(
+        &output("orbit.graph.refs", json!({"selector": helper})),
+        "incompatible index",
+    );
+    assert_eq!(incompatible["error"]["code"], "index_incompatible");
+    assert!(
+        incompatible["error"]["message"]
+            .as_str()
+            .is_some_and(|message| message.contains("\"full\":true")),
+        "{incompatible}"
+    );
+}
+
+/// Check `value` against the subset of JSON Schema the plugin's schemas use
+/// (type, const, enum, required, properties, additionalProperties: false,
+/// items), as Orbit checks tool output against `output_schema`.
+fn assert_matches_schema(value: &Value, schema_path: &str) {
+    let schema: Value = serde_json::from_str(
+        &fs::read_to_string(repository_root().join(schema_path)).expect("read schema"),
+    )
+    .expect("parse schema");
+    let mut errors = Vec::new();
+    check_schema(value, &schema, "$", &mut errors);
+    assert!(errors.is_empty(), "{schema_path}: {errors:?}\n{value}");
+}
+
+fn check_schema(value: &Value, schema: &Value, at: &str, errors: &mut Vec<String>) {
+    let type_matches = |name: &str| match name {
+        "object" => value.is_object(),
+        "array" => value.is_array(),
+        "string" => value.is_string(),
+        "integer" => value.is_i64() || value.is_u64(),
+        "number" => value.is_number(),
+        "boolean" => value.is_boolean(),
+        "null" => value.is_null(),
+        _ => false,
+    };
+    let allowed = match &schema["type"] {
+        Value::String(name) => vec![name.as_str()],
+        Value::Array(names) => names.iter().filter_map(Value::as_str).collect(),
+        _ => Vec::new(),
+    };
+    if !allowed.is_empty() && !allowed.iter().any(|name| type_matches(name)) {
+        errors.push(format!("{at}: expected {allowed:?}, got {value}"));
+        return;
+    }
+    if let Some(expected) = schema.get("const")
+        && value != expected
+    {
+        errors.push(format!("{at}: expected const {expected}, got {value}"));
+    }
+    if let Some(options) = schema["enum"].as_array()
+        && !options.contains(value)
+    {
+        errors.push(format!("{at}: {value} is not one of {options:?}"));
+    }
+    if let Some(object) = value.as_object() {
+        for required in schema["required"].as_array().into_iter().flatten() {
+            let name = required.as_str().unwrap_or_default();
+            if !object.contains_key(name) {
+                errors.push(format!("{at}: missing required {name}"));
+            }
+        }
+        let properties = schema["properties"].as_object();
+        for (name, field) in object {
+            match properties.and_then(|properties| properties.get(name)) {
+                Some(property) => check_schema(field, property, &format!("{at}.{name}"), errors),
+                None if schema["additionalProperties"] == false => {
+                    errors.push(format!("{at}: unexpected property {name}"));
+                }
+                None => {}
+            }
+        }
+    }
+    if let (Some(items), Some(schema_items)) = (value.as_array(), schema.get("items")) {
+        for (index, item) in items.iter().enumerate() {
+            check_schema(item, schema_items, &format!("{at}[{index}]"), errors);
+        }
+    }
+}
+
 #[test]
 fn graph_sync_publishes_structure_that_recommend_applies_at_its_revision() {
     let fixture = evaluation_fixture();
@@ -672,6 +953,9 @@ fn graph_sync_publishes_structure_that_recommend_applies_at_its_revision() {
     );
     let status = call(STATUS_TOOL_NAME, json!({}));
     assert_eq!(status["code_index"]["fresh"], true, "{status}");
+    assert_matches_schema(&status, "schemas/status.response.json");
+    assert_matches_schema(&synced, "schemas/maintain.response.json");
+    assert_matches_schema(&after, "schemas/recommend.response.json");
     // Recommend and status only read the published index (STD-01 R31).
     assert_eq!(state_files(), published_files);
     assert_eq!(status["code_index"]["checkout_revision"], head.as_str());

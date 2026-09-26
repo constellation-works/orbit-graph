@@ -1,0 +1,37 @@
+{
+  "type": "object",
+  "properties": {
+    "schema_version": {
+      "description": "Request contract version; must be 1 when present.",
+      "type": "integer",
+      "const": 1
+    },
+    "repository": {
+      "description": "Absolute path of the Git repository to query. Defaults to the caller's workspace root; never inferred from the tool cwd.",
+      "type": "string",
+      "minLength": 1
+    },
+    "selector": {
+      "description": "Optional dir:<path> or file:<path> scope; the whole repository when absent.",
+      "type": "string",
+      "minLength": 1
+    },
+    "format": {
+      "description": "summary (counts and the highest-symbol files, default) or full (every in-scope file with its symbols).",
+      "type": "string",
+      "enum": [
+        "summary",
+        "full"
+      ],
+      "default": "summary"
+    },
+    "limit": {
+      "description": "Cap on each top-level result array (files); 1-500, default 50. Cut arrays are reported in truncation.",
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 500,
+      "default": 50
+    }
+  },
+  "additionalProperties": false
+}

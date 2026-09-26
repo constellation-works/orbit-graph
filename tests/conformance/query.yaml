@@ -1,0 +1,157 @@
+# Read-only query tools. See status.yaml: the conformance workspace is an
+# empty non-Git directory, so no code-graph index can be built there. These
+# goldens pin request validation (before routing) and repository routing; the
+# answered, missing-index, and stale-index paths are covered by the
+# real-binary tests in crates/orbit-graph-cli/tests/plugin_integration.rs.
+schemaVersion: 1
+kind: PluginTest
+tests:
+  - name: search_requires_a_git_repository
+    tool: search
+    input:
+      schema_version: 1
+      repository: "{{workspace}}"
+      query: "parse"
+    expect:
+      error:
+        code: repository_unavailable
+  - name: search_rejects_a_blank_query
+    tool: search
+    input:
+      schema_version: 1
+      repository: "{{workspace}}"
+      query: "  "
+    expect:
+      error:
+        code: invalid_request
+  - name: search_bounds_its_limit
+    tool: search
+    input:
+      schema_version: 1
+      repository: "{{workspace}}"
+      query: "parse"
+      limit: 501
+    expect:
+      error:
+        code: invalid_request
+  - name: show_requires_a_git_repository
+    tool: show
+    input:
+      schema_version: 1
+      repository: "{{workspace}}"
+      selector: "file:src/lib.rs"
+    expect:
+      error:
+        code: repository_unavailable
+  - name: show_bounds_max_bytes
+    tool: show
+    input:
+      schema_version: 1
+      repository: "{{workspace}}"
+      selector: "file:src/lib.rs"
+      max_bytes: 65537
+    expect:
+      error:
+        code: invalid_request
+  - name: refs_requires_a_git_repository
+    tool: refs
+    input:
+      schema_version: 1
+      repository: "{{workspace}}"
+      selector: "symbol:src/lib.rs#parse:function"
+    expect:
+      error:
+        code: repository_unavailable
+  - name: refs_rejects_an_unknown_confidence
+    tool: refs
+    input:
+      schema_version: 1
+      repository: "{{workspace}}"
+      selector: "symbol:src/lib.rs#parse:function"
+      confidence: "fuzzy"
+    expect:
+      error:
+        code: invalid_request
+  - name: refs_rejects_a_malformed_selector
+    tool: refs
+    input:
+      schema_version: 1
+      repository: "{{workspace}}"
+      selector: "parse"
+    expect:
+      error:
+        code: invalid_request
+  - name: callees_requires_a_git_repository
+    tool: callees
+    input:
+      schema_version: 1
+      repository: "{{workspace}}"
+      selector: "symbol:src/lib.rs#parse:function"
+    expect:
+      error:
+        code: repository_unavailable
+  - name: impact_requires_a_git_repository
+    tool: impact
+    input:
+      schema_version: 1
+      repository: "{{workspace}}"
+      selector: "symbol:src/lib.rs#parse:function"
+      direction: "inbound"
+    expect:
+      error:
+        code: repository_unavailable
+  - name: impact_bounds_its_depth
+    tool: impact
+    input:
+      schema_version: 1
+      repository: "{{workspace}}"
+      selector: "symbol:src/lib.rs#parse:function"
+      depth: 11
+    expect:
+      error:
+        code: invalid_request
+  - name: trace_requires_a_git_repository
+    tool: trace
+    input:
+      schema_version: 1
+      repository: "{{workspace}}"
+      command: "sync"
+    expect:
+      error:
+        code: repository_unavailable
+  - name: trace_rejects_unknown_fields
+    tool: trace
+    input:
+      schema_version: 1
+      repository: "{{workspace}}"
+      command: "sync"
+      limit: 5
+    expect:
+      error:
+        code: invalid_request
+  - name: deps_requires_a_git_repository
+    tool: deps
+    input:
+      schema_version: 1
+      repository: "{{workspace}}"
+      selector: "dir:src"
+    expect:
+      error:
+        code: repository_unavailable
+  - name: overview_requires_a_git_repository
+    tool: overview
+    input:
+      schema_version: 1
+      repository: "{{workspace}}"
+    expect:
+      error:
+        code: repository_unavailable
+  - name: overview_rejects_an_unknown_format
+    tool: overview
+    input:
+      schema_version: 1
+      repository: "{{workspace}}"
+      format: "tree"
+    expect:
+      error:
+        code: invalid_request
