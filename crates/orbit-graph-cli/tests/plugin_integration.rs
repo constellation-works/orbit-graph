@@ -1777,7 +1777,9 @@ fn public_adapter_reaps_an_mcp_server_that_outlives_its_session() {
         ],
     );
     plugin_success(&output);
-    assert!(started.elapsed() < Duration::from_secs(5));
+    // The fake server lingers for 30 s after EOF, so finishing well inside that
+    // proves it was reaped; a tight bound only measured CI load.
+    assert!(started.elapsed() < Duration::from_secs(20));
     let pid = fs::read_to_string(fixture.path().join("linger.pid")).expect("lingering pid");
     assert!(
         !Path::new("/proc").join(pid.trim()).exists(),
