@@ -4,7 +4,9 @@
 # exception carries a reason and a re-review date; today there are none.
 
 [graph]
-# Check every platform the lockfile resolves for, not only the host.
+# Resolve with every feature of the workspace crates enabled, so an optional
+# dependency is checked too. No `targets` list is set, so cargo-deny checks
+# the dependencies of every target platform, not only the host's.
 all-features = true
 
 [advisories]

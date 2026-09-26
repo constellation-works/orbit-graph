@@ -11,8 +11,13 @@
 # 3. A third-party dependency used by more than one member is declared once in
 #    [workspace.dependencies] (STD-02 §R9).
 #
-# Manifests must keep one table per section: a dependency in dotted-key form
-# (`dependencies.foo = ...`) is not seen.
+# The parser fails closed. It accepts only the conventional shape — one
+# `[dependencies]`-style table per section, each dependency a bare
+# `name = ...` or `name.workspace = true` line — and reports anything else
+# that can declare a dependency as an error rather than skipping it: a
+# `[dependencies.<name>]` table header, a dotted key (`clap.version = "4"`,
+# `dependencies.clap = ...`), a quoted key, a `package = ...` rename, or a
+# line in a dependency table it cannot read.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
@@ -45,23 +50,59 @@ policy() {
   esac
 }
 
-# Print the dependency names declared in the tables of a Cargo.toml whose
-# header matches the extended regex $2.
-deps_in() {
-  TABLES="$2" awk '
-    /^\[/ { in_deps = ($0 ~ ENVIRON["TABLES"]); next }
-    in_deps && /^[A-Za-z0-9_-]+[[:space:]]*(\.workspace)?[[:space:]]*=/ {
-      line = $0
-      name = $1; sub(/\.workspace$/, "", name); sub(/=.*/, "", name)
-      gsub(/[[:space:]]/, "", name)
-      inherited = (line ~ /^[A-Za-z0-9_-]+[[:space:]]*\.workspace[[:space:]]*=/ ||
-                   line ~ /workspace[[:space:]]*=[[:space:]]*true/)
-      print name, (inherited ? "workspace" : "local")
+# Parse one Cargo.toml. Prints one record per dependency declaration:
+#   dep <normal|dev> <name> <workspace|local>
+# and one record per construct it refuses to interpret:
+#   unsupported <line number> <reason>
+parse_manifest() {
+  awk '
+    function trim(text) { sub(/^[[:space:]]+/, "", text); sub(/[[:space:]]+$/, "", text); return text }
+    function refuse(reason) { print "unsupported", NR, reason }
+    {
+      line = trim($0)
+      if (line == "" || line ~ /^#/) next
+    }
+    # Table headers, with any trailing comment removed.
+    line ~ /^\[/ {
+      header = line
+      sub(/\][[:space:]]*#.*$/, "]", header)
+      header = trim(header)
+      in_deps = 0
+      if (header ~ /^\[(target\..*\.)?(build-|dev-)?dependencies\]$/) {
+        in_deps = 1
+        kind = (header ~ /dev-dependencies\]$/) ? "dev" : "normal"
+      } else if (header ~ /^\[(target\..*\.)?(build-|dev-)?dependencies\./) {
+        refuse("table-form dependency header " header "; declare it as one line in [dependencies]")
+      }
+      next
+    }
+    {
+      key = line; sub(/=.*/, "", key); key = trim(key)
+      # A dotted key that reaches into a dependency table from anywhere else.
+      if (line ~ /=/ && key ~ /(^|\.)(build-|dev-)?dependencies\./) {
+        refuse("dotted-key dependency " key "; declare it as one line in [dependencies]")
+        next
+      }
+    }
+    !in_deps { next }
+    {
+      if (line !~ /=/) { refuse("unreadable line in a dependency table: " line); next }
+      if (key ~ /^["\047]/) { refuse("quoted dependency key " key); next }
+      if (key !~ /^[A-Za-z0-9_-]+(\.workspace)?$/) {
+        refuse("dotted dependency key " key "; use an inline table on one line")
+        next
+      }
+      value = line; sub(/^[^=]*=/, "", value)
+      if (value ~ /(^|[{,[:space:]])package[[:space:]]*=/) {
+        refuse("renamed dependency " key " (package = ...); the direction check matches crate names")
+        next
+      }
+      name = key; sub(/\.workspace$/, "", name)
+      inherited = (key ~ /\.workspace$/ || value ~ /(^|[{,[:space:]])workspace[[:space:]]*=[[:space:]]*true/)
+      print "dep", kind, name, (inherited ? "workspace" : "local")
     }
   ' "$1"
 }
-NORMAL_TABLES='^\[(target\..*\.)?(build-)?dependencies\]$'
-ALL_TABLES='^\[(target\..*\.)?(build-|dev-)?dependencies\]$'
 
 contains() { # contains <word> <space-separated list>
   local word="$1" item
@@ -83,26 +124,31 @@ if [[ ! -e "${manifests[0]}" ]]; then
 fi
 [[ -f "$ARCHITECTURE" ]] || err "$ARCHITECTURE is missing; it holds the layer table this script enforces"
 
-local_decls=""  # "<dep> <crate>" lines: third-party deps not inherited from the workspace
+uses=""  # "<dep> <crate> <workspace|local>" lines, third-party deps in any table
 for manifest in "${manifests[@]}"; do
-  crate=$(awk -F'"' '/^name[[:space:]]*=/ { print $2; exit }' "$manifest")
+  crate=$(awk -F'"' '/^[[:space:]]*name[[:space:]]*=/ { print $2; exit }' "$manifest")
+  records=$(parse_manifest "$manifest")
 
-  while read -r dep origin; do
+  while read -r _tag lineno reason; do
+    err "$manifest:$lineno: $reason"
+  done < <(grep '^unsupported ' <<<"$records" || true)
+
+  while read -r _tag _kind dep origin; do
     [[ "$dep" == "$PREFIX" || "$dep" == "$PREFIX"-* ]] && continue
-    [[ "$origin" == "local" ]] && local_decls+="$dep $crate"$'\n'
-  done < <(deps_in "$manifest" "$ALL_TABLES")
+    uses+="$dep $crate $origin"$'\n'
+  done < <(grep '^dep ' <<<"$records" || true)
 
   if ! policy "$crate"; then
     err "crate '$crate' ($manifest) has no policy; add one here and a row in $ARCHITECTURE"
     continue
   fi
-  while read -r dep _origin; do
+  while read -r _tag _kind dep _origin; do
     if [[ "$dep" == "$PREFIX" || "$dep" == "$PREFIX"-* ]]; then
       contains "$dep" "$ALLOWED" || err "$crate must not depend on internal crate $dep"
     elif contains "$dep" "$BANNED"; then
       err "$crate must not depend on $dep (a surface crate in the domain)"
     fi
-  done < <(deps_in "$manifest" "$NORMAL_TABLES")
+  done < <(grep '^dep normal ' <<<"$records" || true)
 
   if [[ -f "$ARCHITECTURE" ]]; then
     row="| \`$crate\` | $KIND | $(cell "$ALLOWED") | $(cell "$BANNED") |"
@@ -111,11 +157,21 @@ for manifest in "${manifests[@]}"; do
   fi
 done
 
-while read -r dep users; do
-  err "$dep is declared separately by $users; declare it once in [workspace.dependencies] (STD-02 §R9)"
-done < <(printf '%s' "$local_decls" | sort -u | awk '
-  NF { n[$1]++; users[$1] = users[$1] (users[$1] == "" ? "" : ", ") $2 }
-  END { for (d in n) if (n[d] > 1) print d, users[d] }' | sort)
+# STD-02 §R9: a dependency that more than one member uses is declared once in
+# [workspace.dependencies], so every member inherits it; a single member
+# declaring it locally is the drift this catches.
+while read -r dep members locals; do
+  err "$dep is used by $members members but declared locally by $locals; declare it once in [workspace.dependencies] and inherit it (STD-02 §R9)"
+done < <(printf '%s' "$uses" | sort -u | awk '
+  NF {
+    key = $1 SUBSEP $2
+    if (!(key in seen)) { seen[key] = 1; members[$1]++ }
+    if ($3 == "local" && !((key, "local") in marked)) {
+      marked[key, "local"] = 1
+      locals[$1] = locals[$1] (locals[$1] == "" ? "" : ",") $2
+    }
+  }
+  END { for (d in members) if (members[d] > 1 && locals[d] != "") print d, members[d], locals[d] }' | sort)
 
 if [[ "$fail" -eq 0 ]]; then
   echo "dependency-direction: ok (${#manifests[@]} crates)"

@@ -106,7 +106,7 @@ standards-check:
 # Source-only repository gates (see ARCHITECTURE.md): dependency direction
 # (STD-02 R1-R7, R9), std-stream ownership (STD-02 R15) and unit-test module
 # reachability (STD-02 R19), plus a self-test that seeds a violation for each
-# and requires it to fail (STD-04 R12).
+# and requires it to fail (STD-04 R10).
 structure:
 	scripts/check-dependency-direction.sh
 	scripts/check-terminal-guard.sh

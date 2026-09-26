@@ -29,9 +29,10 @@ release from a SHA-256-pinned download. The layer model and what each
 `scripts/check-*.sh` gate enforces are in [ARCHITECTURE.md](ARCHITECTURE.md):
 a new crate or internal edge changes that file and
 `scripts/check-dependency-direction.sh` together, and a new stream writer
-outside an output layer needs an allow-list entry in
-`scripts/check-terminal-guard.sh` with its reason and the task that removes
-it.
+outside an output layer needs a per-site allow-list entry in
+`scripts/check-terminal-guard.sh` (file, line pattern, hit count) with its
+reason and the task that removes it; the change that removes the write
+removes the entry, or the guard fails.
 
 Changes must follow the constellation standards vendored in
 [`docs/standards/`](docs/standards/README.md); cite a rule as `STD-nn §Rn`.

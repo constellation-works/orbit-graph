@@ -35,8 +35,8 @@ Each runs in `make ci` and in CI (`.github/workflows/ci.yml`):
 
 | Gate | Rule | Fails on |
 |------|------|----------|
-| `scripts/check-dependency-direction.sh` | STD-02 §R1–§R7, §R9 | an unlisted crate, an unlisted internal edge, a banned crate in its crate, a crate table here that disagrees with the script, a third-party dependency declared by two members |
-| `scripts/check-terminal-guard.sh` | STD-02 §R15 | stdout/stderr, `print!`-family macros or TTY checks outside an output layer, except the allow-listed files it names with a reason and a removing task |
+| `scripts/check-dependency-direction.sh` | STD-02 §R1–§R7, §R9 | an unlisted crate, an unlisted internal edge, a banned crate in its crate, a crate table here that disagrees with the script, a third-party dependency used by two or more members that any of them declares locally; and, failing closed, any dependency form it does not read (a `[dependencies.<name>]` header, a dotted or quoted key, a `package =` rename) |
+| `scripts/check-terminal-guard.sh` | STD-02 §R15 | stdout/stderr, `print!`-family macros or TTY checks outside an output layer, except allow-listed write sites (each a file, a line pattern and an exact hit count, with a reason and a removing task); an entry whose count no longer matches, including a site that is gone; grep itself failing |
 | `scripts/check-orphan-modules.sh` | STD-02 §R19 | a `src/**/tests/*.rs` file its `tests/mod.rs` does not declare, or a `tests/` directory its parent module does not declare |
 | `cargo deny --locked check` (`deny.toml`) | STD-02 §R23, STD-05 §R23/§R24 | an open advisory, a yanked crate, a license outside the allow-list, a registry other than crates.io, a git source |
-| `scripts/test-repo-gates.sh` | STD-04 §R12 | any of the three scripts above passing on a seeded violation or on an empty tree |
+| `scripts/test-repo-gates.sh` | STD-04 §R10 | any of the three scripts above passing on a seeded violation or on an empty tree |
