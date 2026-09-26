@@ -103,10 +103,20 @@ fn dirty_working_tree_is_reported_by_the_binary() {
     assert!(stdout.contains("uncommitted change(s)"), "{stdout}");
 }
 
+/// A cache directory under the canonical temp root. `clean` reports canonical
+/// paths, and on macOS the default temp root sits under the `/var` ->
+/// `/private/var` symlink, so comparisons need the canonical form.
+fn canonical_tempdir() -> TempDir {
+    let root = std::env::temp_dir()
+        .canonicalize()
+        .expect("canonical temp root");
+    TempDir::new_in(root).expect("cache directory")
+}
+
 #[test]
 fn clean_reports_by_default_and_removes_exactly_the_report_with_confirm() {
     let fixture = build_fixture();
-    let cache = TempDir::new().expect("cache directory");
+    let cache = canonical_tempdir();
     let cache_dir = cache.path().to_str().expect("utf8 cache path").to_string();
     // A real comparison publishes both entries and marks the directory.
     drop(open_comparison(
@@ -182,7 +192,7 @@ fn clean_reports_by_default_and_removes_exactly_the_report_with_confirm() {
 #[test]
 fn clean_confirm_keeps_what_it_cannot_prove_is_its_own_stale_and_unused() {
     let fixture = build_fixture();
-    let cache = TempDir::new().expect("cache directory");
+    let cache = canonical_tempdir();
     let cache_dir = cache.path().to_str().expect("utf8 cache path").to_string();
     // A running comparison of head against itself holds the head entry open.
     let comparison = open_comparison(&fixture, cache.path(), fixture.head.as_str());
