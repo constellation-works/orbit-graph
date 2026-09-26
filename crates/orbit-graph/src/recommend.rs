@@ -1287,6 +1287,13 @@ impl PathLineage {
             gap: None,
             unresolved: 0,
         };
+        lineage.index_first_parent_distances(
+            repo,
+            visible
+                .iter()
+                .map(|delivery| delivery.after_revision)
+                .collect(),
+        );
         let visible_ids = visible
             .iter()
             .map(|delivery| (delivery.delivery_id.as_str(), delivery.after_revision))
@@ -1335,6 +1342,38 @@ impl PathLineage {
         // The oldest delivery's base always starts the indexed range.
         lineage.unindexed_ranges = unlanded_bases.len().saturating_sub(1);
         Ok(lineage)
+    }
+
+    /// Seed exact distances for the target's first-parent chain in one pass.
+    ///
+    /// Along the chain `c0 = target, c1, c2, ...` each commit's reachable set
+    /// contains its first parent's, so `distance(ck)` is the running sum of
+    /// `|reach(ci) \ reach(ci+1)|`: one for an ordinary commit, plus the side
+    /// commits a merge introduces. This equals [`commit_distance`] exactly but
+    /// costs one step per chain commit instead of one revwalk per delivery.
+    /// The walk stops once every wanted revision is seen or the root is reached;
+    /// revisions off the chain fall back to [`commit_distance`] on demand.
+    fn index_first_parent_distances(&mut self, repo: &Repository, mut wanted: BTreeSet<Oid>) {
+        let Ok(mut current) = repo.find_commit(self.target) else {
+            return;
+        };
+        let mut distance = 0;
+        loop {
+            self.distances.insert(current.id(), distance);
+            wanted.remove(&current.id());
+            if wanted.is_empty() {
+                return;
+            }
+            let Ok(parent) = current.parent(0) else {
+                return;
+            };
+            distance += if current.parent_count() == 1 {
+                1
+            } else {
+                commit_distance(repo, parent.id(), current.id())
+            };
+            current = parent;
+        }
     }
 
     /// Commits reachable from the target but not from `revision`, memoized.
@@ -2148,6 +2187,52 @@ mod tests {
             "{:?}",
             result.fallbacks
         );
+    }
+
+    #[test]
+    fn first_parent_distances_match_revwalk_distances_across_merges() {
+        let fixture = fixture_repo();
+        let root = fixture.path();
+        fs::write(root.join("src/a.rs"), "fn a() {}\n").expect("a");
+        commit_all(root, "base");
+        git(root, &["checkout", "-b", "side"]);
+        for index in 0..3 {
+            fs::write(root.join(format!("src/side{index}.rs")), "fn s() {}\n").expect("side");
+            commit_all(root, "side");
+        }
+        git(root, &["checkout", "main"]);
+        fs::write(root.join("src/b.rs"), "fn b() {}\n").expect("b");
+        commit_all(root, "main");
+        git(root, &["merge", "--no-ff", "-m", "merge side", "side"]);
+        fs::write(root.join("src/c.rs"), "fn c() {}\n").expect("c");
+        commit_all(root, "after merge");
+        let repo = Repository::open(root).expect("repo");
+        let target = repo
+            .head()
+            .and_then(|head| head.peel_to_commit())
+            .expect("head")
+            .id();
+        let mut chain = Vec::new();
+        let mut current = repo.find_commit(target).expect("target commit");
+        loop {
+            chain.push(current.id());
+            let Ok(parent) = current.parent(0) else { break };
+            current = parent;
+        }
+        let side_tip = repo
+            .revparse_single("side")
+            .and_then(|object| object.peel_to_commit())
+            .expect("side")
+            .id();
+        let mut lineage = PathLineage::new(&repo, target, &[], Vec::new()).expect("lineage");
+        lineage.index_first_parent_distances(&repo, chain.iter().copied().collect());
+        for oid in chain.iter().copied().chain([side_tip]) {
+            assert_eq!(
+                lineage.distance(&repo, oid),
+                commit_distance(&repo, oid, target),
+                "distance mismatch for {oid}"
+            );
+        }
     }
 
     #[test]
