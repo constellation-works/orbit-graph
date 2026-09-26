@@ -284,7 +284,9 @@ Ranking counts each delivery once and each file once per delivery. It combines
 the strongest task relevance in a delivery with verified-versus-Git-only
 evidence, commit-distance recency, delivery breadth, multi-task ambiguity,
 location prevalence, generated/lockfile discounts, directional co-change, and
-bounded current structure. Scores are additive relevance scores, not
+bounded current structure; in live mode a Git-only delivery without task
+relevance may instead draw down-weighted relevance from its commit message
+(see "Commit text for Git-only history" below). Scores are additive relevance scores, not
 probabilities. `reasons` exposes every contribution; `association` exposes the
 directional support, source/destination counts, confidence, and lift.
 Association support and prevalence use the complete eligible corpus, including
@@ -362,6 +364,46 @@ by an excluded delivery can be followed only by the gap diff, which compares
 Git trees up to the target revision and so reveals nothing the target
 revision does not already contain; in every mode the target tree must contain
 the resolved path.
+
+### Commit text for Git-only history
+
+Git-only deliveries carry no task text, so a query over a history that holds
+only `history sync` evidence would otherwise rank from the current tree alone.
+In live mode the combined variant therefore reads each Git-only delivery's
+commit message from its landed commit object at query time, and uses it as
+direct relevance when the delivery has no task relevance of its own. Only
+free-text `query` requests use it: a task-ID request's own Git-only delivery
+carries no task association, so its message could describe the very change
+being predicted. Nothing new is persisted, so the history schema is unchanged.
+The rules:
+
+- The text is labelled `post_execution` / `git_commit_message`: it was written
+  with or after the change, so it is never pre-execution task text. It is used
+  only in live requests; an explicit `cutoff` (strict replay) never reads it,
+  whatever the landing time.
+- It is never task evidence. Bracketed IDs such as `[ORB-13007]` in the
+  message are shown as non-authoritative hints in the explanation and are not
+  added to `supporting_task_ids`, and a delivery with matching task text
+  always uses that instead.
+- The message is truncated to 4 KiB after a final trailer paragraph
+  (`Co-authored-by:`, `Signed-off-by:` and the like) is dropped.
+- Relevance is `0.5 × similarity²`, where similarity is the same query-coverage
+  token overlap used for task text. Commit messages reuse a repository's
+  component vocabulary, so partial overlap is weak evidence; squaring keeps a
+  message that describes the whole query at the full 0.5 weight while a
+  message covering half the query contributes a quarter of that. The value then
+  passes through the usual Git-only evidence weight, recency, breadth,
+  ubiquity and artifact discounts, and seeds directional co-change like any
+  direct change.
+- Contributions carry the reason kind `historical_change_commit_text`, and a
+  response that used any is reported with the `git_commit_text_used`
+  fallback. Task-search-only, graph-only and frequency variants do not use
+  commit text.
+
+On a 200-commit Git-only Orbit index, the query "auto-task delete durable
+opt-out for shipped defaults" moved
+`crates/orbit-core/src/application/auto_tasks/delete.rs` from a lexical-only
+tie at rank 6 to rank 2, behind its own test module.
 
 ### Target-tree symbols and their cache
 

@@ -331,9 +331,27 @@ impl RecommendationEngine {
                 cutoff: &cutoff,
                 strict_replay,
                 variant: request.variant,
+                free_text_query: matches!(request.input, RecommendationInput::Query(_)),
             },
         )?;
         fallbacks.extend(lineage.fallbacks());
+        let commit_text_destinations = scored
+            .values()
+            .filter(|entry| {
+                entry
+                    .reasons
+                    .iter()
+                    .any(|reason| reason.kind == "historical_change_commit_text")
+            })
+            .count();
+        if commit_text_destinations > 0 {
+            fallbacks.push(RecommendationFallback {
+                kind: "git_commit_text_used".to_string(),
+                reason: format!(
+                    "{commit_text_destinations} destination(s) draw relevance from Git-only commit messages: post-execution text written with the change, squared and weighted {COMMIT_TEXT_WEIGHT:.2} relative to task text and never used in strict replay"
+                ),
+            });
+        }
 
         if matches!(
             request.variant,
@@ -738,6 +756,20 @@ struct DeliveryLocations {
     breadth: f64,
     locations: BTreeMap<String, LocationMeta>,
     source_delivery_ids: BTreeSet<String>,
+    /// Live-only relevance from a Git-only delivery's own commit message.
+    commit_text: Option<CommitTextEvidence>,
+}
+
+/// Query overlap with a Git-only delivery's commit message.
+///
+/// The message is post-execution text (`git_commit_message` provenance): it
+/// was written with the change. It is used only by live combined requests,
+/// down-weighted relative to task text, and never in strict replay.
+#[derive(Debug, Clone)]
+struct CommitTextEvidence {
+    similarity: f64,
+    /// `[ABC-123]` identifiers cited by the message; non-authoritative hints.
+    cited_task_ids: Vec<String>,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -764,6 +796,10 @@ struct HistoryScoreRequest<'a> {
     cutoff: &'a Timestamp,
     strict_replay: bool,
     variant: RecommendationVariant,
+    /// Free-text query request. Commit text is only matched against these:
+    /// a task-ID request's own Git-only delivery is not associated with the
+    /// task, so its message could otherwise describe the held-out change.
+    free_text_query: bool,
 }
 
 fn score_history(
@@ -807,6 +843,20 @@ fn score_history(
             continue;
         }
         let distance = lineage.distance(repo, after);
+        let commit_text = (similarity <= 0.0
+            && request.free_text_query
+            && !request.strict_replay
+            && request.variant == RecommendationVariant::Combined
+            && delivery.delivery.evidence == DeliveryEvidence::GitOnly)
+            .then(|| commit_message_text(repo, after))
+            .flatten()
+            .and_then(|text| {
+                let similarity = lexical_similarity(request.query, text.as_str());
+                (similarity > 0.0).then(|| CommitTextEvidence {
+                    similarity,
+                    cited_task_ids: cited_task_ids(text.as_str()),
+                })
+            });
         rows.push(DeliveryLocations {
             delivery_id: delivery.delivery.delivery_id.clone(),
             task_ids,
@@ -821,6 +871,7 @@ fn score_history(
             breadth: 1.0 / (delivery.files.len().max(1) as f64).sqrt(),
             locations,
             source_delivery_ids: eligible.source_delivery_ids.clone(),
+            commit_text,
         });
     }
     let mut prevalence: BTreeMap<String, usize> = BTreeMap::new();
@@ -858,9 +909,41 @@ fn score_history(
     }
     let mut direct_strength = BTreeMap::new();
     for row in &rows {
-        if row.similarity <= 0.0 {
+        let source_ids = row
+            .source_delivery_ids
+            .iter()
+            .cloned()
+            .collect::<Vec<_>>()
+            .join(", ");
+        let (relevance, kind, explanation) = if row.similarity > 0.0 {
+            (
+                row.similarity,
+                "historical_change",
+                format!(
+                    "task similarity {:.3}, actual-change evidence {:.2}, recency {:.3}, broad/ambiguous/ubiquity/artifact discounts applied; equivalent source IDs: {source_ids}",
+                    row.similarity, row.evidence_weight, row.recency
+                ),
+            )
+        } else if let Some(commit) = row.commit_text.as_ref() {
+            let hints = if commit.cited_task_ids.is_empty() {
+                String::new()
+            } else {
+                format!(
+                    "; message cites {} (non-authoritative)",
+                    commit.cited_task_ids.join(", ")
+                )
+            };
+            (
+                commit_text_relevance(commit.similarity),
+                "historical_change_commit_text",
+                format!(
+                    "post_execution git_commit_message similarity {:.3} squared and weighted {COMMIT_TEXT_WEIGHT:.2} (not task text), Git-only evidence {:.2}, recency {:.3}, broad/ubiquity/artifact discounts applied; source IDs: {source_ids}{hints}",
+                    commit.similarity, row.evidence_weight, row.recency
+                ),
+            )
+        } else {
             continue;
-        }
+        };
         for (selector, meta) in &row.locations {
             let ubiquity = 1.0
                 / (1.0
@@ -868,7 +951,7 @@ fn score_history(
                         * (*prevalence.get(selector).unwrap_or(&0) as f64 / history_total as f64));
             let artifact = artifact_discount(selector);
             let contribution = weighted_change_score(
-                row.similarity,
+                relevance,
                 row.evidence_weight,
                 row.recency,
                 row.ambiguity,
@@ -887,9 +970,9 @@ fn score_history(
                 entry.fallback_reason.clone_from(&meta.fallback_reason);
             }
             entry.reasons.push(RecommendationReason {
-                kind: "historical_change".to_string(),
+                kind: kind.to_string(),
                 contribution,
-                explanation: format!("task similarity {:.3}, actual-change evidence {:.2}, recency {:.3}, broad/ambiguous/ubiquity/artifact discounts applied; equivalent source IDs: {}", row.similarity, row.evidence_weight, row.recency, row.source_delivery_ids.iter().cloned().collect::<Vec<_>>().join(", ")),
+                explanation: explanation.clone(),
             });
             direct_strength
                 .entry(selector.clone())
@@ -1172,6 +1255,87 @@ fn task_text(task: &TaskAssociation) -> String {
         text.push_str(criterion);
     }
     text
+}
+
+/// Weight of commit-message relevance relative to task-text relevance.
+const COMMIT_TEXT_WEIGHT: f64 = 0.5;
+
+/// Relevance of a commit message: weighted and sharpened (squared) query
+/// coverage. Commit messages reuse a repository's component vocabulary, so a
+/// partial overlap is much weaker evidence than it is for task text; a message
+/// that describes the whole query keeps the full weight.
+fn commit_text_relevance(similarity: f64) -> f64 {
+    COMMIT_TEXT_WEIGHT * similarity * similarity
+}
+
+/// Upper bound on commit-message bytes considered per delivery.
+const COMMIT_TEXT_MAX_BYTES: usize = 4_096;
+
+/// Bounded subject and body of a commit, without its trailer block.
+///
+/// Read from the immutable commit object of the delivery's landed revision,
+/// so existing history indexes need no re-extraction.
+fn commit_message_text(repo: &Repository, revision: Oid) -> Option<String> {
+    let commit = repo.find_commit(revision).ok()?;
+    let message = String::from_utf8_lossy(commit.message_bytes()).into_owned();
+    let mut paragraphs = message
+        .trim()
+        .split("\n\n")
+        .map(str::trim)
+        .filter(|paragraph| !paragraph.is_empty())
+        .collect::<Vec<_>>();
+    if paragraphs.len() > 1
+        && paragraphs
+            .last()
+            .is_some_and(|last| last.lines().all(is_trailer_line))
+    {
+        paragraphs.pop();
+    }
+    let mut text = paragraphs.join("\n\n");
+    if text.len() > COMMIT_TEXT_MAX_BYTES {
+        let mut end = COMMIT_TEXT_MAX_BYTES;
+        while !text.is_char_boundary(end) {
+            end -= 1;
+        }
+        text.truncate(end);
+    }
+    (!text.trim().is_empty()).then_some(text)
+}
+
+fn is_trailer_line(line: &str) -> bool {
+    line.split_once(": ").is_some_and(|(key, value)| {
+        !key.is_empty()
+            && key
+                .chars()
+                .all(|ch| ch.is_ascii_alphanumeric() || ch == '-')
+            && !value.trim().is_empty()
+    })
+}
+
+/// Bracketed `[ABC-123]` identifiers, as squash-merge subjects cite tasks.
+fn cited_task_ids(text: &str) -> Vec<String> {
+    let mut ids = BTreeSet::new();
+    for candidate in text.split('[').skip(1) {
+        let Some((id, _)) = candidate.split_once(']') else {
+            continue;
+        };
+        let Some((prefix, number)) = id.split_once('-') else {
+            continue;
+        };
+        if prefix
+            .chars()
+            .next()
+            .is_some_and(|ch| ch.is_ascii_uppercase())
+            && prefix
+                .chars()
+                .all(|ch| ch.is_ascii_uppercase() || ch.is_ascii_digit())
+            && !number.is_empty()
+            && number.chars().all(|ch| ch.is_ascii_digit())
+        {
+            ids.insert(id.to_string());
+        }
+    }
+    ids.into_iter().collect()
 }
 
 fn lexical_similarity(left: &str, right: &str) -> f64 {
@@ -2780,6 +2944,189 @@ mod tests {
         assert!(!stale.exists(), "other extractor versions are pruned");
     }
 
+    #[test]
+    fn git_only_commit_text_ranks_touched_files_in_live_mode_only() {
+        let fixture = fixture_repo();
+        let root = fixture.path();
+        fs::write(
+            root.join("src/limits.rs"),
+            "pub fn burst_window() -> u32 { 10 }\n",
+        )
+        .expect("limits");
+        fs::write(
+            root.join("src/quota_report.rs"),
+            "pub fn tenant_quota_report() {}\n",
+        )
+        .expect("report");
+        fs::write(root.join("src/other.rs"), "pub fn other() {}\n").expect("other");
+        commit_all(root, "base");
+        fs::write(
+            root.join("src/limits.rs"),
+            "pub fn burst_window() -> u32 { 20 }\n",
+        )
+        .expect("edit limits");
+        git(
+            root,
+            &[
+                "commit",
+                "-am",
+                "fix: Raise tenant quota ceiling for burst traffic [ORB-4242]\n\nThe ceiling now tracks the burst window.\n\nCo-Authored-By: Someone <someone@example.invalid>",
+            ],
+        );
+        fs::write(root.join("src/other.rs"), "pub fn other() -> u8 { 1 }\n").expect("edit other");
+        commit_all(root, "chore: unrelated cleanup");
+        let target = head(root);
+        let index = HistoryIndex::open(root, "main").expect("history");
+        index.sync(Some(10)).expect("sync");
+
+        let engine = RecommendationEngine::open(root, "main").expect("engine");
+        let query = "raise tenant quota ceiling burst traffic";
+        let live = engine
+            .recommend(&query_request(query, &target, None))
+            .expect("live");
+        let limits = live
+            .recommendations
+            .iter()
+            .find(|item| item.selector == "file:src/limits.rs")
+            .expect("commit-text destination");
+        let commit_reason = limits
+            .reasons
+            .iter()
+            .find(|reason| reason.kind == "historical_change_commit_text")
+            .expect("labelled commit-text reason");
+        assert!(commit_reason.explanation.contains("post_execution"));
+        assert!(commit_reason.explanation.contains("ORB-4242"));
+        assert!(
+            limits.supporting_task_ids.is_empty(),
+            "cited IDs are hints, not task evidence"
+        );
+        let report = live
+            .recommendations
+            .iter()
+            .find(|item| item.selector == "file:src/quota_report.rs")
+            .expect("lexical-only neighbour");
+        assert!(
+            report
+                .reasons
+                .iter()
+                .all(|reason| reason.kind == "current_tree_lexical")
+        );
+        assert!(limits.rank < report.rank, "{:?}", live.recommendations);
+        assert!(live.recommendations.iter().all(|item| {
+            item.selector != "file:src/other.rs"
+                || item
+                    .reasons
+                    .iter()
+                    .all(|reason| reason.kind != "historical_change_commit_text")
+        }));
+        assert!(
+            live.fallbacks
+                .iter()
+                .any(|fallback| fallback.kind == "git_commit_text_used")
+        );
+
+        // Task-search-only ranks task text only.
+        let mut task_only = query_request(query, &target, None);
+        task_only.variant = RecommendationVariant::TaskSearchOnly;
+        assert!(
+            engine
+                .recommend(&task_only)
+                .expect("task-search-only")
+                .recommendations
+                .is_empty()
+        );
+
+        // Strict replay and task-ID requests never score commit text, even
+        // for a delivery that reaches ranking (strict eligibility would
+        // already exclude Git-only landing times).
+        let repo = Repository::open(root).expect("repo");
+        let target_oid = Oid::from_str(target.as_str()).expect("oid");
+        let tree = TargetTree::load(&repo, target_oid).expect("tree");
+        let deliveries = index
+            .deliveries()
+            .expect("deliveries")
+            .into_iter()
+            .map(|change| EligibleDelivery {
+                source_delivery_ids: BTreeSet::from([change.delivery.delivery_id.clone()]),
+                change,
+            })
+            .collect::<Vec<_>>();
+        let cutoff = parse_timestamp("test", "unix:99999999999").expect("cutoff");
+        for (strict_replay, free_text_query) in [(false, true), (true, true), (false, false)] {
+            let mut lineage =
+                PathLineage::new(&repo, target_oid, &[], Vec::new()).expect("lineage");
+            let hybrid = BTreeMap::new();
+            let scored = score_history(
+                &repo,
+                &tree,
+                &mut lineage,
+                deliveries.as_slice(),
+                &HistoryScoreRequest {
+                    query,
+                    hybrid: &hybrid,
+                    level: RecommendationLevel::File,
+                    cutoff: &cutoff,
+                    strict_replay,
+                    variant: RecommendationVariant::Combined,
+                    free_text_query,
+                },
+            )
+            .expect("score");
+            let used = scored.values().any(|entry| {
+                entry
+                    .reasons
+                    .iter()
+                    .any(|reason| reason.kind == "historical_change_commit_text")
+            });
+            assert_eq!(
+                used,
+                free_text_query && !strict_replay,
+                "strict_replay={strict_replay} free_text_query={free_text_query}"
+            );
+        }
+        let replay = engine
+            .recommend(&query_request(query, &target, Some("unix:99999999999")))
+            .expect("replay");
+        assert!(replay.recommendations.iter().all(|item| {
+            item.reasons
+                .iter()
+                .all(|reason| reason.kind != "historical_change_commit_text")
+        }));
+    }
+
+    #[test]
+    fn commit_text_drops_trailers_bounds_length_and_parses_cited_ids() {
+        assert!((commit_text_relevance(1.0) - COMMIT_TEXT_WEIGHT).abs() < f64::EPSILON);
+        assert!(commit_text_relevance(0.5) < 0.5 * commit_text_relevance(1.0));
+        assert!(is_trailer_line("Co-Authored-By: A <a@example.invalid>"));
+        assert!(!is_trailer_line("See the design: it moved"));
+        assert!(!is_trailer_line("plain prose without a key"));
+        assert_eq!(
+            cited_task_ids("feat: x [ORB-13007] (#2612) [DANI-1] [not-an-id] [ORB-]"),
+            vec!["DANI-1".to_string(), "ORB-13007".to_string()]
+        );
+        let fixture = fixture_repo();
+        let root = fixture.path();
+        fs::write(root.join("src/a.rs"), "fn a() {}\n").expect("a");
+        commit_all(root, "base");
+        fs::write(root.join("src/a.rs"), "fn a() { }\n").expect("edit");
+        let long_body = "é".repeat(COMMIT_TEXT_MAX_BYTES);
+        git(
+            root,
+            &[
+                "commit",
+                "-am",
+                &format!("subject line\n\n{long_body}\n\nSigned-off-by: X <x@example.invalid>"),
+            ],
+        );
+        let repo = Repository::open(root).expect("repo");
+        let oid = Oid::from_str(head(root).as_str()).expect("oid");
+        let text = commit_message_text(&repo, oid).expect("text");
+        assert!(text.starts_with("subject line"));
+        assert!(text.len() <= COMMIT_TEXT_MAX_BYTES);
+        assert!(!text.contains("Signed-off-by"));
+    }
+
     fn row(locations: &[&str]) -> DeliveryLocations {
         DeliveryLocations {
             delivery_id: "d".to_string(),
@@ -2794,6 +3141,7 @@ mod tests {
                 .map(|value| ((*value).to_string(), LocationMeta::default()))
                 .collect(),
             source_delivery_ids: BTreeSet::from(["d".to_string()]),
+            commit_text: None,
         }
     }
 

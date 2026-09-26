@@ -26,6 +26,13 @@ workspace, task, and repository verification. `hybrid: true` asks the configured
 `orbit.search` surface for ranked task hits. If it is unavailable, the response
 labels the deterministic lexical fallback.
 
+For live free-text `query` requests over Git-only history, a delivery's commit
+message can stand in for missing task text. Such contributions have the reason
+kind `historical_change_commit_text`, are labelled post-execution, are
+down-weighted, and the response lists the `git_commit_text_used` fallback. Task
+IDs cited in a message are hints, not `supporting_task_ids`. Strict replay
+(`cutoff`) and task-ID requests never use commit text.
+
 Maintenance is deliberate. `orbit.graph.maintain` supports:
 
 - `history_sync`: bounded, atomic, resumable first-parent Git-only evidence;
