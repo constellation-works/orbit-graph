@@ -18,7 +18,7 @@ use tempfile::TempDir;
 
 mod common;
 
-use common::http_service::{Service, percent_encode};
+use common::http_service::{ProgressWatchdog, Service, percent_encode};
 use common::{commit_files, corpus};
 use orbit_graph_explorer::service::ServeOptions;
 
@@ -489,7 +489,9 @@ fn status_reports_monotonic_progress_during_a_cold_build_of_a_large_repository()
     let mut ready = [false, false];
     let mut resolving_seen = [false, false];
     let mut resolving_done_previous = [0u64, 0u64];
-    let deadline = Instant::now() + Duration::from_secs(120);
+    // A cold 2,000-file build per side runs at the speed of the host's disk,
+    // so fail on a stalled build rather than on a fixed budget.
+    let mut watchdog = ProgressWatchdog::new();
     loop {
         let status = service.authorized("GET", "/api/status", &[]).json();
         for (index, side) in ["base", "head"].iter().enumerate() {
@@ -532,10 +534,7 @@ fn status_reports_monotonic_progress_during_a_cold_build_of_a_large_repository()
         if ready[0] && ready[1] {
             break;
         }
-        assert!(
-            Instant::now() < deadline,
-            "indexing did not finish within the deadline: {status}"
-        );
+        watchdog.observe(&status);
         std::thread::sleep(Duration::from_millis(5));
     }
     assert!(previous[0] > 0, "base indexed at least one file");
