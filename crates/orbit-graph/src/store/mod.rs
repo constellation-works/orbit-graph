@@ -3,8 +3,10 @@
 pub(crate) mod history;
 pub(crate) mod schema;
 
+use std::ffi::OsStr;
 use std::fs;
-use std::path::Path;
+use std::io::Write;
+use std::path::{Path, PathBuf};
 #[cfg(unix)]
 use std::{io::ErrorKind, os::unix::fs::OpenOptionsExt};
 
@@ -62,8 +64,7 @@ pub(crate) fn open_with_db_path(
 
 fn open_at_path(db_path: GraphDbPath, git: &GitContext) -> Result<OpenedGraph, GraphError> {
     if let Some(parent) = db_path.path().parent() {
-        fs::create_dir_all(parent)
-            .map_err(|source| GraphError::io("create graph database directory", parent, source))?;
+        create_owned_dir(parent, "create graph database directory")?;
     }
 
     // SQLite's default creation mode can expose indexed source text. Create
@@ -151,6 +152,71 @@ pub(crate) fn configure_sync_writer(
     conn.pragma_update(None, "cache_size", -SYNC_WRITER_CACHE_KIB)
         .map_err(|source| GraphError::sqlite(operation, source))?;
     Ok(())
+}
+
+/// Name of the scratch directory orbit-graph keeps in a worktree root.
+const SCRATCH_DIR_NAME: &str = ".orbit-graph";
+
+/// The `.gitignore` orbit-graph writes into a directory it owns. `*` also
+/// matches the file itself, so the directory never shows up as untracked.
+const OWNED_DIR_GITIGNORE: &str =
+    "# Written by orbit-graph: this directory holds local, rebuildable indexes.\n*\n";
+
+/// Creates `dir`, with any missing parents, to hold orbit-graph's own files,
+/// and keeps the directories orbit-graph owns out of `git status`.
+///
+/// orbit-graph owns the directories this call creates, and any
+/// `.orbit-graph` scratch directory on the path, including one that already
+/// exists. The topmost of each gets a `.gitignore` containing `*`, so
+/// databases, WAL files and locks are never offered for commit. An existing
+/// `.gitignore` is never touched, and a directory the caller supplied that
+/// already exists (a custom `--db` parent, say) gets nothing. Failing to write
+/// the file is logged, not fatal: the index works without it.
+pub(crate) fn create_owned_dir(dir: &Path, operation: &'static str) -> Result<(), GraphError> {
+    let created = topmost_missing_ancestor(dir);
+    fs::create_dir_all(dir).map_err(|source| GraphError::io(operation, dir, source))?;
+    let scratch = dir
+        .ancestors()
+        .find(|ancestor| ancestor.file_name() == Some(OsStr::new(SCRATCH_DIR_NAME)));
+    for owned in created.as_deref().into_iter().chain(scratch) {
+        write_owned_dir_gitignore(owned);
+    }
+    Ok(())
+}
+
+/// The outermost ancestor of `dir` (or `dir` itself) that does not exist yet.
+fn topmost_missing_ancestor(dir: &Path) -> Option<PathBuf> {
+    let mut missing = None;
+    for ancestor in dir.ancestors() {
+        if ancestor.as_os_str().is_empty() {
+            break;
+        }
+        match fs::symlink_metadata(ancestor) {
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                missing = Some(ancestor.to_path_buf());
+            }
+            _ => break,
+        }
+    }
+    missing
+}
+
+fn write_owned_dir_gitignore(dir: &Path) {
+    let path = dir.join(".gitignore");
+    let written = fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(path.as_path())
+        .and_then(|mut file| file.write_all(OWNED_DIR_GITIGNORE.as_bytes()));
+    match written {
+        Ok(()) => {}
+        Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {}
+        Err(error) => tracing::warn!(
+            path = %path.display(),
+            error = %error,
+            "could not write .gitignore for orbit-graph index directory"
+        ),
+    }
 }
 
 struct GitContext {

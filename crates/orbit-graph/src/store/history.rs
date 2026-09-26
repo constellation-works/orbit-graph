@@ -195,9 +195,7 @@ impl HistoryIndex {
                 "change-history.{HISTORY_INDEX_SCHEMA_VERSION}.sqlite3"
             ));
         if let Some(parent) = db_path.parent() {
-            fs::create_dir_all(parent).map_err(|source| {
-                GraphError::io("create history index directory", parent, source)
-            })?;
+            super::create_owned_dir(parent, "create history index directory")?;
         }
         let index = Self {
             repo_root,

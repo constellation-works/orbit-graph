@@ -45,7 +45,10 @@ Each worktree stores scratch state under `.orbit-graph/` in its root. Attached
 branches use `.orbit-graph/<sanitized-branch>.<extractor-version>.db`; detached
 worktrees use a commit-prefixed database name. SQLite WAL and lock sidecars
 live beside the database. This directory is independent of Orbit's `.orbit/`
-control-plane state and should not be committed. `orbit-graph db-path` prints
+control-plane state and should not be committed: orbit-graph writes a
+`.gitignore` containing `*` into it (and into any other index directory it
+creates), so it never shows up in `git status`. An existing `.gitignore` there
+is left as it is. `orbit-graph db-path` prints
 the exact path, and `orbit-graph clean` removes obsolete extractor versions and
 unreachable detached-commit indexes.
 
