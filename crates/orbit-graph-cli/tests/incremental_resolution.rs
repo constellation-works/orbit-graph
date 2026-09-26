@@ -140,6 +140,72 @@ fn rewriting_the_file_with_the_highest_symbol_ids_keeps_hints_on_their_symbols()
     );
 }
 
+/// A typed receiver call `foo.hi()` (`<Foo>::hi`, from ORB-13098) resolves
+/// through the type-member rung to a trait's default body only while some
+/// `impl Greet for Foo` exists, and to an inherent `Foo::hi` when one exists. Adding or removing that impl in another file
+/// changes no symbol named `hi`, yet the unchanged caller's ref must follow,
+/// as a full sync would store it.
+#[test]
+fn adding_or_removing_a_trait_impl_re_resolves_typed_receiver_calls() {
+    let repo = TempDir::new().expect("create fixture repository");
+    run_git(repo.path(), &["init", "-q", "-b", "main"]);
+    write(
+        repo.path(),
+        "src/lib.rs",
+        "mod caller;\nmod foo;\nmod greet;\n",
+    );
+    write(
+        repo.path(),
+        "src/greet.rs",
+        "pub trait Greet {\n    fn hi(&self) -> i32 {\n        1\n    }\n}\n",
+    );
+    write(repo.path(), "src/foo.rs", "pub struct Foo;\n");
+    write(
+        repo.path(),
+        "src/caller.rs",
+        "use crate::foo::Foo;\nuse crate::greet::Greet;\n\npub fn call(foo: &Foo) -> i32 {\n    foo.hi()\n}\n",
+    );
+    sync(repo.path(), false);
+    let caller = "symbol:src/caller.rs#call:function";
+    let greet_hi = "symbol:src/greet.rs#Greet::hi:method";
+    let unimplemented = callee(repo.path(), caller, "hi");
+    assert_eq!(unimplemented.0, "fuzzy_name", "{unimplemented:?}");
+
+    write(
+        repo.path(),
+        "src/foo.rs",
+        "use crate::greet::Greet;\n\npub struct Foo;\n\nimpl Greet for Foo {}\n",
+    );
+    let report = sync(repo.path(), false);
+    assert_eq!(report["files_changed"], 1, "{report}");
+    let implemented = callee(repo.path(), caller, "hi");
+    assert_eq!(
+        implemented,
+        ("exact".to_string(), Some("Greet::hi".to_string()))
+    );
+    assert_queries_match_full(repo.path(), &[caller], &[greet_hi]);
+
+    // An inherent method wins over the trait's default body.
+    write(
+        repo.path(),
+        "src/foo.rs",
+        "use crate::greet::Greet;\n\npub struct Foo;\n\nimpl Foo {\n    pub fn hi(&self) -> i32 {\n        2\n    }\n}\n\nimpl Greet for Foo {}\n",
+    );
+    let report = sync(repo.path(), false);
+    assert_eq!(report["files_changed"], 1, "{report}");
+    assert_eq!(
+        callee(repo.path(), caller, "hi"),
+        ("exact".to_string(), Some("<Foo>::hi".to_string()))
+    );
+    assert_queries_match_full(repo.path(), &[caller], &[greet_hi]);
+
+    write(repo.path(), "src/foo.rs", "pub struct Foo;\n");
+    let report = sync(repo.path(), false);
+    assert_eq!(report["files_changed"], 1, "{report}");
+    assert_eq!(callee(repo.path(), caller, "hi"), unimplemented);
+    assert_queries_match_full(repo.path(), &[caller], &[greet_hi]);
+}
+
 /// The files holding refs to `target`, as `refs` reports them.
 fn referencing_files(repo: &Path, target: &str) -> Vec<String> {
     run_json(repo, ["refs", target])["refs"]
@@ -170,10 +236,10 @@ fn assert_queries_match_full(repo: &Path, callers: &[&str], targets: &[&str]) {
 fn graph_queries(repo: &Path, callers: &[&str], targets: &[&str]) -> Vec<Value> {
     let outbound = callers
         .iter()
-        .map(|caller| run_json(repo, ["callees", caller]));
+        .map(|caller| run_json(repo, ["callees", "--include-unresolved", caller]));
     let inbound = targets.iter().flat_map(|target| {
         [
-            run_json(repo, ["refs", target]),
+            run_json(repo, ["refs", "--confidence", "fuzzy", target]),
             run_json(repo, ["impact", target]),
         ]
     });
@@ -183,7 +249,7 @@ fn graph_queries(repo: &Path, callers: &[&str], targets: &[&str]) -> Vec<Value> 
 /// The confidence and resolved qualified name of the caller's one callee
 /// named `target_name`.
 fn callee(repo: &Path, caller: &str, target_name: &str) -> (String, Option<String>) {
-    let callees = run_json(repo, ["callees", caller]);
+    let callees = run_json(repo, ["callees", "--include-unresolved", caller]);
     let matches = callees["callees"]
         .as_array()
         .expect("callees array")

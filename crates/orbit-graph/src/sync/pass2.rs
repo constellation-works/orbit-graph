@@ -10,17 +10,20 @@
 //! included, is final, except that a receiver or `self` call whose type has
 //! no indexed member and no written path continues down the ladder. All refs
 //! for the files refreshed by the current sync are rewritten in one SQLite
-//! transaction; unchanged files' refs are not touched during incremental
-//! syncs.
+//! transaction.
 //!
-//! An unchanged file's ref can still depend on a changed file. The ladder only
-//! considers candidates named like the ref, and it reads from a candidate's
+//! An unchanged file's ref can still depend on a changed file. Apart from
+//! trait impl blocks (below), the ladder only considers candidates named like
+//! the ref, and it reads from a candidate's
 //! file only the `(name, qualified, kind)` of its symbols (the file's module
 //! prefixes derive from every symbol in it). So a ref outside the changed
 //! files can resolve differently after the change only if its `target_name`
 //! names a symbol of a changed or removed file whose definitions under that
 //! name differ, before versus after, or any symbol of a changed file whose
-//! module prefixes differ. Its stored `target_symbol_hint` also goes stale if
+//! module prefixes differ, or any member of a trait whose impl blocks a
+//! changed file adds or removes (the type-member rung resolves `<T>::m` to a
+//! trait's default body through `impl Trait for T`, which is not named `m`).
+//! Its stored `target_symbol_hint` also goes stale if
 //! it points at a symbol row the rewrite replaced. An incremental sync
 //! re-resolves exactly those refs in the same transaction, from the resolution
 //! inputs stored with each ref (`extracted_qualified`, `unresolved_receiver`,
@@ -185,10 +188,19 @@ fn defined_symbols(conn: &Connection, file_path: &str) -> Result<Vec<DefinedSymb
 /// The refs outside the rewritten files that an incremental sync must
 /// re-resolve: every ref whose `target_name` is in `names`, and every ref whose
 /// hint points at one of the `replaced` symbol rows.
+///
+/// The type-member rung also reads trait impl blocks (`impl Greet for Foo`)
+/// by their Self type, not by the ref's name: `foo.hi()` (`<Foo>::hi`)
+/// resolves to the default body `Greet::hi` only while such an impl exists.
+/// So when a trait impl block changes, every member its trait declares is
+/// added to `names`.
 #[derive(Debug, Default)]
 struct Dependents {
     names: BTreeSet<String>,
     replaced: HashMap<i64, String>,
+    /// Traits whose impl blocks changed; expanded into `names` by
+    /// [`Dependents::between`].
+    changed_impl_traits: BTreeSet<String>,
 }
 
 impl Dependents {
@@ -214,6 +226,11 @@ impl Dependents {
             let new = defined_symbols(tx, file_path)?;
             dependents.add_file(file_path, old, &new);
         }
+        for trait_name in std::mem::take(&mut dependents.changed_impl_traits) {
+            dependents
+                .names
+                .extend(type_member::trait_member_names(tx, &trait_name)?);
+        }
         Ok(dependents)
     }
 
@@ -226,23 +243,31 @@ impl Dependents {
 
         // Every candidate in the file is matched against its module prefixes;
         // if they moved, any ref naming any of its symbols may resolve anew.
-        if prefixes_of(file_path, old) != prefixes_of(file_path, new) {
-            self.names
-                .extend(old.iter().chain(new).map(|symbol| symbol.name.clone()));
-            return;
-        }
-        let old_by_name = definitions_by_name(old);
-        let new_by_name = definitions_by_name(new);
-        for (name, definitions) in old_by_name.iter() {
-            if new_by_name.get(name) != Some(definitions) {
-                self.names.insert((*name).to_string());
+        let changed_names = if prefixes_of(file_path, old) != prefixes_of(file_path, new) {
+            old.iter()
+                .chain(new)
+                .map(|symbol| symbol.name.as_str())
+                .collect::<BTreeSet<_>>()
+        } else {
+            let old_by_name = definitions_by_name(old);
+            let new_by_name = definitions_by_name(new);
+            old_by_name
+                .keys()
+                .chain(new_by_name.keys())
+                .filter(|name| old_by_name.get(*name) != new_by_name.get(*name))
+                .copied()
+                .collect()
+        };
+        for symbol in old.iter().chain(new) {
+            if symbol.kind == "impl"
+                && changed_names.contains(symbol.name.as_str())
+                && let Some(trait_name) = type_member::impl_trait_name(&symbol.qualified)
+            {
+                self.changed_impl_traits.insert(trait_name);
             }
         }
-        for name in new_by_name.keys() {
-            if !old_by_name.contains_key(name) {
-                self.names.insert((*name).to_string());
-            }
-        }
+        self.names
+            .extend(changed_names.into_iter().map(str::to_string));
     }
 }
 
