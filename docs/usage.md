@@ -43,6 +43,27 @@ other files that name a definition the changed or removed files added, removed
 or renamed, so its references match what a full rebuild stores.
 `orbit-graph sync --full` rehashes and re-extracts every supported file.
 
+The sync output names the database it wrote (`database_path`) and the branch
+that database indexes (`branch`). It also lists the paths the sync did not
+index:
+
+- **`failed`** holds a `count` and one entry per directory or file the sync
+  could not read or extract, with its `path`, the `operation` that failed, a
+  stable `error_kind` (`permission_denied`, `not_found`, `io`, `invalid_data`,
+  `parse_timeout`, `unsupported` or `panic`) and the `message`. One bad path
+  does not fail the sync: every other file is indexed, and anything already
+  indexed at or under the failed path keeps its rows. A one-line stderr notice
+  gives the count. The sync exits 1 only when paths failed and nothing is
+  indexed.
+- **`skipped`** holds a `count` and one entry per file deliberately left out,
+  with its `path` and `reason` (`oversize` for a file above the byte cap).
+
+An interrupted sync never leaves stale references behind. A file becomes
+current only when pass 2 commits its references. After a crash, a kill, an
+error or a cancellation, the next sync, incremental or full, extracts every
+file the interrupted one touched again and re-resolves every stored reference,
+so its references match what a full rebuild stores.
+
 Each worktree stores scratch state under `.orbit-graph/` in its root. Attached
 branches use `.orbit-graph/<sanitized-branch>.<extractor-version>.db`; detached
 worktrees use a commit-prefixed database name. SQLite WAL and lock sidecars
@@ -78,14 +99,14 @@ A sync finishes or fails within stated bounds:
   and a caller joining it waits for the same bound. If that run panics, its
   waiters get an error and the next sync starts afresh.
 - **File size.** A supported file larger than 4 MiB (the change explorer's
-  blob cap) is skipped with a warning, visible with `RUST_LOG=warn`, and gets
-  no rows; a file that grows past the cap loses its rows at the next sync.
+  blob cap) is skipped and listed in `skipped`, and gets no rows; a file that
+  grows past the cap loses its rows at the next sync.
 - **Memory.** Pass 1 extracts and writes changed files in chunks of at most
   128 files or 32 MiB of source, so it holds one chunk of extracted rows at a
   time. References and command rows still wait in memory for pass 2.
 - **Parse time.** Each file's tree-sitter parse has a 10-second deadline. A
-  file that exceeds it counts as an extraction failure and is skipped with a
-  warning, like a file whose extractor panics.
+  file that exceeds it counts as an extraction failure and is listed in
+  `failed`, like a file whose extractor panics.
 - **Watcher.** A watching `Graph` buffers at most 1,024 file events. When the
   buffer is full, further events are dropped and counted, and the watcher
   schedules a sync, which rescans the whole worktree, so no change is lost.

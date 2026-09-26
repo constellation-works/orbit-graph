@@ -515,11 +515,42 @@ fn graph_sync(repository: PathBuf, full: bool, budget_ms: u64) -> Result<Value, 
             "files_indexed": result.files_indexed,
             "files_changed": result.files_changed,
             "files_removed": result.files_removed,
+            "failed": result.failed.as_deref().map(failed_json),
+            "skipped": result.skipped.as_deref().map(skipped_json),
             "timings": result.timings,
             "unowned_files": result.unowned,
         },
         "code_index": code_index_status(repository.as_path(), index_dir.as_path())?,
     }))
+}
+
+/// `graph_sync`'s `failed` field: the CLI `sync` shape, a count and its
+/// entries.
+fn failed_json(failed: &[crate::SyncFailure]) -> Value {
+    json!({
+        "count": failed.len(),
+        "entries": failed
+            .iter()
+            .map(|failure| json!({
+                "path": failure.path,
+                "operation": failure.operation,
+                "error_kind": failure.error_kind,
+                "message": failure.message,
+            }))
+            .collect::<Vec<_>>(),
+    })
+}
+
+/// `graph_sync`'s `skipped` field: the CLI `sync` shape, a count and its
+/// entries.
+fn skipped_json(skipped: &[crate::SyncSkip]) -> Value {
+    json!({
+        "count": skipped.len(),
+        "entries": skipped
+            .iter()
+            .map(|skip| json!({"path": skip.path, "reason": skip.reason}))
+            .collect::<Vec<_>>(),
+    })
 }
 
 /// The published code-graph index and whether it matches the checkout.

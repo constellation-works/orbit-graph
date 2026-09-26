@@ -28,8 +28,8 @@ use serde::{Deserialize, Serialize};
 
 use crate::recommend::StructureIndex;
 use crate::{
-    EXTRACTOR_VERSION, Graph, GraphError, STORE_SCHEMA_VERSION, SyncMode, SyncObserver,
-    SyncOutcome, SyncPhase, SyncPolicy, SyncProgress,
+    EXTRACTOR_VERSION, Graph, GraphError, STORE_SCHEMA_VERSION, SyncFailure, SyncMode,
+    SyncObserver, SyncOutcome, SyncPhase, SyncPolicy, SyncProgress, SyncSkip,
 };
 
 /// Pointer naming the published generation.
@@ -187,6 +187,12 @@ pub(crate) struct SyncResult {
     pub(crate) files_removed: usize,
     /// Files in the build when it stopped or completed.
     pub(crate) files_indexed: usize,
+    /// Paths the build could not read or extract; `None` when the budget
+    /// ended before the build reported them.
+    pub(crate) failed: Option<Vec<SyncFailure>>,
+    /// Paths the build deliberately did not index; `None` when the budget
+    /// ended before the build reported them.
+    pub(crate) skipped: Option<Vec<SyncSkip>>,
     /// Milliseconds spent per phase.
     pub(crate) timings: Timings,
     /// Graph databases in the index directory that no build recorded
@@ -299,6 +305,8 @@ pub(crate) fn sync(
                 files_changed: build.files_changed,
                 files_removed: build.files_removed,
                 files_indexed: build.files_indexed,
+                failed: Some(build.failed),
+                skipped: Some(build.skipped),
                 timings,
                 unowned,
             })
@@ -316,6 +324,8 @@ pub(crate) fn sync(
                 files_changed: 0,
                 files_removed: 0,
                 files_indexed: progress.files_indexed,
+                failed: None,
+                skipped: None,
                 timings,
                 unowned,
             })
@@ -609,7 +619,7 @@ enum Slot {
     Running,
     /// The caller stopped waiting; the build must discard its generation.
     Abandoned,
-    Finished(Result<Build, GraphError>),
+    Finished(Box<Result<Build, GraphError>>),
 }
 
 struct Progress {
@@ -636,7 +646,7 @@ impl Shared {
                     unreachable!("slot was just checked");
                 };
                 *slot = Slot::Abandoned;
-                return Some(result);
+                return Some(*result);
             }
             let now = Instant::now();
             if now >= deadline {
@@ -682,6 +692,8 @@ struct Build {
     files_changed: usize,
     files_removed: usize,
     files_indexed: usize,
+    failed: Vec<SyncFailure>,
+    skipped: Vec<SyncSkip>,
     extract_ms: u64,
     resolve_ms: u64,
 }
@@ -746,6 +758,8 @@ impl BuildJob {
                     files_changed: report.files_changed,
                     files_removed: report.files_removed,
                     files_indexed: report.files_indexed,
+                    failed: report.failed,
+                    skipped: report.skipped,
                     extract_ms,
                     resolve_ms,
                 })
@@ -757,6 +771,8 @@ impl BuildJob {
                     files_changed: report.files_changed,
                     files_removed: report.files_removed,
                     files_indexed: report.files_indexed,
+                    failed: report.failed,
+                    skipped: report.skipped,
                     extract_ms,
                     resolve_ms,
                 })
@@ -775,7 +791,7 @@ impl BuildJob {
         // elsewhere in the process shares it until its exec closes it.
         let _ = FileExt::unlock(&self.lock);
         drop(self.lock);
-        *slot = Slot::Finished(result);
+        *slot = Slot::Finished(Box::new(result));
         self.shared.changed.notify_all();
     }
 

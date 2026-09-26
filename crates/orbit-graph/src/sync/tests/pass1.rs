@@ -24,8 +24,13 @@ fn panicking_extractor_skips_file_and_preserves_other_writes() {
     drop(graph);
     worktree.write("src/good.rs", "pub fn good() {}\n");
     worktree.write("src/bad.rs", "pub fn bad() {}\n");
+    worktree.write("src/broken.rs", "pub fn broken() {}\n");
     let diff = Diff {
-        new: vec![PathBuf::from("src/good.rs"), PathBuf::from("src/bad.rs")],
+        new: vec![
+            PathBuf::from("src/good.rs"),
+            PathBuf::from("src/bad.rs"),
+            PathBuf::from("src/broken.rs"),
+        ],
         ..Diff::default()
     };
 
@@ -44,7 +49,29 @@ fn panicking_extractor_skips_file_and_preserves_other_writes() {
     assert_eq!(output.files_written, 1);
     assert_eq!(file_count(&conn, "src/good.rs"), 1);
     assert_eq!(file_count(&conn, "src/bad.rs"), 0);
+    assert_eq!(file_count(&conn, "src/broken.rs"), 0);
     assert_eq!(row_count(&conn, "symbols"), 1);
+    // The panic and the failure are both counted, not only logged
+    // (STD-02 §R32).
+    let mut failed = output
+        .failed
+        .iter()
+        .map(|failure| (failure.path.as_str(), failure.error_kind.as_str()))
+        .collect::<Vec<_>>();
+    failed.sort_unstable();
+    assert_eq!(output.failed.len(), 2, "{:?}", output.failed);
+    assert_eq!(
+        failed,
+        [("src/bad.rs", "panic"), ("src/broken.rs", "invalid_data")]
+    );
+    assert!(
+        output
+            .failed
+            .iter()
+            .any(|failure| failure.message.contains("intentional extractor panic")),
+        "{:?}",
+        output.failed
+    );
 }
 
 #[test]
@@ -479,6 +506,12 @@ impl ExtractorBackend for PanickingBackend {
     ) -> Result<ExtractedSourceFile, ExtractFileError> {
         if rel_path == Path::new("src/bad.rs") {
             panic!("intentional extractor panic");
+        }
+        if rel_path == Path::new("src/broken.rs") {
+            return Err(ExtractFileError::new(
+                "extract source file",
+                "intentional extractor failure",
+            ));
         }
         DefaultExtractorBackend::default().extract(worktree_root, rel_path)
     }

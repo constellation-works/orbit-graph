@@ -13,7 +13,8 @@ use git2::Repository;
 use ignore::gitignore::{Gitignore, GitignoreBuilder};
 use rusqlite::{Connection, params};
 
-use crate::{GraphError, SyncMode};
+use super::{graph_failure, io_failure};
+use crate::{GraphError, SyncFailure, SyncMode};
 
 /// Largest file sync reads, hashes or extracts: the change explorer's 4 MiB
 /// blob cap. A larger file is skipped with a warning and gets no rows
@@ -54,6 +55,10 @@ pub(crate) struct Diff {
     /// Supported files skipped because they exceed [`MAX_FILE_BYTES`]. A
     /// previously indexed one is also listed in `deleted`, so its rows go.
     pub(crate) oversize: Vec<PathBuf>,
+    /// Directories and files the scan could not read, one entry each
+    /// (`STD-02 §R32`). What is already indexed at or under such a path is
+    /// neither modified nor deleted, since its state on disk is unknown.
+    pub(crate) failed: Vec<SyncFailure>,
 }
 
 impl Diff {
@@ -109,19 +114,34 @@ impl Scanner {
             .map_err(|source| GraphError::sqlite("open graph database for scan", source))?;
         let mut rows = load_file_rows(&conn)?;
         let orbitignore = OrbitIgnoreMatcher::load(self.worktree_root.as_path())?;
-        let mut disk_files = Vec::new();
+        let mut walk = Walk::default();
         walk_dir(
             self.worktree_root.as_path(),
             self.worktree_root.as_path(),
             &orbitignore,
             &self.registry,
-            &mut disk_files,
-        )?;
+            &mut walk,
+        );
+        let Walk {
+            files: mut disk_files,
+            unreadable,
+        } = walk;
         disk_files.sort_by(|left, right| left.path.cmp(&right.path));
 
-        let ignored = git_ignored_paths(self.worktree_root.as_path(), &disk_files)?;
+        let ignored = git_ignored_paths(
+            self.worktree_root.as_path(),
+            disk_files
+                .iter()
+                .map(|file| file.path.as_path())
+                .chain(unreadable.iter().map(|entry| entry.path.as_path())),
+        )?;
         let mut diff = Diff::default();
         let mut seen = HashSet::new();
+        // An unreadable path Git ignores would not be indexed anyway.
+        let unreadable = unreadable
+            .into_iter()
+            .filter(|entry| !ignored.contains(&entry.path))
+            .collect::<Vec<_>>();
 
         for disk_file in disk_files {
             if ignored.contains(&disk_file.path) {
@@ -142,13 +162,25 @@ impl Scanner {
                 continue;
             }
 
-            let Some(content_hash) =
-                hash_file(self.worktree_root.as_path(), &disk_file.path, hasher)?
-            else {
-                // The file grew past the cap after the walk measured it.
-                skip_oversize(&mut diff, disk_file.path, MAX_FILE_BYTES + 1);
-                continue;
-            };
+            let content_hash =
+                match hash_file(self.worktree_root.as_path(), &disk_file.path, hasher) {
+                    Ok(Some(content_hash)) => content_hash,
+                    Ok(None) => {
+                        // The file grew past the cap after the walk measured it.
+                        skip_oversize(&mut diff, disk_file.path, MAX_FILE_BYTES + 1);
+                        continue;
+                    }
+                    Err(error) => {
+                        // Keep what is indexed for it: its content is unknown.
+                        diff.failed.push(io_failure(
+                            &disk_file.path,
+                            "read file for content hash",
+                            &error,
+                        ));
+                        seen.insert(disk_file.path);
+                        continue;
+                    }
+                };
             seen.insert(disk_file.path.clone());
             let Some(existing) = existing else {
                 diff.new.push(disk_file.path);
@@ -162,8 +194,14 @@ impl Scanner {
             }
         }
 
-        diff.deleted
-            .extend(rows.into_keys().filter(|path| !seen.contains(path)));
+        diff.deleted.extend(rows.into_keys().filter(|path| {
+            !seen.contains(path)
+                && !unreadable
+                    .iter()
+                    .any(|entry| path.starts_with(entry.path.as_path()))
+        }));
+        diff.failed
+            .extend(unreadable.into_iter().map(|entry| entry.failure));
         sort_diff(&mut diff);
         Ok(diff)
     }
@@ -250,6 +288,30 @@ struct DiskFile {
     path: PathBuf,
     mtime_ns: i64,
     byte_len: u64,
+}
+
+/// What a worktree walk found.
+#[derive(Debug, Default)]
+struct Walk {
+    files: Vec<DiskFile>,
+    unreadable: Vec<Unreadable>,
+}
+
+/// A directory or file the walk could not read. Everything at or under
+/// `path` is unknown.
+#[derive(Debug)]
+struct Unreadable {
+    /// Worktree-relative path; empty for the worktree root itself.
+    path: PathBuf,
+    failure: SyncFailure,
+}
+
+impl Walk {
+    fn unreadable(&mut self, root: &Path, path: &Path, operation: &str, error: &std::io::Error) {
+        let rel = path.strip_prefix(root).unwrap_or(path).to_path_buf();
+        let failure = io_failure(&rel, operation, error);
+        self.unreadable.push(Unreadable { path: rel, failure });
+    }
 }
 
 struct OrbitIgnoreMatcher {
@@ -346,24 +408,42 @@ fn touch_mtime(conn: &Connection, path: &Path, mtime_ns: i64) -> Result<(), Grap
     Ok(())
 }
 
+/// Walks `dir`, recording each directory or file it cannot read in
+/// `out.unreadable` and carrying on with the rest (`STD-02 §R32`).
 fn walk_dir(
     root: &Path,
     dir: &Path,
     orbitignore: &OrbitIgnoreMatcher,
     registry: &ExtractorRegistry,
-    out: &mut Vec<DiskFile>,
-) -> Result<(), GraphError> {
-    let entries =
-        fs::read_dir(dir).map_err(|source| GraphError::io("scan directory", dir, source))?;
+    out: &mut Walk,
+) {
+    let entries = match fs::read_dir(dir) {
+        Ok(entries) => entries,
+        Err(error) => {
+            out.unreadable(root, dir, "scan directory", &error);
+            return;
+        }
+    };
 
     for entry in entries {
-        let entry = entry.map_err(|source| GraphError::io("read directory entry", dir, source))?;
+        let entry = match entry {
+            Ok(entry) => entry,
+            Err(error) => {
+                // The rest of the directory cannot be listed.
+                out.unreadable(root, dir, "read directory entry", &error);
+                return;
+            }
+        };
         let path = entry.path();
         let file_name = entry.file_name();
         let name = file_name.to_string_lossy();
-        let file_type = entry
-            .file_type()
-            .map_err(|source| GraphError::io("read file type", path.as_path(), source))?;
+        let file_type = match entry.file_type() {
+            Ok(file_type) => file_type,
+            Err(error) => {
+                out.unreadable(root, path.as_path(), "read file type", &error);
+                continue;
+            }
+        };
 
         if file_type.is_dir() {
             if name.starts_with('.') {
@@ -374,7 +454,7 @@ fn walk_dir(
             {
                 continue;
             }
-            walk_dir(root, path.as_path(), orbitignore, registry, out)?;
+            walk_dir(root, path.as_path(), orbitignore, registry, out);
         } else if file_type.is_file() {
             if name.as_ref() == ORBITIGNORE_FILE_NAME {
                 continue;
@@ -391,19 +471,31 @@ fn walk_dir(
                 if orbitignore.is_ignored(rel, false) || registry.language_for(rel).is_none() {
                     continue;
                 }
-                let metadata = fs::metadata(path.as_path()).map_err(|source| {
-                    GraphError::io("read file metadata", path.as_path(), source)
-                })?;
-                out.push(DiskFile {
+                let metadata = match fs::metadata(path.as_path()) {
+                    Ok(metadata) => metadata,
+                    Err(error) => {
+                        out.unreadable(root, path.as_path(), "read file metadata", &error);
+                        continue;
+                    }
+                };
+                let mtime_ns = match metadata_mtime_ns(path.as_path(), &metadata) {
+                    Ok(mtime_ns) => mtime_ns,
+                    Err(error) => {
+                        out.unreadable.push(Unreadable {
+                            path: rel.to_path_buf(),
+                            failure: graph_failure(rel, &error),
+                        });
+                        continue;
+                    }
+                };
+                out.files.push(DiskFile {
                     path: rel.to_path_buf(),
-                    mtime_ns: metadata_mtime_ns(path.as_path(), &metadata)?,
+                    mtime_ns,
                     byte_len: metadata.len(),
                 });
             }
         }
     }
-
-    Ok(())
 }
 
 fn collect_orbitignore_files(
@@ -412,17 +504,22 @@ fn collect_orbitignore_files(
     default_orbitignore: &OrbitIgnoreMatcher,
     out: &mut Vec<PathBuf>,
 ) -> Result<(), GraphError> {
-    let entries =
-        fs::read_dir(dir).map_err(|source| GraphError::io("scan directory", dir, source))?;
+    // A directory it cannot read is skipped here; the worktree walk reports
+    // it once as a sync failure.
+    let Ok(entries) = fs::read_dir(dir) else {
+        return Ok(());
+    };
 
     for entry in entries {
-        let entry = entry.map_err(|source| GraphError::io("read directory entry", dir, source))?;
+        let Ok(entry) = entry else {
+            break;
+        };
         let path = entry.path();
         let file_name = entry.file_name();
         let name = file_name.to_string_lossy();
-        let file_type = entry
-            .file_type()
-            .map_err(|source| GraphError::io("read file type", path.as_path(), source))?;
+        let Ok(file_type) = entry.file_type() else {
+            continue;
+        };
 
         if file_type.is_dir() {
             if let Ok(rel) = path.strip_prefix(root)
@@ -452,12 +549,13 @@ fn collect_orbitignore_files(
 /// a file inside an ignored directory is ignored, and a tracked file is never
 /// ignored. No Git process is started, so repository-configured programs such
 /// as `core.fsmonitor` or hooks never run (`STD-05 §R10`).
-fn git_ignored_paths(
+fn git_ignored_paths<'a>(
     worktree_root: &Path,
-    paths: &[DiskFile],
+    paths: impl IntoIterator<Item = &'a Path>,
 ) -> Result<HashSet<PathBuf>, GraphError> {
     let mut ignored = HashSet::new();
-    if paths.is_empty() {
+    let mut paths = paths.into_iter().peekable();
+    if paths.peek().is_none() {
         return Ok(ignored);
     }
     // A directory outside a Git repository has no Git ignore rules to apply.
@@ -472,8 +570,8 @@ fn git_ignored_paths(
         .index()
         .map_err(|error| git_ignore_error("read the Git index", &error))?;
 
-    for file in paths {
-        let repo_path = prefix.join(&file.path);
+    for path in paths {
+        let repo_path = prefix.join(path);
         if index.get_path(repo_path.as_path(), 0).is_some() {
             continue;
         }
@@ -481,7 +579,7 @@ fn git_ignored_paths(
             .is_path_ignored(repo_path.as_path())
             .map_err(|error| git_ignore_error("match Git ignore rules", &error))?
         {
-            ignored.insert(file.path.clone());
+            ignored.insert(path.to_path_buf());
         }
     }
 
@@ -542,10 +640,8 @@ fn hash_file(
     root: &Path,
     rel_path: &Path,
     hasher: &dyn ContentHasher,
-) -> Result<Option<Vec<u8>>, GraphError> {
-    let path = root.join(rel_path);
-    let bytes = read_capped(path.as_path())
-        .map_err(|source| GraphError::io("read file for content hash", path, source))?;
+) -> std::io::Result<Option<Vec<u8>>> {
+    let bytes = read_capped(root.join(rel_path).as_path())?;
     Ok(bytes.map(|bytes| hasher.hash(rel_path, &bytes)))
 }
 
@@ -586,6 +682,8 @@ fn sort_diff(diff: &mut Diff) {
     diff.new.sort();
     diff.deleted.sort();
     diff.oversize.sort();
+    diff.failed
+        .sort_by(|left, right| left.path.cmp(&right.path));
 }
 
 #[cfg(test)]

@@ -10,6 +10,17 @@
 //! Pass 1 rows, while `ExtractedFile::refs` and command rows stay in memory for
 //! Pass 2 and the final command transaction instead of being staged in the
 //! frozen schema.
+//!
+//! A file written here is not yet current (`STD-03 §R8`): its row carries
+//! [`PENDING_CONTENT_HASH`] and [`PENDING_MTIME_NS`], which no file on disk
+//! matches, and pass 2 stamps the real values in the transaction that writes
+//! its refs. Before its first write, pass 1 also marks the database as holding
+//! an unfinished sync ([`super::mark_sync_pending`]). If the sync stops before
+//! pass 2 commits, the next scan finds those files changed and extracts them
+//! again, and the marker makes that sync re-resolve every stored ref.
+//!
+//! A file whose extraction fails or panics is not written; it is reported in
+//! [`Pass1Output::failed`] (`STD-02 §R32`) and keeps any rows it already has.
 
 use std::cell::Cell;
 use std::collections::BTreeMap;
@@ -28,7 +39,19 @@ use rayon::prelude::*;
 use rusqlite::{Connection, Transaction, TransactionBehavior, params};
 
 use super::scanner::{Diff, MAX_FILE_BYTES, mtime_ns, normalize_path, read_capped};
-use crate::{GraphError, SyncMode, SyncObserver, SyncPhase, SyncProgress};
+use super::{io_error_kind, mark_sync_pending};
+use crate::{GraphError, SyncFailure, SyncMode, SyncObserver, SyncPhase, SyncProgress};
+
+/// `files.content_hash` of a file pass 1 wrote and pass 2 has not yet made
+/// current. No file hashes to it, so the scanner always sees such a file as
+/// changed.
+pub(crate) const PENDING_CONTENT_HASH: &[u8] = &[];
+/// `files.mtime_ns` of a file pass 1 wrote and pass 2 has not yet made
+/// current, so the scanner's mtime fast path never skips it.
+pub(crate) const PENDING_MTIME_NS: i64 = 0;
+/// [`ExtractFileError::kind`] of a file that grew past [`MAX_FILE_BYTES`]
+/// after the scan measured it; it is reported as skipped, not failed.
+const OVERSIZE_KIND: &str = "oversize";
 
 /// Longest one file's tree-sitter parse may take before the file counts as
 /// an extraction failure (`STD-03 §R22`).
@@ -68,11 +91,19 @@ pub(crate) struct Pass1Output {
     /// Path of the last file pass 1 touched, if any; carried forward as pass
     /// 2's frozen `current_path`.
     pub(crate) last_touched_path: Option<String>,
+    /// Files whose extraction failed or panicked, one entry each.
+    pub(crate) failed: Vec<SyncFailure>,
+    /// Files that grew past [`MAX_FILE_BYTES`] after the scan measured them.
+    pub(crate) oversize: Vec<PathBuf>,
 }
 
+/// A file pass 1 wrote: the refs pass 2 resolves for it, and the content
+/// identity pass 2 stamps on its row to make it current.
 pub(crate) struct ExtractedFileRefs {
     pub(crate) file_path: String,
     pub(crate) refs: Vec<RawRef>,
+    pub(crate) content_hash: Vec<u8>,
+    pub(crate) mtime_ns: i64,
 }
 
 pub(crate) fn run(
@@ -106,6 +137,7 @@ fn run_with_backend(
     let chunks = plan_chunks(worktree_root, &changed, limits);
 
     let mut conn = open_writer_connection(db_path)?;
+    mark_sync_pending(&mut conn)?;
 
     // Files this sync will touch: every deletion plus every changed file,
     // less each one whose extraction fails, as chunks reveal them.
@@ -149,14 +181,24 @@ fn run_with_backend(
     let mut refs = Vec::new();
     let mut commands = Vec::new();
     let mut files_written = 0;
+    let mut failed = Vec::new();
+    let mut oversize = Vec::new();
     for chunk in chunks {
         if cancelled || observer.is_some_and(|observer| observer.is_cancelled()) {
             cancelled = true;
             break;
         }
         let chunk_len = chunk.len();
-        let mut extracted = extract_changed_files(worktree_root, &changed[chunk], backend);
+        let (mut extracted, errors) =
+            extract_changed_files(worktree_root, &changed[chunk], backend);
         total_files -= chunk_len - extracted.len();
+        for (path, error) in errors {
+            if error.kind == OVERSIZE_KIND {
+                oversize.push(path);
+            } else {
+                failed.push(error.into_failure(&path));
+            }
+        }
         extracted.sort_by(|left, right| left.path.cmp(&right.path));
         for mut file in extracted {
             if observer.is_some_and(|observer| observer.is_cancelled()) {
@@ -169,6 +211,8 @@ fn run_with_backend(
             refs.push(ExtractedFileRefs {
                 file_path: file.file_path.clone(),
                 refs: file_refs,
+                content_hash: std::mem::take(&mut file.content_hash),
+                mtime_ns: file.mtime_ns,
             });
             commands.extend(file_commands);
             files_written += 1;
@@ -198,6 +242,8 @@ fn run_with_backend(
         cancelled,
         total_files,
         last_touched_path,
+        failed,
+        oversize,
     })
 }
 
@@ -239,37 +285,46 @@ fn plan_chunks(
     chunks
 }
 
+/// Extracts `changed` in parallel. Returns the extracted files and, for each
+/// file whose extraction failed or panicked, its path and error.
 fn extract_changed_files(
     worktree_root: &Path,
     changed: &[PathBuf],
     backend: &dyn ExtractorBackend,
-) -> Vec<ExtractedSourceFile> {
+) -> (Vec<ExtractedSourceFile>, Vec<(PathBuf, ExtractFileError)>) {
     install_silenceable_panic_hook();
-    changed
+    let results = changed
         .par_iter()
-        .filter_map(|rel_path| {
+        .map(|rel_path| {
             let _silenced = SilencedPanics::enter();
-            match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let result = match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
                 backend.extract(worktree_root, rel_path)
             })) {
-                Ok(Ok(file)) => Some(file),
-                Ok(Err(error)) => {
-                    warn_extraction_failure(rel_path, error.to_string());
-                    None
-                }
-                Err(payload) => {
-                    warn_extraction_failure(
-                        rel_path,
-                        format!(
-                            "extractor panicked: {}",
-                            panic_payload_message(payload.as_ref())
-                        ),
-                    );
-                    None
-                }
-            }
+                Ok(result) => result,
+                Err(payload) => Err(ExtractFileError::new(
+                    "extract source file",
+                    format!(
+                        "extractor panicked: {}",
+                        panic_payload_message(payload.as_ref())
+                    ),
+                )
+                .with_kind("panic")),
+            };
+            result.map_err(|error| {
+                warn_extraction_failure(rel_path, error.to_string());
+                (rel_path.clone(), error)
+            })
         })
-        .collect()
+        .collect::<Vec<_>>();
+    let mut extracted = Vec::new();
+    let mut errors = Vec::new();
+    for result in results {
+        match result {
+            Ok(file) => extracted.push(file),
+            Err(error) => errors.push(error),
+        }
+    }
+    (extracted, errors)
 }
 
 thread_local! {
@@ -369,15 +424,18 @@ impl ExtractorBackend for DefaultExtractorBackend {
         let bytes = read_capped(path.as_path())
             .map_err(|source| {
                 ExtractFileError::new("read source file", format!("{}: {source}", path.display()))
+                    .with_kind(io_error_kind(&source))
             })?
             .ok_or_else(|| {
                 ExtractFileError::new(
                     "read source file",
                     format!("{} exceeds the {MAX_FILE_BYTES}-byte cap", path.display()),
                 )
+                .with_kind(OVERSIZE_KIND)
             })?;
-        let mtime_ns = mtime_ns(path.as_path())
-            .map_err(|error| ExtractFileError::new("read source file mtime", error.to_string()))?;
+        let mtime_ns = mtime_ns(path.as_path()).map_err(|error| {
+            ExtractFileError::new("read source file mtime", error.to_string()).with_kind("io")
+        })?;
         let extractors = languages::extractors();
         let extractor = extractors
             .iter()
@@ -387,6 +445,7 @@ impl ExtractorBackend for DefaultExtractorBackend {
                     "select extractor",
                     format!("no registered extractor for {}", rel_path.display()),
                 )
+                .with_kind("unsupported")
             })?;
         let (rows, deadline_exceeded) = languages::with_parse_timeout(self.parse_timeout, || {
             extractor.extract(rel_path, &bytes)
@@ -398,7 +457,8 @@ impl ExtractorBackend for DefaultExtractorBackend {
                     "parse exceeded the {} ms deadline",
                     self.parse_timeout.as_millis()
                 ),
-            ));
+            )
+            .with_kind("parse_timeout"));
         }
         Ok(ExtractedSourceFile {
             path: rel_path.to_path_buf(),
@@ -421,6 +481,8 @@ impl ExtractorBackend for DefaultExtractorBackend {
 struct ExtractFileError {
     operation: &'static str,
     reason: String,
+    /// Stable class reported as [`SyncFailure::error_kind`].
+    kind: &'static str,
 }
 
 impl ExtractFileError {
@@ -428,6 +490,21 @@ impl ExtractFileError {
         Self {
             operation,
             reason: reason.into(),
+            kind: "invalid_data",
+        }
+    }
+
+    fn with_kind(mut self, kind: &'static str) -> Self {
+        self.kind = kind;
+        self
+    }
+
+    fn into_failure(self, rel_path: &Path) -> SyncFailure {
+        SyncFailure {
+            path: normalize_path(rel_path),
+            operation: self.operation.to_string(),
+            error_kind: self.kind.to_string(),
+            message: self.reason,
         }
     }
 }
@@ -481,13 +558,14 @@ fn write_file_transaction(
     delete_fts_for_file(&tx, &file.file_path)?;
     tx.execute("DELETE FROM files WHERE path = ?1", params![file.file_path])
         .map_err(|source| GraphError::sqlite("delete prior graph file rows", source))?;
+    // Not current until pass 2 stamps the real content hash and mtime.
     tx.execute(
         "INSERT INTO files (path, content_hash, mtime_ns, lang, byte_len, extracted_at)
          VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
         params![
             file.file_path,
-            file.content_hash,
-            file.mtime_ns,
+            PENDING_CONTENT_HASH,
+            PENDING_MTIME_NS,
             file.lang,
             file.byte_len,
             file.extracted_at

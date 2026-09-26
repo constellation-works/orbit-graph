@@ -13,7 +13,7 @@ use std::time::{Duration, Instant};
 use rusqlite::Connection;
 
 use crate::lock::{self, LockHolder};
-use crate::{GraphError, SyncMode, SyncObserver, SyncOutcome, SyncReport};
+use crate::{GraphError, SyncFailure, SyncMode, SyncObserver, SyncOutcome, SyncReport, SyncSkip};
 
 pub(crate) fn run(
     db_path: &Path,
@@ -38,36 +38,11 @@ fn run_once(
     maybe_fail_after_scan(db_path)?;
     maybe_wait_after_scan(db_path);
     maybe_panic_after_scan(db_path);
-    if !diff.has_changes() {
-        let duration = started.elapsed();
-        return Ok(SyncReport {
-            files_indexed: count_indexed_files(db_path)?,
-            files_changed: 0,
-            files_removed: 0,
-            duration,
-        });
-    }
-    let before = definitions_before_pass1(db_path, mode, &diff)?;
-    let pass1 = pass1::run(db_path, worktree_root, mode, &diff, None)?;
-    let total_files = pass1.total_files;
-    let last_touched_path = pass1.last_touched_path.clone();
-    pass2::run(
-        db_path,
-        mode,
-        pass1.refs,
-        &before,
-        None,
-        total_files,
-        last_touched_path,
-    )?;
-    let duration = started.elapsed();
-
-    Ok(SyncReport {
-        files_indexed: pass1.files_indexed,
-        files_changed: pass1.files_written,
-        files_removed: pass1.files_removed,
-        duration,
-    })
+    Ok(
+        match write(db_path, worktree_root, mode, diff, None, started)? {
+            SyncOutcome::Completed(report) | SyncOutcome::Cancelled(report) => report,
+        },
+    )
 }
 
 /// Observer-driven sync used by [`crate::Graph::sync_with_observer`].
@@ -86,45 +61,82 @@ pub(crate) fn run_with_observer(
     let diff = scanner::scan_diff_with_lock_held(db_path, worktree_root, mode)?;
     maybe_fail_after_scan(db_path)?;
     maybe_wait_after_scan(db_path);
-    if !diff.has_changes() {
-        let duration = started.elapsed();
-        return Ok(SyncOutcome::Completed(SyncReport {
-            files_indexed: count_indexed_files(db_path)?,
-            files_changed: 0,
-            files_removed: 0,
-            duration,
-        }));
+    write(db_path, worktree_root, mode, diff, Some(observer), started)
+}
+
+/// Writes what the scan found: pass 1, then pass 2, whose commit makes the
+/// written files current. A sync that finds an earlier one unfinished runs
+/// pass 2 even with nothing changed, re-resolving every stored ref.
+fn write(
+    db_path: &Path,
+    worktree_root: &Path,
+    mode: SyncMode,
+    diff: scanner::Diff,
+    observer: Option<&dyn SyncObserver>,
+    started: Instant,
+) -> Result<SyncOutcome, GraphError> {
+    let recovering = sync_pending(db_path)?;
+    let mut report = SyncReport {
+        files_indexed: 0,
+        files_changed: 0,
+        files_removed: 0,
+        duration: Duration::ZERO,
+        failed: diff.failed.clone(),
+        skipped: skips(&diff.oversize),
+        database_path: db_path.to_path_buf(),
+        branch: String::new(),
+    };
+    if !diff.has_changes() && !recovering {
+        report.files_indexed = count_indexed_files(db_path)?;
+        report.duration = started.elapsed();
+        return Ok(SyncOutcome::Completed(report));
     }
-    let before = definitions_before_pass1(db_path, mode, &diff)?;
-    let pass1 = pass1::run(db_path, worktree_root, mode, &diff, Some(observer))?;
+    let before = if recovering || mode == SyncMode::Full {
+        None
+    } else {
+        Some(definitions_before_pass1(db_path, &diff)?)
+    };
+    let pass1 = pass1::run(db_path, worktree_root, mode, &diff, observer)?;
+    report.files_indexed = pass1.files_indexed;
+    report.files_changed = pass1.files_written;
+    report.files_removed = pass1.files_removed;
+    report.failed.extend(pass1.failed);
+    report
+        .failed
+        .sort_by(|left, right| left.path.cmp(&right.path));
+    report.skipped.extend(skips(&pass1.oversize));
     if pass1.cancelled {
-        let duration = started.elapsed();
-        return Ok(SyncOutcome::Cancelled(SyncReport {
-            files_indexed: pass1.files_indexed,
-            files_changed: pass1.files_written,
-            files_removed: pass1.files_removed,
-            duration,
-        }));
+        // Pass 2 does not run, so no file pass 1 wrote becomes current; the
+        // next sync extracts them again (`STD-03 §R8`).
+        report.duration = started.elapsed();
+        return Ok(SyncOutcome::Cancelled(report));
     }
-    let total_files = pass1.total_files;
-    let last_touched_path = pass1.last_touched_path.clone();
+    inject_fault(FaultPoint::AfterPass1);
+    let reresolve = match &before {
+        Some(before) => pass2::Reresolve::Dependents(before),
+        None => pass2::Reresolve::All,
+    };
     pass2::run(
         db_path,
         mode,
         pass1.refs,
-        &before,
-        Some(observer),
-        total_files,
-        last_touched_path,
+        reresolve,
+        observer,
+        pass1.total_files,
+        pass1.last_touched_path,
     )?;
-    let duration = started.elapsed();
+    report.duration = started.elapsed();
+    Ok(SyncOutcome::Completed(report))
+}
 
-    Ok(SyncOutcome::Completed(SyncReport {
-        files_indexed: pass1.files_indexed,
-        files_changed: pass1.files_written,
-        files_removed: pass1.files_removed,
-        duration,
-    }))
+fn skips(paths: &[PathBuf]) -> Vec<SyncSkip> {
+    paths
+        .iter()
+        .map(|path| SyncSkip {
+            path: scanner::normalize_path(path),
+            reason: "oversize".to_string(),
+        })
+        .collect()
 }
 
 /// What the files an incremental sync is about to rewrite or remove define
@@ -133,12 +145,8 @@ pub(crate) fn run_with_observer(
 /// needs none.
 fn definitions_before_pass1(
     db_path: &Path,
-    mode: SyncMode,
     diff: &scanner::Diff,
 ) -> Result<pass2::Definitions, GraphError> {
-    if mode == SyncMode::Full {
-        return Ok(pass2::Definitions::default());
-    }
     let paths = diff
         .modified
         .iter()
@@ -146,6 +154,114 @@ fn definitions_before_pass1(
         .map(|path| scanner::normalize_path(path))
         .collect::<Vec<_>>();
     pass2::Definitions::load(db_path, paths.iter().map(String::as_str))
+}
+
+/// `meta` key present while a sync has written pass 1 rows that its pass 2
+/// has not yet committed.
+const SYNC_PENDING_KEY: &str = "sync_pending";
+
+/// Records, before pass 1's first write, that the database holds an
+/// unfinished sync. Pass 2 clears it in the transaction that commits.
+pub(crate) fn mark_sync_pending(conn: &mut Connection) -> Result<(), GraphError> {
+    conn.execute(
+        "INSERT OR REPLACE INTO meta (key, value) VALUES (?1, '1')",
+        [SYNC_PENDING_KEY],
+    )
+    .map_err(|source| GraphError::sqlite("mark graph sync pending", source))?;
+    Ok(())
+}
+
+pub(crate) fn clear_sync_pending(tx: &rusqlite::Transaction<'_>) -> Result<(), GraphError> {
+    tx.execute("DELETE FROM meta WHERE key = ?1", [SYNC_PENDING_KEY])
+        .map_err(|source| GraphError::sqlite("clear graph sync pending", source))?;
+    Ok(())
+}
+
+/// Whether an earlier sync stopped between pass 1 and pass 2's commit.
+fn sync_pending(db_path: &Path) -> Result<bool, GraphError> {
+    let conn = Connection::open(db_path)
+        .map_err(|source| GraphError::sqlite("open graph database for sync state", source))?;
+    conn.query_row(
+        "SELECT EXISTS (SELECT 1 FROM meta WHERE key = ?1)",
+        [SYNC_PENDING_KEY],
+        |row| row.get::<_, bool>(0),
+    )
+    .map_err(|source| GraphError::sqlite("read graph sync state", source))
+}
+
+/// A failure of `operation` on the worktree-relative `path`.
+pub(crate) fn io_failure(path: &Path, operation: &str, error: &std::io::Error) -> SyncFailure {
+    SyncFailure {
+        path: display_rel_path(path),
+        operation: operation.to_string(),
+        error_kind: io_error_kind(error).to_string(),
+        message: error.to_string(),
+    }
+}
+
+/// A failure on the worktree-relative `path` from a graph error.
+pub(crate) fn graph_failure(path: &Path, error: &GraphError) -> SyncFailure {
+    let (operation, error_kind) = match error {
+        GraphError::Io { operation, .. } => (*operation, "io"),
+        GraphError::Sqlite { operation, .. } => (*operation, "sqlite"),
+        GraphError::InvalidData { operation, .. } => (*operation, "invalid_data"),
+        GraphError::Unimplemented => ("sync", "unimplemented"),
+    };
+    SyncFailure {
+        path: display_rel_path(path),
+        operation: operation.to_string(),
+        error_kind: error_kind.to_string(),
+        message: error.to_string(),
+    }
+}
+
+/// Stable class of an I/O error, reported as [`SyncFailure::error_kind`].
+pub(crate) fn io_error_kind(error: &std::io::Error) -> &'static str {
+    match error.kind() {
+        std::io::ErrorKind::PermissionDenied => "permission_denied",
+        std::io::ErrorKind::NotFound => "not_found",
+        std::io::ErrorKind::InvalidData => "invalid_data",
+        _ => "io",
+    }
+}
+
+fn display_rel_path(path: &Path) -> String {
+    let path = scanner::normalize_path(path);
+    if path.is_empty() {
+        ".".to_string()
+    } else {
+        path
+    }
+}
+
+/// Environment variable naming a point where the sync process aborts, for
+/// tests that interrupt a sync through the real `orbit-graph` binary:
+/// `after-pass1` aborts once pass 1 has committed, `mid-pass2` halfway
+/// through pass 2's refs, before its commit. An abort stands in for a kill.
+/// Unset, or any other value, injects nothing.
+pub(crate) const FAULT_INJECT_ENV: &str = "ORBIT_GRAPH_FAULT_INJECT";
+
+/// A point [`FAULT_INJECT_ENV`] can name.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum FaultPoint {
+    AfterPass1,
+    MidPass2,
+}
+
+impl FaultPoint {
+    fn name(self) -> &'static str {
+        match self {
+            Self::AfterPass1 => "after-pass1",
+            Self::MidPass2 => "mid-pass2",
+        }
+    }
+}
+
+/// Aborts the process when [`FAULT_INJECT_ENV`] names `point`.
+pub(crate) fn inject_fault(point: FaultPoint) {
+    if std::env::var_os(FAULT_INJECT_ENV).is_some_and(|value| value == point.name()) {
+        std::process::abort();
+    }
 }
 
 type SyncResult = Result<SyncReport, GraphError>;

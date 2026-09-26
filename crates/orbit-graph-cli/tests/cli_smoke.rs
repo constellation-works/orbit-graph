@@ -594,8 +594,187 @@ fn real_binary_skips_a_file_above_the_byte_cap_with_a_warning() {
     );
     let sync: Value = serde_json::from_slice(&output.stdout).expect("JSON sync output");
     assert_eq!(sync["files_indexed"], 3, "the oversize file gets no row");
+    assert_eq!(
+        sync["skipped"],
+        serde_json::json!({
+            "count": 1,
+            "entries": [{"path": "data/huge.json", "reason": "oversize"}],
+        })
+    );
+    assert_eq!(sync["failed"]["count"], 0, "{sync}");
+    assert!(stderr.contains("1 file(s) larger than"), "{stderr}");
     let matches = run_json(fixture.path(), ["search", "HUGE_MARKER_KEY"]);
     assert_eq!(matches["matches"], serde_json::json!([]));
+}
+
+/// Restores a path's permissions on drop, so the fixture can be removed even
+/// when an assertion fails.
+#[cfg(unix)]
+struct RestoreMode(std::path::PathBuf, u32);
+
+#[cfg(unix)]
+impl Drop for RestoreMode {
+    fn drop(&mut self) {
+        let _ = fs::set_permissions(&self.0, fs::Permissions::from_mode(self.1));
+    }
+}
+
+#[cfg(unix)]
+fn make_unreadable(path: &Path) -> RestoreMode {
+    let mode = fs::metadata(path)
+        .expect("fixture metadata")
+        .permissions()
+        .mode();
+    fs::set_permissions(path, fs::Permissions::from_mode(0o000)).expect("chmod 000");
+    RestoreMode(path.to_path_buf(), mode)
+}
+
+#[cfg(unix)]
+#[test]
+fn real_binary_sync_isolates_an_unreadable_file_and_directory() {
+    if skip_as_root("real_binary_sync_isolates_an_unreadable_file_and_directory") {
+        return;
+    }
+    let fixture = fixture_repository();
+    fs::write(
+        fixture.path().join("src/locked.rs"),
+        "pub fn locked() -> i32 { 1 }\n",
+    )
+    .expect("write unreadable file");
+    let sealed = fixture.path().join("src/sealed");
+    fs::create_dir_all(&sealed).expect("create unreadable directory");
+    fs::write(sealed.join("inner.rs"), "pub fn inner() -> i32 { 2 }\n")
+        .expect("write file in unreadable directory");
+    let _file = make_unreadable(&fixture.path().join("src/locked.rs"));
+    let _dir = make_unreadable(&sealed);
+
+    let output = run_explicit_json(fixture.path(), ["sync"]);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(output.status.success(), "sync failed: {stderr}");
+    let sync: Value = serde_json::from_slice(&output.stdout).expect("JSON sync output");
+    assert_eq!(
+        sync["files_indexed"], 3,
+        "every readable file is indexed: {sync}"
+    );
+    assert_eq!(sync["failed"]["count"], 2, "{sync}");
+    let failed = sync["failed"]["entries"]
+        .as_array()
+        .expect("failed entries");
+    let entry = |path: &str| {
+        failed
+            .iter()
+            .find(|entry| entry["path"] == path)
+            .unwrap_or_else(|| panic!("no failed entry for {path}: {sync}"))
+    };
+    assert_eq!(
+        entry("src/locked.rs")["operation"],
+        "read file for content hash"
+    );
+    assert_eq!(entry("src/locked.rs")["error_kind"], "permission_denied");
+    assert_eq!(entry("src/sealed")["operation"], "scan directory");
+    assert_eq!(entry("src/sealed")["error_kind"], "permission_denied");
+    assert!(
+        stderr.contains("warning: 2 path(s) could not be read"),
+        "stderr names the count: {stderr}"
+    );
+    for name in ["helper", "unicode_helper"] {
+        let matches = run_json(fixture.path(), ["search", name, "--kind", "symbol"]);
+        assert!(
+            matches["matches"]
+                .as_array()
+                .is_some_and(|matches| !matches.is_empty()),
+            "{name} missing: {matches}"
+        );
+    }
+}
+
+/// What is already indexed under a path that became unreadable is unknown,
+/// not deleted (STD-02 §R29).
+#[cfg(unix)]
+#[test]
+fn real_binary_sync_keeps_what_is_indexed_under_an_unreadable_path() {
+    if skip_as_root("real_binary_sync_keeps_what_is_indexed_under_an_unreadable_path") {
+        return;
+    }
+    let fixture = fixture_repository();
+    let sealed = fixture.path().join("src/sealed");
+    fs::create_dir_all(&sealed).expect("create directory");
+    fs::write(
+        sealed.join("inner.rs"),
+        "pub fn sealed_inner() -> i32 { 2 }\n",
+    )
+    .expect("write file in directory");
+    let first = run_json(fixture.path(), ["sync"]);
+    assert_eq!(first["files_indexed"], 4, "{first}");
+
+    let dir = make_unreadable(&sealed);
+    let second = run_json(fixture.path(), ["sync"]);
+    assert_eq!(second["files_removed"], 0, "{second}");
+    assert_eq!(second["files_indexed"], 4, "{second}");
+    assert_eq!(second["failed"]["count"], 1, "{second}");
+    assert_eq!(second["failed"]["entries"][0]["path"], "src/sealed");
+    // Queries read source text, so look once the directory is readable
+    // again; no sync has run since.
+    drop(dir);
+    let matches = run_json(
+        fixture.path(),
+        ["search", "sealed_inner", "--kind", "symbol"],
+    );
+    assert!(
+        matches["matches"]
+            .as_array()
+            .is_some_and(|matches| !matches.is_empty()),
+        "{matches}"
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn real_binary_sync_fails_when_nothing_could_be_indexed() {
+    if skip_as_root("real_binary_sync_fails_when_nothing_could_be_indexed") {
+        return;
+    }
+    let fixture = TempDir::new().expect("create fixture");
+    run_git(fixture.path(), ["init", "-b", "main"]);
+    fs::write(fixture.path().join("only.rs"), "pub fn only() {}\n").expect("write source");
+    let _file = make_unreadable(&fixture.path().join("only.rs"));
+
+    let output = run_explicit_json(fixture.path(), ["sync"]);
+    assert_eq!(output.status.code(), Some(1), "nothing indexed must fail");
+    let error: Value = serde_json::from_slice(&output.stderr).expect("JSON error");
+    assert_eq!(error["error"]["code"], "graph_error", "{error}");
+    let message = error["error"]["message"].as_str().expect("error message");
+    assert!(
+        message.contains("1 path(s) failed") && message.contains("only.rs"),
+        "{message}"
+    );
+}
+
+#[test]
+fn real_binary_sync_names_the_database_and_branch_it_wrote() {
+    let fixture = fixture_repository();
+    let sync = run_json(fixture.path(), ["sync"]);
+    let db_path = run_json(fixture.path(), ["db-path"]);
+    assert_eq!(sync["database_path"], db_path["path"], "{sync}");
+    assert_eq!(sync["branch"], "main", "{sync}");
+    assert_eq!(
+        sync["failed"],
+        serde_json::json!({"count": 0, "entries": []})
+    );
+    assert_eq!(
+        sync["skipped"],
+        serde_json::json!({"count": 0, "entries": []})
+    );
+
+    let human = run(fixture.path(), ["--format", "table", "sync"]);
+    assert!(human.status.success());
+    let table = String::from_utf8_lossy(&human.stdout);
+    let database = db_path["path"].as_str().expect("database path");
+    assert!(
+        table.contains("BRANCH") && table.contains("main") && table.contains("DATABASE"),
+        "{table}"
+    );
+    assert!(table.contains(database), "{table}");
 }
 
 #[cfg(unix)]
@@ -1299,12 +1478,16 @@ fn real_binary_renders_recommendation_and_index_views_with_complete_record_bound
         .split('\t')
         .map(str::to_owned)
         .collect::<Vec<_>>();
-    assert_eq!(sync_fields.len(), 4);
+    // Counts and duration first, then the branch and database written.
+    assert_eq!(sync_fields.len(), 8, "{sync_fields:?}");
     assert!(
-        sync_fields
+        sync_fields[..6]
             .iter()
-            .all(|field| field.parse::<u128>().is_ok())
+            .all(|field| field.parse::<u128>().is_ok()),
+        "{sync_fields:?}"
     );
+    assert_eq!(sync_fields[6], "main");
+    assert!(sync_fields[7].ends_with(".db"), "{sync_fields:?}");
     let sync_ndjson = run(fixture.path(), ["sync", "--format", "ndjson"]);
     let sync_ndjson = parse_ndjson(&sync_ndjson.stdout);
     assert_eq!(sync_ndjson.len(), 1);
@@ -2624,4 +2807,21 @@ fn git_stdout<const N: usize>(cwd: &Path, args: [&str; N]) -> String {
         .expect("Git output is UTF-8")
         .trim()
         .to_string()
+}
+
+/// Whether the test process runs as root, for whom `chmod 000` restricts
+/// nothing. A permission test then skips, naming the missing capability on
+/// stderr (STD-04 §R8); CI runs it as a regular user.
+#[cfg(unix)]
+fn skip_as_root(test: &str) -> bool {
+    use std::io::Write as _;
+    // SAFETY: geteuid has no preconditions and cannot fail.
+    if unsafe { libc::geteuid() } != 0 {
+        return false;
+    }
+    let _ = writeln!(
+        std::io::stderr(),
+        "skipping {test}: chmod 000 does not restrict root"
+    );
+    true
 }
