@@ -16,8 +16,10 @@ fn sync_and_history_leave_no_untracked_orbit_graph_entries() {
 
     let sync = run_json(repo.path(), ["sync"]);
     assert_eq!(sync["files_indexed"], 1, "{sync}");
-    let history = run_json(repo.path(), ["history", "status", "--branch", "main"]);
+    let history = run_json(repo.path(), ["history", "sync", "--branch", "main"]);
     assert!(history.is_object(), "{history}");
+    let status = run_json(repo.path(), ["history", "status", "--branch", "main"]);
+    assert!(status.is_object(), "{status}");
 
     let scratch = repo.path().join(".orbit-graph");
     let names = fs::read_dir(&scratch)

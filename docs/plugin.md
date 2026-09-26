@@ -207,7 +207,10 @@ The response's `code_index` names the plugin state `directory` it wrote, and
 `incompatible`, or `ready`, and `fresh` is true when a ready index was built at
 the checkout's `HEAD`. A published generation uses a rollback journal rather
 than WAL, so `status` and `recommend` open it read-only and create no files
-next to it. A recommendation applies structure only when the target
+next to it. Neither tool builds a history index either: without one they fail
+with `index_missing`, naming `orbit.graph.maintain` (or `graph.maintain`, in
+the caller's spelling) with `{"operation":"history_sync","branch":"<branch>"}`,
+and create nothing. A recommendation applies structure only when the target
 revision is the checkout `HEAD` and the published index was built at it; the
 index also covers uncommitted changes present when it was built
 (`published.worktree_dirty`). Otherwise the response keeps lexical and history
@@ -312,8 +315,9 @@ is refused before any repository is read (unknown tool or field, unsupported
 `schema_version`, out-of-range bound, missing required field),
 `repository_unavailable` when the routed `repository` is missing or not a Git
 repository, `index_missing` or `index_incompatible` when a query tool has no
-usable code-graph index, and `graph_error` for every other index, Git, or
-callback failure.
+usable code-graph index, `index_missing` when `status` or `recommend` finds no
+history index, and `graph_error` for every other index, Git, or callback
+failure.
 
 
 The bundled agent guidance is in

@@ -213,37 +213,119 @@ fn configure_connection_applies_shared_pragma_defaults() {
 }
 
 #[test]
-fn graph_open_cleans_stale_version_databases_without_deleting_active_db() {
+fn graph_open_removes_nothing_and_clean_removes_only_strictly_older_unlocked_versions() {
     let worktree = TestWorktree::new("cleans-stale-dbs", "main");
     worktree.init_git_repo();
 
     let [stale_version_a, stale_version_b] = stale_versions();
-    let stale_main = resolve_db_path(worktree.path(), "main", stale_version_a)
-        .path()
-        .to_path_buf();
-    let stale_feature = resolve_db_path(worktree.path(), "feat/old", stale_version_b)
-        .path()
-        .to_path_buf();
+    let db = |branch: &str, version: u32| {
+        resolve_db_path(worktree.path(), branch, version)
+            .path()
+            .to_path_buf()
+    };
+    let sidecar = |db: &Path, suffix: &str| PathBuf::from(format!("{}{suffix}", db.display()));
+    let stale_main = db("main", stale_version_a);
+    let stale_locked = db("feat/old", stale_version_b);
+    let newer_main = db("main", EXTRACTOR_VERSION + 1);
     fs::create_dir_all(stale_main.parent().expect("stale db parent")).expect("create graph dir");
-    fs::write(&stale_main, "stale main").expect("write stale main db");
-    fs::write(&stale_feature, "stale feature").expect("write stale feature db");
+    for path in [&stale_main, &stale_locked, &newer_main] {
+        fs::write(path, "database").expect("write planted db");
+        fs::write(sidecar(path, "-wal"), "wal").expect("write planted wal");
+        fs::write(sidecar(path, "-shm"), "shm").expect("write planted shm");
+    }
+    // Another process syncing the old database holds its lock.
+    let held = fs::File::create(sidecar(&stale_locked, ".lock")).expect("create held lock");
+    held.lock().expect("hold stale lock");
 
     let graph = Graph::open(worktree.path(), SyncPolicy::Manual).expect("open graph");
     let active_db = graph.db_path().path().to_path_buf();
     drop(graph);
+    for path in [&stale_main, &stale_locked, &newer_main] {
+        assert!(
+            path.exists(),
+            "opening must remove nothing: {}",
+            path.display()
+        );
+    }
 
+    let report = crate::clean_old_databases(worktree.path()).expect("clean old databases");
+
+    assert!(active_db.exists(), "the active DB is never removed");
+    for suffix in ["", "-wal", "-shm"] {
+        assert!(
+            !sidecar(&stale_main, suffix).exists(),
+            "a strictly older, unlocked DB family is removed ({suffix})"
+        );
+        assert!(
+            sidecar(&stale_locked, suffix).exists(),
+            "a DB whose lock another process holds is kept ({suffix})"
+        );
+        assert!(
+            sidecar(&newer_main, suffix).exists(),
+            "a newer extractor's DB is never removed ({suffix})"
+        );
+    }
+    assert!(report.deleted.contains(&stale_main));
     assert!(
-        active_db.exists(),
-        "active DB should remain after auto-clean"
+        !report
+            .deleted
+            .iter()
+            .any(|path| path.starts_with(&newer_main))
     );
+
+    drop(held);
+    crate::clean_old_databases(worktree.path()).expect("clean after the lock is released");
+    assert!(!stale_locked.exists(), "the released old DB is removed");
+    assert!(!sidecar(&stale_locked, ".lock").exists());
+    assert!(newer_main.exists(), "a newer extractor's DB is still kept");
+}
+
+#[test]
+fn clean_does_not_create_the_active_database() {
+    let worktree = TestWorktree::new("clean-creates-nothing", "main");
+    worktree.init_git_repo();
+
+    let report = crate::clean_old_databases(worktree.path()).expect("clean old databases");
+
+    assert!(report.deleted.is_empty());
+    assert!(!worktree.path().join(".orbit-graph").exists());
+}
+
+#[test]
+fn an_unreadable_head_fails_instead_of_selecting_the_head_family() {
+    let worktree = TestWorktree::new("unreadable-head", "main");
+    worktree.init_git_repo();
+    // HEAD names `main`, whose loose ref no longer holds an object ID.
+    fs::write(
+        worktree.path().join(".git/refs/heads/main"),
+        "not an object id\n",
+    )
+    .expect("corrupt the branch HEAD names");
+
+    let error =
+        crate::resolve_worktree_db_path(worktree.path()).expect_err("an unreadable HEAD must fail");
     assert!(
-        !stale_main.exists(),
-        "same-branch stale DB should be removed"
+        error.to_string().contains("HEAD") || error.to_string().contains("repository"),
+        "the error names what could not be read: {error}"
     );
-    assert!(
-        !stale_feature.exists(),
-        "other-branch stale DB should be removed"
-    );
+    assert!(Graph::open(worktree.path(), SyncPolicy::Manual).is_err());
+    assert!(!worktree.path().join(".orbit-graph").exists());
+}
+
+#[test]
+fn an_unborn_branch_and_a_directory_outside_git_select_the_head_family() {
+    let unborn = TestWorktree::new("unborn-head", "main");
+    Repository::init(unborn.path()).expect("init repository without commits");
+    let no_git = TempDir::new().expect("create non-git directory");
+
+    for root in [unborn.path(), no_git.path()] {
+        let db_path = crate::resolve_worktree_db_path(root).expect("resolve HEAD family");
+        assert_eq!(db_path.branch(), "HEAD");
+        assert_eq!(
+            db_path.path(),
+            resolve_db_path(root, "HEAD", EXTRACTOR_VERSION).path()
+        );
+    }
 }
 
 #[test]
@@ -314,7 +396,7 @@ fn graph_open_uses_distinct_db_files_for_detached_commits() {
 }
 
 #[test]
-fn graph_open_cleans_unreachable_detached_databases() {
+fn clean_removes_unreachable_detached_databases() {
     let worktree = TestWorktree::new("cleans-unreachable-detached", "main");
     worktree.init_git_repo();
     let reachable_commit = worktree.commit_file("reachable.txt", "reachable\n", "reachable");
@@ -336,6 +418,9 @@ fn graph_open_cleans_unreachable_detached_databases() {
     let main_graph = Graph::open(worktree.path(), SyncPolicy::Manual).expect("open main graph");
     let main_db = main_graph.db_path().path().to_path_buf();
     drop(main_graph);
+    assert!(unreachable_db.exists(), "opening a graph removes nothing");
+
+    crate::clean_old_databases(worktree.path()).expect("clean old databases");
 
     assert!(main_db.exists(), "active branch DB should remain");
     assert!(

@@ -1,7 +1,7 @@
 use std::time::Duration;
 
 use clap::Args;
-use orbit_graph::{GraphError, SyncFailure, SyncMode, SyncReport, SyncSkip};
+use orbit_graph::{GraphError, SyncFailure, SyncMode, SyncReport, SyncSkip, clean_old_databases};
 use serde::Serialize;
 use serde_json::Value;
 
@@ -16,7 +16,10 @@ pub struct SyncCommand {
 
 impl SyncCommand {
     pub(crate) fn run(&self, context: &CommandContext) -> Result<serde_json::Value, CliError> {
-        let graph = context.open_graph()?;
+        let graph = context.open_graph_for_sync()?;
+        // Sync is a writing command, so it removes strictly older extractor
+        // versions whose lock is free; queries never remove anything.
+        clean_old_databases(context.worktree_root())?;
         let report = graph.sync(if self.full {
             SyncMode::Full
         } else {

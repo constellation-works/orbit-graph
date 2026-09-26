@@ -1,4 +1,5 @@
 use clap::Args;
+use orbit_graph::resolve_worktree_db_path;
 use serde::Serialize;
 use serde_json::Value;
 
@@ -10,12 +11,13 @@ pub struct DbPathCommand;
 
 impl DbPathCommand {
     pub(crate) fn run(&self, context: &CommandContext) -> Result<serde_json::Value, CliError> {
-        let graph = context.open_graph()?;
-        let db_path = graph.db_path();
+        // The would-be path: resolving it creates nothing (STD-01 §R31).
+        let db_path = resolve_worktree_db_path(context.worktree_root())?;
         json_value(DbPathOutput {
             path: db_path.path().display().to_string(),
             branch: db_path.branch().to_string(),
             extractor_version: db_path.extractor_version(),
+            exists: db_path.path().is_file(),
         })
     }
 }
@@ -25,6 +27,8 @@ struct DbPathOutput {
     path: String,
     branch: String,
     extractor_version: u32,
+    /// Whether `orbit-graph sync` has built the database yet.
+    exists: bool,
 }
 
 pub(crate) fn output(document: Value) -> CommandOutput {
@@ -32,11 +36,13 @@ pub(crate) fn output(document: Value) -> CommandOutput {
         Column::text("path"),
         Column::text("branch"),
         Column::number("extractor version"),
+        Column::text("exists"),
     ]);
     table.push_row([
         display_value(&document["path"]),
         display_value(&document["branch"]),
         display_value(&document["extractor_version"]),
+        display_value(&document["exists"]),
     ]);
     CommandOutput::with_view(document, View::Blocks(vec![ViewBlock::table(table)]))
 }

@@ -129,8 +129,9 @@ fn push_ref_row(table: &mut TableView, record: &str, entry: &Value, from: &str, 
 
 impl RefsCommand {
     pub(crate) fn run(&self, context: &CommandContext) -> Result<serde_json::Value, CliError> {
-        let graph = context.open_graph()?;
+        // Input is validated before the index is opened.
         let selector = self.symbol.parse::<Selector>()?;
+        let graph = context.open_graph()?;
         let opts = RefOpts {
             confidence: self.confidence.into_graph(),
             kind: self.kind.map(RefKindArg::into_graph),

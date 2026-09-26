@@ -205,6 +205,8 @@ pub(crate) fn graph_failure(path: &Path, error: &GraphError) -> SyncFailure {
         GraphError::Io { operation, .. } => (*operation, "io"),
         GraphError::Sqlite { operation, .. } => (*operation, "sqlite"),
         GraphError::InvalidData { operation, .. } => (*operation, "invalid_data"),
+        GraphError::IndexMissing { .. } => ("open graph index", "index_missing"),
+        GraphError::IndexIncompatible { .. } => ("open graph index", "index_incompatible"),
         GraphError::Unimplemented => ("sync", "unimplemented"),
     };
     SyncFailure {

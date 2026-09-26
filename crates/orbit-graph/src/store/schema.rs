@@ -1,6 +1,8 @@
 //! Graph SQLite schema from `GRAPH_SPEC.md` section 6.2.
 
-use rusqlite::{Connection, TransactionBehavior, params};
+use std::path::Path;
+
+use rusqlite::{Connection, OptionalExtension, TransactionBehavior, params};
 
 use crate::GraphError;
 
@@ -169,16 +171,97 @@ pub(crate) fn database_is_empty(conn: &Connection) -> Result<bool, GraphError> {
     Ok(object_count == 0)
 }
 
-pub(crate) fn initialize(conn: &mut Connection, meta: &InitialMeta<'_>) -> Result<(), GraphError> {
+/// Creates the schema and its `meta` rows unless another connection already
+/// has. The emptiness check runs inside the `IMMEDIATE` transaction, so of
+/// several processes opening a new database at once exactly one creates the
+/// tables and the rest find them.
+pub(crate) fn initialize_if_empty(
+    conn: &mut Connection,
+    meta: &InitialMeta<'_>,
+) -> Result<(), GraphError> {
     let tx = conn
         .transaction_with_behavior(TransactionBehavior::Immediate)
         .map_err(|source| GraphError::sqlite("begin graph schema transaction", source))?;
+    if !database_is_empty(&tx)? {
+        return Ok(());
+    }
     tx.execute_batch(SCHEMA_SQL)
         .map_err(|source| GraphError::sqlite("initialize graph schema", source))?;
     insert_meta_rows(&tx, meta)?;
     tx.commit()
         .map_err(|source| GraphError::sqlite("commit graph schema transaction", source))?;
     Ok(())
+}
+
+/// Checks the schema identity stored in `meta.schema_version` against
+/// [`SCHEMA_VERSION`].
+///
+/// A database that was never initialized is [`GraphError::IndexMissing`]; one
+/// with no identity, or another identity, is [`GraphError::IndexIncompatible`]
+/// naming the file. Neither is ever read or written as if it were current
+/// (STD-03 §R10).
+pub(crate) fn validate_identity(conn: &Connection, db_path: &Path) -> Result<(), GraphError> {
+    if database_is_empty(conn)? {
+        return Err(GraphError::IndexMissing {
+            path: db_path.to_path_buf(),
+            reason: format!(
+                "the graph index at {} was never initialized; run `orbit-graph sync`",
+                db_path.display()
+            ),
+        });
+    }
+    let has_meta: bool = conn
+        .query_row(
+            "SELECT count(*) FROM sqlite_master WHERE type = 'table' AND name = 'meta'",
+            [],
+            |row| row.get::<_, i64>(0),
+        )
+        .map(|count| count > 0)
+        .map_err(|source| GraphError::sqlite("check graph metadata table", source))?;
+    let stored = if has_meta {
+        conn.query_row(
+            "SELECT value FROM meta WHERE key = 'schema_version'",
+            [],
+            |row| row.get::<_, String>(0),
+        )
+        .optional()
+        .map_err(|source| GraphError::sqlite("read graph schema version", source))?
+    } else {
+        None
+    };
+    let expected = SCHEMA_VERSION.to_string();
+    match stored {
+        Some(stored) if stored == expected => Ok(()),
+        stored => Err(incompatible_schema(db_path, stored.as_deref())),
+    }
+}
+
+fn incompatible_schema(db_path: &Path, stored: Option<&str>) -> GraphError {
+    let path = db_path.display();
+    let reason = match stored.map(|value| value.parse::<u32>()) {
+        Some(Ok(stored)) if stored > SCHEMA_VERSION => format!(
+            "the graph index at {path} has schema_version {stored}, newer than the \
+             {SCHEMA_VERSION} this orbit-graph reads; use the orbit-graph that wrote it, \
+             which this one never modifies"
+        ),
+        Some(Ok(stored)) => format!(
+            "the graph index at {path} has schema_version {stored}, older than the \
+             {SCHEMA_VERSION} this orbit-graph reads; delete {path} and run `orbit-graph sync` \
+             to rebuild it"
+        ),
+        Some(Err(_)) | None => format!(
+            "the graph index at {path} records {} instead of schema_version {SCHEMA_VERSION}; \
+             delete {path} and run `orbit-graph sync` to rebuild it",
+            stored.map_or_else(
+                || "no schema_version".to_string(),
+                |value| format!("schema_version {value:?}")
+            )
+        ),
+    };
+    GraphError::IndexIncompatible {
+        path: db_path.to_path_buf(),
+        reason,
+    }
 }
 
 fn insert_meta_rows(conn: &Connection, meta: &InitialMeta<'_>) -> Result<(), GraphError> {

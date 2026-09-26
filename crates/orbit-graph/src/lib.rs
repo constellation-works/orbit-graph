@@ -16,7 +16,7 @@ use std::sync::Mutex;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use git2::Repository;
-use rusqlite::{Connection, OpenFlags, params};
+use rusqlite::{Connection, params};
 use serde::Serialize;
 
 mod evaluation;
@@ -70,7 +70,8 @@ mod tests;
 ///
 /// Bump this when extractor output or storage expectations change
 /// incompatibly. Older graph DB files then become invisible to the active
-/// graph handle and are removed by the next sync.
+/// graph handle and are removed by the next `orbit-graph sync` or `clean`
+/// whose lock on them is free; a newer version's files are never removed.
 ///
 /// A bump also changes the committed `direct-call` sample export, which
 /// records this number: regenerate it in the same change with
@@ -167,19 +168,60 @@ pub struct Graph {
     db_path: GraphDbPath,
     worktree_root: PathBuf,
     policy: SyncPolicy,
+    /// Opened by a read-only constructor: [`Graph::sync`] is refused.
+    read_only: bool,
     read_conn: Mutex<Connection>,
     last_auto_sync_at: Mutex<i64>,
     _watcher: Option<sync::watcher::SyncWatcher>,
 }
 
 impl Graph {
-    /// Open the graph database for `worktree_root` using `policy`.
+    /// Open the graph database for `worktree_root` using `policy`, creating
+    /// and initializing it when it does not exist yet.
+    ///
+    /// This is the writer's open: use it to [`sync`](Self::sync). It removes
+    /// no other database; [`clean_old_databases`] does. A reader that must
+    /// not create anything uses [`Graph::open_existing_read_only`].
     pub fn open(worktree_root: &Path, policy: SyncPolicy) -> Result<Self, GraphError> {
         // Phase 4 query methods will call this; keep the dispatcher live under dead-code lints.
         let _ensure_synced: fn(&Self) -> Result<(), GraphError> = Self::ensure_synced;
         let opened = store::open(worktree_root, policy)?;
-        clean_old_databases_excluding(worktree_root, opened.db_path.path())?;
         Self::from_opened(worktree_root, policy, opened)
+    }
+
+    /// Open the existing graph database for `worktree_root` strictly for
+    /// reading.
+    ///
+    /// Nothing is created, initialized, migrated, locked, synchronized or
+    /// deleted, so this works against a read-only `.orbit-graph/` directory
+    /// (STD-01 §R31). A database that `orbit-graph sync` has not built is
+    /// [`GraphError::IndexMissing`], and one whose stored schema identity is
+    /// not [`STORE_SCHEMA_VERSION`] is [`GraphError::IndexIncompatible`].
+    /// [`Graph::sync`] on the returned handle is refused.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use orbit_graph::{Graph, GraphError, SyncMode, SyncPolicy};
+    ///
+    /// let dir = tempfile::tempdir()?;
+    /// assert!(matches!(
+    ///     Graph::open_existing_read_only(dir.path()),
+    ///     Err(GraphError::IndexMissing { .. })
+    /// ));
+    /// assert!(!dir.path().join(".orbit-graph").exists());
+    ///
+    /// Graph::open(dir.path(), SyncPolicy::Manual)?.sync(SyncMode::Full)?;
+    /// let graph = Graph::open_existing_read_only(dir.path())?;
+    /// assert!(graph.sync(SyncMode::Auto).is_err());
+    /// # Ok::<(), Box<dyn std::error::Error>>(())
+    /// ```
+    pub fn open_existing_read_only(worktree_root: &Path) -> Result<Self, GraphError> {
+        let db_path = store::resolve_worktree_db_path(worktree_root)?;
+        if !db_path.path().is_file() {
+            return Err(store::missing_graph_index(worktree_root, db_path.path()));
+        }
+        Self::open_observed(worktree_root, db_path)
     }
 
     /// Open a graph for a synthetic or detached tree identified by `revision`.
@@ -215,7 +257,6 @@ impl Graph {
             ));
         }
         let opened = store::open_for_revision(worktree_root, revision)?;
-        clean_old_databases_excluding(worktree_root, opened.db_path.path())?;
         Self::from_opened(worktree_root, policy, opened)
     }
 
@@ -259,23 +300,18 @@ impl Graph {
         Self::from_opened(worktree_root, policy, opened)
     }
 
-    /// Open a complete graph database strictly for reading.
-    ///
-    /// Nothing is created, initialized, migrated, locked for writing, or
-    /// synchronized, so this works against a read-only directory. The
-    /// database must already hold the current schema and must not use WAL
-    /// journaling (a WAL reader needs a writable shared-memory file); the
-    /// plugin's published code-graph generations satisfy both.
+    /// Open a complete graph database at `db_path` strictly for reading, as
+    /// [`Graph::open_existing_read_only`] does for the worktree's own
+    /// database. The plugin's published code-graph generations use a
+    /// rollback journal, so they open as ordinary read-only connections.
     pub(crate) fn open_read_only(worktree_root: &Path, db_path: &Path) -> Result<Self, GraphError> {
         let db_path = store::existing_db_path(worktree_root, db_path)?;
-        let read_conn = Connection::open_with_flags(
-            db_path.path(),
-            OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_NO_MUTEX,
-        )
-        .map_err(|source| GraphError::sqlite("open graph database read-only", source))?;
-        read_conn
-            .pragma_update(None, "busy_timeout", 5_000)
-            .map_err(|source| GraphError::sqlite("set busy_timeout for graph read", source))?;
+        Self::open_observed(worktree_root, db_path)
+    }
+
+    fn open_observed(worktree_root: &Path, db_path: GraphDbPath) -> Result<Self, GraphError> {
+        let read_conn = store::open_observational(db_path.path(), "open graph database read-only")?;
+        store::schema::validate_identity(&read_conn, db_path.path())?;
         let last_auto_sync_at = read_last_incremental_at(
             &read_conn,
             "read graph last incremental sync metadata at open",
@@ -284,6 +320,7 @@ impl Graph {
             db_path,
             worktree_root: worktree_root.to_path_buf(),
             policy: SyncPolicy::Manual,
+            read_only: true,
             read_conn: Mutex::new(read_conn),
             last_auto_sync_at: Mutex::new(last_auto_sync_at),
             _watcher: None,
@@ -314,6 +351,7 @@ impl Graph {
             db_path: opened.db_path,
             worktree_root: worktree_root.to_path_buf(),
             policy,
+            read_only: false,
             read_conn: Mutex::new(read_conn),
             last_auto_sync_at: Mutex::new(last_auto_sync_at),
             _watcher: watcher,
@@ -330,13 +368,29 @@ impl Graph {
     /// listed in [`SyncReport::failed`] and everything else is indexed. A
     /// sync interrupted by a crash, a kill, an error or a cancellation is
     /// repaired by the next sync, incremental or full.
+    ///
+    /// A handle from a read-only constructor refuses to sync.
     pub fn sync(&self, mode: SyncMode) -> Result<SyncReport, GraphError> {
+        self.refuse_read_only()?;
         let mut report = sync::run(self.db_path.path(), self.worktree_root.as_path(), mode)?;
         if mode == SyncMode::Auto {
             self.record_auto_sync_now()?;
         }
         self.name_target(&mut report);
         Ok(report)
+    }
+
+    fn refuse_read_only(&self) -> Result<(), GraphError> {
+        if self.read_only {
+            return Err(GraphError::invalid_data(
+                "sync graph",
+                format!(
+                    "{} was opened read-only; sync it with `orbit-graph sync` or Graph::open",
+                    self.db_path.path().display()
+                ),
+            ));
+        }
+        Ok(())
     }
 
     /// Names the database and branch this handle writes in `report`.
@@ -390,6 +444,7 @@ impl Graph {
         mode: SyncMode,
         observer: &dyn SyncObserver,
     ) -> Result<SyncOutcome, GraphError> {
+        self.refuse_read_only()?;
         let mut outcome = sync::run_with_observer(
             self.db_path.path(),
             self.worktree_root.as_path(),
@@ -829,6 +884,21 @@ pub enum GraphError {
         /// Validation failure rendered as text for cloneable error propagation.
         reason: String,
     },
+    /// A read found no index where it looked; nothing was created.
+    IndexMissing {
+        /// Path of the index that does not exist yet.
+        path: PathBuf,
+        /// Actionable message naming the command that builds the index.
+        reason: String,
+    },
+    /// An index exists but its stored schema identity is not the one this
+    /// binary reads, so it is neither read nor written.
+    IndexIncompatible {
+        /// Path of the incompatible index.
+        path: PathBuf,
+        /// Actionable message naming the stored and expected identities.
+        reason: String,
+    },
     /// Placeholder variant until storage, sync, and query errors are defined.
     Unimplemented,
 }
@@ -880,6 +950,9 @@ impl Display for GraphError {
             } => write!(f, "{operation} at {}: {reason}", path.display()),
             Self::Sqlite { operation, reason } => write!(f, "{operation}: {reason}"),
             Self::InvalidData { operation, reason } => write!(f, "{operation}: {reason}"),
+            Self::IndexMissing { reason, .. } | Self::IndexIncompatible { reason, .. } => {
+                f.write_str(reason)
+            }
             Self::Unimplemented => f.write_str("graph operation is not implemented"),
         }
     }
@@ -1090,6 +1163,28 @@ impl GraphDbPath {
     }
 }
 
+/// Resolve the graph database path the worktree's current branch or detached
+/// commit selects, as [`Graph::open`] would, without creating anything.
+///
+/// Only an unborn branch, or a directory outside any Git repository, selects
+/// the `HEAD` family; any other failure to read `HEAD` is an error.
+///
+/// # Examples
+///
+/// ```
+/// use orbit_graph::{EXTRACTOR_VERSION, resolve_worktree_db_path};
+///
+/// let dir = tempfile::tempdir()?;
+/// let db_path = resolve_worktree_db_path(dir.path())?;
+/// assert_eq!(db_path.branch(), "HEAD");
+/// assert_eq!(db_path.extractor_version(), EXTRACTOR_VERSION);
+/// assert!(!db_path.path().exists());
+/// # Ok::<(), Box<dyn std::error::Error>>(())
+/// ```
+pub fn resolve_worktree_db_path(worktree_root: &Path) -> Result<GraphDbPath, GraphError> {
+    store::resolve_worktree_db_path(worktree_root)
+}
+
 /// Resolve the canonical graph database path for a worktree and branch.
 ///
 /// The filename sanitizes the branch with a conservative filesystem-safe
@@ -1163,11 +1258,18 @@ fn sanitize_branch_for_filename(branch: &str) -> String {
 
 /// Delete obsolete graph database files.
 ///
-/// Removes old extractor-version files, plus detached-HEAD DBs whose commit is
-/// no longer reachable from any local ref.
+/// Removes databases from strictly older extractor versions, plus detached-HEAD
+/// databases whose commit is no longer reachable from any local ref, each with
+/// its `-wal`, `-shm` and `.db.lock` sidecars. A database is removed only while
+/// this call holds its `.db.lock`, so one another process is syncing is kept;
+/// a newer extractor version's database is never removed (STD-03 §R10). The
+/// active database is never touched and is not created.
+///
+/// Only the writing commands, `orbit-graph sync` and `orbit-graph clean`, call
+/// this; opening a graph removes nothing.
 pub fn clean_old_databases(worktree_root: &Path) -> Result<CleanReport, GraphError> {
-    let opened = store::open(worktree_root, SyncPolicy::Manual)?;
-    clean_old_databases_excluding(worktree_root, opened.db_path.path())
+    let active = store::resolve_worktree_db_path(worktree_root)?;
+    clean_old_databases_excluding(worktree_root, active.path())
 }
 
 fn clean_old_databases_excluding(
@@ -1186,34 +1288,94 @@ fn clean_old_databases_excluding(
 
     let entries = fs::read_dir(graph_dir.as_path())
         .map_err(|source| GraphError::io("read graph database directory", &graph_dir, source))?;
-    let mut paths = Vec::new();
+    // Every file of one database (the `.db` and its sidecars) is decided and
+    // removed together, keyed by the `.db` path.
+    let mut families = std::collections::BTreeSet::new();
     for entry in entries {
         let entry = entry.map_err(|source| {
             GraphError::io("read graph database directory entry", &graph_dir, source)
         })?;
-        paths.push(entry.path());
+        let path = entry.path();
+        let is_graph_file = path
+            .file_name()
+            .and_then(|name| name.to_str())
+            .and_then(graph_db_file_metadata)
+            .is_some();
+        if is_graph_file && path.is_file() && !is_active_graph_db_family(&path, active_db_path) {
+            families.insert(graph_db_base_path(path.as_path()));
+        }
     }
-    paths.sort();
 
     let repo = Repository::discover(worktree_root).ok();
-    let mut delete_paths = Vec::new();
-    for path in paths {
-        if !path.is_file() || is_active_graph_db_family(path.as_path(), active_db_path) {
-            continue;
+    for db_path in families {
+        if should_delete_graph_db_file(db_path.as_path(), repo.as_ref())? {
+            deleted.extend(delete_graph_db_family_if_unlocked(db_path.as_path())?);
         }
-        if should_delete_graph_db_file(path.as_path(), repo.as_ref())? {
-            delete_paths.push(path);
-        }
-    }
-
-    for path in delete_paths {
-        fs::remove_file(path.as_path())
-            .map_err(|source| GraphError::io("delete old graph database file", &path, source))?;
-        deleted.push(path);
     }
     deleted.sort();
 
     Ok(CleanReport { graph_dir, deleted })
+}
+
+/// Removes `db_path` and its sidecars while holding its `.db.lock`, and
+/// returns the paths removed. When another process holds the lock, as a sync
+/// of that database does, nothing is removed.
+fn delete_graph_db_family_if_unlocked(db_path: &Path) -> Result<Vec<PathBuf>, GraphError> {
+    let lock_path = graph_db_sidecar(db_path, ".lock");
+    // A lock file this call creates only to take the lock is not reported.
+    let lock_existed = lock_path.exists();
+    let lock = fs::OpenOptions::new()
+        .read(true)
+        .write(true)
+        .create(true)
+        .truncate(false)
+        .open(&lock_path)
+        .map_err(|source| GraphError::io("open old graph database lock", &lock_path, source))?;
+    match lock.try_lock() {
+        Ok(()) => {}
+        Err(fs::TryLockError::WouldBlock) => {
+            tracing::info!(
+                path = %db_path.display(),
+                "kept an old graph database whose lock another process holds"
+            );
+            return Ok(Vec::new());
+        }
+        Err(fs::TryLockError::Error(source)) => {
+            return Err(GraphError::io(
+                "lock old graph database",
+                &lock_path,
+                source,
+            ));
+        }
+    }
+    let mut deleted = Vec::new();
+    for (path, report) in [
+        (db_path.to_path_buf(), true),
+        (graph_db_sidecar(db_path, "-wal"), true),
+        (graph_db_sidecar(db_path, "-shm"), true),
+        (lock_path, lock_existed),
+    ] {
+        match fs::remove_file(&path) {
+            Ok(()) if report => deleted.push(path),
+            Ok(()) => {}
+            Err(source) if source.kind() == std::io::ErrorKind::NotFound => {}
+            Err(source) => {
+                return Err(GraphError::io(
+                    "delete old graph database file",
+                    &path,
+                    source,
+                ));
+            }
+        }
+    }
+    drop(lock);
+    Ok(deleted)
+}
+
+fn graph_db_sidecar(db_path: &Path, suffix: &str) -> PathBuf {
+    let mut name = db_path.as_os_str().to_os_string();
+    name.push(suffix);
+    PathBuf::from(name)
 }
 
 fn should_delete_graph_db_file(path: &Path, repo: Option<&Repository>) -> Result<bool, GraphError> {
@@ -1224,8 +1386,11 @@ fn should_delete_graph_db_file(path: &Path, repo: Option<&Repository>) -> Result
         return Ok(false);
     };
 
-    if metadata.extractor_version != EXTRACTOR_VERSION {
-        return Ok(true);
+    // A newer extractor's database belongs to a newer binary (STD-03 §R10).
+    match metadata.extractor_version.cmp(&EXTRACTOR_VERSION) {
+        std::cmp::Ordering::Less => return Ok(true),
+        std::cmp::Ordering::Greater => return Ok(false),
+        std::cmp::Ordering::Equal => {}
     }
 
     // Per-commit detached databases are pruned by Git reachability.
@@ -1288,7 +1453,7 @@ fn detached_db_meta_matches(path: &Path, commit_prefix: &str) -> Result<bool, Gr
     if !db_path.exists() {
         return Ok(false);
     }
-    let Ok(conn) = Connection::open_with_flags(db_path.as_path(), OpenFlags::SQLITE_OPEN_READ_ONLY)
+    let Ok(conn) = store::open_observational(db_path.as_path(), "read detached graph metadata")
     else {
         return Ok(false);
     };

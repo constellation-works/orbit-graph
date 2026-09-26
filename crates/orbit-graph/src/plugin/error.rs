@@ -20,8 +20,9 @@ pub enum ToolErrorCode {
     RepositoryUnavailable,
     /// Any other graph, index, Git, or Orbit-callback failure.
     GraphError,
-    /// A query tool found no published code-graph index for the repository;
-    /// the `graph_sync` maintenance operation builds one.
+    /// A query tool found no published code-graph index for the repository
+    /// (the `graph_sync` maintenance operation builds one), or `status` or
+    /// `recommend` found no history index (`history_sync` builds one).
     IndexMissing,
     /// The published code-graph index was built by another extractor or
     /// schema version; a full `graph_sync` replaces it.
@@ -85,6 +86,14 @@ impl ToolError {
         Self {
             code: ToolErrorCode::IndexMissing,
             source: GraphError::invalid_data("read code-graph index", reason),
+        }
+    }
+
+    /// A read-only tool that needs a history index that has not been built.
+    pub(crate) fn history_index_missing(reason: impl Into<String>) -> Self {
+        Self {
+            code: ToolErrorCode::IndexMissing,
+            source: GraphError::invalid_data("read history index", reason),
         }
     }
 

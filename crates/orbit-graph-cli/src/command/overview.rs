@@ -104,12 +104,13 @@ pub(crate) fn output(document: Value) -> CommandOutput {
 
 impl OverviewCommand {
     pub(crate) fn run(&self, context: &CommandContext) -> Result<serde_json::Value, CliError> {
-        let graph = context.open_graph()?;
+        // Input is validated before the index is opened.
         let scope = self
             .scope
             .as_deref()
             .map(str::parse::<Selector>)
             .transpose()?;
+        let graph = context.open_graph()?;
         json_value(graph.overview(scope.as_ref(), self.format.into_graph())?)
     }
 }

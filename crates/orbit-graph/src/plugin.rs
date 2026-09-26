@@ -75,8 +75,8 @@ pub fn execute_external_tool(name: &str, input: &[u8]) -> Result<Value, ToolErro
         return query::execute(tool, name, input);
     }
     match name {
-        RECOMMEND_TOOL_NAME | V2_RECOMMEND_TOOL_NAME => recommend(decode_input(input)?),
-        STATUS_TOOL_NAME | V2_STATUS_TOOL_NAME => status(decode_input(input)?),
+        RECOMMEND_TOOL_NAME | V2_RECOMMEND_TOOL_NAME => recommend(name, decode_input(input)?),
+        STATUS_TOOL_NAME | V2_STATUS_TOOL_NAME => status(name, decode_input(input)?),
         MAINTAIN_TOOL_NAME | V2_MAINTAIN_TOOL_NAME => maintain(decode_input(input)?),
         VERSION_TOOL_NAME | V2_VERSION_TOOL_NAME => version(decode_input(input)?),
         _ => Err(ToolError::invalid_request(
@@ -162,7 +162,7 @@ struct AdapterEvidence {
     warnings: Vec<String>,
 }
 
-fn recommend(input: RecommendToolInput) -> Result<Value, ToolError> {
+fn recommend(name: &str, input: RecommendToolInput) -> Result<Value, ToolError> {
     validate_schema(input.schema_version)?;
     if input.hybrid && (input.hybrid_limit == 0 || input.hybrid_limit > 100) {
         return Err(ToolError::invalid_request(
@@ -246,9 +246,10 @@ fn recommend(input: RecommendToolInput) -> Result<Value, ToolError> {
             input.branch.as_str(),
             index_dir,
             IndexState::read(index_dir)?.structure_index(index_dir),
-        )?,
-        None => RecommendationEngine::open(repository.as_path(), input.branch.as_str())?,
-    };
+        ),
+        None => RecommendationEngine::open(repository.as_path(), input.branch.as_str()),
+    }
+    .map_err(|error| history_read_error(error, name, input.branch.as_str()))?;
     let result = engine.recommend(&RecommendationRequest {
         input: intent,
         level: input.level.into(),
@@ -284,10 +285,18 @@ struct StatusToolInput {
     branch: String,
 }
 
-fn status(input: StatusToolInput) -> Result<Value, ToolError> {
+fn status(name: &str, input: StatusToolInput) -> Result<Value, ToolError> {
     validate_schema(input.schema_version)?;
     let repository = routed_repository(input.repository.as_path())?;
-    let index = open_history_index(repository.as_path(), input.branch.as_str())?;
+    let index = match plugin_index_dir(repository.as_path())?.as_deref() {
+        Some(index_dir) => HistoryIndex::open_read_only_with_index_dir(
+            repository.as_path(),
+            input.branch.as_str(),
+            index_dir,
+        ),
+        None => HistoryIndex::open_read_only(repository.as_path(), input.branch.as_str()),
+    }
+    .map_err(|error| history_read_error(error, name, input.branch.as_str()))?;
     let mut response = json!({
         "schema_version": PLUGIN_SCHEMA_VERSION,
         "operation": "status",
@@ -712,6 +721,29 @@ fn json_error(error: serde_json::Error) -> GraphError {
     GraphError::invalid_data("decode or encode JSON", error.to_string())
 }
 
+/// A read-only tool's history-open failure; a missing index names the
+/// `history_sync` maintenance call that builds it, in the caller's own tool
+/// spelling (STD-01 §R21).
+fn history_read_error(error: GraphError, tool_name: &str, branch: &str) -> ToolError {
+    match error {
+        GraphError::IndexMissing { path, .. } => {
+            let maintain = if tool_name.starts_with("orbit.") {
+                MAINTAIN_TOOL_NAME
+            } else {
+                V2_MAINTAIN_TOOL_NAME
+            };
+            let call = json!({"operation": "history_sync", "branch": branch});
+            ToolError::history_index_missing(format!(
+                "no history index has been built for branch {branch} (none at {}); run \
+                 {maintain} with {call} and retry",
+                path.display()
+            ))
+        }
+        error => ToolError::graph(error),
+    }
+}
+
+/// The writable history index `maintain` imports and synchronizes into.
 fn open_history_index(
     repository: &std::path::Path,
     branch: &str,
