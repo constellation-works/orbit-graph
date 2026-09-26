@@ -21,13 +21,11 @@ pub fn emit(
     stderr: &mut dyn Write,
 ) -> Result<(), CliError> {
     emit_records(output, sink, stdout, stderr)?;
-    if sink.mode() != OutputMode::Json {
-        for notice in &output.notices {
-            writeln!(stderr, "{notice}").map_err(CliError::Stderr)?;
-        }
-        stderr.flush().map_err(CliError::Stderr)?;
+    // Notices go to stderr in every mode, JSON included (STD-01 §R12, §R33).
+    for notice in &output.notices {
+        writeln!(stderr, "{notice}").map_err(CliError::Stderr)?;
     }
-    Ok(())
+    stderr.flush().map_err(CliError::Stderr)
 }
 
 fn emit_records(

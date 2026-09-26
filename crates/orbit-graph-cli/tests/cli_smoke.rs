@@ -236,10 +236,20 @@ fn real_binary_query_output_carries_locations_context_and_callee_filtering() {
     let ndjson = run(fixture.path(), ["--format", "ndjson", "callees", selector]);
     assert!(ndjson.status.success());
     assert_eq!(parse_ndjson(&ndjson.stdout), filtered_calls.clone());
+    // The default filter is echoed on stderr in JSON mode too, while stdout
+    // stays one parseable document.
     let json_mode = run_explicit_json(fixture.path(), ["callees", selector]);
+    assert!(json_mode.status.success());
+    assert!(String::from_utf8_lossy(&json_mode.stderr).contains("2 unresolved call(s)"));
+    let document: Value = serde_json::from_slice(&json_mode.stdout).expect("one JSON document");
+    assert_eq!(document["hidden_unresolved"], 2);
+    let everything_stderr = run_explicit_json(
+        fixture.path(),
+        ["callees", selector, "--include-unresolved"],
+    );
     assert!(
-        json_mode.stderr.is_empty(),
-        "JSON mode carries the count in the document"
+        everything_stderr.stderr.is_empty(),
+        "nothing hidden, no notice"
     );
 
     // Headerless redirected output is documented in help.

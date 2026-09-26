@@ -165,10 +165,10 @@ were added without removing or renaming any existing field:
   restores every edge and reports `0`.
 
 Commands can attach stderr notices to their output. They are written after the
-records in table, plain, and NDJSON modes and never in JSON mode, whose
-document carries the same fact as a field. `callees` uses one to report a
-non-zero `hidden_unresolved`, so the count is visible even where the record
-stream has no place for it.
+records in every mode, JSON included, while stdout keeps only the payload
+(STD-01 §R12). `callees` uses one to echo its default filter whenever
+`hidden_unresolved` is non-zero (STD-01 §R33), so the count is visible even in
+NDJSON, whose record stream has no place for it.
 
 ## Shared table width and record safety
 
