@@ -28,6 +28,12 @@ mod recommend;
 mod store;
 mod sync;
 
+// `docs/usage.md`, included so `cargo test --doc` compiles its Rust example
+// against this API and a stale example fails the build (STD-04 §R14).
+#[cfg(doctest)]
+#[doc = include_str!("../../../docs/usage.md")]
+mod usage_doc {}
+
 pub use extract::history::{
     CHANGE_EXTRACTOR_VERSION, CurrentRevisionResolution, CurrentSymbolStatus,
     DEFAULT_HISTORY_SYNC_LIMIT, DELIVERY_IMPORT_SCHEMA_VERSION, DeliveredChange, DeliveryEvidence,
@@ -42,7 +48,8 @@ pub use store::history::{
 };
 
 pub use evaluation::{
-    EVALUATION_SCHEMA_VERSION, EvaluationCorpus, EvaluationReport, evaluate_corpus,
+    EVALUATION_CORPUS_SCHEMA_VERSION, EVALUATION_SCHEMA_VERSION, EvaluationCorpus,
+    EvaluationReport, evaluate_corpus,
 };
 pub use query::{
     DEFAULT_SEARCH_LIMIT, DEFAULT_SHOW_MAX_BYTES, Match, NodeMetadata, NodeView, SearchKind,

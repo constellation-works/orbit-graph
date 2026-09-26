@@ -633,14 +633,25 @@ fn chronological_evaluation_reports_four_variants_both_levels_and_no_stale_resul
             "task_search_only"
         ])
     );
-    assert!(report["metrics"].as_array().is_some_and(|metrics| {
-        metrics.iter().all(|metric| {
-            metric["stale_result_rate"] == 0.0
-                && metric["mean_latency_ms"].is_number()
-                && metric["recall_at_k"].is_number()
-                && metric["precision_at_k"].is_number()
-        })
-    }));
+    assert!(
+        report["metrics"].as_array().is_some_and(|metrics| {
+            metrics.iter().all(|metric| {
+                // No stale results: 0.0 over returned results, or null when the
+                // variant returned nothing to be stale (STD-02 §R29).
+                let stale_ok = if metric["returned"].as_u64().unwrap_or_default() > 0 {
+                    metric["stale_result_rate"] == 0.0
+                } else {
+                    metric["stale_result_rate"].is_null()
+                };
+                stale_ok
+                    && metric["mean_latency_ms"].is_number()
+                    && metric["recall_at_k"].is_number()
+                    && metric["precision_at_k"].is_number()
+            })
+        }),
+        "{:#}",
+        report["metrics"]
+    );
     let status = run(fixture.path(), ["history", "status", "--branch", "main"]);
     assert!(status.status.success());
     let status: Value = serde_json::from_slice(&status.stdout).expect("history status JSON");
@@ -854,6 +865,27 @@ fn evaluation_rejects_unverified_pre_cutoff_and_unattested_hybrid_truth() {
     );
     let report: Value = serde_json::from_slice(&output.stdout).expect("evaluation JSON");
     assert_eq!(report["coverage"]["cases_evaluated"], 0);
+    // With every case excluded there is no data behind any metric: each one
+    // is null, not a measured 0.0 (STD-02 §R29; schema version 2).
+    assert_eq!(report["schema_version"], 2);
+    let metrics = report["metrics"].as_array().expect("metrics");
+    assert_eq!(metrics.len(), 8);
+    for metric in metrics {
+        assert_eq!(metric["cases"], 0, "{metric}");
+        assert_eq!(metric["returned"], 0, "{metric}");
+        for field in [
+            "recall_at_k",
+            "precision_at_k",
+            "stale_result_rate",
+            "mean_latency_ms",
+            "max_latency_ms",
+        ] {
+            assert!(
+                metric[field].is_null(),
+                "{field} must be null with no data: {metric}"
+            );
+        }
+    }
     assert!(case_exclusions(&report, 0).contains(&"held_out_delivery_not_proven_after_cutoff"));
     assert!(case_exclusions(&report, 1).contains(&"contradictory_delivery_chronology"));
     assert!(case_exclusions(&report, 2).contains(&"held_out_delivery_not_verified"));
@@ -873,6 +905,19 @@ fn evaluation_rejects_unverified_pre_cutoff_and_unattested_hybrid_truth() {
     assert!(human.status.success());
     let human = String::from_utf8_lossy(&human.stdout);
     assert!(human.contains("admission regression cases"));
+    let metric_rows = human
+        .lines()
+        .filter(|line| line.contains("task_search_only") || line.contains("frequency"))
+        .collect::<Vec<_>>();
+    assert_eq!(metric_rows.len(), 4, "{human}");
+    for row in metric_rows {
+        assert_eq!(
+            row.matches("n/a").count(),
+            4,
+            "recall, precision, stale rate and latency print n/a, not 0.000: {row}"
+        );
+        assert!(!row.contains("0.000"), "{row}");
+    }
     assert!(human.contains("held_out_delivery_not_verified"));
     assert!(human.contains("hybrid_hits_not_attested_strictly_before_cutoff"));
 }

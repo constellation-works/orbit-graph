@@ -124,7 +124,10 @@ cutoff by an exact time or an explicit trustworthy prospective lower bound.
 Reports include
 recall@K, precision@K, stale-result rate, mean/maximum latency, coverage,
 per-level omitted-truth reasons, exclusions, source provenance, input digest,
-and exact graph revisions.
+and exact graph revisions. A metric with no data behind it (no relevant truth,
+no evaluated case, no returned result or no query) is `null` in the JSON
+report (schema version 2) and `n/a` in the table, never `0`. The corpus input
+keeps its own schema version, 1.
 
 The synthetic adversarial executable fixture runs in CI. The bounded real Orbit
 prospective input, measured result, and its no-superiority limitation are

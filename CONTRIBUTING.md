@@ -34,6 +34,14 @@ outside an output layer needs a per-site allow-list entry in
 reason and the task that removes it; the change that removes the write
 removes the entry, or the guard fails.
 
+Some committed files are derived from the binaries and checked by tests: the
+explorer README's "Every flag" block and the `direct-call` sample export under
+`docs/evaluation/change-explorer/samples/`. After an intended change to the
+explorer's help text or report output (including an `EXTRACTOR_VERSION` or
+crate version bump), regenerate them in the same change with
+`UPDATE_GOLDENS=1 cargo test -p orbit-graph-explorer --test derived_artifacts --locked`
+and review the diff.
+
 Changes must follow the constellation standards vendored in
 [`docs/standards/`](docs/standards/README.md); cite a rule as `STD-nn §Rn`.
 Those files are read-only: never edit them, re-sync instead.

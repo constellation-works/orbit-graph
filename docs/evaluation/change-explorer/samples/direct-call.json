@@ -6,14 +6,14 @@
     "repository": null,
     "mode": "direct_base_head",
     "base": {
-      "requested_ref": "fe91baf858947f0a41aff9228f7d8dd0fbb988a9",
-      "commit_sha": "fe91baf858947f0a41aff9228f7d8dd0fbb988a9"
+      "requested_ref": "25b1bf2e5d5f3b6eb6dbeb9bf2cabc4b223dadac",
+      "commit_sha": "25b1bf2e5d5f3b6eb6dbeb9bf2cabc4b223dadac"
     },
     "head": {
-      "requested_ref": "647eb9016d65c03a7a13a1dc92820e8754e7da48",
-      "commit_sha": "647eb9016d65c03a7a13a1dc92820e8754e7da48"
+      "requested_ref": "5bd5eb00bfad27d47c4484cef12a2906b95eabc0",
+      "commit_sha": "5bd5eb00bfad27d47c4484cef12a2906b95eabc0"
     },
-    "effective_base_sha": "fe91baf858947f0a41aff9228f7d8dd0fbb988a9",
+    "effective_base_sha": "25b1bf2e5d5f3b6eb6dbeb9bf2cabc4b223dadac",
     "working_tree": {
       "dirty": false,
       "notice": null,
@@ -23,31 +23,31 @@
     "snapshots": [
       {
         "side": "base",
-        "requested_ref": "fe91baf858947f0a41aff9228f7d8dd0fbb988a9",
-        "commit_sha": "fe91baf858947f0a41aff9228f7d8dd0fbb988a9",
+        "requested_ref": "25b1bf2e5d5f3b6eb6dbeb9bf2cabc4b223dadac",
+        "commit_sha": "25b1bf2e5d5f3b6eb6dbeb9bf2cabc4b223dadac",
         "files_indexed": 2,
         "files_written": 2,
-        "extractor_version": 8,
+        "extractor_version": 11,
         "excluded": []
       },
       {
         "side": "head",
-        "requested_ref": "647eb9016d65c03a7a13a1dc92820e8754e7da48",
-        "commit_sha": "647eb9016d65c03a7a13a1dc92820e8754e7da48",
+        "requested_ref": "5bd5eb00bfad27d47c4484cef12a2906b95eabc0",
+        "commit_sha": "5bd5eb00bfad27d47c4484cef12a2906b95eabc0",
         "files_indexed": 2,
         "files_written": 2,
-        "extractor_version": 8,
+        "extractor_version": 11,
         "excluded": []
       }
     ]
   },
   "index_identity": {
-    "extractor_version": 8,
+    "extractor_version": 11,
     "store_schema_version": 1,
-    "orbit_graph_version": "0.9.2",
-    "explorer_version": "0.9.2",
-    "base_index_identity": "blake3:919fb3f4a759e23f22602bba46245206ea962c28d7c9572b7f81b91b073c2141",
-    "head_index_identity": "blake3:419b7e633b12b7180f6d18b14a37a2cbcd43b9f2fc9860a94fd69d6027dee6ac"
+    "orbit_graph_version": "0.10.0",
+    "explorer_version": "0.10.0",
+    "base_index_identity": "blake3:67b5c6d67eeacb6daba09284f5acf16d3b4007c2c549c0859ec00f8af979b816",
+    "head_index_identity": "blake3:18b19a452e71285db6ce4569efcf5b2a141adaf28cae6584e0138c92a0969175"
   },
   "query_options": {
     "depth": 3,
@@ -74,7 +74,7 @@
         "base": {
           "selector": "symbol:src/lib.rs#helper:function",
           "snapshot": "base",
-          "commit_sha": "fe91baf858947f0a41aff9228f7d8dd0fbb988a9",
+          "commit_sha": "25b1bf2e5d5f3b6eb6dbeb9bf2cabc4b223dadac",
           "rendering": "embedded",
           "excerpt": {
             "start_line": 1,
@@ -86,7 +86,7 @@
         "head": {
           "selector": "symbol:src/lib.rs#helper:function",
           "snapshot": "head",
-          "commit_sha": "647eb9016d65c03a7a13a1dc92820e8754e7da48",
+          "commit_sha": "5bd5eb00bfad27d47c4484cef12a2906b95eabc0",
           "rendering": "embedded",
           "excerpt": {
             "start_line": 1,
@@ -140,7 +140,7 @@
           "category": "resolved_call",
           "confidence": "exact",
           "snapshot": "base",
-          "commit_sha": "fe91baf858947f0a41aff9228f7d8dd0fbb988a9",
+          "commit_sha": "25b1bf2e5d5f3b6eb6dbeb9bf2cabc4b223dadac",
           "source": {
             "file": "src/lib.rs",
             "line": 6
@@ -186,7 +186,7 @@
           "category": "observed_reference",
           "confidence": "same_module",
           "snapshot": "base",
-          "commit_sha": "fe91baf858947f0a41aff9228f7d8dd0fbb988a9",
+          "commit_sha": "25b1bf2e5d5f3b6eb6dbeb9bf2cabc4b223dadac",
           "source": {
             "file": "tests/test_lib.rs",
             "line": 2
@@ -232,7 +232,7 @@
           "category": "resolved_call",
           "confidence": "exact",
           "snapshot": "head",
-          "commit_sha": "647eb9016d65c03a7a13a1dc92820e8754e7da48",
+          "commit_sha": "5bd5eb00bfad27d47c4484cef12a2906b95eabc0",
           "source": {
             "file": "src/lib.rs",
             "line": 6
@@ -278,7 +278,7 @@
           "category": "observed_reference",
           "confidence": "same_module",
           "snapshot": "head",
-          "commit_sha": "647eb9016d65c03a7a13a1dc92820e8754e7da48",
+          "commit_sha": "5bd5eb00bfad27d47c4484cef12a2906b95eabc0",
           "source": {
             "file": "tests/test_lib.rs",
             "line": 2
@@ -404,7 +404,7 @@
             "category": "resolved_call",
             "confidence": "exact",
             "snapshot": "base",
-            "commit_sha": "fe91baf858947f0a41aff9228f7d8dd0fbb988a9",
+            "commit_sha": "25b1bf2e5d5f3b6eb6dbeb9bf2cabc4b223dadac",
             "source": {
               "file": "src/lib.rs",
               "line": 6
@@ -479,7 +479,7 @@
             "category": "observed_reference",
             "confidence": "same_module",
             "snapshot": "base",
-            "commit_sha": "fe91baf858947f0a41aff9228f7d8dd0fbb988a9",
+            "commit_sha": "25b1bf2e5d5f3b6eb6dbeb9bf2cabc4b223dadac",
             "source": {
               "file": "tests/test_lib.rs",
               "line": 2
@@ -604,7 +604,7 @@
             "category": "resolved_call",
             "confidence": "exact",
             "snapshot": "head",
-            "commit_sha": "647eb9016d65c03a7a13a1dc92820e8754e7da48",
+            "commit_sha": "5bd5eb00bfad27d47c4484cef12a2906b95eabc0",
             "source": {
               "file": "src/lib.rs",
               "line": 6
@@ -679,7 +679,7 @@
             "category": "observed_reference",
             "confidence": "same_module",
             "snapshot": "head",
-            "commit_sha": "647eb9016d65c03a7a13a1dc92820e8754e7da48",
+            "commit_sha": "5bd5eb00bfad27d47c4484cef12a2906b95eabc0",
             "source": {
               "file": "tests/test_lib.rs",
               "line": 2
@@ -775,7 +775,7 @@
           "origin": "file"
         },
         "rendering": "reference",
-        "reference": "tests/test_lib.rs@fe91baf858947f0a41aff9228f7d8dd0fbb988a9",
+        "reference": "tests/test_lib.rs@25b1bf2e5d5f3b6eb6dbeb9bf2cabc4b223dadac",
         "source": "naming_heuristic",
         "label": "naming-heuristic",
         "category": "heuristic_match",
@@ -800,7 +800,7 @@
           "origin": "file"
         },
         "rendering": "reference",
-        "reference": "tests/test_lib.rs@647eb9016d65c03a7a13a1dc92820e8754e7da48",
+        "reference": "tests/test_lib.rs@5bd5eb00bfad27d47c4484cef12a2906b95eabc0",
         "source": "naming_heuristic",
         "label": "naming-heuristic",
         "category": "heuristic_match",
