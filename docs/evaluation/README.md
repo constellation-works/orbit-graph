@@ -84,3 +84,33 @@ orbit-graph --format json evaluate \
 
 Wall-clock latency varies by machine; compare the stable corpus digest,
 coverage, revisions, truth counts, hits, recall, precision, and stale rates.
+
+### Recommendation latency with indexed history
+
+Measured on dk-server-1 (15 cores) against a `--no-hardlinks` clone of Orbit
+at `9591bbbd1` (2,752 files) after
+`orbit-graph history sync --branch agent-main --limit 200`, with release
+builds and the query
+`recommend --query "auto-task delete durable opt-out for shipped defaults" --level file --branch agent-main`.
+
+| Build | Host load (1-min avg) | Wall time | User CPU |
+| --- | --- | --- | --- |
+| Before, `279091f` (orchestrator profile) | quieter | 333 s | — |
+| Before, `279091f` | 32–54 | 1,391 s | — |
+| After (path lineage) | 36–42 | 15.0–21.1 s | 9.5–10.0 s |
+| After, same query with an empty history scope | 40 | 11.7–15.9 s | 9.1–9.5 s |
+
+Before the change, 134 of the call's deliveries needed a whole-tree
+`diff_tree_to_tree` plus rename-and-copy `find_similar` against the target
+(about 2.45 s each, 328 s of the 333 s profile), repeated for only 47 distinct
+revisions. Recommendation now chains the rename and deletion steps persisted
+at ingest. On this index (207 steps: 102 renames and 105 deletions) it runs no
+query-time diff, because the history cursor equals the target. The remaining
+latency is the per-call target-tree symbol extraction that every recommend
+call pays even with no history. It dominates both "after" rows, and 200
+commits of history add about 0.5 s of CPU on top of it. The ranked output of
+the combined query (selectors, scores, reasons) is identical to the
+pre-change output. Upgrading the
+existing v3 index copied its 200 deliveries and derived lineage in 2.1 s on
+first open. The box was shared with concurrent builds during these runs, so
+compare CPU times, or re-measure on an idle host, before quoting wall times.

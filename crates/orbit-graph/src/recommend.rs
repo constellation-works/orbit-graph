@@ -12,7 +12,7 @@ use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use git2::{
-    DiffFindOptions, DiffOptions, ObjectType, Oid, Repository, TreeWalkMode, TreeWalkResult,
+    Delta, DiffFindOptions, DiffOptions, ObjectType, Oid, Repository, TreeWalkMode, TreeWalkResult,
 };
 use serde::{Deserialize, Serialize};
 
@@ -22,6 +22,7 @@ use crate::extract::history::{
     TaskTextAvailability, TemporalStatus, Timestamp, parse_timestamp, validate_task_association,
 };
 use crate::extract::languages;
+use crate::store::history::PathLineageStep;
 use crate::{Graph, GraphError, HistoryIndex, SyncPolicy};
 
 /// Default number of ranked destinations returned by recommendation queries.
@@ -284,7 +285,8 @@ impl RecommendationEngine {
         let status = index.status()?;
         let freshness = freshness(&repo, status.cursor, target);
         let deliveries = index.deliveries()?;
-        let mut resolver = TargetTree::load(&repo, target)?;
+        let lineage_steps = index.path_lineage()?;
+        let resolver = TargetTree::load(&repo, target)?;
         let strict_replay = request.cutoff.is_some();
         let query = resolve_query(&deliveries, request, &cutoff, strict_replay, &repo, target)?;
         let hybrid = normalized_hybrid_hits(request.hybrid_hits.as_slice())?;
@@ -299,7 +301,7 @@ impl RecommendationEngine {
                 reason: "the target task has no eligible local snapshot; supplied hybrid task hits provide relevance without reading target delivery output".to_string(),
             });
         }
-        let eligible = eligible_deliveries(
+        let (eligible, visible) = eligible_deliveries(
             &repo,
             deliveries,
             target,
@@ -308,9 +310,11 @@ impl RecommendationEngine {
             target_task,
             &mut fallbacks,
         )?;
+        let mut lineage = PathLineage::new(&repo, target, &visible, lineage_steps)?;
         let mut scored = score_history(
             &repo,
-            &mut resolver,
+            &resolver,
+            &mut lineage,
             eligible.as_slice(),
             &HistoryScoreRequest {
                 query: query.as_str(),
@@ -321,6 +325,7 @@ impl RecommendationEngine {
                 variant: request.variant,
             },
         )?;
+        fallbacks.extend(lineage.fallbacks());
 
         if matches!(
             request.variant,
@@ -614,8 +619,9 @@ fn eligible_deliveries(
     explicit_cutoff: bool,
     target_task: Option<&str>,
     fallbacks: &mut Vec<RecommendationFallback>,
-) -> Result<Vec<EligibleDelivery>, GraphError> {
+) -> Result<(Vec<EligibleDelivery>, Vec<VisibleDelivery>), GraphError> {
     let mut grouped: BTreeMap<(String, String), Vec<DeliveredChange>> = BTreeMap::new();
+    let mut visible = Vec::new();
     let mut excluded_unknown_time = 0;
     for delivery in deliveries {
         let after = Oid::from_str(delivery.delivery.after_revision.as_str())
@@ -641,6 +647,15 @@ fn eligible_deliveries(
                 continue;
             }
         }
+        // Path lineage may use every delivery visible under the ancestry and
+        // cutoff rules, including the target task's own boundary: its rename
+        // steps describe Git history already contained in the target tree.
+        visible.push(VisibleDelivery {
+            delivery_id: delivery.delivery.delivery_id.clone(),
+            before_revision: Oid::from_str(delivery.delivery.before_revision.as_str())
+                .map_err(git_error("parse indexed delivery base revision"))?,
+            after_revision: after,
+        });
         let key = (
             delivery.delivery.before_revision.clone(),
             delivery.delivery.after_revision.clone(),
@@ -680,7 +695,7 @@ fn eligible_deliveries(
             source_delivery_ids,
         });
     }
-    Ok(unique)
+    Ok((unique, visible))
 }
 
 fn evidence_rank(evidence: DeliveryEvidence) -> u8 {
@@ -688,6 +703,14 @@ fn evidence_rank(evidence: DeliveryEvidence) -> u8 {
         DeliveryEvidence::VerifiedDelivery => 1,
         DeliveryEvidence::GitOnly => 0,
     }
+}
+
+/// A delivery on the target's ancestry that passed the request's cutoff rule.
+#[derive(Debug, Clone)]
+struct VisibleDelivery {
+    delivery_id: String,
+    before_revision: Oid,
+    after_revision: Oid,
 }
 
 #[derive(Debug, Clone)]
@@ -737,7 +760,8 @@ struct HistoryScoreRequest<'a> {
 
 fn score_history(
     repo: &Repository,
-    resolver: &mut TargetTree,
+    resolver: &TargetTree,
+    lineage: &mut PathLineage,
     deliveries: &[EligibleDelivery],
     request: &HistoryScoreRequest<'_>,
 ) -> Result<BTreeMap<String, Accumulator>, GraphError> {
@@ -767,16 +791,14 @@ fn score_history(
             }
             similarity = similarity.max(relevance);
         }
-        let locations = resolver.locations_for_delivery(repo, delivery, request.level)?;
+        let after = Oid::from_str(delivery.delivery.after_revision.as_str())
+            .map_err(git_error("parse delivery revision for recency"))?;
+        let locations =
+            resolver.locations_for_delivery(repo, lineage, delivery, after, request.level)?;
         if locations.is_empty() {
             continue;
         }
-        let distance = commit_distance(
-            repo,
-            Oid::from_str(delivery.delivery.after_revision.as_str())
-                .map_err(git_error("parse delivery revision for recency"))?,
-            resolver.revision,
-        );
+        let distance = lineage.distance(repo, after);
         rows.push(DeliveryLocations {
             delivery_id: delivery.delivery.delivery_id.clone(),
             task_ids,
@@ -1199,8 +1221,270 @@ fn commit_distance(repo: &Repository, from: Oid, to: Oid) -> usize {
     walk.filter_map(Result::ok).count()
 }
 
+/// Largest number of added or deleted files for which the single gap diff runs
+/// similarity (inexact) rename detection. Larger gaps follow exact renames only,
+/// so query-time work stays bounded regardless of how far the index lags.
+const GAP_SIMILARITY_FILE_LIMIT: usize = 500;
+
+#[cfg(test)]
+thread_local! {
+    /// Query-time tree diffs performed on this thread (test instrumentation).
+    static QUERY_TREE_DIFFS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+/// Forward path lineage from indexed deliveries to the target revision.
+///
+/// Built once per request from the rename and deletion steps each delivery
+/// recorded at ingest (`history_path_lineage`). A path observed at a
+/// delivery's landed revision is followed through every later visible
+/// delivery's steps, oldest first; a deletion ends it. The only query-time Git
+/// diff is one bounded, renames-only comparison from the newest visible
+/// delivery to the target, computed lazily and memoized, covering commits the
+/// index has not ingested (history cursor behind the target).
+///
+/// Visibility follows the request: live requests use every delivery on the
+/// target's ancestry; strict replay uses only deliveries that pass the explicit
+/// cutoff, so post-cutoff index records never steer path resolution. Renames by
+/// excluded deliveries are then observable only through the gap diff, which
+/// compares Git trees up to the target and therefore reveals nothing the
+/// target revision does not already contain. Every resolved path must exist in
+/// the target tree.
+struct PathLineage {
+    target: Oid,
+    /// Memoized commits reachable from the target but not from the key.
+    distances: BTreeMap<Oid, usize>,
+    /// Per landed revision rename (`Some`) and deletion (`None`) maps, oldest first.
+    steps: Vec<(usize, BTreeMap<String, Option<String>>)>,
+    /// Newest visible delivery revision and its distance from the target.
+    newest: Option<(Oid, usize)>,
+    /// Visible delivery bases that are not another visible delivery's landing.
+    unindexed_ranges: usize,
+    gap: Option<GapRenames>,
+    unresolved: usize,
+}
+
+/// Renames detected by the single memoized gap diff.
+struct GapRenames {
+    renames: BTreeMap<String, String>,
+    exact_only: bool,
+    added: usize,
+    deleted: usize,
+}
+
+impl PathLineage {
+    fn new(
+        repo: &Repository,
+        target: Oid,
+        visible: &[VisibleDelivery],
+        steps: Vec<PathLineageStep>,
+    ) -> Result<Self, GraphError> {
+        let mut lineage = Self {
+            target,
+            distances: BTreeMap::new(),
+            steps: Vec::new(),
+            newest: None,
+            unindexed_ranges: 0,
+            gap: None,
+            unresolved: 0,
+        };
+        let visible_ids = visible
+            .iter()
+            .map(|delivery| (delivery.delivery_id.as_str(), delivery.after_revision))
+            .collect::<BTreeMap<_, _>>();
+        let mut by_revision: BTreeMap<Oid, BTreeMap<String, Option<String>>> = BTreeMap::new();
+        for step in steps {
+            let Some(after) = visible_ids.get(step.delivery_id.as_str()) else {
+                continue;
+            };
+            let recorded = Oid::from_str(step.after_revision.as_str())
+                .map_err(git_error("parse lineage delivery revision"))?;
+            if recorded != *after {
+                continue;
+            }
+            // Equivalent boundaries record identical steps; keep the first.
+            by_revision
+                .entry(*after)
+                .or_default()
+                .entry(step.old_path)
+                .or_insert(step.new_path);
+        }
+        let mut ordered = by_revision
+            .into_iter()
+            .map(|(revision, renames)| (lineage.distance(repo, revision), renames))
+            .collect::<Vec<_>>();
+        ordered.sort_by_key(|(distance, _)| std::cmp::Reverse(*distance));
+        lineage.steps = ordered;
+        for delivery in visible {
+            let distance = lineage.distance(repo, delivery.after_revision);
+            if lineage
+                .newest
+                .is_none_or(|(_, newest_distance)| distance < newest_distance)
+            {
+                lineage.newest = Some((delivery.after_revision, distance));
+            }
+        }
+        let landed = visible
+            .iter()
+            .map(|delivery| delivery.after_revision)
+            .collect::<BTreeSet<_>>();
+        let unlanded_bases = visible
+            .iter()
+            .map(|delivery| delivery.before_revision)
+            .filter(|base| !landed.contains(base))
+            .collect::<BTreeSet<_>>();
+        // The oldest delivery's base always starts the indexed range.
+        lineage.unindexed_ranges = unlanded_bases.len().saturating_sub(1);
+        Ok(lineage)
+    }
+
+    /// Commits reachable from the target but not from `revision`, memoized.
+    fn distance(&mut self, repo: &Repository, revision: Oid) -> usize {
+        let target = self.target;
+        *self
+            .distances
+            .entry(revision)
+            .or_insert_with(|| commit_distance(repo, revision, target))
+    }
+
+    /// Map `path` as it existed at `after_revision` to its live descendant in
+    /// the target tree, or `None` when it was deleted or cannot be followed.
+    fn resolve(
+        &mut self,
+        repo: &Repository,
+        tree: &TargetTree,
+        after_revision: Oid,
+        path: &str,
+    ) -> Result<Option<String>, GraphError> {
+        if tree.files.contains_key(path) {
+            return Ok(Some(path.to_string()));
+        }
+        let origin = self.distance(repo, after_revision);
+        let mut current = path.to_string();
+        for (distance, renames) in &self.steps {
+            if *distance >= origin {
+                continue;
+            }
+            match renames.get(current.as_str()) {
+                Some(Some(next)) => current.clone_from(next),
+                Some(None) => return Ok(None),
+                None => {}
+            }
+        }
+        if tree.files.contains_key(current.as_str()) {
+            return Ok(Some(current));
+        }
+        if let Some((newest, distance)) = self.newest
+            && distance > 0
+        {
+            if self.gap.is_none() {
+                self.gap = Some(gap_renames(repo, newest, self.target)?);
+            }
+            if let Some(next) = self
+                .gap
+                .as_ref()
+                .and_then(|gap| gap.renames.get(current.as_str()))
+                .filter(|next| tree.files.contains_key(next.as_str()))
+            {
+                return Ok(Some(next.clone()));
+            }
+        }
+        self.unresolved += 1;
+        Ok(None)
+    }
+
+    fn fallbacks(&self) -> Vec<RecommendationFallback> {
+        let mut fallbacks = Vec::new();
+        if let (Some(gap), Some((newest, distance))) = (self.gap.as_ref(), self.newest) {
+            let (kind, detail) = if gap.exact_only {
+                (
+                    "path_lineage_gap_exact_only",
+                    format!(
+                        "the gap exceeded the {GAP_SIMILARITY_FILE_LIMIT}-file similarity budget, so only content-identical renames were followed"
+                    ),
+                )
+            } else {
+                (
+                    "path_lineage_gap",
+                    "renames there were followed with one bounded renames-only diff".to_string(),
+                )
+            };
+            fallbacks.push(RecommendationFallback {
+                kind: kind.to_string(),
+                reason: format!(
+                    "the newest indexed delivery {newest} is {distance} commit(s) behind the target; {detail} ({} rename(s) across {} deleted and {} added file(s)); sync history to record per-delivery lineage",
+                    gap.renames.len(),
+                    gap.deleted,
+                    gap.added
+                ),
+            });
+        }
+        if self.unresolved > 0 && self.unindexed_ranges > 0 {
+            fallbacks.push(RecommendationFallback {
+                kind: "path_lineage_incomplete".to_string(),
+                reason: format!(
+                    "{} historical path(s) could not be followed to the target; {} unindexed range(s) between indexed deliveries carry no recorded renames",
+                    self.unresolved, self.unindexed_ranges
+                ),
+            });
+        }
+        fallbacks
+    }
+}
+
+/// One bounded renames-only diff from `from` to `to` (no copy detection).
+fn gap_renames(repo: &Repository, from: Oid, to: Oid) -> Result<GapRenames, GraphError> {
+    #[cfg(test)]
+    QUERY_TREE_DIFFS.with(|count| count.set(count.get() + 1));
+    let old_tree = repo
+        .find_commit(from)
+        .and_then(|commit| commit.tree())
+        .map_err(git_error("load newest indexed delivery tree"))?;
+    let new_tree = repo
+        .find_commit(to)
+        .and_then(|commit| commit.tree())
+        .map_err(git_error("load recommendation target tree for lineage gap"))?;
+    let mut options = DiffOptions::new();
+    options.ignore_submodules(true);
+    let mut diff = repo
+        .diff_tree_to_tree(Some(&old_tree), Some(&new_tree), Some(&mut options))
+        .map_err(git_error("diff unindexed history gap"))?;
+    let (mut added, mut deleted) = (0, 0);
+    for delta in diff.deltas() {
+        match delta.status() {
+            Delta::Added => added += 1,
+            Delta::Deleted => deleted += 1,
+            _ => {}
+        }
+    }
+    let exact_only = added > GAP_SIMILARITY_FILE_LIMIT || deleted > GAP_SIMILARITY_FILE_LIMIT;
+    if added > 0 && deleted > 0 {
+        let mut find = DiffFindOptions::new();
+        find.renames(true)
+            .copies(false)
+            .rename_limit(GAP_SIMILARITY_FILE_LIMIT)
+            .exact_match_only(exact_only);
+        diff.find_similar(Some(&mut find))
+            .map_err(git_error("detect renames in unindexed history gap"))?;
+    }
+    let renames = diff
+        .deltas()
+        .filter(|delta| delta.status() == Delta::Renamed)
+        .filter_map(|delta| {
+            Some((
+                delta.old_file().path()?.to_str()?.to_string(),
+                delta.new_file().path()?.to_str()?.to_string(),
+            ))
+        })
+        .collect();
+    Ok(GapRenames {
+        renames,
+        exact_only,
+        added,
+        deleted,
+    })
+}
+
 struct TargetTree {
-    revision: Oid,
     files: BTreeMap<String, Oid>,
     symbols: BTreeMap<String, Vec<RawSymbol>>,
 }
@@ -1242,11 +1526,7 @@ impl TargetTree {
                 symbols.insert(path.clone(), extracted.symbols);
             }
         }
-        Ok(Self {
-            revision,
-            files,
-            symbols,
-        })
+        Ok(Self { files, symbols })
     }
 
     fn baseline_candidates(&self, level: RecommendationLevel) -> Vec<(String, String)> {
@@ -1297,9 +1577,11 @@ impl TargetTree {
     }
 
     fn locations_for_delivery(
-        &mut self,
+        &self,
         repo: &Repository,
+        lineage: &mut PathLineage,
         delivery: &DeliveredChange,
+        after_revision: Oid,
         level: RecommendationLevel,
     ) -> Result<BTreeMap<String, LocationMeta>, GraphError> {
         let mut locations = BTreeMap::new();
@@ -1307,11 +1589,7 @@ impl TargetTree {
             let Some(historical_path) = file.new_path.as_deref() else {
                 continue;
             };
-            let mapped_path = self.resolve_file(
-                repo,
-                delivery.delivery.after_revision.as_str(),
-                historical_path,
-            )?;
+            let mapped_path = lineage.resolve(repo, self, after_revision, historical_path)?;
             let Some(path) = mapped_path else {
                 continue;
             };
@@ -1352,45 +1630,6 @@ impl TargetTree {
             }
         }
         Ok(locations)
-    }
-
-    fn resolve_file(
-        &self,
-        repo: &Repository,
-        historical_revision: &str,
-        historical_path: &str,
-    ) -> Result<Option<String>, GraphError> {
-        if self.files.contains_key(historical_path) {
-            return Ok(Some(historical_path.to_string()));
-        }
-        let historical = repo
-            .find_commit(
-                Oid::from_str(historical_revision)
-                    .map_err(git_error("parse historical file revision"))?,
-            )
-            .and_then(|commit| commit.tree())
-            .map_err(git_error("load historical file tree"))?;
-        let target = repo
-            .find_commit(self.revision)
-            .and_then(|commit| commit.tree())
-            .map_err(git_error("load target file tree"))?;
-        let mut options = DiffOptions::new();
-        let mut diff = repo
-            .diff_tree_to_tree(Some(&historical), Some(&target), Some(&mut options))
-            .map_err(git_error("diff historical path to target"))?;
-        let mut find = DiffFindOptions::new();
-        find.renames(true).copies(true);
-        diff.find_similar(Some(&mut find))
-            .map_err(git_error("detect path rename to target"))?;
-        for delta in diff.deltas() {
-            if delta.old_file().path().and_then(Path::to_str) == Some(historical_path)
-                && let Some(path) = delta.new_file().path().and_then(Path::to_str)
-                && self.files.contains_key(path)
-            {
-                return Ok(Some(path.to_string()));
-            }
-        }
-        Ok(None)
     }
 
     fn resolve_symbol(&self, historical: &SymbolIdentity, mapped_path: &str) -> Option<RawSymbol> {
@@ -1760,6 +1999,283 @@ mod tests {
                     .supporting_delivery_ids
                     .contains(&"D-FUTURE".to_string())
         }));
+    }
+
+    fn query_tree_diffs() -> usize {
+        QUERY_TREE_DIFFS.with(std::cell::Cell::get)
+    }
+
+    fn reset_query_tree_diffs() {
+        QUERY_TREE_DIFFS.with(|count| count.set(0));
+    }
+
+    fn fixture_repo() -> TempDir {
+        let fixture = TempDir::new().expect("fixture");
+        git(fixture.path(), &["init", "-b", "main"]);
+        git(
+            fixture.path(),
+            &["config", "user.email", "test@example.invalid"],
+        );
+        git(fixture.path(), &["config", "user.name", "Test"]);
+        fs::create_dir_all(fixture.path().join("src")).expect("src");
+        fixture
+    }
+
+    fn query_request(query: &str, target: &str, cutoff: Option<&str>) -> RecommendationRequest {
+        RecommendationRequest {
+            input: RecommendationInput::Query(query.to_string()),
+            level: RecommendationLevel::File,
+            variant: RecommendationVariant::Combined,
+            limit: Some(20),
+            target_revision: Some(target.to_string()),
+            cutoff: cutoff.map(str::to_string),
+            task_snapshot: None,
+            hybrid_hits: Vec::new(),
+        }
+    }
+
+    fn historical_support<'a>(
+        result: &'a RecommendationResult,
+        selector: &str,
+    ) -> Option<&'a Recommendation> {
+        result.recommendations.iter().find(|item| {
+            item.selector == selector
+                && item
+                    .reasons
+                    .iter()
+                    .any(|reason| reason.kind == "historical_change")
+        })
+    }
+
+    #[test]
+    fn rename_chain_and_deleted_files_resolve_from_persisted_lineage_without_query_diffs() {
+        let fixture = fixture_repo();
+        let root = fixture.path();
+        fs::write(
+            root.join("src/ledger.rs"),
+            "pub fn ledger_total() -> i32 { 1 }\n",
+        )
+        .expect("ledger");
+        fs::write(root.join("src/obsolete.rs"), "pub fn obsolete_path() {}\n").expect("obsolete");
+        commit_all(root, "base");
+        let base = head(root);
+
+        fs::write(
+            root.join("src/ledger.rs"),
+            "pub fn ledger_total() -> i32 { 2 }\n",
+        )
+        .expect("edit ledger");
+        fs::write(
+            root.join("src/obsolete.rs"),
+            "pub fn obsolete_path() { let _ = 1; }\n",
+        )
+        .expect("edit obsolete");
+        commit_all(root, "delivery A");
+        let delivery_a = head(root);
+
+        git(root, &["mv", "src/ledger.rs", "src/accounts.rs"]);
+        fs::remove_file(root.join("src/obsolete.rs")).expect("delete obsolete");
+        commit_all(root, "delivery B");
+        let delivery_b = head(root);
+
+        fs::create_dir_all(root.join("src/books")).expect("books");
+        git(root, &["mv", "src/accounts.rs", "src/books/accounts.rs"]);
+        commit_all(root, "delivery C");
+        let delivery_c = head(root);
+
+        let index = HistoryIndex::open(root, "main").expect("history");
+        import(
+            &index,
+            base.as_str(),
+            delivery_a.as_str(),
+            "D-A",
+            "TASK-A",
+            "Fix ledger total rounding",
+            10,
+        );
+        import(
+            &index,
+            delivery_a.as_str(),
+            delivery_b.as_str(),
+            "D-B",
+            "TASK-B",
+            "Reorganize modules",
+            20,
+        );
+        import(
+            &index,
+            delivery_b.as_str(),
+            delivery_c.as_str(),
+            "D-C",
+            "TASK-C",
+            "Group modules by domain",
+            30,
+        );
+        let lineage = index.path_lineage().expect("lineage");
+        assert!(lineage.iter().any(|step| step.delivery_id == "D-B"
+            && step.old_path == "src/ledger.rs"
+            && step.new_path.as_deref() == Some("src/accounts.rs")));
+        assert!(lineage.iter().any(|step| step.delivery_id == "D-B"
+            && step.old_path == "src/obsolete.rs"
+            && step.new_path.is_none()));
+
+        let engine = RecommendationEngine::open(root, "main").expect("engine");
+        reset_query_tree_diffs();
+        let result = engine
+            .recommend(&query_request("ledger total rounding", &delivery_c, None))
+            .expect("recommend");
+        assert_eq!(
+            query_tree_diffs(),
+            0,
+            "indexed lineage must resolve renames without query-time diffs"
+        );
+        let moved = historical_support(&result, "file:src/books/accounts.rs")
+            .expect("rename chain resolves to the live path");
+        assert!(moved.supporting_delivery_ids.contains(&"D-A".to_string()));
+        assert!(
+            result
+                .recommendations
+                .iter()
+                .all(|item| !item.selector.contains("obsolete")
+                    && !item.selector.contains("src/ledger.rs")),
+            "deleted and superseded paths must not be recommended"
+        );
+        assert!(
+            result
+                .fallbacks
+                .iter()
+                .all(|fallback| !fallback.kind.starts_with("path_lineage")),
+            "{:?}",
+            result.fallbacks
+        );
+    }
+
+    #[test]
+    fn cursor_gap_uses_one_memoized_renames_only_diff() {
+        let fixture = fixture_repo();
+        let root = fixture.path();
+        for name in ["alpha", "beta"] {
+            fs::write(
+                root.join(format!("src/{name}.rs")),
+                format!("pub fn {name}_quota() -> i32 {{ 1 }}\n"),
+            )
+            .expect("write");
+        }
+        commit_all(root, "base");
+        let base = head(root);
+        for name in ["alpha", "beta"] {
+            fs::write(
+                root.join(format!("src/{name}.rs")),
+                format!("pub fn {name}_quota() -> i32 {{ 2 }}\n"),
+            )
+            .expect("edit");
+        }
+        commit_all(root, "delivery");
+        let delivery = head(root);
+        git(root, &["mv", "src/alpha.rs", "src/alpha_quota.rs"]);
+        git(root, &["mv", "src/beta.rs", "src/beta_quota.rs"]);
+        commit_all(root, "unindexed rename");
+        let target = head(root);
+
+        let index = HistoryIndex::open(root, "main").expect("history");
+        import(
+            &index,
+            base.as_str(),
+            delivery.as_str(),
+            "D-QUOTA",
+            "TASK-QUOTA",
+            "Raise quota limits",
+            10,
+        );
+        let engine = RecommendationEngine::open(root, "main").expect("engine");
+        reset_query_tree_diffs();
+        let result = engine
+            .recommend(&query_request("raise quota limits", &target, None))
+            .expect("recommend");
+        assert_eq!(query_tree_diffs(), 1, "the gap diff is computed once");
+        for selector in ["file:src/alpha_quota.rs", "file:src/beta_quota.rs"] {
+            assert!(
+                historical_support(&result, selector).is_some(),
+                "{selector} missing from {:?}",
+                result.recommendations
+            );
+        }
+        assert!(
+            result
+                .fallbacks
+                .iter()
+                .any(|fallback| fallback.kind == "path_lineage_gap"),
+            "{:?}",
+            result.fallbacks
+        );
+    }
+
+    #[test]
+    fn strict_replay_ignores_lineage_recorded_after_the_cutoff() {
+        let fixture = fixture_repo();
+        let root = fixture.path();
+        fs::write(
+            root.join("src/meter.rs"),
+            "pub fn meter_reading() -> i32 { 1 }\n",
+        )
+        .expect("meter");
+        commit_all(root, "base");
+        let base = head(root);
+        fs::write(
+            root.join("src/meter.rs"),
+            "pub fn meter_reading() -> i32 { 2 }\n",
+        )
+        .expect("edit meter");
+        commit_all(root, "delivery A");
+        let delivery_a = head(root);
+        git(root, &["mv", "src/meter.rs", "src/gauge.rs"]);
+        commit_all(root, "delivery B");
+        let delivery_b = head(root);
+
+        let index = HistoryIndex::open(root, "main").expect("history");
+        import(
+            &index,
+            base.as_str(),
+            delivery_a.as_str(),
+            "D-A",
+            "TASK-A",
+            "Fix meter reading",
+            10,
+        );
+        import(
+            &index,
+            delivery_a.as_str(),
+            delivery_b.as_str(),
+            "D-B",
+            "TASK-B",
+            "Rename meter module",
+            30,
+        );
+        let engine = RecommendationEngine::open(root, "main").expect("engine");
+
+        reset_query_tree_diffs();
+        let live = engine
+            .recommend(&query_request("meter reading", &delivery_b, None))
+            .expect("live");
+        assert_eq!(query_tree_diffs(), 0, "live mode follows indexed lineage");
+        assert!(historical_support(&live, "file:src/gauge.rs").is_some());
+
+        reset_query_tree_diffs();
+        let replay = engine
+            .recommend(&query_request(
+                "meter reading",
+                &delivery_b,
+                Some("unix:20"),
+            ))
+            .expect("replay");
+        assert_eq!(
+            query_tree_diffs(),
+            1,
+            "post-cutoff lineage is not consulted; only the target tree is compared"
+        );
+        let gauge = historical_support(&replay, "file:src/gauge.rs")
+            .expect("path contained in the target revision still resolves");
+        assert_eq!(gauge.supporting_delivery_ids, vec!["D-A".to_string()]);
     }
 
     fn row(locations: &[&str]) -> DeliveryLocations {

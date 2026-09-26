@@ -290,6 +290,117 @@ fn post_execution_and_uncertain_snapshots_are_not_pre_execution_evidence() {
     );
 }
 
+#[test]
+fn path_lineage_records_renames_and_deletions_and_survives_rebuild() {
+    let repo = fixture_repo();
+    write(repo.path(), "a.rs", "fn alpha() -> i32 { 1 }\n");
+    write(repo.path(), "b.rs", "fn beta() -> i32 { 1 }\n");
+    write(repo.path(), "c.rs", "fn gamma() -> i32 { 1 }\n");
+    commit(repo.path(), "root");
+    std::fs::create_dir_all(repo.path().join("moved")).expect("moved dir");
+    git(repo.path(), &["mv", "a.rs", "moved/a.rs"]);
+    std::fs::remove_file(repo.path().join("b.rs")).expect("delete b");
+    write(repo.path(), "c.rs", "fn gamma() -> i32 { 2 }\n");
+    commit(repo.path(), "move, delete, modify");
+    let index = HistoryIndex::open(repo.path(), "main").expect("open");
+    index.sync(Some(10)).expect("sync");
+    let summarize = |steps: Vec<PathLineageStep>| {
+        steps
+            .into_iter()
+            .map(|step| (step.old_path, step.new_path))
+            .collect::<Vec<_>>()
+    };
+    let expected = vec![
+        ("a.rs".to_string(), Some("moved/a.rs".to_string())),
+        ("b.rs".to_string(), None),
+    ];
+    let mut synced = summarize(index.path_lineage().expect("lineage"));
+    synced.sort();
+    assert_eq!(synced, expected);
+    index.rebuild(Some(10)).expect("rebuild");
+    let mut rebuilt = summarize(index.path_lineage().expect("rebuilt lineage"));
+    rebuilt.sort();
+    assert_eq!(rebuilt, expected);
+}
+
+#[test]
+fn opening_the_current_schema_copies_a_compatible_previous_index_once() {
+    let repo = fixture_repo();
+    write(repo.path(), "a.rs", "fn alpha() -> i32 { 1 }\n");
+    commit(repo.path(), "root");
+    let root = head(repo.path());
+    write(repo.path(), "a.rs", "fn alpha() -> i32 { 2 }\n");
+    commit(repo.path(), "edit");
+    let edited = head(repo.path());
+    git(repo.path(), &["mv", "a.rs", "b.rs"]);
+    commit(repo.path(), "rename");
+    let index = HistoryIndex::open(repo.path(), "main").expect("open");
+    index.sync(Some(10)).expect("sync");
+    index
+        .import(fixture_delivery(&index, root, edited, "verified-edit"))
+        .expect("import verified");
+    let original = index.status().expect("original status");
+    let original_lineage = index.path_lineage().expect("original lineage");
+    assert_eq!(original_lineage.len(), 1);
+
+    // Turn the current database into a previous-schema file and remove the current one.
+    let current = index.database_path().to_path_buf();
+    let previous = current.with_file_name(format!(
+        "change-history.{PREVIOUS_HISTORY_INDEX_SCHEMA_VERSION}.sqlite3"
+    ));
+    std::fs::copy(&current, &previous).expect("copy database");
+    {
+        let conn = Connection::open(&previous).expect("open previous");
+        conn.execute_batch(&format!(
+            "DROP TABLE history_path_lineage; DELETE FROM history_meta WHERE key='{LEGACY_COPY_META_KEY}'; UPDATE history_meta SET value='{PREVIOUS_HISTORY_INDEX_SCHEMA_VERSION}' WHERE key='schema_version';"
+        ))
+        .expect("downgrade copy");
+    }
+    std::fs::remove_file(&current).expect("remove current");
+
+    let reopened = HistoryIndex::open(repo.path(), "main").expect("reopen");
+    let copied = reopened.status().expect("copied status");
+    assert_eq!(copied.deliveries, original.deliveries);
+    assert_eq!(copied.verified_deliveries, 1);
+    assert_eq!(copied.task_associations, original.task_associations);
+    assert_eq!(copied.cursor, original.cursor);
+    assert_eq!(
+        reopened.path_lineage().expect("copied lineage"),
+        original_lineage
+    );
+    assert_eq!(
+        reopened.deliveries().expect("copied deliveries"),
+        index.deliveries().expect("original deliveries")
+    );
+
+    // A second open never copies again, even after the scope is cleared.
+    reopened.rebuild(Some(10)).expect("rebuild");
+    let again = HistoryIndex::open(repo.path(), "main").expect("open again");
+    assert_eq!(again.status().expect("status again").verified_deliveries, 0);
+
+    // An incompatible previous index is left alone and recorded as skipped.
+    std::fs::remove_file(&current).expect("remove current again");
+    {
+        let conn = Connection::open(&previous).expect("open previous");
+        conn.execute(
+            "UPDATE history_meta SET value='0' WHERE key='extractor_version'",
+            [],
+        )
+        .expect("mark incompatible");
+    }
+    let skipped = HistoryIndex::open(repo.path(), "main").expect("open skipped");
+    assert_eq!(skipped.status().expect("skipped status").deliveries, 0);
+    let conn = Connection::open(&current).expect("open current");
+    let outcome: String = conn
+        .query_row(
+            "SELECT value FROM history_meta WHERE key=?1",
+            [LEGACY_COPY_META_KEY],
+            |row| row.get(0),
+        )
+        .expect("legacy outcome");
+    assert!(outcome.contains("incompatible"), "{outcome}");
+}
+
 fn fixture_delivery(
     index: &HistoryIndex,
     before: String,
