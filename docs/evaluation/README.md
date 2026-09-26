@@ -53,8 +53,9 @@ exact landing timestamp.
 
 ORB-11484's initial delivery is independently attested by successful run
 `jrun-20260907-0525-3` at boundary `8ca24afb… -> 3311ab82…`; its 05:25:04 UTC
-run start is the corresponding prospective lower bound. The current corrective
-delivery remains outside the corpus until this run lands.
+run start is the corresponding prospective lower bound. The frozen corpus
+records that ORB-11484's rework was unavailable at capture time and includes
+only the initial delivery.
 
 The public start of the first delivery run at 04:41:20 UTC is retained
 separately as a trustworthy prospective lower bound: a performed commit
