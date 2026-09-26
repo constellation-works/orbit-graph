@@ -43,6 +43,7 @@ CREATE TABLE symbols (
 CREATE INDEX symbols_name      ON symbols(name);
 CREATE INDEX symbols_qualified ON symbols(qualified);
 CREATE INDEX symbols_file      ON symbols(file_path);
+CREATE INDEX symbols_parent    ON symbols(parent_symbol) WHERE parent_symbol IS NOT NULL;
 
 -- Textual references from a source location to a symbol name.
 -- Covers callers, type users, `use` statements, trait bounds — anything
@@ -87,6 +88,7 @@ CREATE TABLE relations (
 CREATE INDEX relations_from ON relations(from_qualified);
 CREATE INDEX relations_to   ON relations(to_qualified);
 CREATE INDEX relations_kind ON relations(kind);
+CREATE INDEX relations_def_file ON relations(def_file);
 
 -- Imports / use statements. Module-level dependency edges.
 -- `target_path` is a language-specific opaque string. For Rust it's a
@@ -100,6 +102,8 @@ CREATE TABLE imports (
     target_symbol  TEXT                -- "Scheduler" or NULL for whole-module
 ) STRICT;
 
+CREATE INDEX imports_from_file ON imports(from_file);
+
 -- Clap / CLI command surface, extracted structurally.
 CREATE TABLE commands (
     name           TEXT PRIMARY KEY,
@@ -107,6 +111,9 @@ CREATE TABLE commands (
     span_start     INTEGER NOT NULL,
     handler_symbol INTEGER REFERENCES symbols(id)
 ) STRICT;
+
+CREATE INDEX commands_file    ON commands(file_path);
+CREATE INDEX commands_handler ON commands(handler_symbol) WHERE handler_symbol IS NOT NULL;
 
 -- Notable string literals — error messages, log lines, route paths.
 -- Filter: length >= 6, not all ASCII punctuation, not pure format string.
@@ -118,6 +125,9 @@ CREATE TABLE strings (
     context_symbol INTEGER REFERENCES symbols(id)
 ) STRICT;
 
+CREATE INDEX strings_file           ON strings(file_path);
+CREATE INDEX strings_context_symbol ON strings(context_symbol) WHERE context_symbol IS NOT NULL;
+
 -- Config keys: YAML / TOML / JSON / env var references.
 CREATE TABLE configs (
     id             INTEGER PRIMARY KEY,
@@ -126,6 +136,8 @@ CREATE TABLE configs (
     key            TEXT NOT NULL,
     kind           TEXT NOT NULL       -- "yaml" | "toml" | "json" | "env" | "serde"
 ) STRICT;
+
+CREATE INDEX configs_file ON configs(file_path);
 
 -- Full-text search across the three high-value surfaces.
 CREATE VIRTUAL TABLE symbols_fts USING fts5(name, qualified, signature, content='symbols');

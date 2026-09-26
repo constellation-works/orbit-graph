@@ -108,6 +108,52 @@ because its scratch storage differed, it is evidence of a lower same-host launch
 time rather than a new storage-identical range. Every subsequent launch against the
 same two commits is about a second.
 
+## Graph full sync on `orbit` (2026-09-26, ORB-13092)
+
+`orbit-graph sync --full` in a fresh `git clone --no-hardlinks` of `orbit` at
+`9591bbbd1` (2 752 indexed files, 31 925 symbols, 285 224 refs), release
+builds, measured with `/usr/bin/time -v`. `/tmp` on `dk-server-1` is now ext4
+on the rotational virtual disk, not the `tmpfs` of the studies above, and the
+host was heavily loaded by concurrent builds, so the load average is recorded
+with each run. Every run started with no `.orbit-graph/` directory.
+
+| Binary | `EXTRACTOR_VERSION` | Wall | User CPU | System CPU | Max RSS | Load average (1 min, start → end) |
+| --- | --- | --- | --- | --- | --- | --- |
+| `279091f` (before), plugin-readiness evaluation | 11 | 12 min 27 s | 459 s | 192 s | 198 MB | not recorded |
+| `279091f` (before), re-measured | 11 | 37 min 48 s | 601.7 s | 277.0 s | 190 MB | 19.1 → 42.8 |
+| ORB-13092 (after), run 1 | 12 | **52.3 s** | 16.3 s | 1.5 s | 256 MB | 48.6 → 50.2 |
+| ORB-13092 (after), run 2 | 12 | **48.5 s** | 16.6 s | 1.6 s | 268 MB | 41.2 → 51.7 |
+
+CPU time fell from about 650 to 880 s to about 18 s, a factor of 36 to 49 on
+this corpus; the wall times after the change are inflated by a load average
+above 40 on 14 cores. A `sync --full` over the existing index (every file
+rewritten, so every foreign-key cascade runs) took 54.3 s wall, 21.1 s user and
+4.3 s system at a load average of 43.5. A one-file incremental sync took 0.52 s.
+
+**Cause and change.** Pass 2 spent almost all of the time. For each
+cross-file candidate of each ref it reloaded every symbol in the candidate's
+file to rebuild that file's module prefixes: `new` alone is named by 6 666 refs
+with 209 candidates each. Pass 2 now memoizes, for the duration of the pass,
+each file's module prefixes, each name's candidate list and each calling
+file's imports, and resolves a file's refs once per distinct resolution key.
+Version 12 of the store adds indexes on `imports(from_file)` and on the
+foreign-key child columns (`strings`, `configs`, `commands` and `relations`
+file paths; `symbols.parent_symbol`, `strings.context_symbol`,
+`commands.handler_symbol`), which the per-file lookups and the cascading
+deletes of a rewrite search. Both sync writer connections now set a 64 MiB page
+cache and `synchronous=NORMAL`, as the store's own connection already did.
+
+**Resolution output is unchanged.**
+[`scripts/refs-dump.sh`](scripts/refs-dump.sh) writes every ref sorted by
+file, span, target name, target qualified name, confidence, kind and the
+qualified name of the hinted symbol. The dumps from the two binaries are
+byte-identical on both corpora:
+
+| Corpus | Refs | `exact` | `import_resolved` | `same_module` | `fuzzy_name` | Dump SHA-256 (both binaries) |
+| --- | --- | --- | --- | --- | --- | --- |
+| `orbit` `9591bbbd1` | 285 224 | 29 986 | 19 259 | 36 182 | 199 797 | `6f9ddd20544d…` |
+| `orbit-graph` `279091f` | 31 228 | 5 516 | 1 846 | 1 574 | 22 292 | `3b6361d84f54…` |
+
 ## Query latency (warm cache, 25 runs per endpoint)
 
 `curl -w '%{time_total}'`, whole-request wall clock including connection setup and

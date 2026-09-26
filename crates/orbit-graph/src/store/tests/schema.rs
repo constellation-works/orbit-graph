@@ -114,14 +114,22 @@ fn graph_open_creates_documented_schema_and_initial_meta() {
     assert_eq!(
         object_names(&conn, "index"),
         BTreeSet::from([
+            "commands_file".to_string(),
+            "commands_handler".to_string(),
+            "configs_file".to_string(),
+            "imports_from_file".to_string(),
             "refs_from_file".to_string(),
             "refs_target_name".to_string(),
             "refs_target_qualified".to_string(),
+            "relations_def_file".to_string(),
             "relations_from".to_string(),
             "relations_kind".to_string(),
             "relations_to".to_string(),
+            "strings_context_symbol".to_string(),
+            "strings_file".to_string(),
             "symbols_file".to_string(),
             "symbols_name".to_string(),
+            "symbols_parent".to_string(),
             "symbols_qualified".to_string(),
         ])
     );
