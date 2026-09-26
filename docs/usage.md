@@ -179,6 +179,7 @@ safe.
 | `history rebuild --branch <name> [--limit <n>]` | Atomically recreate one scope from Git-only history. |
 | `recommend --query <text>\|--task-id <id> [--level file\|symbol]` | Rank current destinations with evidence and freshness. |
 | `evaluate --input <corpus.json>` | Compare four ranking variants chronologically. |
+| `evaluate --live --branch <name> [--limit <n>] [--k <n>] [--revision <rev>]` | Hold out first-parent commits and score Git-only commit-text relevance. Requires `history sync` first. |
 | `search <query> [--kind symbol|string|config] [--lang <id>] [--limit <n>]` | Full-text search indexed definitions, strings, or config keys. |
 | `show <selector> [--max-bytes <n>]` | Return metadata and a bounded source slice. |
 | `refs <symbol> [--confidence <level>] [--kind <kind>]` | Return inbound references and relations. |
@@ -261,6 +262,32 @@ keeps its own schema version, 1.
 The synthetic adversarial executable fixture runs in CI. The bounded real Orbit
 prospective input, measured result, and its no-superiority limitation are
 documented in [`docs/evaluation/`](evaluation/README.md).
+
+## Live Git commit-text evaluation
+
+`orbit-graph evaluate --live` measures the Git-only commit-message signal that
+strict replay never reads. It walks the named branch's first-parent history
+from `--revision` (default: the branch tip), newest first, and holds out up to
+`--limit` commits (default 300). For each commit C with a non-empty subject
+whose delivery is already in the history index, the query is that subject and
+the target revision is C's first parent. No `--cutoff` is set, so the request
+is live. Truth is the files C changed that still exist at that parent. Added
+files are omitted from the denominator.
+
+The command reads an existing history index and does not sync or import. Sync
+through the tip first (`history sync --branch <name>`) so the held-out commit
+and later deliveries are present and the ancestry check can see them. Each case
+fails the command if a recommendation cites a delivery that is not an ancestor
+of the target. Five scoring points are reported for the combined file-level
+ranker: no commit text, `0.5·s`, `0.5·s²`, `0.25·s²`, and `1.0·s`. Cohorts are
+`all`, `title_restating` (the subject cites a bracketed task id such as
+`[ORB-123]`, the squash-merge marker; no task store is consulted), and
+`without_title_restating`. Metrics are precision@k with k slots reserved,
+recall@k, and MRR@k. A metric with no cases or no relevant truth is `null`.
+
+Like `recommend`, a live query may write a best-effort target-symbol cache
+beside the history index. That cache is not history evidence. The recorded
+runs are in [`docs/evaluation/`](evaluation/README.md).
 
 ## Language coverage
 

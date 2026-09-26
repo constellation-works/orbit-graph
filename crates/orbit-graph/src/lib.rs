@@ -22,6 +22,7 @@ use serde::Serialize;
 mod evaluation;
 /// Pure extraction contracts and language-specific extractors.
 mod extract;
+mod live_evaluation;
 mod lock;
 pub mod plugin;
 mod query;
@@ -52,6 +53,7 @@ pub use evaluation::{
     EVALUATION_CORPUS_SCHEMA_VERSION, EVALUATION_SCHEMA_VERSION, EvaluationCorpus,
     EvaluationReport, evaluate_corpus,
 };
+pub use live_evaluation::{LiveGitEvaluation, LiveGitReport, evaluate_live_git};
 pub use query::{
     DEFAULT_SEARCH_LIMIT, DEFAULT_SHOW_MAX_BYTES, Match, NodeMetadata, NodeView, SearchKind,
     SearchQuery, SearchResult, SourceSpan,

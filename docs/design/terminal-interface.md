@@ -102,8 +102,12 @@ following views:
 - `history import`, `history sync`, `history status`, and `history rebuild`
   render field/value summaries. Status includes the cursor and bootstrap
   coverage state plus verified, Git-only, and task-association counts.
-- `evaluate` renders corpus coverage, one row per variant/level metric, and one
-  admission row per case so exclusions remain visible.
+- `evaluate` without `--live` renders corpus coverage, one row per variant/level
+  metric, and one admission row per case so exclusions remain visible. `evaluate
+  --live` renders the branch, tip, range, leakage count, and load, then one row
+  per cohort and commit-text variant (recall, precision, MRR), then one row per
+  held-out commit. NDJSON uses `live_git_context`, `live_git_metric`, and
+  `live_git_case`.
 - `sync`, `clean`, `db-path`, and `version` render their counts, locations, and
   versions through the same borderless table path. `clean` writes its empty
   diagnostic to stderr.
@@ -275,7 +279,7 @@ JSON stdin.
 | `history status` | Cursor/evidence counts in human, JSON, and NDJSON output. |
 | `history rebuild` | Atomic rebuild summary in human, JSON, and NDJSON output. |
 | `recommend` | File and symbol results, invalid inputs, empty state, table, JSON, and record-stream output. |
-| `evaluate` | Isolated chronological evaluation, human summary, JSON, and metric/case NDJSON records. |
+| `evaluate` | Chronological corpus evaluation and live Git commit-text evaluation: human summary, JSON, and metric/case NDJSON. |
 | `search` | Match, empty state, plain, table, JSON, and per-match NDJSON output. |
 | `show` | Resolved source/detail output, malformed-selector failure, JSON, and one detail record. |
 | `refs` | Filtered references, missing-argument failure, table, JSON, and context/reference NDJSON output; `from_selector` (including a top-level `null`), `snippet`, and `fallback_used` on precise and fallback results. |

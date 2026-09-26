@@ -96,6 +96,8 @@ impl RecommendCommand {
                 .map(|path| read_json::<TaskAssociation>(path, "task snapshot"))
                 .transpose()?,
             hybrid_hits,
+            commit_text_weight: None,
+            commit_text_exponent: None,
         };
         let engine = RecommendationEngine::open(context.worktree_root(), self.branch.as_str())?;
         json_value(engine.recommend(&request)?)

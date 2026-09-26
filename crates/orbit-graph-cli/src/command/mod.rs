@@ -56,7 +56,7 @@ Follow relationships:
 Recommendations and history:
   recommend  Recommend current change destinations from historical evidence
   history    Inspect and maintain historical delivery evidence
-  evaluate   Run leakage-safe chronological recommendation evaluation
+  evaluate   Run chronological or live leakage-safe recommendation evaluation
 
 Index and utilities:
   sync     Update or rebuild the source graph index
@@ -178,7 +178,7 @@ pub enum Command {
     Recommend(recommend::RecommendCommand),
     /// Inspect and maintain historical delivery evidence.
     History(history::HistoryCommand),
-    /// Run leakage-safe chronological recommendation evaluation.
+    /// Run chronological or live leakage-safe recommendation evaluation.
     Evaluate(evaluate::EvaluateCommand),
     /// Trace outbound calls from a discovered CLI command handler.
     Trace(trace::TraceCommand),

@@ -27,7 +27,7 @@ use crate::{Graph, GraphError, HistoryIndex};
 
 /// Default number of ranked destinations returned by recommendation queries.
 pub const DEFAULT_RECOMMENDATION_LIMIT: usize = 10;
-const MAX_RECOMMENDATION_LIMIT: usize = 100;
+pub(crate) const MAX_RECOMMENDATION_LIMIT: usize = 100;
 
 /// Granularity of requested recommendation destinations.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -104,6 +104,14 @@ pub struct RecommendationRequest {
     /// for tasks not present in this list.
     #[serde(default)]
     pub hybrid_hits: Vec<HybridTaskHit>,
+    /// Override for Git-only commit-text weight. `None` uses the production
+    /// weight. Zero disables commit text. Must be finite and non-negative.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub commit_text_weight: Option<f64>,
+    /// Override for the commit-text similarity exponent. `None` uses the
+    /// production exponent. Must be finite and non-negative.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub commit_text_exponent: Option<f64>,
 }
 
 /// History-index freshness relative to the resolved target revision.
@@ -334,6 +342,7 @@ impl RecommendationEngine {
             resolver.ensure_symbols(&repo, index.database_path().parent())?;
         }
         let strict_replay = request.cutoff.is_some();
+        let commit_text = commit_text_policy(request)?;
         let query = resolve_query(&deliveries, request, &cutoff, strict_replay, &repo, target)?;
         let hybrid = normalized_hybrid_hits(request.hybrid_hits.as_slice())?;
         let target_task = match &request.input {
@@ -370,6 +379,7 @@ impl RecommendationEngine {
                 strict_replay,
                 variant: request.variant,
                 free_text_query: matches!(request.input, RecommendationInput::Query(_)),
+                commit_text,
             },
         )?;
         fallbacks.extend(lineage.fallbacks());
@@ -386,7 +396,8 @@ impl RecommendationEngine {
             fallbacks.push(RecommendationFallback {
                 kind: "git_commit_text_used".to_string(),
                 reason: format!(
-                    "{commit_text_destinations} destination(s) draw relevance from Git-only commit messages: post-execution text written with the change, squared and weighted {COMMIT_TEXT_WEIGHT:.2} relative to task text and never used in strict replay"
+                    "{commit_text_destinations} destination(s) draw relevance from Git-only commit messages: post-execution text written with the change, exponent {:.3} and weighted {:.2} relative to task text and never used in strict replay",
+                    commit_text.exponent, commit_text.weight
                 ),
             });
         }
@@ -588,6 +599,7 @@ fn validate_request(request: &RecommendationRequest) -> Result<(), GraphError> {
             }
         }
     }
+    commit_text_policy(request)?;
     Ok(())
 }
 
@@ -874,6 +886,8 @@ struct HistoryScoreRequest<'a> {
     /// a task-ID request's own Git-only delivery is not associated with the
     /// task, so its message could otherwise describe the held-out change.
     free_text_query: bool,
+    /// Live commit-text weight and exponent. Weight zero disables the signal.
+    commit_text: CommitTextPolicy,
 }
 
 fn score_history(
@@ -917,7 +931,8 @@ fn score_history(
             continue;
         }
         let distance = lineage.distance(repo, after);
-        let commit_text = (similarity <= 0.0
+        let commit_text = (request.commit_text.enabled
+            && similarity <= 0.0
             && request.free_text_query
             && !request.strict_replay
             && request.variant == RecommendationVariant::Combined
@@ -1008,11 +1023,15 @@ fn score_history(
                 )
             };
             (
-                commit_text_relevance(commit.similarity),
+                commit_text_relevance(commit.similarity, request.commit_text),
                 "historical_change_commit_text",
                 format!(
-                    "post_execution git_commit_message similarity {:.3} squared and weighted {COMMIT_TEXT_WEIGHT:.2} (not task text), Git-only evidence {:.2}, recency {:.3}, broad/ubiquity/artifact discounts applied; source IDs: {source_ids}{hints}",
-                    commit.similarity, row.evidence_weight, row.recency
+                    "post_execution git_commit_message similarity {:.3} exponent {:.3} weight {:.2} (not task text), Git-only evidence {:.2}, recency {:.3}, broad/ubiquity/artifact discounts applied; source IDs: {source_ids}{hints}",
+                    commit.similarity,
+                    request.commit_text.exponent,
+                    request.commit_text.weight,
+                    row.evidence_weight,
+                    row.recency
                 ),
             )
         } else {
@@ -1388,14 +1407,58 @@ fn task_text(task: &TaskAssociation) -> String {
 }
 
 /// Weight of commit-message relevance relative to task-text relevance.
-const COMMIT_TEXT_WEIGHT: f64 = 0.5;
+///
+/// Live evaluation overrides this per request. The production value is the
+/// measured setting recorded in `docs/design/change-recommendations.md`.
+pub(crate) const COMMIT_TEXT_WEIGHT: f64 = 0.5;
 
-/// Relevance of a commit message: weighted and sharpened (squared) query
-/// coverage. Commit messages reuse a repository's component vocabulary, so a
-/// partial overlap is much weaker evidence than it is for task text; a message
-/// that describes the whole query keeps the full weight.
-fn commit_text_relevance(similarity: f64) -> f64 {
-    COMMIT_TEXT_WEIGHT * similarity * similarity
+/// Exponent on commit-message query coverage. `2.0` squares similarity, so a
+/// partial overlap is much weaker than a message that covers the query.
+pub(crate) const COMMIT_TEXT_EXPONENT: f64 = 2.0;
+
+/// How a live free-text request turns commit-message overlap into relevance.
+#[derive(Debug, Clone, Copy)]
+struct CommitTextPolicy {
+    /// `false` when the weight is zero: commit messages are not read.
+    enabled: bool,
+    weight: f64,
+    exponent: f64,
+}
+
+fn commit_text_policy(request: &RecommendationRequest) -> Result<CommitTextPolicy, GraphError> {
+    let weight = request.commit_text_weight.unwrap_or(COMMIT_TEXT_WEIGHT);
+    let exponent = request.commit_text_exponent.unwrap_or(COMMIT_TEXT_EXPONENT);
+    if !weight.is_finite() || weight < 0.0 {
+        return Err(GraphError::invalid_data(
+            "validate recommendation request",
+            format!("commit_text_weight must be finite and non-negative; got {weight}"),
+        ));
+    }
+    if !exponent.is_finite() || exponent < 0.0 {
+        return Err(GraphError::invalid_data(
+            "validate recommendation request",
+            format!("commit_text_exponent must be finite and non-negative; got {exponent}"),
+        ));
+    }
+    Ok(CommitTextPolicy {
+        enabled: weight > 0.0,
+        weight,
+        exponent,
+    })
+}
+
+/// Relevance of a commit message: `weight × similarity^exponent`.
+fn commit_text_relevance(similarity: f64, policy: CommitTextPolicy) -> f64 {
+    policy.weight * similarity.powf(policy.exponent)
+}
+
+/// Whether `text` cites a bracketed task id such as `[ORB-13229]`.
+///
+/// Squash-merge subjects in this constellation restate the task title and
+/// append that id. The live evaluation uses the marker to split cohorts
+/// without reading an external task store.
+pub(crate) fn subject_cites_task_id(text: &str) -> bool {
+    !cited_task_ids(text).is_empty()
 }
 
 /// Upper bound on commit-message bytes considered per delivery.
@@ -2632,6 +2695,8 @@ mod tests {
                 cutoff: None,
                 task_snapshot: None,
                 hybrid_hits: Vec::new(),
+                commit_text_weight: None,
+                commit_text_exponent: None,
             })
             .expect("recommend target");
         assert_eq!(result.resolved_target_revision, target_revision);
@@ -2680,6 +2745,8 @@ mod tests {
                 cutoff: None,
                 task_snapshot: None,
                 hybrid_hits: Vec::new(),
+                commit_text_weight: None,
+                commit_text_exponent: None,
             })
             .expect("recommend symbols");
         assert!(symbols.recommendations.iter().any(|item| {
@@ -2697,6 +2764,8 @@ mod tests {
                 cutoff: Some("unix:15".to_string()),
                 task_snapshot: None,
                 hybrid_hits: Vec::new(),
+                commit_text_weight: None,
+                commit_text_exponent: None,
             })
             .expect("recommend current");
         assert!(current.recommendations.iter().all(|item| {
@@ -2737,6 +2806,8 @@ mod tests {
             cutoff: cutoff.map(str::to_string),
             task_snapshot: None,
             hybrid_hits: Vec::new(),
+            commit_text_weight: None,
+            commit_text_exponent: None,
         }
     }
 
@@ -3461,6 +3532,8 @@ mod tests {
                     captured_at: "unix:3".to_string(),
                 }),
                 hybrid_hits: Vec::new(),
+                commit_text_weight: None,
+                commit_text_exponent: None,
             })
             .expect("task-ID request");
         assert!(
@@ -3522,6 +3595,11 @@ mod tests {
                     strict_replay,
                     variant: RecommendationVariant::Combined,
                     free_text_query,
+                    commit_text: CommitTextPolicy {
+                        enabled: true,
+                        weight: COMMIT_TEXT_WEIGHT,
+                        exponent: COMMIT_TEXT_EXPONENT,
+                    },
                 },
             )
             .expect("score");
@@ -3544,6 +3622,27 @@ mod tests {
             item.reasons
                 .iter()
                 .all(|reason| reason.kind != "historical_change_commit_text")
+        }));
+
+        let mut disabled = query_request(query, &target, None);
+        disabled.commit_text_weight = Some(0.0);
+        let disabled = engine.recommend(&disabled).expect("weight zero");
+        assert!(
+            disabled.recommendations.iter().all(|item| {
+                item.reasons
+                    .iter()
+                    .all(|reason| reason.kind != "historical_change_commit_text")
+            }),
+            "weight 0 disables commit text"
+        );
+        let mut linear = query_request(query, &target, None);
+        linear.commit_text_exponent = Some(1.0);
+        let linear = engine.recommend(&linear).expect("linear exponent");
+        assert!(linear.recommendations.iter().any(|item| {
+            item.reasons.iter().any(|reason| {
+                reason.kind == "historical_change_commit_text"
+                    && reason.explanation.contains("exponent 1.000")
+            })
         }));
     }
 
@@ -3700,8 +3799,13 @@ mod tests {
 
     #[test]
     fn commit_text_drops_trailers_bounds_length_and_parses_cited_ids() {
-        assert!((commit_text_relevance(1.0) - COMMIT_TEXT_WEIGHT).abs() < f64::EPSILON);
-        assert!(commit_text_relevance(0.5) < 0.5 * commit_text_relevance(1.0));
+        let policy = CommitTextPolicy {
+            enabled: true,
+            weight: COMMIT_TEXT_WEIGHT,
+            exponent: COMMIT_TEXT_EXPONENT,
+        };
+        assert!((commit_text_relevance(1.0, policy) - COMMIT_TEXT_WEIGHT).abs() < f64::EPSILON);
+        assert!(commit_text_relevance(0.5, policy) < 0.5 * commit_text_relevance(1.0, policy));
         assert!(is_known_trailer_line(
             "Co-Authored-By: A <a@example.invalid>"
         ));

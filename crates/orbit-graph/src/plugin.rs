@@ -259,6 +259,8 @@ fn recommend(name: &str, input: RecommendToolInput) -> Result<Value, ToolError> 
         cutoff: input.cutoff,
         task_snapshot: snapshot,
         hybrid_hits,
+        commit_text_weight: None,
+        commit_text_exponent: None,
     })?;
     serde_json::to_value(json!({
         "schema_version": PLUGIN_SCHEMA_VERSION,

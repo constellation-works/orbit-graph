@@ -286,6 +286,8 @@ pub fn evaluate_corpus(
                             cutoff: Some(case.cutoff.clone()),
                             task_snapshot: Some(case.task_snapshot.clone()),
                             hybrid_hits: case.hybrid_hits.clone(),
+                            commit_text_weight: None,
+                            commit_text_exponent: None,
                         })?;
                         if matches!(
                             variant,
