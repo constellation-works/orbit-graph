@@ -717,6 +717,13 @@ fn insert_symbols(
 ) -> Result<BTreeMap<String, i64>, GraphError> {
     let mut symbol_ids = BTreeMap::new();
     for symbol in symbols {
+        // Signatures keep source literals, including default arguments, so
+        // they are free text. Names and qualified names stay identifiers.
+        let signature = symbol
+            .signature
+            .as_deref()
+            .map(|signature| crate::redaction::redact(signature));
+        let signature = signature.as_ref().map(std::borrow::Cow::as_ref);
         tx.execute(
             "INSERT INTO symbols (
                 file_path, name, qualified, kind, span_start, span_end, signature, parent_symbol
@@ -728,7 +735,7 @@ fn insert_symbols(
                 symbol.kind,
                 usize_to_i64("convert symbol span start", symbol.span_start)?,
                 usize_to_i64("convert symbol span end", symbol.span_end)?,
-                symbol.signature
+                signature
             ],
         )
         .map_err(|source| GraphError::sqlite("insert graph symbol row", source))?;
@@ -736,7 +743,7 @@ fn insert_symbols(
         tx.execute(
             "INSERT INTO symbols_fts (rowid, name, qualified, signature)
              VALUES (?1, ?2, ?3, ?4)",
-            params![symbol_id, symbol.name, symbol.qualified, symbol.signature],
+            params![symbol_id, symbol.name, symbol.qualified, signature],
         )
         .map_err(|source| GraphError::sqlite("insert graph symbol fts row", source))?;
         symbol_ids.insert(symbol.qualified.clone(), symbol_id);

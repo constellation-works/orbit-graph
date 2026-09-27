@@ -2047,8 +2047,9 @@ thread_local! {
 /// loaded only for requests that read them (lexical, structural, or symbol
 /// level), and the extracted table is cached on disk keyed by the target
 /// *tree* OID and [`crate::EXTRACTOR_VERSION`], so repeated requests at an
-/// unchanged revision skip parsing. The cache holds exactly what extraction
-/// produced from Git objects, so cached and uncached results are identical.
+/// unchanged revision skip parsing. Free-text signatures are redacted before
+/// the table is cached or used, so a credential in a default argument is not
+/// durable and cached results stay identical to a cold extraction.
 struct TargetTree {
     tree: Oid,
     files: BTreeMap<String, Oid>,
@@ -2099,7 +2100,8 @@ impl TargetTree {
             self.symbols = Some(symbols);
             return Ok(());
         }
-        let symbols = self.extract_symbols(repo)?;
+        let mut symbols = self.extract_symbols(repo)?;
+        redact_cached_signatures(&mut symbols);
         if let (Some(dir), Some(path)) = (cache_dir, cache_path.as_deref()) {
             write_target_symbol_cache(dir, path, self.tree, &symbols);
         }
@@ -2317,6 +2319,23 @@ struct CachedSymbol {
     signature: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     parent_symbol: Option<String>,
+}
+
+/// Mask credential-shaped literals in signatures before the table is cached.
+///
+/// Names and qualified names are identifiers and are not passed through the
+/// redactor. Redacting here, rather than only in the JSON writer, keeps a
+/// cache hit identical to the cold path that just extracted these symbols.
+fn redact_cached_signatures(symbols: &mut BTreeMap<String, Vec<RawSymbol>>) {
+    for file_symbols in symbols.values_mut() {
+        for symbol in file_symbols {
+            if let Some(signature) = symbol.signature.as_mut()
+                && let std::borrow::Cow::Owned(redacted) = crate::redaction::redact(signature)
+            {
+                *signature = redacted;
+            }
+        }
+    }
 }
 
 fn target_symbol_cache_path(dir: &Path, tree: Oid) -> PathBuf {

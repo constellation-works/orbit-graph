@@ -50,6 +50,116 @@ fn import_is_idempotent_and_preserves_multi_task_provenance() {
 }
 
 #[test]
+fn imported_symbol_signatures_redact_default_argument_credentials() {
+    let token = "ghp_12345678901234567890";
+    let repo = fixture_repo();
+    write(
+        repo.path(),
+        "src/client.py",
+        "def connect(token=\"placeholder\"):\n    return token\n\ndef label(name=\"service\"):\n    return name\n",
+    );
+    commit(repo.path(), "before");
+    let before = head(repo.path());
+    write(
+        repo.path(),
+        "src/client.py",
+        &format!(
+            "def connect(token=\"{token}\"):\n    return token\n\ndef label(name=\"service\"):\n    return name.strip()\n"
+        ),
+    );
+    commit(repo.path(), "after");
+    let after = head(repo.path());
+    let index = HistoryIndex::open(repo.path(), "main").expect("open history");
+    index
+        .import(fixture_delivery(&index, before, after, "signature-secret"))
+        .expect("import");
+
+    let conn = rusqlite::Connection::open(index.database_path()).expect("open history db");
+    let mut symbols = conn
+        .prepare("SELECT name, signature FROM history_symbols ORDER BY name, side")
+        .expect("prepare symbols");
+    let stored: Vec<(String, Option<String>)> = symbols
+        .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))
+        .expect("query symbols")
+        .collect::<Result<Vec<_>, _>>()
+        .expect("read symbols");
+    let mut payloads = conn
+        .prepare("SELECT payload_json FROM history_deliveries")
+        .expect("prepare payloads");
+    let payload_rows: Vec<String> = payloads
+        .query_map([], |row| row.get(0))
+        .expect("query payloads")
+        .collect::<Result<Vec<_>, _>>()
+        .expect("read payloads");
+    drop(payloads);
+    drop(symbols);
+    drop(conn);
+
+    let connect: Vec<_> = stored.iter().filter(|row| row.0 == "connect").collect();
+    assert!(connect.len() >= 2, "{stored:?}");
+    assert!(
+        connect
+            .iter()
+            .any(|row| row.1.as_deref().is_some_and(|signature| {
+                signature.contains("token=\"placeholder\"") && !signature.contains(token)
+            })),
+        "benign before-signature missing: {stored:?}"
+    );
+    assert!(
+        connect
+            .iter()
+            .any(|row| row.1.as_deref().is_some_and(|signature| {
+                signature.contains("[REDACTED_SECRET]") && !signature.contains(token)
+            })),
+        "redacted after-signature missing: {stored:?}"
+    );
+    assert!(
+        stored.iter().any(|row| {
+            row.0 == "label"
+                && row.1.as_deref().is_some_and(|signature| {
+                    signature.contains("name=\"service\"")
+                        && !signature.contains("[REDACTED_SECRET]")
+                })
+        }),
+        "benign label signature missing: {stored:?}"
+    );
+    let payload = payload_rows.join("\n");
+    assert!(payload.contains("[REDACTED_SECRET]"), "{payload}");
+    assert!(!payload.contains(token), "{payload}");
+    assert!(
+        payload.contains("name=\\\"service\\\"") || payload.contains("name=\"service\""),
+        "{payload}"
+    );
+    assert!(payload.contains("\"name\":\"connect\""), "{payload}");
+    assert!(payload.contains("\"name\":\"label\""), "{payload}");
+
+    let bytes = durable_database_bytes(index.database_path());
+    assert!(
+        !contains_slice(&bytes, token.as_bytes()),
+        "history database bytes contain the raw token"
+    );
+}
+
+fn durable_database_bytes(path: &Path) -> Vec<u8> {
+    let mut bytes = fs::read(path).unwrap_or_default();
+    for suffix in ["-wal", "-shm"] {
+        let mut sidecar = path.as_os_str().to_os_string();
+        sidecar.push(suffix);
+        if let Ok(extra) = fs::read(std::path::PathBuf::from(sidecar)) {
+            bytes.extend(extra);
+        }
+    }
+    bytes
+}
+
+fn contains_slice(haystack: &[u8], needle: &[u8]) -> bool {
+    !needle.is_empty()
+        && haystack
+            .windows(needle.len())
+            .any(|window| window == needle)
+}
+
+#[test]
 fn rejects_repository_mismatch_and_conflicting_duplicate() {
     let repo = fixture_repo();
     write(repo.path(), "a.rs", "fn a() {}\n");

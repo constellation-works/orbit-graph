@@ -1607,6 +1607,7 @@ fn insert_delivery(
     for task in &mut redacted.supplied_snapshots {
         redact_task(task);
     }
+    redact_symbol_signatures(&mut redacted);
     let change = &redacted;
     let delivery = &change.delivery;
     let payload = serde_json::to_string(change)
@@ -1841,6 +1842,27 @@ fn normalize_tasks(tasks: &mut Vec<TaskAssociation>) -> Result<(), GraphError> {
     }
     *tasks = normalized;
     Ok(())
+}
+
+/// Mask credential-shaped literals inside free-text signatures.
+///
+/// Names, qualified names, kinds and paths are identifiers and are left
+/// unchanged. A signature with no credential shape is stored as extracted.
+fn redact_symbol_signatures(change: &mut DeliveredChange) {
+    for file in &mut change.files {
+        for symbol in &mut file.symbols {
+            for side in [symbol.before.as_mut(), symbol.after.as_mut()]
+                .into_iter()
+                .flatten()
+            {
+                if let Some(signature) = side.symbol.signature.as_mut()
+                    && let std::borrow::Cow::Owned(redacted) = redaction::redact(signature)
+                {
+                    *signature = redacted;
+                }
+            }
+        }
+    }
 }
 
 fn redact_task(task: &mut TaskAssociation) {
