@@ -52,7 +52,7 @@ struct LauncherProbeOutput {
     store_schema_version: u32,
 }
 
-/// Tools of the root manifest that are not read-only code-graph queries.
+/// Tools of the plugin manifest that are not read-only code-graph queries.
 const NON_QUERY_TOOLS: [&str; 5] = ["version", "status", "recommend", "maintain", "changes"];
 /// `GRAPH_ORBIT_TIMEOUT_SECONDS` for the adapter tests that bound time.
 const ADAPTER_TIMEOUT_SECONDS: u64 = 1;
@@ -567,7 +567,8 @@ fn launchers_reject_a_stale_path_binary_and_ignore_the_environment() {
         stale_path
     );
 
-    for launcher in ["bin/orbit-graph", "plugin/bin/orbit-graph"] {
+    {
+        let launcher = ".orbit-plugin/bin/orbit-graph";
         let launcher = repository_root().join(launcher);
         // Orbit clears a backend's environment, so an override variable can
         // never select the executable: only the bundled binary and PATH do.
@@ -626,9 +627,13 @@ fn bundled_binary_precedes_path() {
     let launcher_dir = fixture.path().join("bin");
     fs::create_dir(&launcher_dir).expect("launcher directory");
     let launcher = launcher_dir.join("orbit-graph");
-    fs::copy(repository_root().join("bin/orbit-graph"), &launcher).expect("copy launcher");
     fs::copy(
-        repository_root().join("plugin.yaml"),
+        repository_root().join(".orbit-plugin/bin/orbit-graph"),
+        &launcher,
+    )
+    .expect("copy launcher");
+    fs::copy(
+        repository_root().join(".orbit-plugin/plugin.yaml"),
         fixture.path().join("plugin.yaml"),
     )
     .expect("copy manifest");
@@ -721,7 +726,7 @@ fn bundled_binary_precedes_path() {
         manifest
     );
     fs::copy(
-        repository_root().join("plugin.yaml"),
+        repository_root().join(".orbit-plugin/plugin.yaml"),
         fixture.path().join("plugin.yaml"),
     )
     .expect("restore the committed manifest");
@@ -739,7 +744,8 @@ fn bundled_binary_precedes_path() {
     );
     assert_eq!(
         fs::read_to_string(fixture.path().join("plugin.yaml")).expect("manifest"),
-        fs::read_to_string(repository_root().join("plugin.yaml")).expect("committed manifest")
+        fs::read_to_string(repository_root().join(".orbit-plugin/plugin.yaml"))
+            .expect("committed manifest")
     );
     let selected = launcher_version(&launcher, &[UNBOUND], &path, None);
     assert_eq!(selected.status.code(), Some(0));
@@ -793,7 +799,8 @@ fn launcher_runs_only_the_executable_its_manifest_binds() {
     let real_digest = sha256_hex(real);
     let fake_digest = sha256_hex(&fake);
 
-    for launcher in ["bin/orbit-graph", "plugin/bin/orbit-graph"] {
+    {
+        let launcher = ".orbit-plugin/bin/orbit-graph";
         let launcher = repository_root().join(launcher);
         let bound = ["--backend-sha256", real_digest.as_str()];
 
@@ -887,7 +894,8 @@ fn launchers_reject_version_number_prefixes_before_the_real_request() {
         ),
     ];
 
-    for launcher_name in ["bin/orbit-graph", "plugin/bin/orbit-graph"] {
+    {
+        let launcher_name = ".orbit-plugin/bin/orbit-graph";
         let launcher = repository_root().join(launcher_name);
         for (
             index,
@@ -1086,8 +1094,10 @@ fn configured_branch_is_what_calls_naming_no_branch_work_on() {
 
     // The seeded activity's input, exactly as Orbit hands it to the tool.
     let activity: Value = serde_norway::from_str(
-        &fs::read_to_string(repository_root().join("definitions/activities/history-sync.yaml"))
-            .expect("history-sync activity"),
+        &fs::read_to_string(
+            repository_root().join(".orbit-plugin/definitions/activities/history-sync.yaml"),
+        )
+        .expect("history-sync activity"),
     )
     .expect("activity YAML");
     assert_eq!(activity["spec"]["config"]["tool"], MAINTAIN_TOOL_NAME);
@@ -1728,7 +1738,8 @@ fn query_tools_answer_from_the_published_index_and_name_missing_and_stale_indexe
 /// or a schema, items), as Orbit checks tool output against `output_schema`.
 fn assert_matches_schema(value: &Value, schema_path: &str) {
     let schema: Value = serde_json::from_str(
-        &fs::read_to_string(repository_root().join(schema_path)).expect("read schema"),
+        &fs::read_to_string(repository_root().join(".orbit-plugin").join(schema_path))
+            .expect("read schema"),
     )
     .expect("parse schema");
     let mut errors = Vec::new();
@@ -3273,7 +3284,7 @@ fn manifests_are_versioned_and_describe_all_registered_tools() {
         ("orbit-graph-maintain.orbit-tool.yaml", MAINTAIN_TOOL_NAME),
     ] {
         let manifest: Value = serde_norway::from_slice(
-            &fs::read(root.join("plugin").join(file)).expect("read manifest"),
+            &fs::read(root.join("scripts/legacy-plugin").join(file)).expect("read manifest"),
         )
         .expect("parse manifest");
         assert_eq!(manifest["schemaVersion"], 1);
@@ -3303,7 +3314,7 @@ fn installed_orbit_registration_and_invocation_when_authority_binary_is_requeste
     let isolated = TempDir::new().expect("isolated Orbit root");
     let isolated_root = isolated.path().join(".orbit");
     let graph_bin = env!("CARGO_BIN_EXE_orbit-graph");
-    let plugin = repository_root().join("plugin");
+    let plugin = repository_root().join("scripts/legacy-plugin");
     let initialized = orbit_command(&orbit_bin)
         .current_dir(fixture.path())
         .args([
@@ -3475,7 +3486,7 @@ fn install_and_uninstall_scripts_work_and_reject_malformed_arguments_first() {
         "{}",
         String::from_utf8_lossy(&installed.stderr)
     );
-    // plugin/plugin.yaml carries the named override, which the installer
+    // .orbit-plugin/plugin.yaml carries the named override, which the installer
     // reports rather than applies silently.
     assert!(
         String::from_utf8_lossy(&installed.stderr).contains("backend override"),
@@ -3534,7 +3545,9 @@ fn installer_follows_the_backend_binding_and_refuses_orbit_graph_bin() {
     let fixture = TempDir::new().expect("installer fixture");
     let root = repository_root();
     fs::create_dir(fixture.path().join("scripts")).expect("scripts directory");
-    fs::create_dir(fixture.path().join("plugin")).expect("plugin directory");
+    fs::create_dir(fixture.path().join(".orbit-plugin")).expect("plugin directory");
+    fs::create_dir(fixture.path().join("scripts/legacy-plugin"))
+        .expect("legacy manifest directory");
     fs::create_dir(fixture.path().join("fake-bin")).expect("fake bin directory");
     let install = fixture.path().join("scripts/install-orbit-plugin.sh");
     fs::copy(root.join("scripts/install-orbit-plugin.sh"), &install).expect("copy installer");
@@ -3544,8 +3557,8 @@ fn installer_follows_the_backend_binding_and_refuses_orbit_graph_bin() {
         "orbit-graph-maintain.orbit-tool.yaml",
     ] {
         fs::copy(
-            root.join("plugin").join(manifest),
-            fixture.path().join("plugin").join(manifest),
+            root.join("scripts/legacy-plugin").join(manifest),
+            fixture.path().join("scripts/legacy-plugin").join(manifest),
         )
         .expect("copy sidecar manifest");
     }
@@ -3562,10 +3575,11 @@ fn installer_follows_the_backend_binding_and_refuses_orbit_graph_bin() {
         fixture.path().join("fake-bin").display()
     );
     let graph_bin = env!("CARGO_BIN_EXE_orbit-graph");
-    let committed = fs::read_to_string(root.join("plugin/plugin.yaml")).expect("plugin manifest");
+    let committed =
+        fs::read_to_string(root.join(".orbit-plugin/plugin.yaml")).expect("plugin manifest");
     let with_args = |args: &str| {
         fs::write(
-            fixture.path().join("plugin/plugin.yaml"),
+            fixture.path().join(".orbit-plugin/plugin.yaml"),
             committed.replace(
                 &format!("    args: [{UNBOUND}]\n"),
                 &format!("    args: [{args}]\n"),
@@ -3686,11 +3700,11 @@ fn isolated_tool_run(
         .expect("invoke isolated Orbit tool")
 }
 
-/// The read-only code-graph query verbs the root `plugin.yaml` registers, in
+/// The read-only code-graph query verbs the plugin manifest registers, in
 /// manifest order.
 fn manifest_query_verbs() -> Vec<String> {
     let manifest: Value = serde_norway::from_slice(
-        &fs::read(repository_root().join("plugin.yaml")).expect("read plugin.yaml"),
+        &fs::read(repository_root().join(".orbit-plugin/plugin.yaml")).expect("read plugin.yaml"),
     )
     .expect("parse plugin.yaml");
     manifest["spec"]["tools"]
@@ -3703,7 +3717,7 @@ fn manifest_query_verbs() -> Vec<String> {
         .collect()
 }
 
-/// The repository root, which owns `plugin/` and `scripts/` while this crate
+/// The repository root, which owns `.orbit-plugin/` and `scripts/` while this crate
 /// lives in `crates/orbit-graph-cli`.
 fn repository_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))

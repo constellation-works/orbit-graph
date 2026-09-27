@@ -3,7 +3,8 @@
 Read this when the `orbit.graph.*` tools are missing or return
 `incompatible_binary`, or when every query fails with `index_missing`. Also read
 it when preparing a repository for code navigation and recommendations.
-[docs/plugin.md](../../../docs/plugin.md) is the full reference.
+[docs/plugin.md](https://github.com/constellation-works/orbit-graph/blob/main/docs/plugin.md)
+is the full reference.
 
 ## 1. Check what is installed
 
@@ -30,7 +31,8 @@ tag. Every Orbit service then runs that binary, whatever its `PATH` is:
 cargo install --git https://github.com/constellation-works/orbit-graph --tag <tag> --locked orbit-graph-cli
 orbit plugin add git+https://github.com/constellation-works/orbit-graph#<tag> --enable --grant fs,orbit_tools
 plugin_root=$(orbit plugin show graph | sed -n 's/^Install path: //p')
-sh "$plugin_root/scripts/bundle-plugin-binary.sh" --unbound --binary "$HOME/.cargo/bin/orbit-graph"
+# Run the bundler from an orbit-graph source checkout.
+sh scripts/bundle-plugin-binary.sh --unbound --binary "$HOME/.cargo/bin/orbit-graph" "$plugin_root"
 orbit plugin test "$plugin_root"
 ```
 

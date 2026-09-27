@@ -118,14 +118,13 @@ jobs:
           "$RUNNER_TEMP/orbit" workspace init --name graph-conformance --root "$RUNNER_TEMP/graph-conformance/.orbit"
       # The manifest claims `origin: orbit`, which Orbit honours only for a
       # verified constellation-works source; --first-party checks this
-      # checkout as it would be after `orbit plugin add git+…`.
+      # plugin root as it would be after `orbit plugin add git+…`.
       - name: Validate and test plugin
         shell: bash
         run: |
-          "$RUNNER_TEMP/orbit" plugin validate --first-party .
-          "$RUNNER_TEMP/orbit" plugin validate --first-party plugin
+          "$RUNNER_TEMP/orbit" plugin validate --first-party .orbit-plugin
           PATH="$PWD/target/debug:$PATH" "$RUNNER_TEMP/orbit" plugin test --first-party \
-            --root "$RUNNER_TEMP/graph-conformance/.orbit" --workspace graph-conformance .
+            --root "$RUNNER_TEMP/graph-conformance/.orbit" --workspace graph-conformance .orbit-plugin
       # The installed-Orbit tests are #[ignore]d everywhere else; here they run
       # against the pinned Orbit, and fail rather than skip without it.
       - name: Installed-Orbit tests

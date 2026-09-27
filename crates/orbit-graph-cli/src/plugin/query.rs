@@ -830,7 +830,8 @@ mod tests {
                 },
             ),
         ];
-        let schemas = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../schemas");
+        let schemas =
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../.orbit-plugin/schemas");
         for (tool, mut input, limit, query) in cases {
             let schema: serde_json::Value = serde_json::from_slice(
                 &std::fs::read(schemas.join(format!("{}.request.json", tool.verb())))
