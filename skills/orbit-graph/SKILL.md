@@ -1,5 +1,5 @@
 ---
-name: graph-recommendations
+name: orbit-graph
 description: Navigate code (search, show, refs, callees, impact, trace, deps, overview) and query leakage-safe file or symbol recommendations from verified delivered changes through the Orbit graph plugin.
 ---
 
@@ -11,6 +11,9 @@ git+https://github.com/constellation-works/orbit-graph#<tag>`) registers
 installed from any other source registers bare `graph.*` (MCP `graph_*`)
 instead; use whichever spelling your tool list shows. The names below use the
 first-party spelling.
+
+If the tools are missing, fail with `incompatible_binary`, or every call fails
+with `index_missing`, follow [references/setup.md](references/setup.md) first.
 
 ## Code navigation
 
