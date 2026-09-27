@@ -4,9 +4,15 @@ use std::path::Path;
 
 use tree_sitter::{Node, Parser};
 
-use super::common::parse_source;
+use super::common::{NonCodeKinds, collect_dotted_calls, parse_source};
 
 use crate::{ExtractedFile, Extractor, RawImport, RawRef, RawRelation, RawSymbol};
+
+const NON_CODE: NonCodeKinds = NonCodeKinds {
+    opaque: &["line_comment", "block_comment", "character_literal"],
+    with_holes: &["string_literal"],
+    holes: &["string_interpolation"],
+};
 
 /// Extracts Java source files into raw graph rows.
 pub struct JavaExtractor;
@@ -202,7 +208,18 @@ fn extract_method(node: Node, source: &str, parent: Option<&str>, state: &mut Ex
     );
 
     if let Some(body) = node.child_by_field_name("body") {
-        collect_dot_call_refs(source, body.start_byte(), body.end_byte(), state);
+        let body_start = body.start_byte();
+        let body_end = body.end_byte();
+        collect_dotted_calls(
+            source,
+            body_start,
+            body_end,
+            body,
+            NON_CODE,
+            |name, start, end| {
+                state.push_call_ref(name, start, end);
+            },
+        );
     }
 }
 
@@ -268,47 +285,6 @@ fn extract_supertype_relations(
         for target in parse_type_list(&header[start..]) {
             state.push_relation(node, from_qualified, target, "implements");
         }
-    }
-}
-
-fn collect_dot_call_refs(
-    source: &str,
-    range_start: usize,
-    range_end: usize,
-    state: &mut ExtractionState,
-) {
-    let bytes = source.as_bytes();
-    let mut index = range_start;
-    while index < range_end {
-        if bytes.get(index) != Some(&b'.') {
-            index += 1;
-            continue;
-        }
-
-        let mut name_start = index + 1;
-        while name_start < range_end && bytes[name_start].is_ascii_whitespace() {
-            name_start += 1;
-        }
-        if name_start >= range_end || !is_ident_start(bytes[name_start]) {
-            index += 1;
-            continue;
-        }
-
-        let mut name_end = name_start + 1;
-        while name_end < range_end && is_ident_continue(bytes[name_end]) {
-            name_end += 1;
-        }
-
-        let mut paren = name_end;
-        while paren < range_end && bytes[paren].is_ascii_whitespace() {
-            paren += 1;
-        }
-        if bytes.get(paren) == Some(&b'(')
-            && let Some(name) = source.get(name_start..name_end)
-        {
-            state.push_call_ref(name.to_string(), name_start, name_end);
-        }
-        index = name_end;
     }
 }
 

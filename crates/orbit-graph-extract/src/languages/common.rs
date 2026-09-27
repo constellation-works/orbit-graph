@@ -7,7 +7,7 @@ use std::ops::ControlFlow;
 use std::path::Path;
 use std::time::{Duration, Instant};
 
-use tree_sitter::{ParseOptions, Parser, Tree};
+use tree_sitter::{Node, ParseOptions, Parser, Tree};
 
 use crate::{RawImport, RawRef, RawRelation, RawSymbol};
 
@@ -172,4 +172,166 @@ pub(crate) fn dedup_imports(imports: &mut Vec<RawImport>) {
             && left.source_symbol == right.source_symbol
             && left.reexport_module == right.reexport_module
     });
+}
+
+/// Tree-sitter kinds whose text is not code, for dotted-call scans.
+///
+/// `with_holes` literals still contain real calls. Their span is excluded,
+/// then each `holes` child is restored and walked so a nested literal stays
+/// excluded.
+#[derive(Clone, Copy)]
+pub(crate) struct NonCodeKinds {
+    pub opaque: &'static [&'static str],
+    pub with_holes: &'static [&'static str],
+    pub holes: &'static [&'static str],
+}
+
+/// Records `.identifier(` names in `range_start..range_end`.
+///
+/// A match whose `.` or name lies in a comment or string/character literal is
+/// dropped. Interpolation holes stay eligible, which keeps a real dotted call
+/// written inside a template.
+pub(crate) fn collect_dotted_calls(
+    source: &str,
+    range_start: usize,
+    range_end: usize,
+    scope: Node,
+    non_code: NonCodeKinds,
+    mut push: impl FnMut(String, usize, usize),
+) {
+    let excluded = non_code_ranges(scope, non_code);
+    let bytes = source.as_bytes();
+    let mut index = range_start;
+    while index < range_end {
+        if let Some(end) = excluded_end(&excluded, index) {
+            index = end;
+            continue;
+        }
+        if bytes.get(index) != Some(&b'.') {
+            index += 1;
+            continue;
+        }
+
+        let mut name_start = index + 1;
+        while name_start < range_end && bytes[name_start].is_ascii_whitespace() {
+            name_start += 1;
+        }
+        if name_start >= range_end || !is_ident_start(bytes[name_start]) {
+            index += 1;
+            continue;
+        }
+
+        let mut name_end = name_start + 1;
+        while name_end < range_end && is_ident_continue(bytes[name_end]) {
+            name_end += 1;
+        }
+
+        let mut paren = name_end;
+        while paren < range_end && bytes[paren].is_ascii_whitespace() {
+            paren += 1;
+        }
+        if bytes.get(paren) == Some(&b'(')
+            && let Some(name) = source.get(name_start..name_end)
+            && (name_start..name_end).all(|byte| excluded_end(&excluded, byte).is_none())
+        {
+            push(name.to_string(), name_start, name_end);
+        }
+        index = name_end;
+    }
+}
+
+fn non_code_ranges(scope: Node, non_code: NonCodeKinds) -> Vec<(usize, usize)> {
+    let mut excluded = Vec::new();
+    collect_non_code(scope, non_code, &mut excluded);
+    merge_ranges(&mut excluded);
+    excluded
+}
+
+fn collect_non_code(node: Node, non_code: NonCodeKinds, excluded: &mut Vec<(usize, usize)>) {
+    let kind = node.kind();
+    if kind_listed(kind, non_code.opaque) {
+        excluded.push((node.start_byte(), node.end_byte()));
+        return;
+    }
+    if kind_listed(kind, non_code.with_holes) {
+        excluded.push((node.start_byte(), node.end_byte()));
+        let mut cursor = node.walk();
+        for child in node.children(&mut cursor) {
+            if kind_listed(child.kind(), non_code.holes) {
+                punch(excluded, child.start_byte(), child.end_byte());
+                collect_non_code(child, non_code, excluded);
+            }
+        }
+        return;
+    }
+
+    let mut cursor = node.walk();
+    for child in node.children(&mut cursor) {
+        collect_non_code(child, non_code, excluded);
+    }
+}
+
+fn punch(excluded: &mut Vec<(usize, usize)>, start: usize, end: usize) {
+    if start >= end {
+        return;
+    }
+    let mut next = Vec::with_capacity(excluded.len() + 1);
+    for (left, right) in excluded.drain(..) {
+        if right <= start || left >= end {
+            next.push((left, right));
+            continue;
+        }
+        if left < start {
+            next.push((left, start));
+        }
+        if end < right {
+            next.push((end, right));
+        }
+    }
+    *excluded = next;
+}
+
+fn merge_ranges(ranges: &mut Vec<(usize, usize)>) {
+    ranges.retain(|(start, end)| start < end);
+    ranges.sort_unstable();
+    let mut merged = Vec::with_capacity(ranges.len());
+    for (start, end) in ranges.iter().copied() {
+        if let Some((_, last_end)) = merged.last_mut()
+            && start <= *last_end
+        {
+            *last_end = (*last_end).max(end);
+        } else {
+            merged.push((start, end));
+        }
+    }
+    *ranges = merged;
+}
+
+fn excluded_end(ranges: &[(usize, usize)], index: usize) -> Option<usize> {
+    let mut low = 0;
+    let mut high = ranges.len();
+    while low < high {
+        let mid = low + (high - low) / 2;
+        let (start, end) = ranges[mid];
+        if index < start {
+            high = mid;
+        } else if index >= end {
+            low = mid + 1;
+        } else {
+            return Some(end);
+        }
+    }
+    None
+}
+
+fn kind_listed(kind: &str, kinds: &[&str]) -> bool {
+    kinds.contains(&kind)
+}
+
+fn is_ident_start(byte: u8) -> bool {
+    byte == b'_' || byte.is_ascii_alphabetic()
+}
+
+fn is_ident_continue(byte: u8) -> bool {
+    is_ident_start(byte) || byte.is_ascii_digit()
 }

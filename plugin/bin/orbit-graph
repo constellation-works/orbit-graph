@@ -27,7 +27,7 @@ json_escape() {
 
 incompatible() {
     path=$(json_escape "$graph_binary")
-    printf '{"ok":false,"error":{"code":"incompatible_binary","message":"orbit-graph at %s must support the v2 envelope (plugin_schema_version=1, extractor_version=23)","path":"%s"}}\n' "$path" "$path"
+    printf '{"ok":false,"error":{"code":"incompatible_binary","message":"orbit-graph at %s must support the v2 envelope (plugin_schema_version=1, extractor_version=24)","path":"%s"}}\n' "$path" "$path"
     exit 0
 }
 
@@ -89,7 +89,7 @@ probe=$(printf '%s\n' '{"tool":"orbit.graph.version","input":{}}' |
 # and numeric tokens so nested fields, unrelated text, and numeric prefixes
 # cannot claim compatibility.
 if ! printf '%s\n' "$probe" | grep -Eq \
-    '^[{]"ok":true,"output":[{]"crate_version":"[^"]+","extractor_version":23,"history_schema_version":[0-9]+,"plugin_schema_version":1,"store_schema_version":[0-9]+[}][}]$'; then
+    '^[{]"ok":true,"output":[{]"crate_version":"[^"]+","extractor_version":24,"history_schema_version":[0-9]+,"plugin_schema_version":1,"store_schema_version":[0-9]+[}][}]$'; then
     incompatible
 fi
 
