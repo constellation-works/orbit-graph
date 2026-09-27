@@ -7,6 +7,8 @@
 
 #![allow(clippy::expect_used)]
 
+mod common;
+
 use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -617,8 +619,7 @@ fn verify_known_gaps(case_id: &str, manifest: &Value, worktrees: &BTreeMap<Strin
 }
 
 fn run_git(cwd: &Path, args: &[&str]) {
-    let output = Command::new("git")
-        .current_dir(cwd)
+    let output = common::git_command(cwd)
         .args(args)
         .output()
         .expect("run git");
@@ -630,8 +631,8 @@ fn run_git(cwd: &Path, args: &[&str]) {
 }
 
 fn run_git_with_env(cwd: &Path, args: &[&str], env: &[(&str, &str)]) {
-    let mut command = Command::new("git");
-    command.current_dir(cwd).args(args);
+    let mut command = common::git_command(cwd);
+    command.args(args);
     for (key, value) in env {
         command.env(key, value);
     }
@@ -644,8 +645,7 @@ fn run_git_with_env(cwd: &Path, args: &[&str], env: &[(&str, &str)]) {
 }
 
 fn git_stdout(cwd: &Path, args: &[&str]) -> String {
-    let output = Command::new("git")
-        .current_dir(cwd)
+    let output = common::git_command(cwd)
         .args(args)
         .output()
         .expect("run git");

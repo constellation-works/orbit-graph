@@ -1,6 +1,5 @@
 use std::fs;
 use std::path::Path;
-use std::process::Command;
 
 use tempfile::TempDir;
 
@@ -437,8 +436,7 @@ fn git(root: &Path, args: &[&str]) {
 }
 
 fn git_output(root: &Path, args: &[&str]) -> Vec<u8> {
-    let output = Command::new("git")
-        .current_dir(root)
+    let output = crate::tests::support::git_command(root)
         .args(args)
         .output()
         .expect("run git");

@@ -10,7 +10,8 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use rusqlite::Connection;
 
 use crate::sync::{
-    SyncLeaderGate, panic_next_sync_after_scan, set_sync_after_scan_gate, wait_for_sync_followers,
+    SyncLeaderGate, install_sync_after_scan_gate, panic_next_sync_after_scan,
+    wait_for_sync_followers,
 };
 use crate::{
     EXTRACTOR_VERSION, Graph, SyncMode, SyncObserver, SyncOutcome, SyncPhase, SyncPolicy,
@@ -216,7 +217,7 @@ fn concurrent_syncs_hold_flock_across_scan_and_writes() {
 
     fs::remove_file(worktree.path().join("src/lib.rs")).expect("remove indexed file");
     let gate = Arc::new(SyncLeaderGate::new());
-    set_sync_after_scan_gate(db_path.clone(), Some(Arc::clone(&gate)));
+    let registration = install_sync_after_scan_gate(db_path.as_path(), Arc::clone(&gate));
 
     let first = thread::spawn(move || first_graph.sync(SyncMode::Auto));
     assert!(gate.wait_started(Duration::from_secs(2)));
@@ -234,7 +235,7 @@ fn concurrent_syncs_hold_flock_across_scan_and_writes() {
         .join()
         .expect("join second sync")
         .expect("second sync succeeds");
-    set_sync_after_scan_gate(db_path, None);
+    drop(registration);
     fs::remove_file(link).expect("remove symlink");
 
     let conn = open_test_connection(worktree.path());
@@ -407,6 +408,7 @@ impl TestWorktree {
             std::process::id()
         ));
         fs::create_dir_all(&path).expect("create test worktree");
+        crate::tests::support::set_discovery_boundary(&path);
         Self { path }
     }
 

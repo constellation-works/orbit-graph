@@ -1,2 +1,2 @@
 mod inventory;
-mod subcommands;
+pub(crate) mod support;

@@ -5,12 +5,53 @@ use std::sync::{Arc, Condvar, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
 
+use notify::event::{AccessKind, AccessMode, CreateKind, DataChange, ModifyKind, RemoveKind};
 use notify::{Event, EventKind};
 
-use super::{event_loop, forward_event, spawn_stoppable, stop_and_join};
+use super::{event_loop, event_requires_sync, forward_event, spawn_stoppable, stop_and_join};
 
 fn source_event() -> notify::Result<Event> {
     Ok(Event::new(EventKind::Any).add_path("/repo/src/lib.rs".into()))
+}
+
+#[test]
+fn reads_do_not_require_a_sync_but_changes_and_rescans_do() {
+    let root = Path::new("/repo");
+    let event = |kind: EventKind, path: &str| Event::new(kind).add_path(root.join(path));
+    for kind in [
+        EventKind::Access(AccessKind::Open(AccessMode::Any)),
+        EventKind::Access(AccessKind::Read),
+        EventKind::Access(AccessKind::Close(AccessMode::Read)),
+    ] {
+        assert!(
+            !event_requires_sync(root, &event(kind, "src/lib.rs")),
+            "a read is not a change: {kind:?}"
+        );
+        assert!(
+            !event_requires_sync(root, &event(kind, "")),
+            "{kind:?} on the root"
+        );
+    }
+    for kind in [
+        EventKind::Access(AccessKind::Close(AccessMode::Write)),
+        EventKind::Create(CreateKind::File),
+        EventKind::Modify(ModifyKind::Data(DataChange::Any)),
+        EventKind::Remove(RemoveKind::File),
+        EventKind::Any,
+    ] {
+        assert!(
+            event_requires_sync(root, &event(kind, "src/lib.rs")),
+            "{kind:?} can change a source file"
+        );
+        assert!(
+            !event_requires_sync(root, &event(kind, ".orbit-graph/graph.db")),
+            "{kind:?} in an ignored directory"
+        );
+    }
+    assert!(
+        event_requires_sync(root, &Event::new(EventKind::Other)),
+        "an event without paths asks for a rescan"
+    );
 }
 
 #[test]

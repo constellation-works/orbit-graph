@@ -442,7 +442,7 @@ fn maybe_fail_after_scan(_db_path: &Path) -> Result<(), GraphError> {
 
 #[cfg(test)]
 fn maybe_wait_after_scan(db_path: &Path) {
-    if let Some(gate) = sync_after_scan_gate(db_path) {
+    if let Some(gate) = installed_gate(sync_after_scan_gates(), db_path) {
         gate.mark_started();
         gate.wait_released();
     }
@@ -546,7 +546,7 @@ fn note_sync_leader_started(db_path: &Path) {
     *counts.entry(db_path.to_path_buf()).or_insert(0) += 1;
     drop(counts);
 
-    if let Some(gate) = sync_leader_gate() {
+    if let Some(gate) = installed_gate(sync_leader_gates(), db_path) {
         gate.mark_started();
         gate.wait_released();
     }
@@ -627,53 +627,97 @@ impl SyncLeaderGate {
     }
 }
 
+/// Gates installed for one database each, so tests running in parallel never
+/// stop each other's syncs.
 #[cfg(test)]
-pub(crate) fn set_sync_leader_gate(gate: Option<Arc<SyncLeaderGate>>) {
-    let mut slot = sync_leader_gate_slot()
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner);
-    *slot = gate;
+type GateSlots = Mutex<HashMap<PathBuf, Arc<SyncLeaderGate>>>;
+
+/// Keeps a gate installed for one database until dropped.
+#[cfg(test)]
+#[must_use = "the gate is uninstalled when the registration is dropped"]
+pub(crate) struct GateRegistration {
+    slots: &'static GateSlots,
+    db_path: PathBuf,
+    gate: Arc<SyncLeaderGate>,
 }
 
 #[cfg(test)]
-pub(crate) fn set_sync_after_scan_gate(db_path: PathBuf, gate: Option<Arc<SyncLeaderGate>>) {
-    let mut slot = sync_after_scan_gate_slot()
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner);
-    *slot = gate.map(|gate| (db_path, gate));
+impl Drop for GateRegistration {
+    fn drop(&mut self) {
+        let mut slots = self
+            .slots
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        if slots
+            .get(&self.db_path)
+            .is_some_and(|gate| Arc::ptr_eq(gate, &self.gate))
+        {
+            slots.remove(&self.db_path);
+        }
+    }
 }
 
 #[cfg(test)]
-fn sync_leader_gate() -> Option<Arc<SyncLeaderGate>> {
-    sync_leader_gate_slot()
+fn install_gate(
+    slots: &'static GateSlots,
+    db_path: &Path,
+    gate: Arc<SyncLeaderGate>,
+) -> GateRegistration {
+    let previous = slots
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner)
-        .clone()
+        .insert(db_path.to_path_buf(), Arc::clone(&gate));
+    assert!(
+        previous.is_none(),
+        "a gate is already installed for {}",
+        db_path.display()
+    );
+    GateRegistration {
+        slots,
+        db_path: db_path.to_path_buf(),
+        gate,
+    }
 }
 
 #[cfg(test)]
-fn sync_leader_gate_slot() -> &'static Mutex<Option<Arc<SyncLeaderGate>>> {
-    static SYNC_LEADER_GATE: OnceLock<Mutex<Option<Arc<SyncLeaderGate>>>> = OnceLock::new();
-    SYNC_LEADER_GATE.get_or_init(|| Mutex::new(None))
-}
-
-#[cfg(test)]
-fn sync_after_scan_gate(db_path: &Path) -> Option<Arc<SyncLeaderGate>> {
-    sync_after_scan_gate_slot()
+fn installed_gate(slots: &GateSlots, db_path: &Path) -> Option<Arc<SyncLeaderGate>> {
+    slots
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner)
-        .as_ref()
-        .filter(|(gate_path, _gate)| gate_path == db_path)
-        .map(|(_gate_path, gate)| Arc::clone(gate))
+        .get(db_path)
+        .cloned()
+}
+
+/// Holds every coalesced sync of `db_path` that leads, before it runs, until
+/// `gate` is released.
+#[cfg(test)]
+pub(crate) fn install_sync_leader_gate(
+    db_path: &Path,
+    gate: Arc<SyncLeaderGate>,
+) -> GateRegistration {
+    install_gate(sync_leader_gates(), db_path, gate)
+}
+
+/// Holds every sync of `db_path`, after its scan and with the database lock
+/// held, until `gate` is released.
+#[cfg(test)]
+pub(crate) fn install_sync_after_scan_gate(
+    db_path: &Path,
+    gate: Arc<SyncLeaderGate>,
+) -> GateRegistration {
+    install_gate(sync_after_scan_gates(), db_path, gate)
 }
 
 #[cfg(test)]
-type SyncAfterScanGateSlot = Mutex<Option<(PathBuf, Arc<SyncLeaderGate>)>>;
+fn sync_leader_gates() -> &'static GateSlots {
+    static SYNC_LEADER_GATES: OnceLock<GateSlots> = OnceLock::new();
+    SYNC_LEADER_GATES.get_or_init(|| Mutex::new(HashMap::new()))
+}
 
 #[cfg(test)]
-fn sync_after_scan_gate_slot() -> &'static SyncAfterScanGateSlot {
-    static SYNC_AFTER_SCAN_GATE: OnceLock<SyncAfterScanGateSlot> = OnceLock::new();
-    SYNC_AFTER_SCAN_GATE.get_or_init(|| Mutex::new(None))
+fn sync_after_scan_gates() -> &'static GateSlots {
+    static SYNC_AFTER_SCAN_GATES: OnceLock<GateSlots> = OnceLock::new();
+    SYNC_AFTER_SCAN_GATES.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
 #[cfg(test)]

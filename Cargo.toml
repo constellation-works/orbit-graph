@@ -38,6 +38,9 @@ expect_used = "warn"
 print_stderr = "warn"
 print_stdout = "warn"
 unwrap_used = "warn"
+# A spawned child that is never waited on holds a process slot (STD-03 §R13,
+# §R18).
+zombie_processes = "deny"
 
 [workspace.lints.rust]
 missing_docs = "warn"

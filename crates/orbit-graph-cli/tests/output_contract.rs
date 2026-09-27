@@ -5,6 +5,8 @@
 
 #![allow(clippy::expect_used)]
 
+mod common;
+
 use std::fs;
 use std::io::Read;
 use std::path::Path;
@@ -620,8 +622,7 @@ fn commit(root: &Path) {
 }
 
 fn git(root: &Path, args: &[&str]) {
-    let output = Command::new("git")
-        .current_dir(root)
+    let output = common::git_command(root)
         .args(args)
         .output()
         .expect("run git");

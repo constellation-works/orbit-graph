@@ -1,12 +1,38 @@
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::thread;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicI64, Ordering};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use rusqlite::{Connection, params};
 
+use super::Clock;
+use crate::sync::watcher::probe;
 use crate::sync::{fail_next_sync_after_scan, scanner::scan_count, sync_leader_count};
 use crate::{EXTRACTOR_VERSION, Graph, GraphError, SearchQuery, SyncPolicy, resolve_db_path};
+
+/// Longest a test waits for a watcher to settle before failing.
+const SETTLE_TIMEOUT: Duration = Duration::from_secs(30);
+
+/// A [`Clock`] that moves only when a test advances it.
+struct ManualClock(AtomicI64);
+
+impl ManualClock {
+    fn new() -> Arc<Self> {
+        Arc::new(Self(AtomicI64::new(1_000_000_000_000_000_000)))
+    }
+
+    fn advance(&self, by: Duration) {
+        let nanos = i64::try_from(by.as_nanos()).expect("advance fits in i64 nanoseconds");
+        self.0.fetch_add(nanos, Ordering::SeqCst);
+    }
+}
+
+impl Clock for ManualClock {
+    fn now_epoch_nanos(&self, _operation: &'static str) -> Result<i64, GraphError> {
+        Ok(self.0.load(Ordering::SeqCst))
+    }
+}
 
 #[test]
 fn manual_policy_ensure_synced_is_noop() {
@@ -43,20 +69,19 @@ fn on_read_policy_ensure_synced_syncs_on_every_call() {
 fn windowed_policy_respects_recent_and_expired_sync_windows() {
     let worktree = TestWorktree::new("windowed");
     worktree.write("src/lib.rs", "pub fn windowed() {}\n");
-    let graph = Graph::open(
-        worktree.path(),
-        SyncPolicy::Windowed {
-            window: Duration::from_millis(500),
-        },
-    )
-    .expect("open graph");
+    let window = Duration::from_millis(500);
+    let clock = ManualClock::new();
+    let graph = Graph::open(worktree.path(), SyncPolicy::Windowed { window })
+        .expect("open graph")
+        .with_clock(clock.clone());
     let db_path = graph_db_path(worktree.path());
 
     graph.ensure_synced().expect("initial windowed ensure");
+    clock.advance(window);
     graph.ensure_synced().expect("recent windowed ensure");
     assert_eq!(sync_leader_count(db_path.as_path()), 1);
 
-    thread::sleep(Duration::from_millis(600));
+    clock.advance(Duration::from_nanos(1));
     graph.ensure_synced().expect("expired windowed ensure");
 
     assert_eq!(sync_leader_count(db_path.as_path()), 2);
@@ -66,13 +91,11 @@ fn windowed_policy_respects_recent_and_expired_sync_windows() {
 fn windowed_policy_uses_process_local_success_timestamp_between_checks() {
     let worktree = TestWorktree::new("windowed-local-timestamp");
     worktree.write("src/lib.rs", "pub fn stale_meta() {}\n");
-    let graph = Graph::open(
-        worktree.path(),
-        SyncPolicy::Windowed {
-            window: Duration::from_millis(500),
-        },
-    )
-    .expect("open graph");
+    let window = Duration::from_millis(500);
+    let clock = ManualClock::new();
+    let graph = Graph::open(worktree.path(), SyncPolicy::Windowed { window })
+        .expect("open graph")
+        .with_clock(clock.clone());
     let db_path = graph_db_path(worktree.path());
 
     graph.ensure_synced().expect("initial windowed ensure");
@@ -83,7 +106,7 @@ fn windowed_policy_uses_process_local_success_timestamp_between_checks() {
 
     assert_eq!(sync_leader_count(db_path.as_path()), 1);
 
-    thread::sleep(Duration::from_millis(600));
+    clock.advance(window + Duration::from_nanos(1));
     graph
         .ensure_synced()
         .expect("expired windowed ensure after local timestamp elapses");
@@ -101,7 +124,8 @@ fn windowed_policy_retries_after_sync_failure_without_advancing_timestamp() {
             window: Duration::from_millis(500),
         },
     )
-    .expect("open graph");
+    .expect("open graph")
+    .with_clock(ManualClock::new());
     let db_path = graph_db_path(worktree.path());
 
     fail_next_sync_after_scan(db_path.as_path());
@@ -141,9 +165,7 @@ fn watch_policy_repeated_reads_do_not_rescan_without_file_events() {
     let graph = Graph::open(
         worktree.path(),
         SyncPolicy::Watch {
-            // Keep the background debounce beyond these reads even when the
-            // rest of the test suite runs concurrently.
-            debounce: Duration::from_millis(250),
+            debounce: Duration::from_millis(25),
         },
     )
     .expect("open graph");
@@ -154,11 +176,16 @@ fn watch_policy_repeated_reads_do_not_rescan_without_file_events() {
             .expect("watch-backed search");
         assert_eq!(result.matches.len(), 1);
     }
+    // Induced delay: however slow the reads were, hold the test until the
+    // watcher has classified every event so far and run any sync they
+    // scheduled. Before ORB-13169 the open's own reads scheduled one, and
+    // each background sync's reads the next.
+    worktree.settle_watcher("after-reads");
 
-    assert!(
-        scan_count(worktree.path()) <= 1,
-        "watch-backed reads should not trigger scanner walks: {}",
-        scan_count(worktree.path())
+    assert_eq!(
+        scan_count(worktree.path()),
+        1,
+        "only the open's initial sync may walk the worktree"
     );
 }
 
@@ -180,18 +207,14 @@ fn watch_policy_refreshes_query_results_after_file_edit() {
     assert_eq!(before.matches.len(), 1);
 
     worktree.write("src/lib.rs", "pub fn fresh_after_edit() {}\n");
+    // The edit's events precede the sentinel's, so the sync they schedule
+    // has run once the watcher settles.
+    worktree.settle_watcher("after-edit");
 
-    assert!(
-        wait_until(Duration::from_secs(5), || {
-            graph
-                .search(&SearchQuery::new("fresh_after_edit"))
-                .expect("watched search after edit")
-                .matches
-                .len()
-                == 1
-        }),
-        "watch-backed graph query did not observe edited file within freshness window"
-    );
+    let after = graph
+        .search(&SearchQuery::new("fresh_after_edit"))
+        .expect("watched search after edit");
+    assert_eq!(after.matches.len(), 1);
 }
 
 #[test]
@@ -257,17 +280,6 @@ fn set_meta_value(worktree: &Path, key: &str, value: i64) {
         .expect("update meta value");
 }
 
-fn wait_until(timeout: Duration, mut condition: impl FnMut() -> bool) -> bool {
-    let started = std::time::Instant::now();
-    while started.elapsed() < timeout {
-        if condition() {
-            return true;
-        }
-        thread::sleep(Duration::from_millis(25));
-    }
-    condition()
-}
-
 struct TestWorktree {
     path: PathBuf,
 }
@@ -284,6 +296,7 @@ impl TestWorktree {
             std::process::id()
         ));
         fs::create_dir_all(&path).expect("create test worktree");
+        crate::tests::support::set_discovery_boundary(&path);
         Self { path }
     }
 
@@ -297,6 +310,20 @@ impl TestWorktree {
             fs::create_dir_all(parent).expect("create parent directory");
         }
         fs::write(path, content).expect("write file");
+    }
+
+    /// Creates a sentinel file in the ignored `.orbit-graph/` directory and
+    /// waits until the watcher has classified it and has no sync due.
+    fn settle_watcher(&self, name: &str) {
+        let sentinel = self
+            .path
+            .join(".orbit-graph")
+            .join(format!("settle-{name}"));
+        fs::write(&sentinel, "").expect("write watcher sentinel");
+        assert!(
+            probe::wait_for_settled(self.path(), &sentinel, SETTLE_TIMEOUT),
+            "the watcher did not settle within {SETTLE_TIMEOUT:?}"
+        );
     }
 }
 
