@@ -12,7 +12,7 @@ use crate::{
 };
 
 #[test]
-fn refs_result_shape_matches_golden_fixture_and_skips_unresolved_qualified() {
+fn refs_result_shape_matches_golden_fixture_and_nulls_unresolved_qualified() {
     let result = RefResult {
         target: RefTarget {
             name: "Missing".to_string(),

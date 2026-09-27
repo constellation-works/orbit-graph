@@ -22,6 +22,7 @@ fn trace_result_shape_matches_golden_fixture() {
         }),
         truncated: false,
         visited_nodes: 2,
+        total: Some(2),
     };
 
     crate::query::tests::support::assert_json_matches_fixture(

@@ -53,7 +53,7 @@ fn empty_table_routes_its_diagnostic_to_stderr() {
 
 #[test]
 fn ndjson_uses_declared_record_units() {
-    let output = CommandOutput::document(json!({"records": [1, 2]}))
+    let output = CommandOutput::with_view(json!({"records": [1, 2]}), View::Blocks(Vec::new()))
         .with_ndjson_records(vec![json!({"value": 1}), json!({"value": 2})]);
     let sink = OutputSink::resolve(
         false,
@@ -79,7 +79,10 @@ fn broken_stdout_pipe_is_classified_for_silent_success() {
         }
     }
 
-    let output = CommandOutput::document(json!({"ok": true}));
+    let output = CommandOutput::with_view(
+        json!({"ok": true}),
+        View::Blocks(vec![ViewBlock::text("ok")]),
+    );
     let sink = OutputSink::resolve(false, &SinkEnvironment::default(), None, None);
     let error = emit(&output, sink, &mut BrokenWriter, &mut Vec::new())
         .expect_err("broken pipe must reach the process boundary");

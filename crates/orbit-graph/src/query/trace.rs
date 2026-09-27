@@ -71,6 +71,7 @@ pub(crate) fn run(
             root: Some(build_tree(&arena, 0)),
             truncated,
             visited_nodes: arena.len(),
+            total: (!truncated).then_some(arena.len()),
         })
     })
 }

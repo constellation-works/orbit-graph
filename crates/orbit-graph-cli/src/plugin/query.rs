@@ -150,14 +150,19 @@ pub(crate) fn execute(tool: QueryTool, name: &str, input: &[u8]) -> Result<Value
         // array that must not be cut like a list.
         Query::Show { .. } => (raw, Map::new()),
         Query::Search(_) => {
-            let (result, mut truncation) = bound(raw, request.limit)?;
-            // The library was asked for one extra match, so a cut from
-            // `limit + 1` shows there are more without counting them.
-            if let Some(Value::Object(cut)) = truncation.get_mut("matches")
-                && cut.get("total").and_then(Value::as_u64) == u64::try_from(request.limit + 1).ok()
-                && let Some(total) = cut.remove("total")
-            {
-                cut.insert("total_at_least".to_string(), total);
+            // The library reads one match past the limit, so its `truncated`
+            // shows there are more without counting them.
+            let more = raw["truncated"].as_bool() == Some(true);
+            let (mut result, mut truncation) = bound(raw, request.limit)?;
+            if more {
+                let returned = result["matches"].as_array().map_or(0, Vec::len);
+                truncation.insert(
+                    "matches".to_string(),
+                    json!({"returned": returned, "total_at_least": request.limit + 1}),
+                );
+            } else if truncation.contains_key("matches") {
+                // Cut to fit the response ceiling: `total` stays the count.
+                result["truncated"] = Value::Bool(true);
             }
             (result, truncation)
         }
@@ -491,8 +496,7 @@ impl SearchInput {
                     SearchKindInput::Config => SearchKind::Config,
                 }),
                 lang: self.lang,
-                // One past the cap, so a cut result is reported as truncated.
-                limit: Some(limit + 1),
+                limit: Some(limit),
             }),
         })
     }
@@ -762,7 +766,7 @@ mod tests {
                     query: "parse".to_string(),
                     kind: Some(SearchKind::Config),
                     lang: Some("rust".to_string()),
-                    limit: Some(8),
+                    limit: Some(7),
                 }),
             ),
             (

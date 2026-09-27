@@ -10,7 +10,7 @@ use orbit_graph::{
 
 use serde_json::{Value, json};
 
-use super::{CliError, CommandContext, display_value, json_value};
+use super::{CliError, CommandContext, display_value, json_value, truncation_notice};
 use crate::output::{Column, CommandOutput, TableView, View, ViewBlock};
 
 #[derive(Debug, Args)]
@@ -170,6 +170,12 @@ pub(crate) fn output(document: Value) -> CommandOutput {
     };
     let view = View::Blocks(vec![ViewBlock::table(table.with_empty_message(empty))]);
 
+    let notice = truncation_notice(
+        &document,
+        document["recommendations"].as_array().map_or(0, Vec::len),
+        "recommendations",
+        "raise --limit (at most 100) to see more",
+    );
     let mut context = document.clone();
     let recommendations = context
         .as_object_mut()
@@ -180,13 +186,23 @@ pub(crate) fn output(document: Value) -> CommandOutput {
     records.extend(recommendations.into_iter().map(
         |recommendation| json!({"record_type": "recommendation", "recommendation": recommendation}),
     ));
-    CommandOutput::with_view(document, view).with_ndjson_records(records)
+    let mut output = CommandOutput::with_view(document, view).with_ndjson_records(records);
+    if let Some(notice) = notice {
+        output = output.with_notice(notice);
+    }
+    output
 }
 
+/// Ranking strategies, spelled as the `variant` field prints them so a
+/// printed token is accepted back (STD-01 §R32). The earlier kebab-case
+/// spellings stay accepted as hidden aliases (STD-01 §R35).
 #[derive(Debug, Clone, Copy, ValueEnum)]
+#[clap(rename_all = "snake_case")]
 enum VariantArg {
     Combined,
+    #[value(alias = "task-search-only")]
     TaskSearchOnly,
+    #[value(alias = "graph-only")]
     GraphOnly,
     Frequency,
 }
@@ -221,7 +237,9 @@ fn read_json<T: serde::de::DeserializeOwned>(
     })
 }
 
+/// Destination granularities, spelled as the `level` field prints them.
 #[derive(Debug, Clone, Copy, ValueEnum)]
+#[clap(rename_all = "snake_case")]
 enum LevelArg {
     File,
     Symbol,

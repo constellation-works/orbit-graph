@@ -409,11 +409,11 @@ fn assert_symbol_present(
     expected_present: bool,
 ) {
     let cwd = worktree_for(case_id, worktrees, snapshot);
-    let document = run_graph_json(cwd, &["show", selector]);
-    let present = !document.is_null();
+    let document = show_graph_json(cwd, selector);
+    let present = document.is_some();
     assert_eq!(
         present, expected_present,
-        "case `{case_id}` selector `{selector}` in snapshot `{snapshot}`: expected present={expected_present}, got {document}"
+        "case `{case_id}` selector `{selector}` in snapshot `{snapshot}`: expected present={expected_present}, got {document:?}"
     );
 }
 
@@ -545,9 +545,9 @@ fn verify_candidate_tests(case_id: &str, manifest: &Value, worktrees: &BTreeMap<
                 let test_selector = entry["test_selector"]
                     .as_str()
                     .expect("candidate_tests[].test_selector");
-                let document = run_graph_json(cwd, &["show", test_selector]);
+                let document = show_graph_json(cwd, test_selector);
                 assert!(
-                    !document.is_null(),
+                    document.is_some(),
                     "case `{case_id}` naming-heuristic candidate test `{test_selector}` does not exist in snapshot `{snapshot}`"
                 );
             }
@@ -597,10 +597,10 @@ fn verify_known_gaps(case_id: &str, manifest: &Value, worktrees: &BTreeMap<Strin
                 let path = check["path"].as_str().expect("check.path");
                 let search_query = check["search_query"].as_str().expect("check.search_query");
                 let file_selector = format!("file:{path}");
-                let shown = run_graph_json(cwd, &["show", &file_selector]);
+                let shown = show_graph_json(cwd, &file_selector);
                 assert!(
-                    shown.is_null(),
-                    "case `{case_id}` expected `{path}` to be unindexed in snapshot `{snapshot}`, but show returned {shown}"
+                    shown.is_none(),
+                    "case `{case_id}` expected `{path}` to be unindexed in snapshot `{snapshot}`, but show returned {shown:?}"
                 );
                 let search_result = run_graph_json(cwd, &["search", search_query]);
                 let matched = array_field(&search_result, "matches")
@@ -667,6 +667,21 @@ fn run_graph(cwd: &Path, args: &[&str]) -> Output {
         .args(args)
         .output()
         .expect("run orbit-graph")
+}
+
+/// `show` for `selector`, or `None` when it fails with `not_found` because
+/// the selector resolves to nothing in this snapshot.
+fn show_graph_json(cwd: &Path, selector: &str) -> Option<Value> {
+    let output = run_graph(cwd, &["show", selector]);
+    if output.status.success() {
+        return Some(serde_json::from_slice(&output.stdout).expect("orbit-graph JSON output"));
+    }
+    let error: Value = serde_json::from_slice(&output.stderr).expect("orbit-graph JSON error");
+    assert!(
+        output.status.code() == Some(1) && error["code"] == "not_found",
+        "orbit-graph show {selector} failed: {error}"
+    );
+    None
 }
 
 fn run_graph_json(cwd: &Path, args: &[&str]) -> Value {

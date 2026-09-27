@@ -1,9 +1,9 @@
-//! JSON and NDJSON bytes, and the structured error envelope.
+//! JSON and NDJSON bytes, and the structured error object.
 //!
 //! Both machine modes write through [`write_json`], so the trailing newline and
 //! flush behavior of a document and of one NDJSON record cannot drift apart.
 
-use std::io::Write;
+use std::io::{self, Write};
 
 use serde::Serialize;
 use serde_json::Value;
@@ -25,28 +25,30 @@ pub(crate) fn write_json(
     writer.flush().map_err(CliError::Stdout)
 }
 
-/// The stable failure envelope emitted in the two machine modes.
-#[derive(Debug, Serialize)]
-pub(crate) struct ErrorPayload<'a> {
-    error: ErrorBody,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    details: Option<&'a str>,
+/// Write one compact Orbit plugin protocol response line to stdout.
+///
+/// The plugin protocol is separate from terminal rendering: its response and
+/// error envelopes always go to stdout, whatever the output mode.
+pub(crate) fn write_plugin_response<T: Serialize>(value: &T) -> Result<(), CliError> {
+    let mut stdout = io::stdout().lock();
+    serde_json::to_writer(&mut stdout, value).map_err(CliError::Json)?;
+    stdout.write_all(b"\n").map_err(CliError::Stdout)?;
+    stdout.flush().map_err(CliError::Stdout)
 }
 
+/// The machine-mode failure object written to stderr (STD-01 §R19): the
+/// message under `error` and its stable `snake_case` `code`.
 #[derive(Debug, Serialize)]
-struct ErrorBody {
+pub(crate) struct ErrorPayload {
+    error: String,
     code: &'static str,
-    message: String,
 }
 
-impl<'a> From<&'a CliError> for ErrorPayload<'a> {
-    fn from(error: &'a CliError) -> Self {
+impl From<&CliError> for ErrorPayload {
+    fn from(error: &CliError) -> Self {
         Self {
-            error: ErrorBody {
-                code: error.code(),
-                message: error.to_string(),
-            },
-            details: error.details(),
+            error: error.to_string(),
+            code: error.code(),
         }
     }
 }

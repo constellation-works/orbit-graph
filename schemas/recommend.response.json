@@ -117,6 +117,17 @@
           "items": {
             "type": "object"
           }
+        },
+        "total": {
+          "description": "Number of ranked destinations before limit was applied; null when unknown.",
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "truncated": {
+          "description": "True when total exceeds the recommendations returned.",
+          "type": "boolean"
         }
       },
       "additionalProperties": false

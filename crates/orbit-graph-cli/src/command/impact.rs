@@ -3,7 +3,7 @@ use orbit_graph::Selector;
 use orbit_graph::{DEFAULT_IMPACT_DEPTH, ImpactDirection, RefConfidence};
 use serde_json::{Value, json};
 
-use super::{CliError, CommandContext, json_value};
+use super::{CliError, CommandContext, json_value, truncation_notice};
 use crate::output::{Column, CommandOutput, TableView, View, ViewBlock};
 
 #[derive(Debug, Args)]
@@ -43,6 +43,12 @@ pub(crate) fn output(document: Value) -> CommandOutput {
         push_impact_row(&mut table, "fallback", entry);
     }
 
+    let notice = truncation_notice(
+        &document,
+        touched.len(),
+        "impacted nodes",
+        "the traversal stopped at its node cap; lower --depth or narrow the selector",
+    );
     let mut context = document.clone();
     let mut fallback_context = None;
     if let Some(object) = context.as_object_mut() {
@@ -66,13 +72,17 @@ pub(crate) fn output(document: Value) -> CommandOutput {
             .into_iter()
             .map(|entry| json!({"record_type": "fallback_impact", "impact": entry})),
     );
-    CommandOutput::with_view(
+    let mut output = CommandOutput::with_view(
         document,
         View::Blocks(vec![ViewBlock::table(table.with_empty_message(
             "selector has no related nodes at this confidence",
         ))]),
     )
-    .with_ndjson_records(records)
+    .with_ndjson_records(records);
+    if let Some(notice) = notice {
+        output = output.with_notice(notice);
+    }
+    output
 }
 
 fn push_impact_row(table: &mut TableView, set: &str, entry: &Value) {
@@ -109,13 +119,7 @@ impl ImpactCommand {
             )?,
             None => graph.impact(&selector, self.depth, self.confidence.into_graph())?,
         };
-        let mut document = json_value(result)?;
-        if let Some(direction) = self.direction
-            && let Some(object) = document.as_object_mut()
-        {
-            object.insert("direction".to_string(), json!(direction.into_graph()));
-        }
-        Ok(document)
+        json_value(result)
     }
 }
 

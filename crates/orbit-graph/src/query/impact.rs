@@ -51,6 +51,7 @@ pub(crate) fn run(
         Ok(ImpactResult {
             direction,
             visited_nodes: traversal.touched.len(),
+            total: (!traversal.truncated).then_some(traversal.touched.len()),
             touched: traversal.touched,
             truncated: traversal.truncated,
             fallback_used: fallback.is_some(),
@@ -65,6 +66,7 @@ fn empty_result(direction: ImpactDirection) -> ImpactResult {
         touched: Vec::new(),
         truncated: false,
         visited_nodes: 0,
+        total: Some(0),
         fallback_used: false,
         fallback: None,
     }

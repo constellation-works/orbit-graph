@@ -25,30 +25,27 @@ pub struct NodeView {
     pub metadata: NodeMetadata,
 }
 
+/// `source` is the UTF-8 text, or `null` when the bytes are not UTF-8; then
+/// `source_bytes` carries them losslessly. `source_encoding` names which one
+/// is set (`utf-8` or `bytes`), so the field types never depend on content
+/// (STD-01 §R11).
 impl Serialize for NodeView {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        let mut state = serializer.serialize_struct("NodeView", 2)?;
+        let mut state = serializer.serialize_struct("NodeView", 4)?;
         match str::from_utf8(self.bytes.as_slice()) {
-            Ok(source) => state.serialize_field("source", source)?,
-            Err(_) => state.serialize_field("source", &ByteFallback::new(self.bytes.as_slice()))?,
+            Ok(source) => {
+                state.serialize_field("source", source)?;
+                state.serialize_field("source_bytes", &None::<&[u8]>)?;
+                state.serialize_field("source_encoding", "utf-8")?;
+            }
+            Err(_) => {
+                state.serialize_field("source", &None::<&str>)?;
+                state.serialize_field("source_bytes", self.bytes.as_slice())?;
+                state.serialize_field("source_encoding", "bytes")?;
+            }
         }
         state.serialize_field("metadata", &self.metadata)?;
         state.end()
-    }
-}
-
-#[derive(Debug, Serialize)]
-struct ByteFallback<'a> {
-    encoding: &'static str,
-    bytes: &'a [u8],
-}
-
-impl<'a> ByteFallback<'a> {
-    fn new(bytes: &'a [u8]) -> Self {
-        Self {
-            encoding: "bytes",
-            bytes,
-        }
     }
 }
 
@@ -61,11 +58,9 @@ pub struct NodeMetadata {
     pub span: SourceSpan,
     /// Resolved node kind.
     pub kind: String,
-    /// Display name when one exists.
-    #[serde(skip_serializing_if = "Option::is_none")]
+    /// Display name when one exists, otherwise `null`.
     pub name: Option<String>,
-    /// Qualified symbol name when one exists.
-    #[serde(skip_serializing_if = "Option::is_none")]
+    /// Qualified symbol name when one exists, otherwise `null`.
     pub qualified: Option<String>,
     /// Whether the returned source is shorter than the resolved source span.
     pub truncated: bool,

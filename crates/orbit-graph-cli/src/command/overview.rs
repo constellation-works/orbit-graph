@@ -4,17 +4,17 @@ use orbit_graph::Selector;
 use serde_json::{Value, json};
 
 use super::{CliError, CommandContext, json_value};
-use crate::output::{Column, CommandOutput, TableView, View, ViewBlock};
+use crate::output::{Column, CommandOutput, LegacyDetail, TableView, View, ViewBlock};
 
 #[derive(Debug, Args)]
 pub struct OverviewCommand {
     /// Optional `dir:…` or `file:…` selector scoping the summary
     /// (default: whole worktree).
     scope: Option<String>,
-    /// Output detail. `summary` returns counts plus the highest-symbol files;
-    /// `full` lists every in-scope file with its symbols.
-    #[arg(long, value_enum, default_value_t = FormatArg::Summary)]
-    format: FormatArg,
+    /// Detail level: summary (default) returns counts plus the
+    /// highest-symbol files; full lists every in-scope file with its symbols.
+    #[arg(long, value_enum)]
+    detail: Option<DetailArg>,
 }
 
 pub(crate) fn output(document: Value) -> CommandOutput {
@@ -111,18 +111,47 @@ impl OverviewCommand {
             .map(str::parse::<Selector>)
             .transpose()?;
         let graph = context.open_graph()?;
-        json_value(graph.overview(scope.as_ref(), self.format.into_graph())?)
+        let detail = self.detail.unwrap_or(DetailArg::Summary);
+        json_value(graph.overview(scope.as_ref(), detail.into_graph())?)
+    }
+
+    /// Take the detail level from the deprecated `--format summary|full`
+    /// spelling. A different explicit `--detail` is a conflict, not a silent
+    /// precedence pick.
+    pub(crate) fn apply_legacy_detail(&mut self, legacy: LegacyDetail) -> Result<(), CliError> {
+        let legacy_detail = match legacy {
+            LegacyDetail::Summary => DetailArg::Summary,
+            LegacyDetail::Full => DetailArg::Full,
+        };
+        match self.detail {
+            Some(detail) if detail != legacy_detail => Err(CliError::Usage(format!(
+                "--format {} conflicts with --detail {}; pass only --detail",
+                legacy.as_str(),
+                detail.as_str()
+            ))),
+            _ => {
+                self.detail = Some(legacy_detail);
+                Ok(())
+            }
+        }
     }
 }
 
-#[derive(Debug, Clone, Copy, ValueEnum)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
 #[clap(rename_all = "snake_case")]
-enum FormatArg {
+enum DetailArg {
     Summary,
     Full,
 }
 
-impl FormatArg {
+impl DetailArg {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::Summary => "summary",
+            Self::Full => "full",
+        }
+    }
+
     fn into_graph(self) -> OverviewFormat {
         match self {
             Self::Summary => OverviewFormat::Summary,

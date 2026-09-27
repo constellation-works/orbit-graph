@@ -65,6 +65,16 @@ add_dep() {
 # edit <file> <sed expression>: portable in-place sed on a copied file.
 edit() { sed -i.bak "$2" "$case_dir/$1"; rm -f "$case_dir/$1.bak"; }
 
+# allow <entry>: seed an ALLOW entry into the copied terminal guard.
+allow() {
+  local guard="$case_dir/scripts/check-terminal-guard.sh"
+  # The marker comes in through ENVIRON: BSD awk (macOS) has no \x escapes.
+  MARKER="read -r -d '' ALLOW <<'EOF' || true" ENTRY="$1" \
+    awk '{ print } $0 == ENVIRON["MARKER"] { print ENVIRON["ENTRY"] }' "$guard" >"$guard.new"
+  mv "$guard.new" "$guard"
+  grep -qF -- "$1" "$guard" || { echo "allow: could not seed $1" >&2; exit 1; }
+}
+
 # prepend <file> <text>: add a line at the top of a copied file.
 prepend() {
   { printf '%s\n' "$2"; cat "$case_dir/$1"; } >"$case_dir/$1.new"
@@ -152,12 +162,20 @@ fresh_copy; append crates/orbit-graph/src/evaluation.rs '// println!("only a com
 expect pass $G "a comment that mentions println!"
 fresh_copy; append crates/orbit-graph-cli/src/output/render.rs 'fn seeded() { let _ = std::io::stdout(); }'
 expect pass $G "io::stdout inside the CLI output layer"
-fresh_copy; edit crates/orbit-graph-cli/src/main.rs '/\.with_writer(io::stderr)$/d'
-expect fail $G "an allow-list entry whose write site is gone" 'with_writer.* expects 1 hit\(s\) and matched 0'
-fresh_copy; append crates/orbit-graph-cli/src/main.rs 'fn seeded() { let mut stdout = io::stdout().lock(); }'
-expect fail $G "a new write matching an allow-list entry's regex" 'crates/orbit-graph-cli/src/main.rs:[0-9]+:fn seeded'
-fresh_copy; printf 'fn seeded() {\n    let mut stdout = io::stdout().lock();\n}\n' >>"$case_dir/crates/orbit-graph-cli/src/main.rs"
-expect fail $G "a third site of an entry that allows two" 'let mut stdout.* expects 2 hit\(s\) and matched 3'
+SEEDED_ENTRY='crates/orbit-graph-cli/src/command/search.rs|1|seeded_stderr|A seeded self-test entry.'
+SEEDED_WRITE='fn seeded_stderr() { let _ = std::io::stderr(); }'
+fresh_copy; allow "$SEEDED_ENTRY"; append crates/orbit-graph-cli/src/command/search.rs "$SEEDED_WRITE"
+expect pass $G "a write its allow-list entry covers" 'ok \(1 allow-list entries\)'
+fresh_copy; allow "$SEEDED_ENTRY"
+expect fail $G "an allow-list entry whose write site is gone" 'seeded_stderr expects 1 hit\(s\) and matched 0'
+fresh_copy; allow "$SEEDED_ENTRY"; append crates/orbit-graph-cli/src/command/search.rs "$SEEDED_WRITE"
+append crates/orbit-graph-cli/src/command/search.rs 'fn seeded() { let _ = std::io::stdout(); }'
+expect fail $G "a new write beside an allow-listed one" 'crates/orbit-graph-cli/src/command/search.rs:[0-9]+:fn seeded\(\)'
+fresh_copy; allow "$SEEDED_ENTRY"; append crates/orbit-graph-cli/src/command/search.rs "$SEEDED_WRITE"
+append crates/orbit-graph-cli/src/command/search.rs "$SEEDED_WRITE"
+expect fail $G "a second site of an entry that allows one" 'seeded_stderr expects 1 hit\(s\) and matched 2'
+fresh_copy; append crates/orbit-graph-cli/src/main.rs 'fn seeded() { let _ = std::io::stdout(); }'
+expect fail $G "a stream write in main.rs, which has no allow-list entry" 'crates/orbit-graph-cli/src/main.rs:[0-9]+:fn seeded'
 if [[ "$(id -u)" -ne 0 ]]; then
   fresh_copy; chmod 000 "$case_dir/crates/orbit-graph/src/evaluation.rs"
   expect fail $G "grep failing on an unreadable source (exit 2, not 'no hits')" 'grep failed \(exit 2\)'

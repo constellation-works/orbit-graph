@@ -23,15 +23,10 @@ OUTPUT_LAYERS=(
 )
 
 # A plain here-document, not $(cat <<EOF): bash 3.2 (macOS) mis-parses a
-# quote inside a here-document within command substitution.
+# quote inside a here-document within command substitution. The list is empty:
+# every stream write and terminal query lives in an output layer.
 ALLOW=""
 read -r -d '' ALLOW <<'EOF' || true
-crates/orbit-graph-cli/src/main.rs|1|\.with_writer\(io::stderr\)$|The log subscriber's writer; STD-02 §R15 permits the one place that installs it to hand it io::stderr. Permanent.
-crates/orbit-graph-cli/src/main.rs|1|^use std::io::\{self, IsTerminal, Read, Write\};$|Import for the stdin TTY probe below. Temporary: ORB-13164 moves the probe to src/output/ and removes this entry.
-crates/orbit-graph-cli/src/main.rs|1|!io::stdin\(\)\.is_terminal\(\)|The bare-invocation stdin TTY probe. Temporary: ORB-13164 moves it to src/output/ and removes this entry.
-crates/orbit-graph-cli/src/main.rs|1|^[[:space:]]*io::stderr\(\)\.lock\(\),$|The bare-envelope deprecation warning. Temporary: ORB-13164 moves it to src/output/ and removes this entry.
-crates/orbit-graph-cli/src/main.rs|2|^[[:space:]]*let mut stdout = io::stdout\(\)\.lock\(\);$|emit_to_process and write_json_to_stdout. Temporary: ORB-13164 moves them to src/output/ and removes this entry.
-crates/orbit-graph-cli/src/main.rs|1|^[[:space:]]*let mut stderr = io::stderr\(\)\.lock\(\);$|emit_to_process. Temporary: ORB-13164 moves it to src/output/ and removes this entry.
 EOF
 
 PATTERN='io::stdout|io::stderr|\bstd(out|err)\(\)|\bprintln!|\beprintln!|\bprint!|\beprint!|\bdbg!|is_terminal|IsTerminal'
@@ -41,7 +36,8 @@ if [[ ! -d crates ]] || [[ -z "$(find crates -path '*/src/*' -name '*.rs' -print
   exit 1
 fi
 
-# Entries as parallel indexed arrays (bash 3 compatible).
+# Entries as parallel indexed arrays (bash 3 compatible). Bash 3.2 treats an
+# empty array as unbound under `set -u`, so the loops below guard with ${a[@]+...}.
 entry_paths=()
 entry_hits=()
 entry_regexes=()
@@ -87,7 +83,7 @@ while IFS= read -r hit; do
   [[ "$text" =~ ^[[:space:]]*// ]] && continue
   in_output_layer "$path" && continue
   matched=0
-  for i in "${!entry_paths[@]}"; do
+  for i in ${entry_paths[@]+"${!entry_paths[@]}"}; do
     if [[ "$path" == "${entry_paths[$i]}" ]] && grep -qE -- "${entry_regexes[$i]}" <<<"$text"; then
       entry_counts[$i]=$((entry_counts[$i] + 1))
       matched=1
@@ -99,7 +95,7 @@ while IFS= read -r hit; do
   fail=1
 done <<<"$hits"
 
-for i in "${!entry_paths[@]}"; do
+for i in ${entry_paths[@]+"${!entry_paths[@]}"}; do
   if [[ "${entry_counts[$i]}" -ne "${entry_hits[$i]}" ]]; then
     echo "terminal-guard: allow-list entry ${entry_paths[$i]}|${entry_regexes[$i]} expects ${entry_hits[$i]} hit(s) and matched ${entry_counts[$i]}; update or remove it" >&2
     fail=1

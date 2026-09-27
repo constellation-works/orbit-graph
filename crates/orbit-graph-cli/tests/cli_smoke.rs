@@ -156,7 +156,8 @@ fn real_binary_query_output_carries_locations_context_and_callee_filtering() {
         ["refs", "symbol:src/lib.rs#helper:function"],
     );
     assert_eq!(refs["fallback_used"], false);
-    assert!(refs.get("fallback").is_none());
+    // An absent value is `null`, never a missing key (STD-01 §R11).
+    assert_eq!(refs.get("fallback"), Some(&Value::Null));
     let reference = &refs["refs"][0];
     assert_eq!(reference["file"], "src/lib.rs");
     assert_eq!(reference["line"], 6);
@@ -553,8 +554,8 @@ fn real_binary_sync_times_out_naming_the_lock_holder() {
         "failed before the deadline"
     );
     let error: Value = serde_json::from_slice(&output.stderr).expect("JSON sync error");
-    assert_eq!(error["error"]["code"], "graph_error");
-    let message = error["error"]["message"].as_str().expect("error message");
+    assert_eq!(error["code"], "graph_error");
+    let message = error["error"].as_str().expect("error message");
     assert!(message.contains("timed out after 300 ms"), "{message}");
     assert!(
         message.contains(&format!("pid {}", std::process::id())),
@@ -744,8 +745,8 @@ fn real_binary_sync_fails_when_nothing_could_be_indexed() {
     let output = run_explicit_json(fixture.path(), ["sync"]);
     assert_eq!(output.status.code(), Some(1), "nothing indexed must fail");
     let error: Value = serde_json::from_slice(&output.stderr).expect("JSON error");
-    assert_eq!(error["error"]["code"], "graph_error", "{error}");
-    let message = error["error"]["message"].as_str().expect("error message");
+    assert_eq!(error["code"], "graph_error", "{error}");
+    let message = error["error"].as_str().expect("error message");
     assert!(
         message.contains("1 path(s) failed") && message.contains("only.rs"),
         "{message}"
@@ -854,16 +855,11 @@ fn real_binary_impact_direction_distinguishes_callers_from_callees() {
     assert!(outbound_names.iter().any(|name| name.ends_with("helper")));
     assert_ne!(inbound_names, outbound_names);
 
+    // `direction` is always present, and defaults to `both` (STD-01 §R11).
     let default = run_json(fixture.path(), ["impact", selector]);
-    assert!(default.get("direction").is_none());
+    assert_eq!(default["direction"], "both");
     let both = run_json(fixture.path(), ["impact", selector, "--direction", "both"]);
-    assert_eq!(both["direction"], "both");
-    let mut both_without_direction = both;
-    both_without_direction
-        .as_object_mut()
-        .expect("impact result object")
-        .remove("direction");
-    assert_eq!(default, both_without_direction);
+    assert_eq!(default, both);
 }
 
 #[test]
@@ -878,9 +874,9 @@ fn real_binary_rejects_malformed_selectors_with_json_error() {
 
     assert!(!output.status.success());
     let error: Value = serde_json::from_slice(&output.stderr).expect("JSON error payload");
-    assert_eq!(error["error"]["code"], "selector_parse_error");
+    assert_eq!(error["code"], "selector_parse_error");
     assert!(
-        error["error"]["message"]
+        error["error"]
             .as_str()
             .is_some_and(|message| { message.contains("selectors must start with") })
     );
@@ -974,9 +970,9 @@ fn assert_show_hides_outside_source(repo: &Path, selector: &str, marker: &str) {
     assert!(!stdout.contains(marker), "{stdout}");
     assert!(!stderr.contains(marker), "{stderr}");
     let error: Value = serde_json::from_slice(&output.stderr).expect("JSON error payload");
-    assert_eq!(error["error"]["code"], "graph_error");
+    assert_eq!(error["code"], "graph_error");
     assert!(
-        error["error"]["message"]
+        error["error"]
             .as_str()
             .is_some_and(|message| message.contains("worktree")),
         "{error}"
@@ -1128,7 +1124,7 @@ fn real_binary_unknown_command_keeps_json_error_protocol() {
 
     assert!(!output.status.success());
     let error: Value = serde_json::from_slice(&output.stderr).expect("JSON error payload");
-    assert_eq!(error["error"]["code"], "argument_error");
+    assert_eq!(error["code"], "argument_error");
 }
 
 #[test]
@@ -1151,9 +1147,9 @@ fn real_binary_usage_errors_are_human_by_default_and_machine_readable_on_request
         assert_eq!(json.status.code(), Some(2));
         assert!(json.stdout.is_empty());
         let envelope: Value = serde_json::from_slice(&json.stderr).expect("structured usage error");
-        assert_eq!(envelope["error"]["code"], "argument_error");
+        assert_eq!(envelope["code"], "argument_error");
         assert!(
-            envelope["error"]["message"]
+            envelope["error"]
                 .as_str()
                 .is_some_and(|message| message.contains("Usage: orbit-graph"))
         );
@@ -1162,7 +1158,7 @@ fn real_binary_usage_errors_are_human_by_default_and_machine_readable_on_request
     let ndjson = run(fixture.path(), ["--format", "ndjson", "refs"]);
     assert_eq!(ndjson.status.code(), Some(2));
     let envelope: Value = serde_json::from_slice(&ndjson.stderr).expect("NDJSON error envelope");
-    assert_eq!(envelope["error"]["code"], "argument_error");
+    assert_eq!(envelope["code"], "argument_error");
 
     let namespace = run(fixture.path(), ["history"]);
     assert_eq!(namespace.status.code(), Some(2));
@@ -1462,7 +1458,7 @@ fn real_binary_recommends_in_file_and_symbol_modes_and_validates_top_k() {
     );
     assert!(!bad_limit.status.success());
     let error: Value = serde_json::from_slice(&bad_limit.stderr).expect("JSON error");
-    assert_eq!(error["error"]["code"], "graph_error");
+    assert_eq!(error["code"], "graph_error");
 
     let both = run_explicit_json(
         fixture.path(),
@@ -1470,7 +1466,7 @@ fn real_binary_recommends_in_file_and_symbol_modes_and_validates_top_k() {
     );
     assert!(!both.status.success());
     let error: Value = serde_json::from_slice(&both.stderr).expect("JSON error");
-    assert_eq!(error["error"]["code"], "argument_error");
+    assert_eq!(error["code"], "argument_error");
 }
 
 #[test]
@@ -1513,7 +1509,12 @@ fn real_binary_renders_recommendation_and_index_views_with_complete_record_bound
         ],
     );
     assert!(plain.status.success());
-    assert!(plain.stderr.is_empty());
+    // `--limit 1` cuts the ranked list, which is said on stderr (STD-01 §R34).
+    let notice = String::from_utf8_lossy(&plain.stderr);
+    assert!(
+        notice.starts_with("showing 1 of ") && notice.lines().count() == 1,
+        "{notice}"
+    );
     let fields = String::from_utf8(plain.stdout)
         .expect("recommendation plain UTF-8")
         .trim_end()
@@ -2513,8 +2514,8 @@ fn real_binary_recovers_each_history_contract_version_mismatch() {
         let rejected = run_explicit_json(fixture.path(), ["history", "status", "--branch", "main"]);
         assert!(!rejected.status.success(), "{key}");
         let error: Value = serde_json::from_slice(&rejected.stderr).expect("JSON error");
-        assert_eq!(error["error"]["code"], "version_mismatch", "{key}: {error}");
-        let message = error["error"]["message"].as_str().expect("error message");
+        assert_eq!(error["code"], "version_mismatch", "{key}: {error}");
+        let message = error["error"].as_str().expect("error message");
         for expected in [
             key,
             "=0",
@@ -2757,11 +2758,12 @@ fn real_binary_rejects_history_repository_mismatch_with_json_error() {
     );
     assert!(!output.status.success());
     let error: Value = serde_json::from_slice(&output.stderr).expect("JSON error");
-    assert_eq!(error["error"]["code"], "graph_error");
+    assert_eq!(error["code"], "graph_error");
     assert!(
-        error["details"]
+        error["error"]
             .as_str()
-            .is_some_and(|details| details.contains("mismatch"))
+            .is_some_and(|message| message.contains("mismatch")),
+        "{error}"
     );
 }
 

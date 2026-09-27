@@ -1,7 +1,9 @@
 {
+  "direction": "both",
   "touched": [
     {
       "qualified_name": "crate::a",
+      "origin": "symbol",
       "distance": 1,
       "edge_kind": "call",
       "selector": "symbol:src/a.rs#crate::a:function",
@@ -10,6 +12,7 @@
     },
     {
       "qualified_name": "crate::Impl",
+      "origin": "symbol",
       "distance": 2,
       "edge_kind": "impl",
       "selector": null,
@@ -19,5 +22,7 @@
   ],
   "truncated": false,
   "visited_nodes": 2,
-  "fallback_used": false
+  "total": 2,
+  "fallback_used": false,
+  "fallback": null
 }

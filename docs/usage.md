@@ -15,8 +15,8 @@ mkdir -p "$fixture/src"
 printf 'pub fn helper() -> i32 { 1 }\npub fn entry() -> i32 { helper() }\n' > "$fixture/src/lib.rs"
 
 cd "$fixture"
-orbit-graph --format json sync --full
-orbit-graph --format json search helper --kind symbol --limit 5
+orbit-graph --json sync --full
+orbit-graph --json search helper --kind symbol --limit 5
 orbit-graph --format json show 'symbol:src/lib.rs#entry:function' --max-bytes 1024
 orbit-graph --format json refs 'symbol:src/lib.rs#helper:function' --confidence fuzzy --kind call
 orbit-graph --format json callees 'symbol:src/lib.rs#entry:function'
@@ -24,12 +24,46 @@ orbit-graph --format json callees 'symbol:src/lib.rs#entry:function'
 
 The default is deliberately human-oriented: a terminal receives a headed table
 and a redirected command receives lossless, tab-separated plain rows. Scripts
-must select the stable machine contract explicitly with `--format json`; use
-`--format ndjson` for one complete JSON record per line. `--help` remains
-conventional text help. Failures return a nonzero status, keep stdout empty,
-and write either a readable diagnostic or, in explicit JSON/NDJSON mode, a JSON
-object with `error.code` and `error.message` to stderr. Set `RUST_LOG` to enable
-diagnostic tracing on stderr.
+must select the stable machine contract explicitly with `--json` (the same as
+`--format json`, byte for byte); use `--format ndjson` for one complete JSON
+record per line. `--help` remains conventional text help, and a bare
+`orbit-graph` prints it and exits 0. Output carries no color or other styling.
+
+## Output contract
+
+- **Modes.** `--format` means the output mode everywhere: `auto` (default),
+  `table`, `json`, `ndjson`. `--json` may appear before or after the
+  command; combining it with a different `--format` is a usage error (exit 2).
+- **Absent values are `null`.** A JSON field that has no value (a file's
+  `qualified` name, an unused `fallback`, the `scope` of a whole-repository
+  overview) is present as `null`, never omitted. `impact` always reports its
+  `direction`.
+- **Truncation.** `search` and `recommend` report `total` and `truncated`
+  alongside their list. When `--limit` cut the list, `truncated` is `true` and
+  `total` is the full count, or `null` when it was not counted (search stops
+  one past the limit). `impact` and `trace` report the same pair when their
+  node cap stops the traversal. Whenever a list is truncated, one line such as
+  `showing 5 of more than 5 search matches; raise --limit to see more` goes to
+  stderr in every mode, so stdout stays a complete document. `search` rejects
+  an empty query and `--limit 0` (exit 2).
+- **Tokens round-trip.** Every `variant`, `level`, `confidence` and `kind`
+  value printed in JSON is accepted by the matching flag. `--variant` takes
+  `combined`, `task_search_only`, `graph_only` and `frequency`; the
+  kebab-case spellings `task-search-only` and `graph-only` remain accepted.
+- **Errors.** A failure keeps stdout empty and exits 1, or 2 for a usage
+  error (an unknown flag, a missing or invalid argument, a conflicting mode).
+  In `json`/`ndjson` mode stderr carries one flat object,
+  `{"error": "<message>", "code": "<code>"}`; otherwise it carries
+  `error: <message>`. `show` of a selector that resolves to no indexed source
+  fails with code `not_found`.
+- **Diagnostics.** Warnings (for example a file skipped by the extraction byte
+  cap) are logged to stderr by default. `RUST_LOG` overrides the default `warn`
+  filter, for example `RUST_LOG=orbit_graph=debug`.
+- **Plugin protocol.** The binary reads an Orbit plugin request from stdin only
+  when `ORBIT_TOOL_NAME` is set, and then takes no arguments: setting
+  `ORBIT_TOOL_NAME` together with command-line arguments is a usage error
+  (exit 2, nothing on stdout). Plugin responses keep their `{"ok": ...}`
+  envelope on stdout; see [plugin.md](plugin.md).
 
 The grouped help layout, stream contracts, styling rules, and compatibility
 boundaries are documented in [the terminal-interface design](design/terminal-interface.md).
@@ -185,16 +219,16 @@ their stored envelopes and retained unless `--discard-verified` is explicit.
 | `history sync --branch <name> [--limit <n>]` | Atomically index new first-parent commits as Git-only evidence. |
 | `history status --branch <name>` | Report history versions, cursor, evidence, and association counts. |
 | `history rebuild --branch <name> [--limit <n>] [--confirm] [--discard-verified]` | Preview one scope, then atomically re-extract Git-only history while retaining verified deliveries by default. |
-| `recommend --query <text>\|--task-id <id> [--level file\|symbol]` | Rank current destinations with evidence and freshness. |
+| `recommend --query <text>\|--task-id <id> [--level file\|symbol] [--variant <variant>]` | Rank current destinations with evidence and freshness. |
 | `evaluate --input <corpus.json>` | Compare four ranking variants chronologically. |
 | `evaluate --live --branch <name> [--limit <n>] [--k <n>] [--revision <rev>]` | Hold out first-parent commits and score Git-only commit-text relevance. Requires `history sync` first. |
-| `search <query> [--kind symbol|string|config] [--lang <id>] [--limit <n>]` | Full-text search indexed definitions, strings, or config keys. |
-| `show <selector> [--max-bytes <n>]` | Return metadata and a bounded source slice. |
+| `search <query> [--kind symbol\|string\|config] [--lang <id>] [--limit <n>]` | Full-text search indexed definitions, strings, or config keys. |
+| `show <selector> [--max-bytes <n>]` | Return metadata and a bounded source slice. `source` is the slice as text, or `null` when it is not UTF-8; then `source_bytes` carries the raw bytes and `source_encoding` is `bytes` (otherwise `utf-8`). |
 | `refs <symbol> [--confidence <level>] [--kind <kind>]` | Return inbound references and relations. |
 | `callees <symbol> [--include-unresolved]` | Return calls made by a symbol. Unresolved calls whose name has no indexed definition (standard-library and prelude calls) are hidden by default, counted in `hidden_unresolved`, and noted on stderr. |
 | `impact <selector> [--depth <n>] [--confidence <level>] [--direction inbound\|outbound\|both]` | Traverse callers, callees, or both around a selector (default: both). |
 | `trace <command> [--depth <n>] [--confidence <level>]` | Trace a discovered CLI command handler and its calls. |
-| `overview [<file-or-dir-selector>] [--format summary|full]` | Summarize indexed files and symbols. |
+| `overview [<file-or-dir-selector>] [--detail summary\|full]` | Summarize indexed files and symbols. The former `--format summary\|full` spelling still works but warns on stderr; `--format` otherwise selects the output mode. |
 | `implementors <trait-selector>` | Find concrete implementations of a trait-like symbol. |
 | `deps <file-or-dir-selector>` | List source-level module/import edges. |
 | `db-path` | Show the current database path, extractor version, and whether it exists. |

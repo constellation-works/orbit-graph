@@ -1,9 +1,11 @@
 {
   "target": {
-    "name": "Missing"
+    "name": "Missing",
+    "qualified": null
   },
   "refs": [],
   "relations": [],
   "skipped_low_confidence": 0,
-  "fallback_used": false
+  "fallback_used": false,
+  "fallback": null
 }

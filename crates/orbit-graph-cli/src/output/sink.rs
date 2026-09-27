@@ -2,21 +2,35 @@
 //! this?".
 //!
 //! Resolved once from stdout, the process environment, and the shared
-//! `--format` argument installed by [`install_format_argument`]. It is the only
-//! module that reads terminal state, so no renderer re-derives these answers.
+//! `--format`/`--json` arguments installed by [`install_format_argument`]. It
+//! is the only module that reads terminal state, so no renderer re-derives
+//! these answers. Nothing is styled, so there is no color decision to make
+//! (STD-01 §R17): clap is built without its `color` feature and log lines
+//! carry no ANSI escapes.
 
 use std::ffi::OsString;
 use std::io::{self, IsTerminal};
 
-use clap::{Arg, ArgMatches, Command, ValueEnum};
+use clap::builder::{PossibleValue, PossibleValuesParser, TypedValueParser};
+use clap::{Arg, ArgAction, ArgMatches, Command, ValueEnum};
+
+use crate::command::CliError;
 
 const FORMAT_ARG_ID: &str = "output-format";
+const JSON_ARG_ID: &str = "output-json";
+
+/// The command whose `--format` also accepts the deprecated detail values.
+const LEGACY_DETAIL_COMMAND: &str = "overview";
 
 /// Help for the shared `--format` option. `auto` output that is redirected or
 /// piped has no header row, so the help says how to get field names.
 const FORMAT_HELP: &str = "Output mode: auto, table, json, or ndjson (default: auto). \
 auto prints a headed table on a terminal but headerless tab-separated rows when piped; \
 use table for a header or json/ndjson for named fields";
+
+/// Help for the shared `--json` shorthand (STD-01 §R7).
+const JSON_HELP: &str =
+    "Shorthand for --format json; combining it with a different --format is an error";
 
 /// A user-facing output mode before `auto` has been resolved against stdout.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, ValueEnum)]
@@ -29,6 +43,42 @@ pub enum FormatArg {
     Json,
     /// Emit one complete JSON record per line.
     Ndjson,
+}
+
+/// A detail level passed through the deprecated `overview --format
+/// summary|full` spelling, which now belongs to `overview --detail`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum LegacyDetail {
+    /// `--format summary`.
+    Summary,
+    /// `--format full`.
+    Full,
+}
+
+impl LegacyDetail {
+    /// The value as the user spelled it.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Summary => "summary",
+            Self::Full => "full",
+        }
+    }
+}
+
+/// One parsed value of the shared `--format` option.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum FormatValue {
+    Mode(FormatArg),
+    Detail(LegacyDetail),
+}
+
+/// What the shared output arguments asked for, resolved once after parsing.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct OutputRequest {
+    /// The explicit output mode, if any.
+    pub format: Option<FormatArg>,
+    /// A deprecated `overview --format summary|full` value, if one was given.
+    pub legacy_detail: Option<LegacyDetail>,
 }
 
 /// The concrete rendering selected for one invocation.
@@ -51,12 +101,6 @@ pub struct SinkEnvironment {
     pub columns: Option<String>,
     /// The standalone `ORBIT_GRAPH_FORMAT` override.
     pub format: Option<String>,
-    /// `NO_COLOR`; any non-empty value disables styling.
-    pub no_color: Option<String>,
-    /// `CLICOLOR_FORCE`; any non-empty value enables styling on a terminal.
-    pub clicolor_force: Option<String>,
-    /// `TERM`; `dumb` disables styling.
-    pub term: Option<String>,
 }
 
 impl SinkEnvironment {
@@ -65,9 +109,6 @@ impl SinkEnvironment {
         Self {
             columns: read_var("COLUMNS"),
             format: read_var("ORBIT_GRAPH_FORMAT"),
-            no_color: read_var("NO_COLOR"),
-            clicolor_force: read_var("CLICOLOR_FORCE"),
-            term: read_var("TERM"),
         }
     }
 }
@@ -77,7 +118,6 @@ impl SinkEnvironment {
 pub struct OutputSink {
     is_tty: bool,
     width: u16,
-    color_allowed: bool,
     mode: OutputMode,
 }
 
@@ -104,7 +144,6 @@ impl OutputSink {
         Self {
             is_tty,
             width: resolve_width(is_tty, environment, terminal_width),
-            color_allowed: resolve_color(is_tty, environment),
             mode: resolve_mode(is_tty, environment, requested),
         }
     }
@@ -119,91 +158,122 @@ impl OutputSink {
         self.width
     }
 
-    /// Whether human rendering may emit ANSI styling.
-    // No renderer styles output yet; the decision stays resolved here, once,
-    // and is exercised by the sink tests.
-    #[allow(dead_code)]
-    pub fn color_allowed(self) -> bool {
-        self.color_allowed
-    }
-
     /// The resolved output mode.
     pub fn mode(self) -> OutputMode {
         self.mode
     }
 
-    /// Whether failures use the existing structured error envelope.
+    /// Whether failures are written as a JSON error object.
     pub fn structured_errors(self) -> bool {
         matches!(self.mode, OutputMode::Json | OutputMode::Ndjson)
     }
 }
 
-/// Add the shared `--format` argument at every command level that does not
-/// already own that spelling. `overview --format summary|full` is therefore
-/// unchanged; its output mode is selected at the root before `overview`.
+/// Add the shared `--format` and `--json` arguments at every command level,
+/// so either spelling is accepted at the root or after any command (STD-01
+/// §R4, §R7). On `overview`, `--format` also accepts the hidden, deprecated
+/// `summary` and `full` values of its former detail option (STD-01 §R35).
 pub fn install_format_argument(command: Command) -> Command {
     let children: Vec<String> = command
         .get_subcommands()
         .map(|child| child.get_name().to_owned())
         .collect();
-    let declares_format = command
-        .get_arguments()
-        .any(|argument| argument.get_long() == Some("format"));
-    let mut command = if declares_format {
-        command
-    } else {
-        command.arg(
+    let legacy_detail = command.get_name() == LEGACY_DETAIL_COMMAND;
+    let mut command = command
+        .arg(
             Arg::new(FORMAT_ARG_ID)
                 .long("format")
                 .value_name("MODE")
-                .value_parser(clap::value_parser!(FormatArg))
+                .value_parser(format_value_parser(legacy_detail))
                 .help(FORMAT_HELP),
         )
-    };
+        .arg(
+            Arg::new(JSON_ARG_ID)
+                .long("json")
+                .action(ArgAction::SetTrue)
+                .help(JSON_HELP),
+        );
     for child in children {
         command = command.mut_subcommand(child, install_format_argument);
     }
     command
 }
 
-/// Return the deepest explicitly parsed shared output mode.
-pub fn requested_format(matches: &ArgMatches) -> Option<FormatArg> {
-    let mut level = matches;
-    let mut requested = None;
-    loop {
-        if let Ok(Some(format)) = level.try_get_one::<FormatArg>(FORMAT_ARG_ID) {
-            requested = Some(*format);
-        }
-        match level.subcommand() {
-            Some((_, child)) => level = child,
-            None => return requested,
-        }
+fn format_value_parser(legacy_detail: bool) -> impl TypedValueParser<Value = FormatValue> {
+    let mut values: Vec<PossibleValue> = FormatArg::value_variants()
+        .iter()
+        .filter_map(ValueEnum::to_possible_value)
+        .collect();
+    if legacy_detail {
+        values.push(PossibleValue::new(LegacyDetail::Summary.as_str()).hide(true));
+        values.push(PossibleValue::new(LegacyDetail::Full.as_str()).hide(true));
     }
+    PossibleValuesParser::new(values).map(|value| match value.as_str() {
+        "summary" => FormatValue::Detail(LegacyDetail::Summary),
+        "full" => FormatValue::Detail(LegacyDetail::Full),
+        other => FormatValue::Mode(parse_format(other).unwrap_or(FormatArg::Auto)),
+    })
 }
 
-/// Recover an explicit mode from argv when Clap rejects the invocation.
+/// Resolve the shared output arguments once after parsing (STD-01 §R7, §R8).
 ///
-/// The scan intentionally stops interpreting `--format` after the `overview`
-/// command token because that command owns the spelling for `summary|full`.
+/// The deepest explicit `--format` mode wins, as before. `--json` at any
+/// level is `--format json`; given with a different explicit mode it is a
+/// usage error rather than a silent precedence pick.
+pub fn requested_output(matches: &ArgMatches) -> Result<OutputRequest, CliError> {
+    let mut level = matches;
+    let mut request = OutputRequest::default();
+    let mut json = false;
+    loop {
+        match level.try_get_one::<FormatValue>(FORMAT_ARG_ID) {
+            Ok(Some(FormatValue::Mode(format))) => request.format = Some(*format),
+            Ok(Some(FormatValue::Detail(detail))) => request.legacy_detail = Some(*detail),
+            _ => {}
+        }
+        json |= level.try_get_one::<bool>(JSON_ARG_ID).ok().flatten() == Some(&true);
+        match level.subcommand() {
+            Some((_, child)) => level = child,
+            None => break,
+        }
+    }
+    if json {
+        if let Some(format) = request.format.filter(|format| *format != FormatArg::Json) {
+            return Err(CliError::Usage(format!(
+                "--json conflicts with --format {}; pass one output mode",
+                format_name(format)
+            )));
+        }
+        request.format = Some(FormatArg::Json);
+    }
+    Ok(request)
+}
+
+/// Recover an explicit mode from argv when Clap rejects the invocation, so a
+/// usage error honors a requested machine mode (STD-01 §R19). `--json`
+/// selects JSON; otherwise the last recognizable `--format` mode wins.
 pub fn requested_format_from_args(args: &[OsString]) -> Option<FormatArg> {
     let mut requested = None;
-    let mut overview = false;
+    let mut json = false;
     let mut index = 1;
     while index < args.len() {
         let token = args[index].to_string_lossy();
-        if token == "overview" {
-            overview = true;
-        } else if !overview && token == "--format" {
+        if token == "--json" {
+            json = true;
+        } else if token == "--format" {
             if let Some(value) = args.get(index + 1).and_then(|value| value.to_str()) {
-                requested = parse_format(value);
+                requested = parse_format(value).or(requested);
                 index += 1;
             }
-        } else if !overview && let Some(value) = token.strip_prefix("--format=") {
-            requested = parse_format(value);
+        } else if let Some(value) = token.strip_prefix("--format=") {
+            requested = parse_format(value).or(requested);
         }
         index += 1;
     }
-    requested
+    if json {
+        Some(FormatArg::Json)
+    } else {
+        requested
+    }
 }
 
 fn resolve_width(is_tty: bool, environment: &SinkEnvironment, terminal_width: Option<u16>) -> u16 {
@@ -223,19 +293,6 @@ fn parse_width(raw: &str) -> Option<u16> {
         Ok(0) | Err(_) => None,
         Ok(width) => Some(width),
     }
-}
-
-fn resolve_color(is_tty: bool, environment: &SinkEnvironment) -> bool {
-    if !is_tty
-        || environment.term.as_deref() == Some("dumb")
-        || is_set(environment.no_color.as_deref())
-    {
-        return false;
-    }
-    if is_set(environment.clicolor_force.as_deref()) {
-        return true;
-    }
-    true
 }
 
 fn resolve_mode(
@@ -265,8 +322,13 @@ fn parse_format(raw: &str) -> Option<FormatArg> {
     }
 }
 
-fn is_set(value: Option<&str>) -> bool {
-    value.is_some_and(|value| !value.is_empty())
+fn format_name(format: FormatArg) -> &'static str {
+    match format {
+        FormatArg::Auto => "auto",
+        FormatArg::Table => "table",
+        FormatArg::Json => "json",
+        FormatArg::Ndjson => "ndjson",
+    }
 }
 
 fn read_var(key: &str) -> Option<String> {

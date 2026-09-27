@@ -494,8 +494,7 @@ pub struct CleanItem {
     pub path: PathBuf,
     /// Why it would be deleted, was deleted, or was kept.
     pub reason: CleanReason,
-    /// What could not be verified, for an `unverifiable` item.
-    #[serde(skip_serializing_if = "Option::is_none")]
+    /// What could not be verified, for an `unverifiable` item; otherwise `null`.
     pub detail: Option<String>,
 }
 
