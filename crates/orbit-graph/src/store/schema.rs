@@ -6,7 +6,7 @@ use rusqlite::{Connection, OptionalExtension, TransactionBehavior, params};
 
 use crate::GraphError;
 
-pub(crate) const SCHEMA_VERSION: u32 = 1;
+pub(crate) const SCHEMA_VERSION: u32 = 2;
 
 pub(crate) struct InitialMeta<'a> {
     pub(crate) extractor_version: u32,
@@ -108,7 +108,9 @@ CREATE INDEX relations_def_file ON relations(def_file);
 CREATE TABLE imports (
     from_file      TEXT NOT NULL REFERENCES files(path) ON DELETE CASCADE,
     target_path    TEXT NOT NULL,
-    target_symbol  TEXT                -- "Scheduler" or NULL for whole-module
+    target_symbol   TEXT,              -- "Scheduler" or NULL for whole-module
+    source_symbol   TEXT,              -- Rust name before an alias
+    reexport_module TEXT               -- NULL unless a public Rust use
 ) STRICT;
 
 CREATE INDEX imports_from_file ON imports(from_file);

@@ -186,6 +186,39 @@ use crate::task::{Task, TaskId as Id};
 }
 
 #[test]
+fn records_public_use_origin_and_containing_module() {
+    let file = extract_at(
+        "src/lib.rs",
+        r#"
+mod api {
+    pub use crate::util::helper as h;
+    use crate::util::private;
+    pub use crate::util::*;
+}
+"#,
+    );
+    let alias = file
+        .imports
+        .iter()
+        .find(|row| row.target_symbol.as_deref() == Some("h"))
+        .unwrap();
+    assert_eq!(alias.source_symbol.as_deref(), Some("helper"));
+    assert_eq!(alias.reexport_module.as_deref(), Some("api"));
+    let private = file
+        .imports
+        .iter()
+        .find(|row| row.target_symbol.as_deref() == Some("private"))
+        .unwrap();
+    assert_eq!(private.reexport_module, None);
+    let glob = file
+        .imports
+        .iter()
+        .find(|row| row.target_symbol.is_none())
+        .unwrap();
+    assert_eq!(glob.reexport_module.as_deref(), Some("api"));
+}
+
+#[test]
 fn fixture_qualified_calls_and_import_forms_preserve_resolution_inputs() {
     let calls = extract_at(
         "src/lib.rs",

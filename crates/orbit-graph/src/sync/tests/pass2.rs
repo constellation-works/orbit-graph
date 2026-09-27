@@ -1778,6 +1778,7 @@ mod tests {
         crate::counts::tally()
     }
 }
+
 "#,
     );
     worktree.write(
@@ -1808,6 +1809,156 @@ mod tests {
         tally.target_symbol_hint,
         Some(symbol_id(&conn, "src/process/lock.rs", "tally")),
         "{tally:?}"
+    );
+}
+
+#[test]
+fn rust_public_reexports_resolve_direct_alias_chain_and_glob() {
+    let (_worktree, conn) = sync_rust_files(
+        "public-reexports",
+        &[
+            (
+                "src/lib.rs",
+                r#"
+mod util { pub fn helper() {} }
+mod api {
+    pub use crate::util::helper;
+    pub use crate::util::helper as h;
+}
+mod second { pub use crate::api::h as twice; }
+mod third { pub use crate::second::twice as final_name; }
+mod glob { pub use crate::util::*; }
+pub use crate::util as alias_module;
+pub use util as alias_short;
+pub use crate::util::{self as alias_self};
+"#,
+            ),
+            (
+                "src/caller.rs",
+                "fn run() { api::helper(); api::h(); crate::api::h(); third::final_name(); crate::third::final_name(); glob::helper(); alias_module::helper(); alias_short::helper(); alias_self::helper(); }",
+            ),
+        ],
+    );
+    for name in ["helper", "h", "final_name"] {
+        let calls = calls_named(&conn, "src/caller.rs", name);
+        for call in calls {
+            assert_ref(
+                &call,
+                Some("util::helper"),
+                super::CONFIDENCE_IMPORT_RESOLVED,
+            );
+        }
+    }
+}
+
+#[test]
+fn rust_public_reexport_cycle_terminates() {
+    let (_worktree, conn) = sync_rust_files(
+        "public-reexport-cycle",
+        &[
+            (
+                "src/lib.rs",
+                "mod a { pub use crate::b::h; } mod b { pub use crate::a::h; }",
+            ),
+            ("src/caller.rs", "fn run() { a::h(); }"),
+        ],
+    );
+    assert_ref(
+        &call_ref(&conn, "src/caller.rs", "h"),
+        None,
+        super::CONFIDENCE_FUZZY_NAME,
+    );
+}
+
+#[test]
+fn ambiguous_public_globs_remain_fuzzy() {
+    let (_worktree, conn) = sync_rust_files(
+        "ambiguous-public-globs",
+        &[
+            (
+                "src/lib.rs",
+                r#"
+mod first { pub fn helper() {} }
+mod second { pub fn helper() {} }
+mod api { pub use crate::first::*; pub use crate::second::*; }
+"#,
+            ),
+            ("src/caller.rs", "fn run() { api::helper(); }"),
+        ],
+    );
+    assert_ref(
+        &call_ref(&conn, "src/caller.rs", "helper"),
+        None,
+        super::CONFIDENCE_FUZZY_NAME,
+    );
+}
+
+#[test]
+fn explicit_public_use_outranks_glob() {
+    let (_worktree, conn) = sync_rust_files(
+        "explicit-over-glob",
+        &[
+            (
+                "src/lib.rs",
+                r#"
+mod first { pub fn helper() {} }
+mod second { pub fn helper() {} }
+mod api { pub use crate::first::helper; pub use crate::second::*; }
+"#,
+            ),
+            ("src/caller.rs", "fn run() { api::helper(); }"),
+        ],
+    );
+    assert_ref(
+        &call_ref(&conn, "src/caller.rs", "helper"),
+        Some("first::helper"),
+        super::CONFIDENCE_IMPORT_RESOLVED,
+    );
+}
+
+#[test]
+fn rust_same_file_reexport_beats_short_name_exact_match() {
+    let (_worktree, conn) = sync_rust_files(
+        "same-file-public-reexport",
+        &[(
+            "src/lib.rs",
+            r#"
+mod util { pub fn helper() {} }
+mod api { pub use crate::util::helper; }
+fn caller() { api::helper(); }
+"#,
+        )],
+    );
+    assert_ref(
+        &call_ref(&conn, "src/lib.rs", "helper"),
+        Some("util::helper"),
+        super::CONFIDENCE_IMPORT_RESOLVED,
+    );
+}
+
+#[test]
+fn changing_public_reexport_reresolves_unchanged_caller() {
+    let worktree = TestWorktree::new("changed-reexport");
+    let graph = Graph::open(worktree.path(), SyncPolicy::Manual).expect("open graph");
+    worktree.write("src/util.rs", "mod util { pub fn helper() {} }");
+    worktree.write("src/other.rs", "mod other { pub fn helper() {} }");
+    worktree.write("src/api.rs", "pub use crate::util::helper;");
+    worktree.write("src/caller.rs", "fn caller() { api::helper(); }");
+    graph.sync(SyncMode::Full).expect("initial sync");
+    let conn = open_test_connection(worktree.path());
+    assert_ref(
+        &call_ref(&conn, "src/caller.rs", "helper"),
+        Some("util::helper"),
+        super::CONFIDENCE_IMPORT_RESOLVED,
+    );
+    drop(conn);
+    worktree.write("src/api.rs", "pub use crate::other::helper;");
+    graph.sync(SyncMode::Auto).expect("incremental sync");
+    let conn = open_test_connection(worktree.path());
+    assert_ref(
+        &call_ref(&conn, "src/caller.rs", "helper"),
+        Some("other::helper"),
+        super::CONFIDENCE_IMPORT_RESOLVED,
     );
 }
 

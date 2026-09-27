@@ -97,6 +97,8 @@ impl ExtractionState {
             from_file: self.file_path.clone(),
             target_path,
             target_symbol: None,
+            source_symbol: None,
+            reexport_module: None,
         });
     }
 

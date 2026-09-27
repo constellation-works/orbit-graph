@@ -162,10 +162,14 @@ pub(crate) fn dedup_imports(imports: &mut Vec<RawImport>) {
         left.target_path
             .cmp(&right.target_path)
             .then_with(|| left.target_symbol.cmp(&right.target_symbol))
+            .then_with(|| left.source_symbol.cmp(&right.source_symbol))
+            .then_with(|| left.reexport_module.cmp(&right.reexport_module))
     });
     imports.dedup_by(|left, right| {
         left.from_file == right.from_file
             && left.target_path == right.target_path
             && left.target_symbol == right.target_symbol
+            && left.source_symbol == right.source_symbol
+            && left.reexport_module == right.reexport_module
     });
 }

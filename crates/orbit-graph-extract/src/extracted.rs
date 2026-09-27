@@ -111,6 +111,11 @@ pub struct RawImport {
     pub target_path: String,
     /// Imported symbol name, or `None` for whole-module imports.
     pub target_symbol: Option<String>,
+    /// Original Rust name before an alias; empty when `target_path` names the
+    /// whole imported module.
+    pub source_symbol: Option<String>,
+    /// Containing Rust module for a public re-export; `Some("")` is crate root.
+    pub reexport_module: Option<String>,
 }
 
 /// Raw row for a notable string literal or document snippet.

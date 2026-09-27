@@ -165,7 +165,10 @@ pub use store::create_plugin_state_dir;
 ///
 /// Version 19 rebuilds refs so package-qualified Rust type-member calls from
 /// integration tests and examples resolve against their library crate.
-pub const EXTRACTOR_VERSION: u32 = 19;
+///
+/// Version 20 records public Rust re-export scope and original names and
+/// follows those imports for spelled module-path calls.
+pub const EXTRACTOR_VERSION: u32 = 20;
 
 /// SQLite schema version used by the graph store.
 ///

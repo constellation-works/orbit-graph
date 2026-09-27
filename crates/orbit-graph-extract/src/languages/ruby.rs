@@ -406,6 +406,8 @@ fn extract_require_import(node: Node, source: &str, state: &mut ExtractionState)
             from_file: state.file_path.clone(),
             target_path,
             target_symbol: None,
+            source_symbol: None,
+            reexport_module: None,
         });
     }
 }

@@ -35,7 +35,10 @@ fn direct_call_report_matches_exported_contract() {
         json["comparison"]["base"]["commit_sha"]
     );
     assert!(json["comparison"]["repository"].is_null());
-    assert_eq!(json["index_identity"]["store_schema_version"], 1);
+    assert_eq!(
+        json["index_identity"]["store_schema_version"],
+        orbit_graph::STORE_SCHEMA_VERSION
+    );
     assert!(
         json["index_identity"]["base_index_identity"]
             .as_str()

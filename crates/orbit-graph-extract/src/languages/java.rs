@@ -235,6 +235,8 @@ fn extract_import(node: Node, source: &str, state: &mut ExtractionState) {
         from_file: state.file_path.clone(),
         target_path: target.to_string(),
         target_symbol: import_symbol(target),
+        source_symbol: None,
+        reexport_module: None,
     });
 }
 
