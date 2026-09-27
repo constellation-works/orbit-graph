@@ -11,17 +11,18 @@
 
 use std::collections::BTreeMap;
 use std::fs;
+use std::path::Path;
 use std::sync::Mutex;
 
 use orbit_graph::{Confidence, DEFAULT_IMPACT_DEPTH, RefOpts, Selector};
 use orbit_graph_changes::snapshot::{
-    BuildState, BuildStatus, Comparison, ComparisonOptions, ComparisonOutcome, ComparisonProgress,
-    SnapshotSide, WorkingTreeChange,
+    BuildState, BuildStatus, Comparison, ComparisonMode, ComparisonOptions, ComparisonOutcome,
+    ComparisonProgress, ExclusionReason, SnapshotSide, WorkingTreeChange,
 };
 
 mod common;
 
-use common::{build_fixture, fingerprint_working_tree, head_commit};
+use common::{build_fixture, commit_files, fingerprint_working_tree, head_commit};
 
 #[test]
 fn removed_function_is_base_evidence_and_absent_from_head() {
@@ -329,4 +330,274 @@ fn languages_survive_into_the_ready_status_on_a_cold_build_and_a_cache_hit() {
             "a cache hit for {side} must still report the languages the original build persisted"
         );
     }
+}
+
+/// Walk `root` without following symlinks and report whether any regular file
+/// contains `needle`.
+#[cfg(unix)]
+fn snapshot_contains(root: &Path, needle: &str) -> bool {
+    fn walk(dir: &Path, needle: &[u8]) -> bool {
+        let entries = fs::read_dir(dir).expect("read snapshot directory");
+        for entry in entries {
+            let entry = entry.expect("read snapshot entry");
+            let path = entry.path();
+            let metadata = fs::symlink_metadata(path.as_path()).expect("snapshot metadata");
+            if metadata.file_type().is_symlink() {
+                continue;
+            }
+            if metadata.is_dir() {
+                if walk(path.as_path(), needle) {
+                    return true;
+                }
+            } else if metadata.is_file()
+                && let Ok(bytes) = fs::read(path.as_path())
+                && bytes.windows(needle.len()).any(|window| window == needle)
+            {
+                return true;
+            }
+        }
+        false
+    }
+    walk(root, needle.as_bytes())
+}
+
+#[cfg(unix)]
+fn head_qualified(comparison: &Comparison, selector: &str) -> Option<String> {
+    let selector: Selector = selector.parse().expect("parse selector");
+    comparison
+        .head()
+        .refs(&selector, &RefOpts::default())
+        .expect("query working-tree snapshot")
+        .target
+        .qualified
+}
+
+/// A tracked directory replaced by a symlink to a directory outside the
+/// repository must not contribute that directory's bytes to a working-tree
+/// snapshot. Ordinary tracked and untracked files are still copied, a deleted
+/// tracked file stays absent, and a tracked file replaced by a symlink is
+/// excluded without reading its target (STD-05 §R6, §R7).
+#[cfg(unix)]
+#[test]
+fn working_tree_comparison_excludes_descendants_of_an_outside_symlink() {
+    use std::os::unix::fs::symlink;
+
+    use git2::Repository;
+    use tempfile::TempDir;
+
+    const COMMITTED_LIB: &str = "pub fn kept() -> i32 {\n    1\n}\n";
+    const WORKTREE_LIB: &str =
+        "pub fn kept() -> i32 {\n    // WORKTREE_KEPT_MARKER_ORB13394\n    3\n}\n";
+    const COMMITTED_LEAF: &str = "pub fn inside() -> i32 {\n    2\n}\n";
+    const EXTERNAL_LEAF: &str =
+        "pub fn leaked() -> i32 {\n    // EXTERNAL_DIRECTORY_MARKER_ORB13394\n    9\n}\n";
+    const EXTERNAL_SECRET: &str =
+        "pub fn secret() -> i32 {\n    // EXTERNAL_SECRET_MARKER_ORB13394\n    8\n}\n";
+    const COMMITTED_LINK: &str = "pub fn link_file() -> i32 {\n    6\n}\n";
+    const EXTERNAL_LINK: &str =
+        "pub fn stolen() -> i32 {\n    // EXTERNAL_LINK_MARKER_ORB13394\n    7\n}\n";
+    const COMMITTED_GONE: &str = "pub fn gone() -> i32 {\n    5\n}\n";
+    const EXTRA: &str =
+        "pub fn extra() -> i32 {\n    // WORKTREE_EXTRA_MARKER_ORB13394\n    4\n}\n";
+
+    let parent = TempDir::new().expect("parent directory");
+    let repo_path = parent.path().join("repo");
+    let outside = parent.path().join("outside");
+    fs::create_dir(repo_path.as_path()).expect("repository directory");
+    fs::create_dir(outside.as_path()).expect("outside directory");
+    let outside_leaf = outside.join("leaf.rs");
+    let outside_secret = outside.join("secret.rs");
+    let outside_link = outside.join("link_target.rs");
+    fs::write(outside_leaf.as_path(), EXTERNAL_LEAF).expect("outside leaf");
+    fs::write(outside_secret.as_path(), EXTERNAL_SECRET).expect("outside secret");
+    fs::write(outside_link.as_path(), EXTERNAL_LINK).expect("outside link target");
+
+    let base = {
+        let repo = Repository::init(repo_path.as_path()).expect("init repository");
+        let base = commit_files(
+            &repo,
+            repo_path.as_path(),
+            &[
+                ("src/lib.rs", COMMITTED_LIB),
+                ("src/nested/leaf.rs", COMMITTED_LEAF),
+                ("link.rs", COMMITTED_LINK),
+                ("gone.rs", COMMITTED_GONE),
+            ],
+            "base: tracked files a working-tree comparison will mutate",
+            0,
+        );
+        drop(repo);
+        base
+    };
+
+    fs::write(repo_path.join("src/lib.rs"), WORKTREE_LIB).expect("edit tracked file");
+    fs::write(repo_path.join("src/extra.rs"), EXTRA).expect("untracked file");
+    fs::remove_file(repo_path.join("gone.rs")).expect("delete tracked file");
+    fs::remove_file(repo_path.join("link.rs")).expect("remove file that becomes a symlink");
+    symlink(outside_link.as_path(), repo_path.join("link.rs")).expect("leaf symlink");
+    fs::remove_dir_all(repo_path.join("src/nested")).expect("remove tracked directory");
+    symlink(outside.as_path(), repo_path.join("src/nested")).expect("ancestor symlink");
+
+    let index_before = fs::read(repo_path.join(".git/index")).expect("read index");
+    let outside_leaf_before = fs::read(outside_leaf.as_path()).expect("read outside leaf");
+    let outside_link_before = fs::read(outside_link.as_path()).expect("read outside link");
+    let outside_secret_before = fs::read(outside_secret.as_path()).expect("read outside secret");
+
+    let outcome = Comparison::open_working_tree(
+        repo_path.as_path(),
+        base.as_str(),
+        &ComparisonOptions {
+            cache_dir: None,
+            no_cache: true,
+            scratch_dir: Some(parent.path().join("scratch")),
+        },
+        &RecordingProgress::default(),
+    )
+    .expect("open working-tree comparison");
+    let ComparisonOutcome::Ready(comparison) = outcome else {
+        panic!("an uncancelled build must be ready");
+    };
+
+    assert_eq!(comparison.mode(), ComparisonMode::WorkingTree);
+    assert_eq!(comparison.head().commit_sha(), "worktree");
+
+    let head = comparison.head();
+    let excluded = |path: &str| {
+        head.materialization()
+            .excluded
+            .iter()
+            .find(|entry| entry.path == path)
+            .map(|entry| entry.reason)
+    };
+    assert_eq!(
+        excluded("src/nested/leaf.rs"),
+        Some(ExclusionReason::Symlink),
+        "a descendant of an outside directory symlink is excluded: {:?}",
+        head.materialization()
+    );
+    assert_eq!(
+        excluded("link.rs"),
+        Some(ExclusionReason::Symlink),
+        "a tracked file replaced by a symlink is excluded: {:?}",
+        head.materialization()
+    );
+    assert!(
+        head.materialization()
+            .excluded
+            .iter()
+            .all(|entry| entry.path != "gone.rs"),
+        "a deleted tracked file is absent, not an exclusion: {:?}",
+        head.materialization()
+    );
+    for path in head
+        .materialization()
+        .excluded
+        .iter()
+        .filter(|entry| entry.path.starts_with("src/nested/"))
+    {
+        assert_eq!(
+            path.reason,
+            ExclusionReason::Symlink,
+            "every descendant reached through the outside symlink is excluded: {path:?}"
+        );
+    }
+
+    let head_root = head.root();
+    let read_snapshot = |path: &str| {
+        fs::read_to_string(head_root.join(path)).unwrap_or_else(|_| panic!("read snapshot {path}"))
+    };
+    assert!(
+        read_snapshot("src/lib.rs").contains("WORKTREE_KEPT_MARKER_ORB13394"),
+        "a tracked regular file is copied from the working tree"
+    );
+    assert!(
+        read_snapshot("src/extra.rs").contains("WORKTREE_EXTRA_MARKER_ORB13394"),
+        "an untracked regular file is copied"
+    );
+    assert!(
+        !head_root.join("gone.rs").exists(),
+        "a deleted tracked file is not materialized"
+    );
+    assert!(
+        !head_root.join("link.rs").exists(),
+        "a symlink is not materialized"
+    );
+    assert!(
+        !head_root.join("src/nested/leaf.rs").exists(),
+        "an escaped descendant is not materialized"
+    );
+    for marker in [
+        "EXTERNAL_DIRECTORY_MARKER_ORB13394",
+        "EXTERNAL_LINK_MARKER_ORB13394",
+        "EXTERNAL_SECRET_MARKER_ORB13394",
+    ] {
+        assert!(
+            !snapshot_contains(head_root, marker),
+            "external bytes must not be copied into the snapshot ({marker})"
+        );
+    }
+
+    assert_eq!(
+        head_qualified(&comparison, "symbol:src/lib.rs#kept:function").as_deref(),
+        Some("kept")
+    );
+    assert_eq!(
+        head_qualified(&comparison, "symbol:src/extra.rs#extra:function").as_deref(),
+        Some("extra")
+    );
+    assert_eq!(
+        head_qualified(&comparison, "symbol:gone.rs#gone:function"),
+        None,
+        "a deleted file is not indexed"
+    );
+    for selector in [
+        "symbol:src/nested/leaf.rs#leaked:function",
+        "symbol:src/nested/leaf.rs#inside:function",
+        "symbol:src/nested/secret.rs#secret:function",
+        "symbol:link.rs#stolen:function",
+        "symbol:link.rs#link_file:function",
+    ] {
+        assert_eq!(
+            head_qualified(&comparison, selector),
+            None,
+            "{selector} must not be indexed from outside the repository"
+        );
+    }
+
+    let base_snapshot = comparison.base();
+    let base_leaf = fs::read_to_string(base_snapshot.root().join("src/nested/leaf.rs"))
+        .expect("base still has the committed leaf");
+    assert!(base_leaf.contains("fn inside"), "{base_leaf}");
+    assert!(!base_leaf.contains("EXTERNAL_DIRECTORY_MARKER_ORB13394"));
+    assert!(base_snapshot.root().join("gone.rs").is_file());
+    assert!(base_snapshot.root().join("link.rs").is_file());
+
+    drop(comparison);
+    assert_eq!(
+        fs::read(repo_path.join(".git/index")).expect("read index"),
+        index_before,
+        "the Git index is read, never written"
+    );
+    assert_eq!(
+        fs::read(outside_leaf.as_path()).expect("outside leaf"),
+        outside_leaf_before
+    );
+    assert_eq!(
+        fs::read(outside_link.as_path()).expect("outside link"),
+        outside_link_before
+    );
+    assert_eq!(
+        fs::read(outside_secret.as_path()).expect("outside secret"),
+        outside_secret_before
+    );
+    assert!(
+        fs::symlink_metadata(repo_path.join("src/nested"))
+            .expect("ancestor symlink")
+            .file_type()
+            .is_symlink()
+    );
+    assert_eq!(
+        fs::read_to_string(repo_path.join("src/lib.rs")).expect("worktree file"),
+        WORKTREE_LIB
+    );
 }
