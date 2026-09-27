@@ -19,11 +19,35 @@ pub struct Graph {
     policy: SyncPolicy,
     /// Opened by a read-only constructor: [`Graph::sync`] is refused.
     read_only: bool,
-    read_conn: Mutex<Connection>,
+    read_conn: Mutex<Option<Connection>>,
+    /// Physical database whose lock covers this handle's writer-connection
+    /// close. `None` for a read-only handle, which must not create a lock file.
+    writer_db: Option<PathBuf>,
     last_auto_sync_at: Mutex<i64>,
     /// Time source for the auto-sync timestamp the windowed policy checks.
     clock: Arc<dyn Clock>,
     _watcher: Option<sync::watcher::SyncWatcher>,
+}
+
+impl Drop for Graph {
+    fn drop(&mut self) {
+        let Some(conn) = self
+            .read_conn
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .take()
+        else {
+            return;
+        };
+        // The last writer connection's close unlinks `-shm` before `-wal`.
+        // Hold the database lock until that close returns so a concurrent
+        // `open_at_path` pre-check waits out the gap instead of refusing it.
+        // A read-only handle must not create the lock file.
+        match self.writer_db.as_deref() {
+            Some(db_path) => store::close_writer_connection(conn, db_path),
+            None => drop(conn),
+        }
+    }
 }
 
 /// The wall clock [`SyncPolicy::Windowed`] measures its window with.
@@ -232,7 +256,8 @@ impl Graph {
             worktree_root: worktree_root.to_path_buf(),
             policy: SyncPolicy::Manual,
             read_only: true,
-            read_conn: Mutex::new(read_conn),
+            read_conn: Mutex::new(Some(read_conn)),
+            writer_db: None,
             last_auto_sync_at: Mutex::new(last_auto_sync_at),
             clock: Arc::new(SystemClock),
             _watcher: None,
@@ -248,16 +273,28 @@ impl Graph {
             opened.physical_db.as_path(),
             "open graph read connection",
         )?)?;
-        let last_auto_sync_at = read_last_incremental_at(
+        let last_auto_sync_at = match read_last_incremental_at(
             &read_conn,
             "read graph last incremental sync metadata at open",
-        )?;
+        ) {
+            Ok(value) => value,
+            Err(error) => {
+                store::close_writer_connection(read_conn, opened.physical_db.as_path());
+                return Err(error);
+            }
+        };
         let watcher = if let SyncPolicy::Watch { debounce } = policy {
-            Some(sync::watcher::SyncWatcher::start(
+            match sync::watcher::SyncWatcher::start(
                 opened.db_path.path().to_path_buf(),
                 worktree_root.to_path_buf(),
                 debounce,
-            )?)
+            ) {
+                Ok(watcher) => Some(watcher),
+                Err(error) => {
+                    store::close_writer_connection(read_conn, opened.physical_db.as_path());
+                    return Err(error);
+                }
+            }
         } else {
             None
         };
@@ -267,7 +304,8 @@ impl Graph {
             worktree_root: worktree_root.to_path_buf(),
             policy,
             read_only: false,
-            read_conn: Mutex::new(read_conn),
+            read_conn: Mutex::new(Some(read_conn)),
+            writer_db: Some(opened.physical_db),
             last_auto_sync_at: Mutex::new(last_auto_sync_at),
             clock: Arc::new(SystemClock),
             _watcher: watcher,
@@ -440,7 +478,13 @@ impl Graph {
             .read_conn
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
-        run(&conn)
+        let Some(conn) = conn.as_ref() else {
+            return Err(GraphError::invalid_data(
+                "read graph",
+                "the graph database connection is already closed",
+            ));
+        };
+        run(conn)
     }
 
     /// Search indexed symbols, strings, and config keys.
