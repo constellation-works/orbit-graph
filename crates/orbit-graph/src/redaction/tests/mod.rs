@@ -22,6 +22,9 @@ fn persisted_text_writer_inventory_is_explicit() {
     let report = include_str!("../../../../orbit-graph-changes/src/report.rs");
     // `strings` and `strings_fts` contain arbitrary extracted values;
     // their shared `value` passes through redact before either insert.
+    // Symbol names and qualified names are identifiers. `signature` is free
+    // text (it keeps default-argument literals) and is redacted before both
+    // `symbols` and `symbols_fts` (STD-05 §R13).
     assert_eq!(
         sql_targets(graph, "INSERT INTO "),
         [
@@ -44,9 +47,14 @@ fn persisted_text_writer_inventory_is_explicit() {
         ["commands", "symbols", "commands"]
     );
     assert!(graph.contains("let value = crate::redaction::redact(&string.value)"));
+    assert!(
+        graph.contains("crate::redaction::redact(signature)"),
+        "symbol signatures must pass through the shared redactor before SQL insert (STD-05 §R13)"
+    );
 
-    // Delivery payloads, task columns and caller snapshots carry task
-    // prose. Scope, path, symbol and cursor rows are structured metadata.
+    // Delivery payloads, task columns and caller snapshots carry task prose.
+    // Symbol signatures are free text and are redacted with that payload.
+    // Scope, path and cursor rows stay structured metadata.
     assert_eq!(
         sql_targets(history, "INSERT INTO "),
         [
@@ -68,6 +76,15 @@ fn persisted_text_writer_inventory_is_explicit() {
     );
     assert!(history.contains("let change = &redacted;"));
     assert!(history.contains("redact_task(&mut snapshot)"));
+    assert!(
+        history.contains("redact_symbol_signatures(&mut redacted)"),
+        "history symbol signatures must be redacted before payload and column writes (STD-05 §R13)"
+    );
+    let recommend = include_str!("../../recommend.rs");
+    assert!(
+        recommend.contains("redact_cached_signatures(&mut symbols)"),
+        "target-symbol cache signatures must be redacted before the cache is written (STD-05 §R13)"
+    );
 
     // One declaration plus two excerpt constructors, both redacted.
     assert_eq!(report.matches("SourceExcerpt {").count(), 3);

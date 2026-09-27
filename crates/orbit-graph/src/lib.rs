@@ -188,7 +188,11 @@ pub use state_dir::{
 /// follows those imports for spelled module-path calls.
 ///
 /// Version 21 redacts credential-shaped values before graph strings are stored.
-pub const EXTRACTOR_VERSION: u32 = 21;
+///
+/// Version 22 redacts credential-shaped values in symbol signatures before
+/// graph rows are stored. A signature is free text and can carry a default
+/// argument; symbol names and qualified names stay unchanged.
+pub const EXTRACTOR_VERSION: u32 = 22;
 
 /// SQLite schema version used by the graph store.
 ///

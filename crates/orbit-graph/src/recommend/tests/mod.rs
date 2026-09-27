@@ -796,6 +796,101 @@ fn target_symbol_cache_is_reused_and_results_match_uncached_extraction() {
 }
 
 #[test]
+fn target_symbol_cache_redacts_default_argument_credentials() {
+    let token = "ghp_12345678901234567890";
+    let fixture = fixture_repo();
+    let root = fixture.path();
+    fs::write(
+        root.join("src/client.py"),
+        "def connect(token=\"placeholder\"):\n    return token\n\ndef label(name=\"service\"):\n    return name\n",
+    )
+    .expect("before");
+    commit_all(root, "before");
+    let before = head(root);
+    fs::write(
+        root.join("src/client.py"),
+        format!(
+            "def connect(token=\"{token}\"):\n    return token\n\ndef label(name=\"service\"):\n    return name\n"
+        ),
+    )
+    .expect("after");
+    commit_all(root, "after");
+    let after = head(root);
+    let index = HistoryIndex::open(root, "main").expect("history");
+    import(
+        &index,
+        before.as_str(),
+        after.as_str(),
+        "D-SECRET",
+        "TASK-SECRET",
+        "Rotate the client token default",
+        10,
+    );
+    let engine = RecommendationEngine::open(root, "main").expect("engine");
+    let mut request = query_request("label service", after.as_str(), None);
+    request.level = RecommendationLevel::Symbol;
+    let cold = engine.recommend(&request).expect("cold recommend");
+    let warm = engine.recommend(&request).expect("warm recommend");
+    assert_eq!(comparable(&cold), comparable(&warm));
+    assert!(
+        cold.recommendations
+            .iter()
+            .any(|item| item.selector.contains("label")),
+        "benign identifier should stay recommendable: {cold:?}"
+    );
+
+    let names = cache_files(root);
+    assert_eq!(names.len(), 1, "{names:?}");
+    let cache = fs::read(root.join(".orbit-graph").join(&names[0])).expect("read cache");
+    let cache_text = String::from_utf8(cache.clone()).expect("cache utf8");
+    assert!(cache_text.contains("[REDACTED_SECRET]"), "{cache_text}");
+    assert!(!cache_text.contains(token), "{cache_text}");
+    assert!(
+        cache_text.contains("name=\\\"service\\\"") || cache_text.contains("name=\"service\""),
+        "{cache_text}"
+    );
+    assert!(cache_text.contains("\"name\":\"connect\""), "{cache_text}");
+    assert!(cache_text.contains("\"name\":\"label\""), "{cache_text}");
+    assert!(
+        cache_text.contains("\"qualified\":\"connect\""),
+        "{cache_text}"
+    );
+    assert!(
+        cache_text.contains("\"qualified\":\"label\""),
+        "{cache_text}"
+    );
+
+    let conn = rusqlite::Connection::open(index.database_path()).expect("history db");
+    let payload: String = conn
+        .query_row("SELECT payload_json FROM history_deliveries", [], |row| {
+            row.get(0)
+        })
+        .expect("payload");
+    let signature: String = conn
+        .query_row(
+            "SELECT signature FROM history_symbols WHERE name='connect' AND signature LIKE '%REDACTED_SECRET%'",
+            [],
+            |row| row.get(0),
+        )
+        .expect("redacted history signature");
+    drop(conn);
+    assert!(!payload.contains(token), "{payload}");
+    assert!(signature.contains("[REDACTED_SECRET]"));
+    assert!(!signature.contains(token));
+    let history_bytes = fs::read(index.database_path()).expect("history bytes");
+    assert!(
+        !history_bytes
+            .windows(token.len())
+            .any(|window| window == token.as_bytes())
+    );
+    assert!(
+        !cache
+            .windows(token.len())
+            .any(|window| window == token.as_bytes())
+    );
+}
+
+#[test]
 fn target_symbol_cache_invalidates_on_revision_and_extractor_version() {
     let (fixture, base, delivery) = cache_fixture();
     let root = fixture.path();
