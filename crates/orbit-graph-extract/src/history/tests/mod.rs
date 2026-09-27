@@ -6,6 +6,63 @@ use tempfile::TempDir;
 use super::*;
 
 #[test]
+fn origin_credentials_are_excluded_from_identity_and_validation_errors() {
+    let repo = fixture_repo();
+    write(repo.path(), "src/lib.rs", "pub fn before() {}\n");
+    commit(repo.path(), "before");
+    let before = head(repo.path());
+    write(repo.path(), "src/lib.rs", "pub fn after() {}\n");
+    commit(repo.path(), "after");
+    let after = head(repo.path());
+    let old = "https://review-user:synthetic-review-password@example.invalid/repo.git";
+    git(repo.path(), &["remote", "add", "origin", old]);
+    let repository = Repository::open(repo.path()).expect("open fixture");
+    let expected = "https://example.invalid/repo.git";
+    assert_eq!(
+        repository_identity(&repository).expect("identity"),
+        expected
+    );
+    git(
+        repo.path(),
+        &[
+            "remote",
+            "set-url",
+            "origin",
+            "https://new-token@example.invalid/repo.git",
+        ],
+    );
+    assert_eq!(
+        repository_identity(&repository).expect("rotated identity"),
+        expected
+    );
+    assert_eq!(
+        repository_identity_without_credentials("git@host.example:org/repo.git"),
+        "host.example:org/repo.git"
+    );
+
+    let delivery = DeliveryImport {
+        schema_version: DELIVERY_IMPORT_SCHEMA_VERSION,
+        repository: old.into(),
+        landing_branch: "main".into(),
+        before_revision: before,
+        after_revision: after,
+        delivery_id: "legacy-envelope".into(),
+        evidence: DeliveryEvidence::VerifiedDelivery,
+        source: Provenance {
+            system: "test".into(),
+            record_id: None,
+        },
+        delivered_at: known_time("delivery"),
+        captured_at: "2026-09-07T00:00:00Z".into(),
+        tasks: vec![],
+    };
+    let error = extract_delivery(&repository, delivery).expect_err("legacy identity must fail");
+    let message = error.to_string();
+    assert!(message.contains("repository mismatch"), "{message}");
+    assert!(!message.contains("synthetic-review-password"), "{message}");
+}
+
+#[test]
 fn real_git_trees_attribute_add_edit_delete_rename_and_nested_symbols() {
     let repo = fixture_repo();
     write(

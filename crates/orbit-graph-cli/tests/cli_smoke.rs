@@ -2959,6 +2959,180 @@ fn real_binary_rejects_history_repository_mismatch_with_json_error() {
 }
 
 #[test]
+fn real_binary_history_origin_credentials_never_reach_json_or_index() {
+    let fixture = fixture_repository();
+    let root = fixture.path();
+    let secret = "synthetic-review-password";
+    let legacy = format!("https://review-user:{secret}@example.invalid/repo.git");
+    run_git(root, ["remote", "add", "origin", legacy.as_str()]);
+    let expected = "https://example.invalid/repo.git";
+    let synced = run_json(root, ["history", "sync", "--branch", "main"]);
+    assert_eq!(synced["complete"], true);
+    let status = run_json(root, ["history", "status", "--branch", "main"]);
+    assert_eq!(status["repository"], expected);
+    let db_path = Path::new(status["database_path"].as_str().expect("database path"));
+    assert!(
+        !fs::read(db_path)
+            .expect("read index")
+            .windows(secret.len())
+            .any(|part| part == secret.as_bytes())
+    );
+
+    fs::write(root.join("src/added.rs"), "pub fn added() {}\n").expect("write source");
+    run_git(root, ["add", "src/added.rs"]);
+    run_git(root, ["commit", "-m", "second"]);
+    let before = git_stdout(root, ["rev-parse", "HEAD~1"]);
+    let after = git_stdout(root, ["rev-parse", "HEAD"]);
+    let envelope_path = root.join("delivery.json");
+    let envelope = serde_json::json!({
+        "schema_version": 2, "repository": expected, "landing_branch": "main",
+        "before_revision": before, "after_revision": after, "delivery_id": "verified-origin",
+        "evidence": "verified_delivery", "source": {"system": "test"},
+        "delivered_at": {"status": "unavailable", "source": {"system": "test"}},
+        "captured_at": "2026-09-07T00:00:00Z", "tasks": []
+    });
+    fs::write(
+        &envelope_path,
+        serde_json::to_vec(&envelope).expect("encode envelope"),
+    )
+    .expect("write envelope");
+    let envelope_arg = envelope_path.to_string_lossy();
+    let imported = run_json(
+        root,
+        ["history", "import", "--input", envelope_arg.as_ref()],
+    );
+    assert_eq!(imported["inserted"], true);
+    let mut invalid = envelope;
+    invalid["repository"] = serde_json::json!(legacy);
+    invalid["delivery_id"] = serde_json::json!("invalid-origin");
+    fs::write(
+        &envelope_path,
+        serde_json::to_vec(&invalid).expect("encode invalid"),
+    )
+    .expect("write invalid envelope");
+    let rejected = run_explicit_json(
+        root,
+        ["history", "import", "--input", envelope_arg.as_ref()],
+    );
+    assert!(!rejected.status.success());
+    assert!(!String::from_utf8_lossy(&rejected.stderr).contains(secret));
+
+    run_git(
+        root,
+        [
+            "remote",
+            "set-url",
+            "origin",
+            "https://rotated-token@example.invalid/repo.git",
+        ],
+    );
+    let rotated = run_json(root, ["history", "status", "--branch", "main"]);
+    assert_eq!(rotated["repository"], expected);
+    assert_eq!(rotated["verified_deliveries"], 1);
+    for bytes in [&rejected.stdout, &rejected.stderr] {
+        assert!(!String::from_utf8_lossy(bytes).contains(secret));
+    }
+    assert!(
+        !fs::read(db_path)
+            .expect("read index")
+            .windows(secret.len())
+            .any(|part| part == secret.as_bytes())
+    );
+}
+
+#[test]
+fn real_binary_migrates_credentialed_history_scope_before_sync() {
+    let fixture = fixture_repository();
+    let root = fixture.path();
+    let clean = "https://example.invalid/repo.git";
+    let secret = "synthetic-old-password";
+    let old = format!("https://old-user:{secret}@example.invalid/repo.git");
+    run_git(root, ["remote", "add", "origin", old.as_str()]);
+    fs::write(root.join("src/migrated.rs"), "pub fn migrated() {}\n").expect("write source");
+    run_git(root, ["add", "src/migrated.rs"]);
+    run_git(root, ["commit", "-m", "second"]);
+    let status = run_json(root, ["history", "sync", "--branch", "main"]);
+    assert_eq!(status["complete"], true);
+    let envelope_path = root.join("legacy-delivery.json");
+    let envelope = serde_json::json!({
+        "schema_version": 2, "repository": clean, "landing_branch": "main",
+        "before_revision": git_stdout(root, ["rev-parse", "HEAD~1"]),
+        "after_revision": git_stdout(root, ["rev-parse", "HEAD"]),
+        "delivery_id": "verified-legacy", "evidence": "verified_delivery",
+        "source": {"system": "test"},
+        "delivered_at": {"status": "unavailable", "source": {"system": "test"}},
+        "captured_at": "2026-09-07T00:00:00Z", "tasks": []
+    });
+    fs::write(
+        &envelope_path,
+        serde_json::to_vec(&envelope).expect("encode envelope"),
+    )
+    .expect("write envelope");
+    let envelope_arg = envelope_path.to_string_lossy();
+    let imported = run_json(
+        root,
+        ["history", "import", "--input", envelope_arg.as_ref()],
+    );
+    assert_eq!(imported["inserted"], true);
+    let before = run_json(root, ["history", "status", "--branch", "main"]);
+    assert_eq!(before["verified_deliveries"], 1);
+    let db_path = Path::new(before["database_path"].as_str().expect("database path"));
+    {
+        let conn = rusqlite::Connection::open(db_path).expect("open index");
+        conn.pragma_update(None, "foreign_keys", "OFF")
+            .expect("seed legacy keys independently");
+        for table in [
+            "history_scopes",
+            "history_deliveries",
+            "history_tasks",
+            "history_supplied_task_snapshots",
+            "history_files",
+            "history_symbols",
+            "history_path_lineage",
+        ] {
+            conn.execute(
+                &format!("UPDATE {table} SET repository=?1 WHERE repository=?2"),
+                rusqlite::params![old, clean],
+            )
+            .expect("seed legacy repository");
+        }
+        conn.execute(
+            "UPDATE history_deliveries SET payload_json=replace(payload_json,?1,?2)",
+            rusqlite::params![clean, old],
+        )
+        .expect("seed legacy payload");
+    }
+    let blocked = run_explicit_json(root, ["history", "status", "--branch", "main"]);
+    assert!(!blocked.status.success());
+    let error = String::from_utf8_lossy(&blocked.stderr);
+    assert!(error.contains("history sync"), "{error}");
+    assert!(!error.contains(secret), "{error}");
+
+    run_git(
+        root,
+        [
+            "remote",
+            "set-url",
+            "origin",
+            "https://new-token@example.invalid/repo.git",
+        ],
+    );
+    let synced = run_json(root, ["history", "sync", "--branch", "main"]);
+    assert_eq!(synced["commits_indexed"], 0);
+    let after = run_json(root, ["history", "status", "--branch", "main"]);
+    assert_eq!(after["repository"], clean);
+    assert_eq!(after["cursor"], before["cursor"]);
+    assert_eq!(after["deliveries"], before["deliveries"]);
+    assert_eq!(after["verified_deliveries"], 1);
+    let bytes = fs::read(db_path).expect("read migrated index");
+    assert!(
+        !bytes
+            .windows(secret.len())
+            .any(|part| part == secret.as_bytes())
+    );
+}
+
+#[test]
 fn real_binary_rejects_invalid_history_timestamps_without_partial_import() {
     let fixture = fixture_repository();
     fs::write(

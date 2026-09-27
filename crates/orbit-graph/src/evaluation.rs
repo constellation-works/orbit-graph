@@ -221,10 +221,7 @@ pub fn evaluate_corpus(
         return Err(GraphError::invalid_input(
             "validate evaluation repository routing",
             "repository",
-            format!(
-                "corpus repository {:?} does not match routed repository {:?}",
-                corpus.repository, routed_identity
-            ),
+            "corpus repository does not match the routed credential-free repository identity",
         ));
     }
     let digest = blake3::hash(
