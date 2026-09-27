@@ -38,14 +38,10 @@ impl Extractor for MarkdownExtractor {
 
         for (i, heading) in headings.iter().enumerate() {
             let end_line = headings
-                .get(i + 1)
-                .map(|next| {
-                    if next.depth <= heading.depth {
-                        next.line.saturating_sub(1)
-                    } else {
-                        total_lines
-                    }
-                })
+                .iter()
+                .skip(i + 1)
+                .find(|next| next.depth <= heading.depth)
+                .map(|next| next.line.saturating_sub(1))
                 .unwrap_or(total_lines);
             let _body = slice_lines(&lines, heading.line, end_line);
             let (start_byte, end_byte) = line_range_to_bytes(source, heading.line, end_line);
