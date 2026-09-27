@@ -277,6 +277,10 @@ fn graph_open_removes_nothing_and_clean_removes_only_strictly_older_unlocked_ver
             .any(|path| path.starts_with(&newer_main_physical))
     );
 
+    // A concurrent test may spawn a child after this descriptor is opened.
+    // A forked child can briefly retain the same lock after `drop(held)`,
+    // whereas an explicit unlock releases it even with inherited descriptors.
+    held.unlock().expect("release stale lock");
     drop(held);
     crate::clean_old_databases(worktree.path()).expect("clean after the lock is released");
     assert!(!stale_locked.exists(), "the released old DB is removed");
