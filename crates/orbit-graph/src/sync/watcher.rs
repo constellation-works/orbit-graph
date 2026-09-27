@@ -1,11 +1,11 @@
 //! Background watcher for long-lived graph handles.
 //!
-//! Overflow policy (`STD-03 §R2`): file events reach the sync thread through a
-//! channel of [`EVENT_CHANNEL_CAPACITY`] events. When it is full, the notify
-//! callback drops the event and counts it, and the sync thread then schedules
-//! a sync. Every watcher sync rescans the whole worktree, so a dropped event
-//! loses no change. Dropping the watcher waits at most [`JOIN_TIMEOUT`] for the
-//! thread, then detaches it (`STD-03 §R22`).
+//! Overflow policy (`STD-03 §R2`): relevant file events reach the sync thread
+//! through a channel of [`EVENT_CHANNEL_CAPACITY`] events. When it is full, the
+//! notify callback drops the event and counts it, and the sync thread then
+//! schedules a sync. Every watcher sync rescans the whole worktree, so a
+//! dropped event loses no change. Dropping the watcher waits at most
+//! [`JOIN_TIMEOUT`] for the thread, then detaches it (`STD-03 §R22`).
 //!
 //! Only an event that can change the worktree schedules a sync. The notify
 //! backend also reports reads (on Linux, inotify's `IN_OPEN` for every file
@@ -180,8 +180,14 @@ fn watcher_thread(
     let (event_tx, event_rx) = mpsc::sync_channel(EVENT_CHANNEL_CAPACITY);
     let dropped = Arc::new(AtomicU64::new(0));
     let callback_dropped = Arc::clone(&dropped);
+    // Notify reports resolved paths on some backends. Use the same root for
+    // callback filtering and the event loop's classification.
+    let watch_root = worktree_root
+        .canonicalize()
+        .unwrap_or_else(|_| worktree_root.clone());
+    let callback_root = watch_root.clone();
     let mut watcher = match RecommendedWatcher::new(
-        move |event| forward_event(&event_tx, &callback_dropped, event),
+        move |event| forward_event(&event_tx, &callback_dropped, &callback_root, event),
         Config::default(),
     ) {
         Ok(watcher) => watcher,
@@ -195,9 +201,6 @@ fn watcher_thread(
     // root does not prefix would escape the ignored-directory filter, so the
     // watcher's own index writes would schedule syncs. The sync itself keeps
     // the caller's root.
-    let watch_root = worktree_root
-        .canonicalize()
-        .unwrap_or_else(|_| worktree_root.clone());
     if let Err(error) = watcher.watch(watch_root.as_path(), RecursiveMode::Recursive) {
         notify_start(ready.as_ref(), Err(error.to_string()));
         return;
@@ -213,14 +216,21 @@ fn watcher_thread(
     );
 }
 
-/// Queues `event` without blocking the notify thread. When the channel is
-/// full the event is dropped and counted; the sync thread turns the count
-/// into a full rescan.
+/// Filters irrelevant events before they can fill the queue or count as lost
+/// changes. Queues the rest without blocking the notify thread; a full queue
+/// counts as a lost change and causes a full rescan.
 fn forward_event(
     event_tx: &SyncSender<notify::Result<Event>>,
     dropped: &AtomicU64,
+    worktree_root: &Path,
     event: notify::Result<Event>,
 ) {
+    if let Ok(ref event) = event
+        && !event_requires_sync(worktree_root, event)
+        && !probe::keep_for_settle(event)
+    {
+        return;
+    }
     match event_tx.try_send(event) {
         Ok(()) | Err(TrySendError::Disconnected(_)) => {}
         Err(TrySendError::Full(_)) => {
@@ -304,12 +314,15 @@ fn run_background_sync(db_path: &Path, worktree_root: &Path) {
 
 /// Whether `event` may have changed what a sync would index.
 ///
-/// An access that is not the close of a write reads the worktree without
-/// changing it, whatever its path; a sync's own reads are such accesses. Any
-/// other event, including an unclassified one or one without paths (a
-/// backend's rescan request), schedules a sync unless every path it names is
-/// in an ignored top-level directory.
+/// A rescan flag always means events may have been lost. Otherwise, an access
+/// that is not the close of a write reads the worktree without changing it,
+/// whatever its path; a sync's own reads are such accesses. Any other event,
+/// including an unclassified one or one without paths, schedules a sync unless
+/// every path it names is in an ignored top-level directory.
 fn event_requires_sync(worktree_root: &Path, event: &Event) -> bool {
+    if event.need_rescan() {
+        return true;
+    }
     if matches!(event.kind, EventKind::Access(kind) if kind != AccessKind::Close(AccessMode::Write))
     {
         return false;
@@ -376,6 +389,20 @@ pub(crate) mod probe {
         changed.notify_all();
     }
 
+    /// Preserve the ignored sentinel as a test-only queue barrier. The loop
+    /// must classify it after earlier source events before reporting idle.
+    pub(super) fn keep_for_settle(event: &Event) -> bool {
+        event.paths.iter().any(|path| {
+            path.parent().is_some_and(|parent| {
+                parent
+                    .file_name()
+                    .is_some_and(|name| name == ".orbit-graph")
+            }) && path
+                .file_name()
+                .is_some_and(|name| name.to_string_lossy().starts_with("settle-"))
+        })
+    }
+
     pub(super) fn note_idle(worktree_root: &Path, sync_due: bool) {
         if sync_due {
             return;
@@ -430,6 +457,10 @@ mod probe {
     pub(super) fn note_event(_worktree_root: &Path, _event: &Event) {}
 
     pub(super) fn note_idle(_worktree_root: &Path, _sync_due: bool) {}
+
+    pub(super) fn keep_for_settle(_event: &Event) -> bool {
+        false
+    }
 }
 
 #[cfg(test)]

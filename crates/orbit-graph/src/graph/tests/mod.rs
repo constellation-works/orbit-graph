@@ -218,6 +218,41 @@ fn watch_policy_refreshes_query_results_after_file_edit() {
 }
 
 #[test]
+fn watch_policy_large_sync_settles_after_source_change() {
+    let worktree = TestWorktree::new("watch-large-sync-settles");
+    for index in 0..1_100 {
+        worktree.write(
+            &format!("src/module_{index}.rs"),
+            &format!("pub fn module_{index}() {{}}\n"),
+        );
+    }
+    let graph = Graph::open(
+        worktree.path(),
+        SyncPolicy::Watch {
+            debounce: Duration::from_millis(25),
+        },
+    )
+    .expect("open large watched graph");
+
+    worktree.write("src/module_0.rs", "pub fn changed_module() {}\n");
+    worktree.settle_watcher("after-large-sync");
+
+    assert_eq!(
+        graph
+            .search(&SearchQuery::new("changed_module"))
+            .expect("watched search after large sync")
+            .matches
+            .len(),
+        1
+    );
+    assert_eq!(
+        scan_count(worktree.path()),
+        2,
+        "the initial scan and changed-source scan must not trigger another scan"
+    );
+}
+
+#[test]
 fn clean_auto_sync_skips_pass_writes_and_preserves_persisted_sync_timestamp() {
     let worktree = TestWorktree::new("clean-auto-sync");
     worktree.write("src/lib.rs", "pub fn clean_auto_sync() {}\n");
