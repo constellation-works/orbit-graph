@@ -33,6 +33,15 @@ const PREVIOUS_HISTORY_INDEX_SCHEMA_VERSION: u32 = 4;
 /// `history_meta` key recording that the one-time previous-schema copy was attempted.
 const LEGACY_COPY_META_KEY: &str = "legacy_copy";
 
+/// Extraction contracts that stored delivery payloads were produced under.
+///
+/// `history_meta` records each database-wide, and a rebuild that re-extracts
+/// only some stored scopes records it per scope until every scope is current.
+const CONTRACT_VERSIONS: [(&str, u32); 2] = [
+    ("extractor_version", CHANGE_EXTRACTOR_VERSION),
+    ("import_schema_version", DELIVERY_IMPORT_SCHEMA_VERSION),
+];
+
 /// Handle to the repository-local, rebuildable delivery-history index.
 #[derive(Debug, Clone)]
 pub struct HistoryIndex {
@@ -169,7 +178,8 @@ impl HistoryIndex {
         Self::open_with_optional_index_dir(repo_root, landing_branch, None)
     }
 
-    /// Open a history index for a rebuild, validating only its schema.
+    /// Open a history index for a rebuild, validating its schema and
+    /// tolerating older, but not newer, extraction contracts.
     /// Preview mode is observational and never creates an index.
     pub fn open_for_rebuild(
         repo_root: &Path,
@@ -190,6 +200,7 @@ impl HistoryIndex {
                 index.db_path = physical;
                 let conn = index.open_connection()?;
                 index.validate_schema_version(&conn)?;
+                index.refuse_unsupported_contracts(&conn)?;
             }
             return Ok(index);
         }
@@ -200,6 +211,7 @@ impl HistoryIndex {
             initialize_schema(&conn)?;
         } else {
             index.validate_schema_version(&conn)?;
+            index.refuse_unsupported_contracts(&conn)?;
         }
         Ok(index)
     }
@@ -209,8 +221,10 @@ impl HistoryIndex {
     /// Nothing is created, initialized, locked, copied or chmodded, so this
     /// works against a read-only `.orbit-graph/` directory (STD-01 §R31). An
     /// index that `orbit-graph history sync` has not built is
-    /// [`GraphError::IndexMissing`], and one with other stored versions is an
-    /// error naming `history rebuild`. Writes through the handle are refused.
+    /// [`GraphError::IndexMissing`], one whose scope has older extraction
+    /// contracts is an error naming `history rebuild`, and one with a newer
+    /// schema or contract is [`GraphError::IndexIncompatible`]. Writes
+    /// through the handle are refused.
     pub fn open_read_only(repo_root: &Path, landing_branch: &str) -> Result<Self, GraphError> {
         Self::open_read_only_with_optional_index_dir(repo_root, landing_branch, None)
     }
@@ -698,6 +712,8 @@ impl HistoryIndex {
         let tx = conn
             .transaction_with_behavior(TransactionBehavior::Immediate)
             .map_err(|source| GraphError::sqlite("begin history rebuild", source))?;
+        // Re-checked under the lock: a newer binary may have written since open.
+        self.refuse_unsupported_contracts(&tx)?;
         let removed = delete_scope(&tx, self.repository.as_str(), self.landing_branch.as_str())?;
         for change in &preserved {
             insert_delivery(&tx, change)?;
@@ -705,23 +721,13 @@ impl HistoryIndex {
         for change in &extracted {
             insert_delivery(&tx, change)?;
         }
-        for (key, value) in [
-            ("schema_version", HISTORY_INDEX_SCHEMA_VERSION),
-            ("extractor_version", CHANGE_EXTRACTOR_VERSION),
-            ("import_schema_version", DELIVERY_IMPORT_SCHEMA_VERSION),
-        ] {
-            tx.execute(
-                "INSERT OR REPLACE INTO history_meta(key,value) VALUES(?1,?2)",
-                params![key, value.to_string()],
-            )
-            .map_err(|source| GraphError::sqlite("rewrite history version", source))?;
-        }
         write_cursor(
             &tx,
             self.repository.as_str(),
             self.landing_branch.as_str(),
             tip,
         )?;
+        stamp_rebuilt_scope(&tx, self.repository.as_str(), self.landing_branch.as_str())?;
         tx.commit()
             .map_err(|source| GraphError::sqlite("commit history rebuild", source))?;
         Ok(HistoryRebuildReport {
@@ -1299,13 +1305,18 @@ impl HistoryIndex {
         self.validate_version(conn, "schema_version", HISTORY_INDEX_SCHEMA_VERSION)
     }
 
+    /// Validate the schema and the extraction contracts of this handle's
+    /// scope, which may have been rebuilt ahead of the database-global ones.
     fn validate_versions(&self, conn: &Connection) -> Result<(), GraphError> {
-        for (key, expected) in [
-            ("schema_version", HISTORY_INDEX_SCHEMA_VERSION),
-            ("extractor_version", CHANGE_EXTRACTOR_VERSION),
-            ("import_schema_version", DELIVERY_IMPORT_SCHEMA_VERSION),
-        ] {
-            self.validate_version(conn, key, expected)?;
+        self.validate_schema_version(conn)?;
+        for (key, expected) in CONTRACT_VERSIONS {
+            let actual = scope_contract_version(
+                conn,
+                key,
+                self.repository.as_str(),
+                self.landing_branch.as_str(),
+            )?;
+            self.check_version(key, actual, expected)?;
         }
         Ok(())
     }
@@ -1316,13 +1327,51 @@ impl HistoryIndex {
         key: &str,
         expected: u32,
     ) -> Result<(), GraphError> {
-        let actual: String = conn
-            .query_row(
-                "SELECT value FROM history_meta WHERE key=?1",
-                [key],
-                |row| row.get(0),
-            )
-            .map_err(|source| GraphError::sqlite("read history index version", source))?;
+        let actual = read_meta(conn, key)?;
+        self.check_version(key, actual, expected)
+    }
+
+    /// Refuse an index holding any extraction contract, global or scoped,
+    /// that this binary does not understand: rebuilding would stamp it down
+    /// (STD-03 §R10). Checked before a rebuild mutates anything.
+    fn refuse_unsupported_contracts(&self, conn: &Connection) -> Result<(), GraphError> {
+        let mut stmt = conn
+            .prepare("SELECT key, value FROM history_meta ORDER BY key")
+            .map_err(|source| GraphError::sqlite("prepare history version read", source))?;
+        let rows = stmt
+            .query_map([], |row| {
+                Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+            })
+            .map_err(|source| GraphError::sqlite("query history versions", source))?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|source| GraphError::sqlite("read history version", source))?;
+        for (key, value) in rows {
+            let base = key.split_once('@').map_or(key.as_str(), |(base, _)| base);
+            let Some(expected) = CONTRACT_VERSIONS
+                .iter()
+                .find(|(contract, _)| *contract == base)
+                .map(|(_, expected)| *expected)
+            else {
+                continue;
+            };
+            if !is_older_or_current(value.as_str(), expected) {
+                return Err(self.unsupported_contract(key.as_str(), value.as_str(), expected));
+            }
+        }
+        Ok(())
+    }
+
+    fn unsupported_contract(&self, key: &str, found: &str, expected: u32) -> GraphError {
+        GraphError::IndexIncompatible {
+            path: self.db_path.clone(),
+            reason: format!(
+                "history index {} has {key}={found}; expected at most {expected}; it was written by a newer or unknown orbit-graph, so this binary neither reads nor rebuilds it",
+                self.db_path.display()
+            ),
+        }
+    }
+
+    fn check_version(&self, key: &str, actual: String, expected: u32) -> Result<(), GraphError> {
         if actual != expected.to_string() {
             if key == "schema_version" {
                 return Err(GraphError::IndexIncompatible {
@@ -1332,6 +1381,9 @@ impl HistoryIndex {
                         self.db_path.display()
                     ),
                 });
+            }
+            if !is_older_or_current(actual.as_str(), expected) {
+                return Err(self.unsupported_contract(key, actual.as_str(), expected));
             }
             return Err(GraphError::VersionMismatch(Box::new(
                 VersionMismatchDetails {
@@ -1348,6 +1400,100 @@ impl HistoryIndex {
         }
         Ok(())
     }
+}
+
+fn read_meta(conn: &Connection, key: &str) -> Result<String, GraphError> {
+    conn.query_row(
+        "SELECT value FROM history_meta WHERE key=?1",
+        [key],
+        |row| row.get(0),
+    )
+    .map_err(|source| GraphError::sqlite("read history index version", source))
+}
+
+/// `history_meta` key holding `key` for one scope rebuilt while other stored
+/// scopes still carry older payloads.
+fn scope_version_key(key: &str, repository: &str, branch: &str) -> String {
+    format!("{key}@{}", serde_json::json!([repository, branch]))
+}
+
+/// The contract version a scope's payloads were extracted under: its own
+/// rebuilt version, else the database-global one.
+fn scope_contract_version(
+    conn: &Connection,
+    key: &str,
+    repository: &str,
+    branch: &str,
+) -> Result<String, GraphError> {
+    let scoped: Option<String> = conn
+        .query_row(
+            "SELECT value FROM history_meta WHERE key=?1",
+            [scope_version_key(key, repository, branch)],
+            |row| row.get(0),
+        )
+        .optional()
+        .map_err(|source| GraphError::sqlite("read history scope version", source))?;
+    match scoped {
+        Some(scoped) => Ok(scoped),
+        None => read_meta(conn, key),
+    }
+}
+
+/// True for a stored version this binary can re-extract: an older or the
+/// current one. Newer or unparseable versions belong to another binary.
+fn is_older_or_current(found: &str, expected: u32) -> bool {
+    found
+        .parse::<u32>()
+        .is_ok_and(|version| version <= expected)
+}
+
+/// Record the rebuilt scope's payloads as current. The database-global
+/// versions are stamped current only once every stored scope is, so a scope
+/// that was not re-extracted never becomes readable as current.
+fn stamp_rebuilt_scope(
+    conn: &Connection,
+    repository: &str,
+    branch: &str,
+) -> Result<(), GraphError> {
+    let stamp = |key: &str, value: u32| {
+        conn.execute(
+            "INSERT OR REPLACE INTO history_meta(key,value) VALUES(?1,?2)",
+            params![key, value.to_string()],
+        )
+        .map_err(|source| GraphError::sqlite("rewrite history version", source))
+    };
+    stamp("schema_version", HISTORY_INDEX_SCHEMA_VERSION)?;
+    for (key, value) in CONTRACT_VERSIONS {
+        stamp(scope_version_key(key, repository, branch).as_str(), value)?;
+    }
+    let mut stmt = conn
+        .prepare(
+            "SELECT repository, landing_branch FROM history_scopes UNION SELECT repository, landing_branch FROM history_deliveries",
+        )
+        .map_err(|source| GraphError::sqlite("prepare stored history scopes", source))?;
+    let scopes = stmt
+        .query_map([], |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+        })
+        .map_err(|source| GraphError::sqlite("query stored history scopes", source))?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|source| GraphError::sqlite("read stored history scope", source))?;
+    for (repository, branch) in &scopes {
+        for (key, expected) in CONTRACT_VERSIONS {
+            if scope_contract_version(conn, key, repository, branch)? != expected.to_string() {
+                return Ok(());
+            }
+        }
+    }
+    for (key, value) in CONTRACT_VERSIONS {
+        stamp(key, value)?;
+        conn.execute(
+            "DELETE FROM history_meta WHERE substr(key,1,length(?1))=?1",
+            [format!("{key}@")],
+        )
+        .map_err(|source| GraphError::sqlite("clear history scope versions", source))?;
+    }
+    Ok(())
 }
 
 const HISTORY_SCHEMA: &str = r#"

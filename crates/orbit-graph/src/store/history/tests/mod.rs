@@ -501,6 +501,235 @@ fn concurrent_opens_copy_a_previous_index_exactly_once() {
     }
 }
 
+#[test]
+fn rebuilding_one_stale_scope_leaves_other_stale_scopes_refused() {
+    for (key, current) in CONTRACT_VERSIONS {
+        let repo = two_scope_repo();
+        let db = index_path(repo.path());
+        set_meta(&db, key, "0");
+        let release_before = scope_rows(&db, "release");
+        for branch in ["main", "release"] {
+            assert!(
+                matches!(
+                    HistoryIndex::open_read_only(repo.path(), branch),
+                    Err(GraphError::VersionMismatch(_))
+                ),
+                "{key}: {branch} refused before rebuild"
+            );
+        }
+
+        rebuild_confirmed(repo.path(), "main").expect("rebuild main");
+        HistoryIndex::open_read_only(repo.path(), "main")
+            .expect("rebuilt main is current")
+            .status()
+            .expect("main status");
+        assert!(
+            matches!(
+                HistoryIndex::open_read_only(repo.path(), "release"),
+                Err(GraphError::VersionMismatch(_))
+            ),
+            "{key}: release was not re-extracted"
+        );
+        assert!(
+            matches!(
+                HistoryIndex::open(repo.path(), "release"),
+                Err(GraphError::VersionMismatch(_))
+            ),
+            "{key}: release writer refused"
+        );
+        assert_eq!(scope_rows(&db, "release"), release_before, "{key}");
+        assert_eq!(meta(&db).get(key).map(String::as_str), Some("0"), "{key}");
+
+        rebuild_confirmed(repo.path(), "release").expect("rebuild release");
+        for branch in ["main", "release"] {
+            HistoryIndex::open_read_only(repo.path(), branch)
+                .unwrap_or_else(|error| panic!("{key}: {branch} current: {error}"));
+        }
+        let meta = meta(&db);
+        assert_eq!(meta.get(key), Some(&current.to_string()), "{key}");
+        assert!(
+            meta.keys().all(|stored| !stored.contains('@')),
+            "{key}: scoped versions collapse once every scope is current: {meta:?}"
+        );
+    }
+}
+
+#[test]
+fn rebuild_refuses_newer_contract_versions_without_mutation() {
+    for (key, current) in CONTRACT_VERSIONS {
+        let newer = (current + 1).to_string();
+        for scoped in [false, true] {
+            let repo = two_scope_repo();
+            let db = index_path(repo.path());
+            let repository = HistoryIndex::open(repo.path(), "main")
+                .expect("open")
+                .repository()
+                .to_string();
+            let stored_key = if scoped {
+                scope_version_key(key, repository.as_str(), "release")
+            } else {
+                key.to_string()
+            };
+            set_meta(&db, stored_key.as_str(), newer.as_str());
+            let before = (
+                meta(&db),
+                scope_rows(&db, "main"),
+                scope_rows(&db, "release"),
+            );
+            for confirm in [false, true] {
+                assert!(
+                    matches!(
+                        HistoryIndex::open_for_rebuild(repo.path(), "main", confirm),
+                        Err(GraphError::IndexIncompatible { .. })
+                    ),
+                    "{stored_key}: confirm={confirm} refused"
+                );
+            }
+            if !scoped {
+                assert!(matches!(
+                    HistoryIndex::open_read_only(repo.path(), "main"),
+                    Err(GraphError::IndexIncompatible { .. })
+                ));
+            }
+            let after = (
+                meta(&db),
+                scope_rows(&db, "main"),
+                scope_rows(&db, "release"),
+            );
+            assert_eq!(after, before, "{stored_key}");
+        }
+
+        // A newer writer landing between open and the rebuild transaction.
+        let repo = two_scope_repo();
+        let db = index_path(repo.path());
+        let index = HistoryIndex::open_for_rebuild(repo.path(), "main", true).expect("open");
+        set_meta(&db, key, newer.as_str());
+        let before = (meta(&db), scope_rows(&db, "main"));
+        assert!(matches!(
+            index.rebuild_with_options(Some(10), true, false),
+            Err(GraphError::IndexIncompatible { .. })
+        ));
+        assert_eq!((meta(&db), scope_rows(&db, "main")), before, "{key}");
+    }
+}
+
+#[test]
+fn same_version_scoped_rebuild_preserves_verified_deliveries_and_snapshots() {
+    let repo = two_scope_repo();
+    let db = index_path(repo.path());
+    let index = HistoryIndex::open(repo.path(), "main").expect("open");
+    let deliveries = index.deliveries().expect("main deliveries");
+    let git_only = &deliveries[0].delivery;
+    let delivery = fixture_delivery(
+        &index,
+        git_only.before_revision.clone(),
+        git_only.after_revision.clone(),
+        "verified-main",
+    );
+    let mut snapshot = delivery.tasks[0].clone();
+    snapshot.title = "Caller-supplied A".into();
+    index
+        .import_with_supplied_snapshots(delivery, vec![snapshot.clone()])
+        .expect("import verified");
+    let meta_before = meta(&db);
+    let release_before = scope_rows(&db, "release");
+
+    let report = rebuild_confirmed(repo.path(), "main").expect("rebuild main");
+    assert_eq!(report.verified_deliveries, 1);
+    assert_eq!(report.removed_verified_deliveries, 0);
+    let rebuilt = HistoryIndex::open_read_only(repo.path(), "main").expect("read main");
+    assert_eq!(rebuilt.status().expect("status").verified_deliveries, 1);
+    let verified = rebuilt
+        .deliveries()
+        .expect("rebuilt deliveries")
+        .into_iter()
+        .find(|change| change.delivery.delivery_id == "verified-main")
+        .expect("verified delivery kept");
+    assert_eq!(verified.supplied_snapshots, vec![snapshot]);
+    let conn = Connection::open(&db).expect("open db");
+    let snapshots: i64 = conn
+        .query_row(
+            "SELECT count(*) FROM history_supplied_task_snapshots WHERE landing_branch='main'",
+            [],
+            |row| row.get(0),
+        )
+        .expect("count snapshots");
+    assert_eq!(snapshots, 1);
+    assert_eq!(scope_rows(&db, "release"), release_before);
+    assert_eq!(meta(&db), meta_before);
+    HistoryIndex::open_read_only(repo.path(), "release").expect("release still current");
+}
+
+/// A repository with synced `main` and diverged `release` history scopes.
+fn two_scope_repo() -> TempDir {
+    let repo = fixture_repo();
+    write(repo.path(), "a.rs", "fn a() -> i32 { 1 }\n");
+    commit(repo.path(), "root");
+    write(repo.path(), "a.rs", "fn a() -> i32 { 2 }\n");
+    commit(repo.path(), "main work");
+    git(repo.path(), &["checkout", "-b", "release"]);
+    write(repo.path(), "r.rs", "fn release() {}\n");
+    commit(repo.path(), "release work");
+    git(repo.path(), &["checkout", "main"]);
+    for branch in ["main", "release"] {
+        HistoryIndex::open(repo.path(), branch)
+            .expect("open scope")
+            .sync(Some(10))
+            .expect("sync scope");
+    }
+    repo
+}
+
+fn rebuild_confirmed(root: &Path, branch: &str) -> Result<HistoryRebuildReport, GraphError> {
+    HistoryIndex::open_for_rebuild(root, branch, true)?.rebuild_with_options(Some(10), true, false)
+}
+
+fn index_path(root: &Path) -> std::path::PathBuf {
+    HistoryIndex::open_read_only(root, "main")
+        .expect("open index")
+        .database_path()
+        .to_path_buf()
+}
+
+fn set_meta(db: &Path, key: &str, value: &str) {
+    Connection::open(db)
+        .expect("open db")
+        .execute(
+            "INSERT OR REPLACE INTO history_meta(key,value) VALUES(?1,?2)",
+            params![key, value],
+        )
+        .expect("set history meta");
+}
+
+fn meta(db: &Path) -> std::collections::BTreeMap<String, String> {
+    let conn = Connection::open(db).expect("open db");
+    let mut stmt = conn
+        .prepare("SELECT key, value FROM history_meta")
+        .expect("prepare meta");
+    stmt.query_map([], |row| Ok((row.get(0)?, row.get(1)?)))
+        .expect("query meta")
+        .collect::<Result<_, _>>()
+        .expect("read meta")
+}
+
+/// Every stored delivery payload and the cursor row of one branch scope.
+fn scope_rows(db: &Path, branch: &str) -> Vec<String> {
+    let conn = Connection::open(db).expect("open db");
+    let mut stmt = conn
+        .prepare(
+            "SELECT payload_json FROM history_deliveries WHERE landing_branch=?1 UNION ALL SELECT coalesce(cursor,'') || '|' || coalesce(bootstrap_tip,'') FROM history_scopes WHERE landing_branch=?1",
+        )
+        .expect("prepare scope rows");
+    let mut rows = stmt
+        .query_map([branch], |row| row.get::<_, String>(0))
+        .expect("query scope rows")
+        .collect::<Result<Vec<_>, _>>()
+        .expect("read scope rows");
+    rows.sort();
+    assert!(!rows.is_empty(), "scope {branch} is stored");
+    rows
+}
+
 fn fixture_delivery(
     index: &HistoryIndex,
     before: String,
