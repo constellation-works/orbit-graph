@@ -20,7 +20,7 @@ pub struct Graph {
     /// Opened by a read-only constructor: [`Graph::sync`] is refused.
     read_only: bool,
     read_conn: Mutex<Option<Connection>>,
-    /// Physical database whose lock covers this handle's writer-connection
+    /// Physical database whose short close lock covers its writer-connection
     /// close. `None` for a read-only handle, which must not create a lock file.
     writer_db: Option<PathBuf>,
     last_auto_sync_at: Mutex<i64>,
@@ -40,7 +40,7 @@ impl Drop for Graph {
             return;
         };
         // The last writer connection's close unlinks `-shm` before `-wal`.
-        // Hold the database lock until that close returns so a concurrent
+        // Hold the short close lock until that close returns so a concurrent
         // `open_at_path` pre-check waits out the gap instead of refusing it.
         // A read-only handle must not create the lock file.
         match self.writer_db.as_deref() {

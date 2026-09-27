@@ -20,8 +20,10 @@ use std::fs;
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output, Stdio};
+use std::sync::mpsc;
+use std::time::{Duration, Instant};
 
-use orbit_graph::{EXTRACTOR_VERSION, STORE_SCHEMA_VERSION};
+use orbit_graph::{EXTRACTOR_VERSION, Graph, STORE_SCHEMA_VERSION, SyncPolicy};
 use serde_json::{Value, json};
 use tempfile::TempDir;
 
@@ -227,16 +229,89 @@ fn sixteen_concurrent_first_syncs_all_succeed() {
     assert!(search.is_object(), "{search}");
 }
 
-/// Concurrent syncs on an index that is already in WAL mode. Each process
-/// opens, syncs, and closes. Closing the last connection unlinks `-shm`
-/// before `-wal`; the opener must wait on the database lock that covers that
-/// close, not on a sleep.
+/// An initialized writer handle can open and close while another process
+/// holds the sync lock. A CLI query also exits before that lock is released.
 #[test]
-fn concurrent_syncs_on_an_initialized_wal_index_all_succeed() {
-    const ITERATIONS: usize = 200;
+fn a_held_sync_lock_does_not_delay_query_or_writer_close() {
     let repo = fixture_repository();
     run_json(repo.path(), &["sync"]);
-    for iteration in 1..=ITERATIONS {
+    let db = PathBuf::from(
+        run_json(repo.path(), &["db-path"])["path"]
+            .as_str()
+            .expect("database path"),
+    );
+    let held = hold_lock(&db);
+    let (sender, receiver) = mpsc::channel();
+    let root = repo.path().to_path_buf();
+    let writer = std::thread::spawn(move || {
+        let result = Graph::open(&root, SyncPolicy::Manual).map(drop);
+        sender.send(result).expect("send writer result");
+    });
+
+    let started = Instant::now();
+    let output = run_cli(repo.path(), &["search", "helper"]);
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let query: Value = serde_json::from_slice(&output.stdout).expect("query JSON");
+    assert!(query.is_object(), "{query}");
+    assert!(
+        started.elapsed() < Duration::from_secs(2),
+        "CLI query waited for the held sync lock"
+    );
+    let writer_result = receiver.recv_timeout(Duration::from_secs(2));
+    drop(held);
+    writer_result
+        .expect("writer open or close waited for the held sync lock")
+        .expect("open writer while sync lock held");
+    writer.join().expect("writer thread");
+}
+
+/// The close-lock sidecar is state too: an unexpected directory in its name
+/// must be refused before a query or sync changes the existing index.
+#[test]
+fn invalid_close_lock_sidecar_is_refused_without_mutation() {
+    let repo = fixture_repository();
+    run_json(repo.path(), &["sync"]);
+    let db = PathBuf::from(
+        run_json(repo.path(), &["db-path"])["path"]
+            .as_str()
+            .expect("database path"),
+    );
+    let close_lock = sidecar(&db, ".close.lock");
+    fs::remove_file(&close_lock).expect("remove fixture close lock");
+    fs::create_dir(&close_lock).expect("plant invalid close lock");
+    let index = repo.path().join(".orbit-graph");
+    let before = snapshot(&index);
+
+    for args in [&["search", "helper"][..], &["sync"][..]] {
+        let output = run_cli(repo.path(), args);
+        assert!(
+            !output.status.success(),
+            "{args:?} accepted invalid sidecar"
+        );
+        let error: Value = serde_json::from_slice(&output.stderr).expect("JSON error");
+        assert_eq!(error["code"], "unsafe_state_path", "{error}");
+        assert_eq!(snapshot(&index), before, "{args:?} changed the index");
+    }
+}
+
+/// Concurrent syncs on an index already in WAL mode. Each process opens,
+/// syncs, and closes. The default 12 iterations keep CI below 10 seconds per
+/// platform; run all 200 with:
+/// `ORBIT_GRAPH_FULL_CONCURRENCY_STRESS=1 cargo test -p orbit-graph-cli --test read_only_index concurrent_syncs_on_an_initialized_wal_index_all_succeed --locked -- --exact`.
+#[test]
+fn concurrent_syncs_on_an_initialized_wal_index_all_succeed() {
+    let iterations = if std::env::var_os("ORBIT_GRAPH_FULL_CONCURRENCY_STRESS").is_some() {
+        200
+    } else {
+        12
+    };
+    let repo = fixture_repository();
+    run_json(repo.path(), &["sync"]);
+    for iteration in 1..=iterations {
         assert_concurrent_syncs_succeed(repo.path(), 16, &format!("iteration {iteration}"));
     }
 }
@@ -286,6 +361,7 @@ fn only_sync_and_clean_remove_strictly_older_databases_whose_lock_is_free() {
     let newer = plant(&dir, &format!("main.{}.db", EXTRACTOR_VERSION + 1));
     let older_locked = plant(&dir, &format!("main.{}.db", EXTRACTOR_VERSION - 1));
     let older_free = plant(&dir, &format!("feature.{}.db", EXTRACTOR_VERSION - 1));
+    fs::write(sidecar(&older_free, ".close.lock"), b"").expect("plant close lock");
     let newer_lock = hold_lock(&newer);
     let older_lock = hold_lock(&older_locked);
 
@@ -309,6 +385,10 @@ fn only_sync_and_clean_remove_strictly_older_databases_whose_lock_is_free() {
     assert!(
         !sidecar(&older_free, "-wal").exists(),
         "sync left the obsolete database's WAL"
+    );
+    assert!(
+        !sidecar(&older_free, ".close.lock").exists(),
+        "sync left the obsolete database's close lock"
     );
 
     let clean = run_json(repo.path(), &["clean", "--confirm"]);

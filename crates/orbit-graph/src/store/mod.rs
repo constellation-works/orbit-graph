@@ -13,6 +13,7 @@ use std::path::{Path, PathBuf};
 use git2::Repository;
 use rusqlite::{Connection, OpenFlags, OptionalExtension};
 
+use crate::lock::{self, FileLockGuard};
 use crate::state_dir::{SCRATCH_DIR_NAME, StateAccess, open_state_file};
 use crate::sync::scanner::DbLockGuard;
 use crate::{EXTRACTOR_VERSION, GraphDbPath, GraphError, resolve_db_path_for_commit};
@@ -180,10 +181,10 @@ pub(crate) fn existing_physical_db(
     Ok(Some(physical))
 }
 
-/// Refuse a database whose `-wal`, `-shm` or `.lock` sidecar is a symlink,
+/// Refuse a database whose `-wal`, `-shm`, `.lock` or `.close.lock` sidecar is a symlink,
 /// not a regular file, or another user's, without changing anything.
 pub(crate) fn check_sidecars(physical_db: &Path) -> Result<(), GraphError> {
-    for suffix in ["-wal", "-shm", ".lock"] {
+    for suffix in ["-wal", "-shm", ".lock", ".close.lock"] {
         let mut name = physical_db.as_os_str().to_os_string();
         name.push(suffix);
         crate::state_dir::check_state_file(Path::new(&name))?;
@@ -212,7 +213,6 @@ fn open_at_path(
     // Check a populated database before even repairing its directory or
     // permissions. An incompatible index must be left exactly as found.
     let existing = existing_physical_db(worktree_root, db_path.path())?;
-    let mut setup_lock = None;
     let needs_initialization = if let Some(path) = existing.as_deref() {
         let initialized =
             match validate_nonempty_identity(path, db_path.path(), expected_branch, false) {
@@ -220,10 +220,10 @@ fn open_at_path(
                 // SQLite's last-connection close unlinks `-shm` and then `-wal`
                 // inside `sqlite3_close`. Sampling those sidecars separately
                 // reports a torn pair that is not a schema refusal. The writer
-                // holds this lock until that close returns, so acquiring it
-                // happens after the close. Revalidate once while holding it.
+                // holds the short close lock until that close returns, so
+                // acquiring it happens after the close. Revalidate once.
                 Err(error) if torn_wal_sidecars(&error) => {
-                    setup_lock = Some(DbLockGuard::acquire(path)?);
+                    let _close_lock = acquire_close_lock(path)?;
                     validate_nonempty_identity(path, db_path.path(), expected_branch, true)?
                 }
                 Err(error) => return Err(error),
@@ -238,12 +238,9 @@ fn open_at_path(
     // Switching a new file to WAL needs the database to itself, and SQLite
     // answers a concurrent switch with SQLITE_BUSY instead of waiting. First
     // opens therefore serialize on the sync lock until the schema is ready.
-    // An initialized WAL database needs no lock for that switch (STD-03 §R6).
-    // Connection close still takes the lock below: the `-shm`/`-wal` gap is
-    // inside `sqlite3_close`, and a concurrent pre-check waits on this lock.
-    let setup_lock = if setup_lock.is_some() {
-        setup_lock
-    } else if !needs_initialization
+    // An initialized WAL database needs no sync lock for that switch
+    // (STD-03 §R6). Connection close uses a separate short lock.
+    let setup_lock = if !needs_initialization
         && database_uses_wal(physical_db.as_path(), "read graph database header")?
     {
         None
@@ -253,7 +250,12 @@ fn open_at_path(
     // Another first opener may have initialized the database while we waited
     // for the setup lock. Recheck its identity before any writable open.
     if setup_lock.is_some() {
-        validate_nonempty_identity(physical_db.as_path(), db_path.path(), expected_branch, true)?;
+        validate_nonempty_identity(
+            physical_db.as_path(),
+            db_path.path(),
+            expected_branch,
+            false,
+        )?;
     }
     // SQLite's default creation mode can expose indexed source text. Create
     // the database with private permissions before SQLite opens it, repair an
@@ -278,14 +280,8 @@ fn open_at_path(
     // A database whose stored schema identity differs is never written
     // (STD-03 §R10).
     schema::validate_identity(&conn, db_path.path(), expected_branch)?;
-    // Close while the lock is held. `flock` is not reentrant, so take it
-    // here only when this open does not already hold it.
-    if let Some(lock) = setup_lock {
-        drop(conn);
-        drop(lock);
-    } else {
-        close_connection_under_lock(conn, physical_db.as_path())?;
-    }
+    close_connection_under_lock(conn, physical_db.as_path())?;
+    drop(setup_lock);
 
     Ok(OpenedGraph {
         db_path,
@@ -296,14 +292,14 @@ fn open_at_path(
 /// Return whether an existing database has a complete, compatible schema.
 /// An empty SQLite database is left for initialization under the setup lock.
 ///
-/// `lock_held` is true when the caller already holds the database lock.
+/// `close_lock_held` is true when the caller already holds the close lock.
 /// A compatible WAL connection is closed under that lock: it may be the last
 /// connection, and SQLite then unlinks `-shm` before `-wal`.
 fn validate_nonempty_identity(
     path: &Path,
     db_path: &Path,
     expected_branch: Option<&str>,
-    lock_held: bool,
+    close_lock_held: bool,
 ) -> Result<bool, GraphError> {
     let Some(file) = open_state_file(path, StateAccess::Read)? else {
         return Ok(false);
@@ -321,7 +317,7 @@ fn validate_nonempty_identity(
         return Ok(false);
     }
     schema::validate_identity(&conn, db_path, expected_branch)?;
-    if !lock_held && database_uses_wal(path, "read graph database header")? {
+    if !close_lock_held && database_uses_wal(path, "read graph database header")? {
         close_connection_under_lock(conn, path)?;
     }
     Ok(true)
@@ -340,17 +336,30 @@ fn torn_wal_sidecars(error: &GraphError) -> bool {
     )
 }
 
-/// Close `conn` while holding the database lock, then release the lock.
+/// Acquire the short lock shared by writer closes and torn-sidecar retries.
+/// It is separate from the sync lock, which can be held throughout a scan.
+fn acquire_close_lock(db_path: &Path) -> Result<FileLockGuard, GraphError> {
+    let mut name = db_path.as_os_str().to_os_string();
+    name.push(".close.lock");
+    FileLockGuard::acquire(
+        Path::new(&name),
+        &lock::holder_label("graph connection close"),
+        lock::lock_timeout(),
+        "lock graph connection close",
+    )
+}
+
+/// Close `conn` while holding the short close lock, then release it.
 ///
 /// SQLite unlinks the `-shm` wal-index and then the `-wal` file before
 /// `sqlite3_close` returns. Releasing the lock only after that return orders
-/// a concurrent opener's pre-check after the gap. The caller must not already
-/// hold the lock: `flock` on a second descriptor of this process blocks.
+/// a concurrent opener's torn-sidecar retry after the gap. The caller must
+/// not already hold this lock: `flock` on a second descriptor blocks.
 pub(crate) fn close_connection_under_lock(
     conn: Connection,
     db_path: &Path,
 ) -> Result<(), GraphError> {
-    match DbLockGuard::acquire(db_path) {
+    match acquire_close_lock(db_path) {
         Ok(lock) => {
             drop(conn);
             drop(lock);
@@ -365,13 +374,13 @@ pub(crate) fn close_connection_under_lock(
 
 /// Close a writer connection from a destructor, which cannot return the lock
 /// error. The connection is closed either way, so the descriptor is not
-/// leaked when the lock times out.
+/// leaked when the close lock times out.
 pub(crate) fn close_writer_connection(conn: Connection, db_path: &Path) {
     if let Err(error) = close_connection_under_lock(conn, db_path) {
         tracing::warn!(
             path = %db_path.display(),
             %error,
-            "closed a graph writer without holding the database lock across WAL teardown"
+            "closed a graph writer without holding the close lock across WAL teardown"
         );
     }
 }
