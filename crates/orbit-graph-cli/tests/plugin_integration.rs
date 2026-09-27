@@ -855,7 +855,7 @@ fn launchers_reject_version_number_prefixes_before_the_real_request() {
     let fake = fake_dir.join("orbit-graph");
     let fake_path = format!("{}:/usr/bin:/bin", fake_dir.display());
     let cases = [
-        ("expected 21/1 envelope", 21, 1, true, true),
+        ("a stale extractor version 21", 21, 1, true, false),
         (
             "current 23/1 envelope",
             EXTRACTOR_VERSION,
