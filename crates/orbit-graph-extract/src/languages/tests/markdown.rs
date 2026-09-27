@@ -63,3 +63,45 @@ fn markdown_extractor_no_refs_relations_configs() {
     assert!(file.relations.is_empty());
     assert!(file.configs.is_empty());
 }
+
+fn heading_span<'a>(file: &crate::ExtractedFile, source: &'a str, name: &str) -> &'a str {
+    let heading = file
+        .symbols
+        .iter()
+        .find(|symbol| symbol.name == name)
+        .unwrap_or_else(|| panic!("missing heading symbol {name:?}"));
+    &source[heading.span_start..heading.span_end]
+}
+
+#[test]
+fn parent_heading_span_ends_at_next_ancestor_after_nested_child() {
+    let source = "# A\n## child\nbody\n# B\nother\n";
+    let file = extract(source);
+
+    assert_eq!(heading_span(&file, source, "A"), "# A\n## child\nbody");
+    assert_eq!(heading_span(&file, source, "B"), "# B\nother");
+}
+
+#[test]
+fn nested_heading_spans_end_at_next_peer_or_ancestor_and_final_heading_at_eof() {
+    let source = "# A\n## child\n### grandchild\ndeep body\n## sibling\nsibling body\n# B\nother";
+    let file = extract(source);
+
+    assert_eq!(
+        heading_span(&file, source, "A"),
+        "# A\n## child\n### grandchild\ndeep body\n## sibling\nsibling body"
+    );
+    assert_eq!(
+        heading_span(&file, source, "child"),
+        "## child\n### grandchild\ndeep body"
+    );
+    assert_eq!(
+        heading_span(&file, source, "grandchild"),
+        "### grandchild\ndeep body"
+    );
+    assert_eq!(
+        heading_span(&file, source, "sibling"),
+        "## sibling\nsibling body"
+    );
+    assert_eq!(heading_span(&file, source, "B"), "# B\nother");
+}
