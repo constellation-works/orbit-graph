@@ -1,4 +1,4 @@
-# Generated from ../plugin.yaml; do not edit. Regenerate with
+# Generated from ../orbit_plugin.yaml; do not edit. Regenerate with
 # UPDATE_GOLDENS=1 cargo test -p orbit-graph-cli --test plugin_contract --locked
 kind: Plugin
 metadata:

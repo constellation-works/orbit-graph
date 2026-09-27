@@ -1,6 +1,6 @@
 # Orbit plugin
 
-orbit-graph ships an Orbit v2 plugin (`plugin.yaml`) that exposes read-only
+orbit-graph ships an Orbit v2 plugin (`orbit_plugin.yaml`) that exposes read-only
 code-graph queries, leakage-safe change recommendations, and index maintenance
 as Orbit tools.
 
@@ -67,7 +67,7 @@ orbit plugin show graph
 `scripts/bundle-plugin-binary.sh` probes the candidate against the launcher's
 pinned `extractor_version` and `plugin_schema_version` and refuses an
 incompatible one. By default it also binds the tree: it records the copied
-executable's SHA-256 as `--backend-sha256` in that tree's `plugin.yaml`. That
+executable's SHA-256 as `--backend-sha256` in that tree's `orbit_plugin.yaml`. That
 changes the manifest digest, so Orbit treats the tree as a new manifest until
 the operator approves it again with `orbit plugin add <tree> --force`; the
 bundler prints that step. A tree installed from `git+` cannot be re-added in
@@ -87,7 +87,7 @@ For a checkout, `make plugin-check` builds the executable and runs
 `orbit plugin test --first-party .` with the fresh build first on `PATH`
 (`--first-party` checks the checkout as it would load after a verified `git+`
 install); `make plugin-bundle` bundles a release build as the git-ignored
-`bin/orbit-graph.bin` and binds the checkout's `plugin.yaml` to it, a local
+`bin/orbit-graph.bin` and binds the checkout's `orbit_plugin.yaml` to it, a local
 change not to commit.
 
 The older `orbit tool add` installation path and
@@ -95,7 +95,7 @@ The older `orbit tool add` installation path and
 deprecated and remain available for one compatibility release. They register
 only the three v1 sidecars. The installer uses the bundled executable when
 present, then `--binary`, then `PATH`, verifies the v2 envelope, and applies
-the launcher's binding rule from `plugin/plugin.yaml` before registering
+the launcher's binding rule from `plugin/orbit_plugin.yaml` before registering
 anything: a recorded `--backend-sha256` must match (otherwise it exits 1 with
 `incompatible_binary`), and the `--allow-unbound-backend` override is reported
 on stderr as `backend override: registering <path> unverified …`. It refuses a
@@ -127,7 +127,7 @@ codes, the Orbit subprocess adapter and the plugin-state code-graph index. The
 `ORBIT_GRAPH_LOCK_TIMEOUT_MS` once, before any tool runs, and refuses a
 malformed value with `invalid_request` naming the variable. The tool table,
 `TOOLS` in `src/plugin.rs`, is the one place a tool is named; a unit test
-checks it against `plugin.yaml`.
+checks it against `orbit_plugin.yaml`.
 
 Each Orbit callback runs `orbit` as the leader of its own process group. When
 it outlives `GRAPH_ORBIT_TIMEOUT_SECONDS` the whole group gets SIGTERM, then
@@ -375,7 +375,7 @@ query tools use the existing `fs` read grant and request no new permissions.
 The deprecated `plugin/` compatibility tree advertises every tool of the root
 manifest; its v1 sidecars register only `recommend`, `status` and `maintain`.
 
-The `plugin/` tree is generated from the root `plugin.yaml` (schemas inlined,
+The `plugin/` tree is generated from the root `orbit_plugin.yaml` (schemas inlined,
 no routines, jobs or config, so it seeds no schedule), and its skill mirrors
 `skills/orbit-graph/` exactly. `plugin_contract` fails when either drifts; see
 CONTRIBUTING.md for the regeneration command.

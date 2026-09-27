@@ -1,5 +1,5 @@
 //! The plugin's tool table is the one place a tool is named (STD-02 §R24);
-//! it must serve exactly the tools `plugin.yaml` declares.
+//! it must serve exactly the tools `orbit_plugin.yaml` declares.
 
 use std::fs;
 use std::path::Path;
@@ -15,9 +15,10 @@ fn repository_root() -> &'static Path {
 #[test]
 fn the_tool_table_serves_exactly_the_tools_plugin_yaml_declares() {
     let manifest: serde_norway::Value = serde_norway::from_str(
-        &fs::read_to_string(repository_root().join("plugin.yaml")).expect("read plugin.yaml"),
+        &fs::read_to_string(repository_root().join("orbit_plugin.yaml"))
+            .expect("read orbit_plugin.yaml"),
     )
-    .expect("parse plugin.yaml");
+    .expect("parse orbit_plugin.yaml");
     let declared = manifest["spec"]["tools"]
         .as_sequence()
         .expect("spec.tools")
@@ -35,7 +36,10 @@ fn the_tool_table_serves_exactly_the_tools_plugin_yaml_declares() {
             verb.to_string()
         })
         .collect::<Vec<_>>();
-    assert_eq!(served, declared, "tool table and plugin.yaml disagree");
+    assert_eq!(
+        served, declared,
+        "tool table and orbit_plugin.yaml disagree"
+    );
 
     for (tool, entry) in TOOLS
         .iter()

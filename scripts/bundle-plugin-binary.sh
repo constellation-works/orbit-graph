@@ -3,14 +3,14 @@ set -eu
 
 # Place a compatible orbit-graph executable at <plugin-root>/bin/orbit-graph.bin,
 # where the plugin launcher selects it ahead of PATH, and bind the plugin to it:
-# its SHA-256 is recorded as `--backend-sha256` in the tree's plugin.yaml
+# its SHA-256 is recorded as `--backend-sha256` in the tree's orbit_plugin.yaml
 # `spec.backend.args`, so the launcher runs nothing else. That changes the
 # manifest digest Orbit's consent is bound to, so Orbit treats the tree as a
 # new manifest until the operator installs it again (`orbit plugin add <tree>
 # --force`); that re-approval is the explicit step (STD-05 R21).
 #
 # --unbound copies the executable without binding it and without touching
-# plugin.yaml. The launcher then runs it only under the manifest's
+# orbit_plugin.yaml. The launcher then runs it only under the manifest's
 # `--allow-unbound-backend` override, which it reports on every call.
 #
 # The plugin root is either this checkout (the default) or a plugin tree such
@@ -42,7 +42,7 @@ fi
 plugin_root=$(CDPATH= cd -- "$plugin_root" && pwd -P)
 launcher="$plugin_root/bin/orbit-graph"
 [ -f "$launcher" ] || { echo "no plugin launcher at $launcher" >&2; exit 2; }
-manifest="$plugin_root/plugin.yaml"
+manifest="$plugin_root/orbit_plugin.yaml"
 [ -f "$manifest" ] || { echo "no plugin manifest at $manifest" >&2; exit 2; }
 # The one `spec.backend.args` line the binding lives on.
 args_pattern='^    args: \[.*\]$'

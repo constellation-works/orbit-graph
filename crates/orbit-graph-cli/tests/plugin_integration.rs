@@ -628,8 +628,8 @@ fn bundled_binary_precedes_path() {
     let launcher = launcher_dir.join("orbit-graph");
     fs::copy(repository_root().join("bin/orbit-graph"), &launcher).expect("copy launcher");
     fs::copy(
-        repository_root().join("plugin.yaml"),
-        fixture.path().join("plugin.yaml"),
+        repository_root().join("orbit_plugin.yaml"),
+        fixture.path().join("orbit_plugin.yaml"),
     )
     .expect("copy manifest");
     let stale_dir = fixture.path().join("stale");
@@ -682,7 +682,7 @@ fn bundled_binary_precedes_path() {
         String::from_utf8_lossy(&bundled.stderr)
     );
     let digest = sha256_hex(&bundled_binary);
-    let manifest = fs::read_to_string(fixture.path().join("plugin.yaml")).expect("manifest");
+    let manifest = fs::read_to_string(fixture.path().join("orbit_plugin.yaml")).expect("manifest");
     assert!(
         manifest.contains(&format!("    args: [--backend-sha256, {digest}]\n")),
         "the bundler binds the manifest to the bundled executable:\n{manifest}"
@@ -717,12 +717,12 @@ fn bundled_binary_precedes_path() {
         .expect("run bundler unbound against a bound manifest");
     assert_eq!(unbound.status.code(), Some(1));
     assert_eq!(
-        fs::read_to_string(fixture.path().join("plugin.yaml")).expect("manifest"),
+        fs::read_to_string(fixture.path().join("orbit_plugin.yaml")).expect("manifest"),
         manifest
     );
     fs::copy(
-        repository_root().join("plugin.yaml"),
-        fixture.path().join("plugin.yaml"),
+        repository_root().join("orbit_plugin.yaml"),
+        fixture.path().join("orbit_plugin.yaml"),
     )
     .expect("restore the committed manifest");
     let unbound = Command::new("sh")
@@ -738,8 +738,9 @@ fn bundled_binary_precedes_path() {
         String::from_utf8_lossy(&unbound.stderr)
     );
     assert_eq!(
-        fs::read_to_string(fixture.path().join("plugin.yaml")).expect("manifest"),
-        fs::read_to_string(repository_root().join("plugin.yaml")).expect("committed manifest")
+        fs::read_to_string(fixture.path().join("orbit_plugin.yaml")).expect("manifest"),
+        fs::read_to_string(repository_root().join("orbit_plugin.yaml"))
+            .expect("committed manifest")
     );
     let selected = launcher_version(&launcher, &[UNBOUND], &path, None);
     assert_eq!(selected.status.code(), Some(0));
@@ -3475,7 +3476,7 @@ fn install_and_uninstall_scripts_work_and_reject_malformed_arguments_first() {
         "{}",
         String::from_utf8_lossy(&installed.stderr)
     );
-    // plugin/plugin.yaml carries the named override, which the installer
+    // plugin/orbit_plugin.yaml carries the named override, which the installer
     // reports rather than applies silently.
     assert!(
         String::from_utf8_lossy(&installed.stderr).contains("backend override"),
@@ -3562,10 +3563,11 @@ fn installer_follows_the_backend_binding_and_refuses_orbit_graph_bin() {
         fixture.path().join("fake-bin").display()
     );
     let graph_bin = env!("CARGO_BIN_EXE_orbit-graph");
-    let committed = fs::read_to_string(root.join("plugin/plugin.yaml")).expect("plugin manifest");
+    let committed =
+        fs::read_to_string(root.join("plugin/orbit_plugin.yaml")).expect("plugin manifest");
     let with_args = |args: &str| {
         fs::write(
-            fixture.path().join("plugin/plugin.yaml"),
+            fixture.path().join("plugin/orbit_plugin.yaml"),
             committed.replace(
                 &format!("    args: [{UNBOUND}]\n"),
                 &format!("    args: [{args}]\n"),
@@ -3686,16 +3688,16 @@ fn isolated_tool_run(
         .expect("invoke isolated Orbit tool")
 }
 
-/// The read-only code-graph query verbs the root `plugin.yaml` registers, in
+/// The read-only code-graph query verbs the root `orbit_plugin.yaml` registers, in
 /// manifest order.
 fn manifest_query_verbs() -> Vec<String> {
     let manifest: Value = serde_norway::from_slice(
-        &fs::read(repository_root().join("plugin.yaml")).expect("read plugin.yaml"),
+        &fs::read(repository_root().join("orbit_plugin.yaml")).expect("read orbit_plugin.yaml"),
     )
-    .expect("parse plugin.yaml");
+    .expect("parse orbit_plugin.yaml");
     manifest["spec"]["tools"]
         .as_array()
-        .expect("plugin.yaml tools")
+        .expect("orbit_plugin.yaml tools")
         .iter()
         .filter_map(|tool| tool["name"].as_str())
         .filter(|name| !NON_QUERY_TOOLS.contains(name))

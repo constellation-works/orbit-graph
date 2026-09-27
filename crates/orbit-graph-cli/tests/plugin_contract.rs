@@ -26,7 +26,7 @@ const PINNING_SCRIPTS: [&str; 3] = [
 
 #[test]
 fn manifests_declare_the_crate_version_and_first_party_origin() {
-    for path in ["plugin.yaml", "plugin/plugin.yaml"] {
+    for path in ["orbit_plugin.yaml", "plugin/orbit_plugin.yaml"] {
         let manifest = read_yaml(path);
         assert_eq!(
             manifest["metadata"]["version"], CRATE_VERSION,
@@ -118,7 +118,7 @@ fn a_released_version_never_changes_its_contract() {
 
 #[test]
 fn every_tool_schema_property_is_described() {
-    let manifest = read_yaml("plugin.yaml");
+    let manifest = read_yaml("orbit_plugin.yaml");
     let mut schemas = vec![
         manifest["spec"]["config"]["schema"]
             .as_str()
@@ -150,13 +150,13 @@ fn every_tool_schema_property_is_described() {
 /// does, so they pin validation and routing codes.
 #[test]
 fn changes_tool_is_declared_and_its_conformance_goldens_replay() {
-    let manifest = read_yaml("plugin.yaml");
+    let manifest = read_yaml("orbit_plugin.yaml");
     let tool = manifest["spec"]["tools"]
         .as_array()
         .expect("tools")
         .iter()
         .find(|tool| tool["name"] == "changes")
-        .expect("plugin.yaml declares changes");
+        .expect("orbit_plugin.yaml declares changes");
     assert_eq!(tool["execution_kind"], "read_only");
     assert_eq!(tool["mcp_scope"], "workspace");
     for (key, path) in [
@@ -340,7 +340,7 @@ const REGENERATE: &str =
 /// Files of the root skill that `plugin/skills/orbit-graph` mirrors.
 const MIRRORED_SKILL_FILES: [&str; 2] = ["SKILL.md", "references/setup.md"];
 
-/// STD-01 §R25, STD-04 §R11: `plugin/plugin.yaml` is generated from the
+/// STD-01 §R25, STD-04 §R11: `plugin/orbit_plugin.yaml` is generated from the
 /// root manifest, not maintained by hand. It declares the same tools with
 /// the same input and output schemas, inlined because the compatibility
 /// tree has no `schemas/`, and ships the same skill. It omits the root
@@ -353,7 +353,7 @@ fn plugin_tree_is_generated_from_the_root_plugin() {
     let generated = generated_compatibility_manifest();
     let update = std::env::var_os("UPDATE_GOLDENS").is_some_and(|value| value == "1");
     if update {
-        write("plugin/plugin.yaml", &generated);
+        write("plugin/orbit_plugin.yaml", &generated);
         for file in MIRRORED_SKILL_FILES {
             write(
                 &format!("plugin/skills/orbit-graph/{file}"),
@@ -361,18 +361,18 @@ fn plugin_tree_is_generated_from_the_root_plugin() {
             );
         }
     }
-    let committed = read("plugin/plugin.yaml");
-    let root_args = backend_args_line(&read("plugin.yaml"));
+    let committed = read("plugin/orbit_plugin.yaml");
+    let root_args = backend_args_line(&read("orbit_plugin.yaml"));
     let committed_args = backend_args_line(&committed);
     assert_eq!(
         committed.replacen(&committed_args, &root_args, 1),
         generated,
-        "plugin/plugin.yaml is stale; regenerate it with {REGENERATE}"
+        "plugin/orbit_plugin.yaml is stale; regenerate it with {REGENERATE}"
     );
 
     // The same tools, schemas resolved, in the same order.
-    let root = resolved_tools(&read_yaml("plugin.yaml"));
-    let compatibility = resolved_tools(&read_yaml("plugin/plugin.yaml"));
+    let root = resolved_tools(&read_yaml("orbit_plugin.yaml"));
+    let compatibility = resolved_tools(&read_yaml("plugin/orbit_plugin.yaml"));
     assert_eq!(
         root.iter().map(|tool| &tool["name"]).collect::<Vec<_>>(),
         compatibility
@@ -427,7 +427,7 @@ fn plugin_tree_is_generated_from_the_root_plugin() {
 /// it carries the named override, and only a bundling step records a digest.
 #[test]
 fn committed_manifests_carry_the_named_unbound_override() {
-    for path in ["plugin.yaml", "plugin/plugin.yaml"] {
+    for path in ["orbit_plugin.yaml", "plugin/orbit_plugin.yaml"] {
         let manifest = read_yaml(path);
         assert_eq!(
             manifest["spec"]["backend"]["args"],
@@ -443,7 +443,7 @@ fn committed_manifests_carry_the_named_unbound_override() {
 /// backend, which warns about any `context.config` key it does not read.
 #[test]
 fn every_config_key_is_consumed() {
-    let manifest = read_yaml("plugin.yaml");
+    let manifest = read_yaml("orbit_plugin.yaml");
     let schema: Value = serde_json::from_str(&read(
         manifest["spec"]["config"]["schema"]
             .as_str()
@@ -462,10 +462,10 @@ fn every_config_key_is_consumed() {
     for key in defaults.keys() {
         assert!(
             keys.contains(key),
-            "plugin.yaml defaults {key}, which config.json does not declare"
+            "orbit_plugin.yaml defaults {key}, which config.json does not declare"
         );
     }
-    let mut templates = read("plugin.yaml");
+    let mut templates = read("orbit_plugin.yaml");
     let mut definitions = Vec::new();
     collect_files(&repository_root().join("definitions"), "", &mut definitions);
     for file in definitions {
@@ -515,7 +515,7 @@ fn request_schemas_equal_the_serde_structs_and_runtime_validation() {
     let state = tempfile::TempDir::new().expect("plugin state");
     let missing = workspace.path().join("missing-repository");
     let missing = missing.to_str().expect("UTF-8 path").to_string();
-    let manifest = read_yaml("plugin.yaml");
+    let manifest = read_yaml("orbit_plugin.yaml");
     for tool in resolved_tools(&manifest) {
         let verb = tool["name"].as_str().expect("tool name");
         let name = format!("orbit.graph.{verb}");
@@ -700,9 +700,9 @@ fn resolved_tools(manifest: &Value) -> Vec<Value> {
         .collect()
 }
 
-/// `plugin/plugin.yaml` as generated from the root manifest.
+/// `plugin/orbit_plugin.yaml` as generated from the root manifest.
 fn generated_compatibility_manifest() -> String {
-    let mut manifest = read_yaml("plugin.yaml");
+    let mut manifest = read_yaml("orbit_plugin.yaml");
     manifest["spec"]["tools"] = Value::Array(resolved_tools(&manifest));
     let spec = manifest["spec"].as_object_mut().expect("spec");
     spec.remove("definitions");
@@ -714,7 +714,7 @@ fn generated_compatibility_manifest() -> String {
     let mut in_args = false;
     for line in body.lines() {
         if line == "    args:" {
-            lines.push(backend_args_line(&read("plugin.yaml")));
+            lines.push(backend_args_line(&read("orbit_plugin.yaml")));
             in_args = true;
             continue;
         }
@@ -725,7 +725,7 @@ fn generated_compatibility_manifest() -> String {
         lines.push(line.to_string());
     }
     format!(
-        "# Generated from ../plugin.yaml; do not edit. Regenerate with\n# {REGENERATE}\n{}\n",
+        "# Generated from ../orbit_plugin.yaml; do not edit. Regenerate with\n# {REGENERATE}\n{}\n",
         lines.join("\n")
     )
 }

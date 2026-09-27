@@ -50,7 +50,7 @@ analysis library. After an intended report output change (including an
 and review the diff.
 
 The compatibility plugin tree under `plugin/` is generated from the root
-`plugin.yaml` and `skills/orbit-graph/`, and `plugin_contract` fails when it
+`orbit_plugin.yaml` and `skills/orbit-graph/`, and `plugin_contract` fails when it
 drifts. After changing the root manifest, a schema or the skill, regenerate it
 with
 `UPDATE_GOLDENS=1 cargo test -p orbit-graph-cli --test plugin_contract --locked`

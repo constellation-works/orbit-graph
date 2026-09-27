@@ -68,11 +68,11 @@ case "$probe" in
     *'"ok":true'*'"extractor_version":24'*'"plugin_schema_version":1'*) ;;
     *) echo "incompatible orbit-graph binary: $graph_binary (expected v2 envelope, plugin_schema_version=1, extractor_version=24)" >&2; exit 1 ;;
 esac
-# The same binding rule as the plugin launcher, read from plugin/plugin.yaml
+# The same binding rule as the plugin launcher, read from plugin/orbit_plugin.yaml
 # `spec.backend.args`: a recorded --backend-sha256 must match, and the
 # --allow-unbound-backend override is reported. `orbit tool add` registers the
 # executable itself, so this is checked once, here.
-backend_args=$(sed -n 's/^    args: \[\(.*\)\]$/\1/p' "$plugin_dir/plugin.yaml")
+backend_args=$(sed -n 's/^    args: \[\(.*\)\]$/\1/p' "$plugin_dir/orbit_plugin.yaml")
 case "$backend_args" in
     '--backend-sha256, '*)
         expected_sha256=${backend_args#--backend-sha256, }
@@ -85,15 +85,15 @@ case "$backend_args" in
             exit 1
         fi
         [ "$actual_sha256" = "$expected_sha256" ] || {
-            echo "incompatible_binary: $graph_binary has SHA-256 $actual_sha256, but plugin/plugin.yaml binds $expected_sha256" >&2
+            echo "incompatible_binary: $graph_binary has SHA-256 $actual_sha256, but plugin/orbit_plugin.yaml binds $expected_sha256" >&2
             exit 1
         }
         ;;
     --allow-unbound-backend)
-        echo "backend override: registering $graph_binary unverified (plugin/plugin.yaml has --allow-unbound-backend and records no --backend-sha256)" >&2
+        echo "backend override: registering $graph_binary unverified (plugin/orbit_plugin.yaml has --allow-unbound-backend and records no --backend-sha256)" >&2
         ;;
     *)
-        echo "incompatible_binary: plugin/plugin.yaml spec.backend.args records neither --backend-sha256 nor --allow-unbound-backend" >&2
+        echo "incompatible_binary: plugin/orbit_plugin.yaml spec.backend.args records neither --backend-sha256 nor --allow-unbound-backend" >&2
         exit 1
         ;;
 esac
