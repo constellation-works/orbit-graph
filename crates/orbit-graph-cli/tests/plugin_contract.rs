@@ -49,6 +49,23 @@ fn launchers_and_installer_pin_the_crate_contract() {
         ] {
             let pins = pinned_numbers(&text, field);
             assert!(!pins.is_empty(), "{path} does not pin {field}");
+            if field == "extractor_version"
+                && matches!(path, "bin/orbit-graph" | "plugin/bin/orbit-graph")
+            {
+                assert!(
+                    pins.contains(&21),
+                    "{path} must retain v21 compatibility: {pins:?}"
+                );
+                assert!(
+                    pins.contains(&expected),
+                    "{path} must pin current v{expected}: {pins:?}"
+                );
+                assert!(
+                    pins.iter().all(|pin| *pin == 21 || *pin == expected),
+                    "{path} has unsupported extractor pins {pins:?}"
+                );
+                continue;
+            }
             assert!(
                 pins.iter().all(|pin| *pin == expected),
                 "{path} pins {field} {pins:?}; the crate defines {expected}"
