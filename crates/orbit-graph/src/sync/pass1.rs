@@ -655,9 +655,9 @@ fn insert_symbols(
 fn insert_imports(tx: &Transaction<'_>, imports: &[RawImport]) -> Result<(), GraphError> {
     for import in imports {
         tx.execute(
-            "INSERT INTO imports (from_file, target_path, target_symbol)
-             VALUES (?1, ?2, ?3)",
-            params![import.from_file, import.target_path, import.target_symbol],
+            "INSERT INTO imports (from_file, target_path, target_symbol, source_symbol, reexport_module)
+             VALUES (?1, ?2, ?3, ?4, ?5)",
+            params![import.from_file, import.target_path, import.target_symbol, import.source_symbol, import.reexport_module],
         )
         .map_err(|source| GraphError::sqlite("insert graph import row", source))?;
     }

@@ -323,7 +323,7 @@ fn extract_items(
                 pending_attrs.clear();
             }
             "use_declaration" => {
-                extract_use(child, source, state);
+                extract_use(child, source, module, state);
                 pending_attrs.clear();
             }
             _ => {
@@ -1530,14 +1530,24 @@ fn unresolved_receiver_text(value: Node, source: &str) -> Option<String> {
     Some(text)
 }
 
-fn extract_use(node: Node, source: &str, state: &mut ExtractionState) {
+fn extract_use(node: Node, source: &str, module: &ModuleScope, state: &mut ExtractionState) {
     let Some(argument) = node.child_by_field_name("argument") else {
         return;
     };
-    collect_use(argument, source, &[], state);
+    let public_module = node_text(node, source)
+        .trim_start()
+        .starts_with("pub use")
+        .then(|| module.segments.join("::"));
+    collect_use(argument, source, &[], public_module.as_deref(), state);
 }
 
-fn collect_use(node: Node, source: &str, prefix: &[String], state: &mut ExtractionState) {
+fn collect_use(
+    node: Node,
+    source: &str,
+    prefix: &[String],
+    public_module: Option<&str>,
+    state: &mut ExtractionState,
+) {
     match node.kind() {
         "scoped_use_list" => {
             let mut next_prefix = prefix.to_vec();
@@ -1545,13 +1555,13 @@ fn collect_use(node: Node, source: &str, prefix: &[String], state: &mut Extracti
                 next_prefix.extend(path_segments(path, source));
             }
             if let Some(list) = node.child_by_field_name("list") {
-                collect_use(list, source, &next_prefix, state);
+                collect_use(list, source, &next_prefix, public_module, state);
             }
         }
         "use_list" => {
             let mut cursor = node.walk();
             for child in node.named_children(&mut cursor) {
-                collect_use(child, source, prefix, state);
+                collect_use(child, source, prefix, public_module, state);
             }
         }
         "use_as_clause" => {
@@ -1568,6 +1578,7 @@ fn collect_use(node: Node, source: &str, prefix: &[String], state: &mut Extracti
                 source,
                 &source_segments,
                 Some(node_text(alias, source)),
+                public_module,
                 state,
             );
         }
@@ -1582,6 +1593,8 @@ fn collect_use(node: Node, source: &str, prefix: &[String], state: &mut Extracti
                     from_file: state.file_path.clone(),
                     target_path,
                     target_symbol: None,
+                    source_symbol: None,
+                    reexport_module: public_module.map(str::to_string),
                 });
                 state.push_ref(node, source, None, "use", "import_resolved");
             }
@@ -1589,12 +1602,12 @@ fn collect_use(node: Node, source: &str, prefix: &[String], state: &mut Extracti
         "identifier" | "crate" | "self" | "super" | "scoped_identifier" => {
             let mut source_segments = prefix.to_vec();
             source_segments.extend(path_segments(node, source));
-            push_use_rows(node, source, &source_segments, None, state);
+            push_use_rows(node, source, &source_segments, None, public_module, state);
         }
         _ => {
             let mut cursor = node.walk();
             for child in node.named_children(&mut cursor) {
-                collect_use(child, source, prefix, state);
+                collect_use(child, source, prefix, public_module, state);
             }
         }
     }
@@ -1605,6 +1618,7 @@ fn push_use_rows(
     source: &str,
     source_segments: &[String],
     alias: Option<String>,
+    public_module: Option<&str>,
     state: &mut ExtractionState,
 ) {
     let Some(source_path) = join_segments(source_segments) else {
@@ -1612,11 +1626,24 @@ fn push_use_rows(
     };
     let imported_name = alias.unwrap_or_else(|| import_name(source_segments));
     let target_path = import_target_path(source_segments);
+    // A single-segment use and a grouped `self` use already name their whole
+    // target in `target_path`; appending that name would duplicate it.
+    let source_symbol = if source_segments.len() == 1
+        || source_segments
+            .last()
+            .is_some_and(|segment| segment == "self")
+    {
+        String::new()
+    } else {
+        import_name(source_segments)
+    };
 
     state.imports.push(RawImport {
         from_file: state.file_path.clone(),
         target_path,
         target_symbol: Some(imported_name),
+        source_symbol: Some(source_symbol),
+        reexport_module: public_module.map(str::to_string),
     });
     state.push_ref(
         span_node,

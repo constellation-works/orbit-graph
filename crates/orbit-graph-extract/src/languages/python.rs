@@ -972,6 +972,8 @@ fn extract_import(node: Node, source: &str, state: &mut ExtractionState) {
                     from_file: state.file_path.clone(),
                     target_path: target_path.clone(),
                     target_symbol: Some(alias),
+                    source_symbol: None,
+                    reexport_module: None,
                 });
                 state.push_ref(
                     alias_node,
@@ -987,6 +989,8 @@ fn extract_import(node: Node, source: &str, state: &mut ExtractionState) {
                     from_file: state.file_path.clone(),
                     target_path: target_path.clone(),
                     target_symbol: None,
+                    source_symbol: None,
+                    reexport_module: None,
                 });
                 state.push_ref(child, source, Some(target_path), "use", "import_resolved");
             }
@@ -1051,6 +1055,8 @@ fn extract_from_import(node: Node, source: &str, state: &mut ExtractionState) {
             from_file: state.file_path.clone(),
             target_path,
             target_symbol: None,
+            source_symbol: None,
+            reexport_module: None,
         });
     }
 }
@@ -1083,6 +1089,8 @@ fn push_from_import_rows(
         from_file: state.file_path.clone(),
         target_path: target_path.to_string(),
         target_symbol,
+        source_symbol: None,
+        reexport_module: None,
     });
     if node_text(span_node, source) == "*" {
         state.push_ref(span_node, source, None, "use", "import_resolved");

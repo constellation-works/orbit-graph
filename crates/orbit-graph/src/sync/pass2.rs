@@ -2,7 +2,8 @@
 //!
 //! Resolution follows the documented confidence ladder in strict order:
 //! same-file exact matches, explicit imports, qualified cross-file matches,
-//! same-module matches, then fuzzy name-only refs. One rung comes first and
+//! public Rust re-exports, same-module matches, then fuzzy name-only refs.
+//! One rung comes first and
 //! short-circuits the rest: a Rust ref whose target names a member of a type
 //! (`<T>::m`, `<T as Trait>::m`, `path::T::m`) is resolved by the type-member
 //! rung in [`type_member`], which narrows to the type's module before picking
@@ -13,8 +14,9 @@
 //! transaction.
 //!
 //! An unchanged file's ref can still depend on a changed file. Apart from
-//! trait impl blocks (below), the ladder only considers candidates named like
-//! the ref, and it reads from a candidate's file only its language and the
+//! public re-exports and trait impl blocks (below), the ladder only considers
+//! candidates named like the ref, and it reads from a candidate's file only
+//! its language and the
 //! `(name, qualified, kind)` of its symbols (the file's module
 //! prefixes derive from every symbol in it). So a ref outside the changed
 //! files can resolve differently after the change only if its `target_name`
@@ -29,7 +31,9 @@
 //! inputs stored with each ref (`extracted_qualified`, `unresolved_receiver`,
 //! `spelled_path`), so every ref ends up as a full sync would store it.
 //! A changed Cargo manifest can also rename the crate alias used by refs in
-//! unchanged files, so sync re-resolves all refs when one changes.
+//! unchanged files, so sync re-resolves all refs when one changes. A changed
+//! public re-export can redirect a differently named alias through multiple
+//! modules, so it likewise re-resolves all unchanged refs.
 //!
 //! This transaction is also the single point where the files pass 1 wrote
 //! become current (`STD-03 §R8`): it stamps their real content hash and mtime,
@@ -148,8 +152,18 @@ pub(crate) fn run(
 
     match reresolve {
         Reresolve::Dependents(before) => {
-            let dependents = Dependents::between(&tx, before, &rewritten_files)?;
-            refresh_dependent_refs(&tx, &mut resolver, &dependents, &rewritten_files)?;
+            let mut reexports_changed = before.has_reexports;
+            if !reexports_changed {
+                for path in before.by_file.keys().chain(&rewritten_files) {
+                    reexports_changed |= has_reexports(&tx, path)?;
+                }
+            }
+            if reexports_changed {
+                refresh_all_refs(&tx, &mut resolver, &rewritten_files)?;
+            } else {
+                let dependents = Dependents::between(&tx, before, &rewritten_files)?;
+                refresh_dependent_refs(&tx, &mut resolver, &dependents, &rewritten_files)?;
+            }
         }
         Reresolve::All => {
             refresh_all_refs(&tx, &mut resolver, &rewritten_files)?;
@@ -184,6 +198,7 @@ pub(crate) struct Progress {
 #[derive(Debug, Default)]
 pub(crate) struct Definitions {
     by_file: BTreeMap<String, Vec<DefinedSymbol>>,
+    has_reexports: bool,
 }
 
 impl Definitions {
@@ -195,11 +210,25 @@ impl Definitions {
         let conn =
             crate::open_read_connection(db_path, "open graph database for prior definitions")?;
         let mut by_file = BTreeMap::new();
+        let mut has_any_reexports = false;
         for file_path in file_paths {
             by_file.insert(file_path.to_string(), defined_symbols(&conn, file_path)?);
+            has_any_reexports |= has_reexports(&conn, file_path)?;
         }
-        Ok(Self { by_file })
+        Ok(Self {
+            by_file,
+            has_reexports: has_any_reexports,
+        })
     }
+}
+
+fn has_reexports(conn: &Connection, file_path: &str) -> Result<bool, GraphError> {
+    conn.query_row(
+        "SELECT EXISTS(SELECT 1 FROM imports WHERE from_file = ?1 AND reexport_module IS NOT NULL)",
+        params![file_path],
+        |row| row.get(0),
+    )
+    .map_err(|source| GraphError::sqlite("check public re-exports", source))
 }
 
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord)]
@@ -670,6 +699,7 @@ struct Resolver<'a, 'conn> {
     /// Trait impl blocks by Self type name, loaded on first use.
     trait_impls: Option<HashMap<String, TraitImpls>>,
     qualified_matches: HashMap<(String, String, String), Option<SymbolCandidate>>,
+    reexports: Option<Rc<HashMap<String, Vec<ReexportCandidate>>>>,
 }
 
 impl<'a, 'conn> Resolver<'a, 'conn> {
@@ -682,6 +712,7 @@ impl<'a, 'conn> Resolver<'a, 'conn> {
             candidates_by_name: HashMap::new(),
             trait_impls: None,
             qualified_matches: HashMap::new(),
+            reexports: None,
         }
     }
 
@@ -749,6 +780,31 @@ impl<'a, 'conn> Resolver<'a, 'conn> {
         }
         if let Some(candidate) = self.resolve_qualified(language, raw_ref)? {
             return Ok(ResolvedRef::candidate(candidate, CONFIDENCE_EXACT));
+        }
+        // `self` and `super` already carry a scope relative to the caller.
+        // Preserve the established same-module match before trying public
+        // aliases, which may expose several unrelated items with that name.
+        if language == "rust"
+            && raw_ref.spelled_path
+            && raw_ref
+                .target_qualified
+                .as_deref()
+                .is_some_and(|target| target.starts_with("self::") || target.starts_with("super::"))
+            && let Some(candidate) = self.resolve_same_module(from_file, language, raw_ref)?
+        {
+            return Ok(ResolvedRef::candidate(candidate, CONFIDENCE_SAME_MODULE));
+        }
+        if language == "rust" && raw_ref.spelled_path {
+            match self.resolve_reexport(from_file, raw_ref)? {
+                ImportResolution::Unique(candidate) => {
+                    return Ok(ResolvedRef::candidate(
+                        candidate,
+                        CONFIDENCE_IMPORT_RESOLVED,
+                    ));
+                }
+                ImportResolution::Ambiguous => return Ok(ResolvedRef::fuzzy()),
+                ImportResolution::None => {}
+            }
         }
         if let Some(candidate) = self.resolve_same_module(from_file, language, raw_ref)? {
             return Ok(ResolvedRef::candidate(candidate, CONFIDENCE_SAME_MODULE));
@@ -843,6 +899,128 @@ impl<'a, 'conn> Resolver<'a, 'conn> {
             }
         }
         Ok(ImportResolution::None)
+    }
+
+    /// Follows public Rust use rows from a spelled module path to the named
+    /// symbol. Each path is visited once; the cap also bounds alias cycles
+    /// whose spelling grows at each hop.
+    fn resolve_reexport(
+        &mut self,
+        from_file: &str,
+        raw_ref: &RawRef,
+    ) -> Result<ImportResolution, GraphError> {
+        let Some(spelled) = raw_ref.target_qualified.as_deref() else {
+            return Ok(ImportResolution::None);
+        };
+        let initial = resolve_import_path(from_file, spelled);
+        if !initial.contains("::") {
+            return Ok(ImportResolution::None);
+        }
+        let reexports = self.reexports()?;
+        let mut pending = vec![initial.clone()];
+        let mut visited = BTreeSet::new();
+        let mut matches = BTreeMap::new();
+        while let Some(path) = pending.pop() {
+            if !visited.insert(path.clone()) {
+                continue;
+            }
+            if visited.len() > 64 {
+                return Ok(ImportResolution::Ambiguous);
+            }
+            if path != initial {
+                let name = path.rsplit("::").next().unwrap_or("");
+                if let Some(candidate) = self.unique_qualified_match("rust", name, &path)? {
+                    matches.insert(candidate.id, candidate);
+                }
+            }
+            for module in
+                std::iter::once("").chain(path.match_indices("::").map(|(at, _)| &path[..at]))
+            {
+                if let Some(rows) = reexports.get(module) {
+                    let exposed_name = path
+                        .strip_prefix(module)
+                        .unwrap_or("")
+                        .trim_start_matches("::")
+                        .split("::")
+                        .next()
+                        .unwrap_or("");
+                    let has_explicit = rows
+                        .iter()
+                        .any(|row| row.target_symbol.as_deref() == Some(exposed_name));
+                    for row in rows {
+                        if has_explicit && row.target_symbol.is_none() {
+                            continue;
+                        }
+                        let target =
+                            resolve_reexport_path(&row.from_file, &row.module, &row.target_path);
+                        let mapped = if let Some(alias) = row.target_symbol.as_deref() {
+                            let exposed = join_module_symbol(module, alias);
+                            path.strip_prefix(&exposed)
+                                .filter(|rest| rest.is_empty() || rest.starts_with("::"))
+                                .map(|rest| {
+                                    let source = row.source_symbol.as_deref().unwrap_or(alias);
+                                    let source_path = if source.is_empty() {
+                                        target.clone()
+                                    } else {
+                                        join_module_symbol(&target, source)
+                                    };
+                                    format!("{source_path}{rest}")
+                                })
+                        } else {
+                            path.strip_prefix(module)
+                                .filter(|rest| rest.starts_with("::"))
+                                .map(|rest| format!("{target}{rest}"))
+                        };
+                        if let Some(mapped) = mapped {
+                            pending.push(mapped);
+                        }
+                    }
+                }
+            }
+        }
+        let mut candidates = matches.into_values();
+        Ok(match (candidates.next(), candidates.next()) {
+            (Some(candidate), None) => ImportResolution::Unique(candidate),
+            (Some(_), Some(_)) => ImportResolution::Ambiguous,
+            _ => ImportResolution::None,
+        })
+    }
+
+    fn reexports(&mut self) -> Result<Rc<HashMap<String, Vec<ReexportCandidate>>>, GraphError> {
+        if let Some(rows) = &self.reexports {
+            return Ok(Rc::clone(rows));
+        }
+        let mut stmt = self.tx.prepare_cached(
+            "SELECT i.from_file, i.target_path, i.target_symbol, i.source_symbol, i.reexport_module
+             FROM imports i JOIN files f ON f.path = i.from_file
+             WHERE f.lang = 'rust' AND i.reexport_module IS NOT NULL",
+        ).map_err(|source| GraphError::sqlite("prepare re-export lookup", source))?;
+        let rows = stmt
+            .query_map([], |row| {
+                Ok(ReexportCandidate {
+                    from_file: row.get(0)?,
+                    target_path: row.get(1)?,
+                    target_symbol: row.get(2)?,
+                    source_symbol: row.get(3)?,
+                    module: row.get(4)?,
+                })
+            })
+            .map_err(|source| GraphError::sqlite("query re-exports", source))?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|source| GraphError::sqlite("collect re-exports", source))?;
+        let mut by_module: HashMap<String, Vec<ReexportCandidate>> = HashMap::new();
+        for row in rows {
+            let file_module = file_module_parts(&row.from_file).join("::");
+            let module = if row.module.is_empty() {
+                file_module
+            } else {
+                join_module_symbol(&file_module, &row.module)
+            };
+            by_module.entry(module).or_default().push(row);
+        }
+        let rows = Rc::new(by_module);
+        self.reexports = Some(Rc::clone(&rows));
+        Ok(rows)
     }
 
     fn resolve_same_module(
@@ -992,6 +1170,10 @@ fn resolve_exact(
         if unique_candidate(&qualified_matches).is_some() {
             return Ok(qualified_matches.into_iter().next());
         }
+    }
+
+    if call_module_qualifier(from_file, raw_ref).is_some() {
+        return Ok(None);
     }
 
     if !resolves_by_name_only(raw_ref) {
@@ -1196,6 +1378,36 @@ fn resolve_import_path(from_file: &str, path: &str) -> String {
     parts.join("::")
 }
 
+fn resolve_reexport_path(from_file: &str, module: &str, path: &str) -> String {
+    let normalized = normalize_module_path(path);
+    let mut parts = normalized.split("::").filter(|part| !part.is_empty());
+    let Some(first) = parts.next() else {
+        return String::new();
+    };
+    if first == "crate" {
+        return parts.collect::<Vec<_>>().join("::");
+    }
+    if first == "self" || first == "super" {
+        let mut base = file_module_parts(from_file);
+        base.extend(
+            module
+                .split("::")
+                .filter(|part| !part.is_empty())
+                .map(str::to_string),
+        );
+        if first == "super" {
+            base.pop();
+            while parts.clone().next() == Some("super") {
+                parts.next();
+                base.pop();
+            }
+        }
+        base.extend(parts.map(str::to_string));
+        return base.join("::");
+    }
+    normalized
+}
+
 fn normalize_module_path(path: &str) -> String {
     path.replace('.', "::")
         .split("::")
@@ -1367,6 +1579,15 @@ impl NamedCandidate {
 struct ImportCandidate {
     target_path: String,
     target_symbol: Option<String>,
+}
+
+#[derive(Debug)]
+struct ReexportCandidate {
+    from_file: String,
+    target_path: String,
+    target_symbol: Option<String>,
+    source_symbol: Option<String>,
+    module: String,
 }
 
 enum ImportResolution {

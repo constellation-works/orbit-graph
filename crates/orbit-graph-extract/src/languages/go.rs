@@ -440,6 +440,8 @@ fn extract_import_spec(node: Node, source: &str, state: &mut ExtractionState) {
         from_file: state.file_path.clone(),
         target_path: target_path.clone(),
         target_symbol: explicit_name.filter(|name| !matches!(name.as_str(), "." | "_")),
+        source_symbol: None,
+        reexport_module: None,
     });
     state.push_ref(
         path_node,
