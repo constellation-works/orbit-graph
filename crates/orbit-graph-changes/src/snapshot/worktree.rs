@@ -15,6 +15,7 @@ use std::path::Path;
 use std::time::Instant;
 
 use git2::{Repository, StatusOptions};
+use orbit_graph::atomic_write;
 use serde::Serialize;
 
 use super::{
@@ -209,8 +210,8 @@ fn copy_working_file(
             reason: error.to_string(),
         })?;
     }
-    // Written without the executable bit, like a commit snapshot.
-    fs::write(target.as_path(), bytes.as_slice()).map_err(|error| SnapshotError::Io {
+    // Written owner-only without the executable bit, like a commit snapshot.
+    atomic_write(target.as_path(), bytes.as_slice()).map_err(|error| SnapshotError::Io {
         operation: "write snapshot file",
         path: target,
         reason: error.to_string(),
