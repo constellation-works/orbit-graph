@@ -587,6 +587,11 @@ fn bundled_binary_precedes_path() {
     );
     let selected = launcher_version(&launcher, &[UNBOUND], &path, None);
     assert_eq!(selected.status.code(), Some(0));
+    // The launcher reports its own directory resolved (`pwd -P`), and macOS
+    // temp dirs sit behind the /var -> /private/var symlink.
+    let bundled_binary = bundled_binary
+        .canonicalize()
+        .expect("resolve the bundled binary");
     assert_override_reported(&selected, &bundled_binary);
 }
 
