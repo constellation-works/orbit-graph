@@ -221,6 +221,99 @@ fn import_is_idempotent_and_preserves_multi_task_provenance() {
 }
 
 #[test]
+fn duplicate_import_applies_supplied_snapshots_and_refuses_conflicts_atomically() {
+    let repo = fixture_repo();
+    write(repo.path(), "a.rs", "fn a() -> i32 { 1 }\n");
+    commit(repo.path(), "before");
+    let before = head(repo.path());
+    write(repo.path(), "a.rs", "fn a() -> i32 { 2 }\n");
+    commit(repo.path(), "after");
+    let after = head(repo.path());
+    let index = HistoryIndex::open(repo.path(), "main").expect("open history");
+    let delivery = fixture_delivery(&index, before, after, "snapshot-replay");
+    assert!(
+        index
+            .import(delivery.clone())
+            .expect("first import")
+            .inserted
+    );
+    let observed = index
+        .delivery("snapshot-replay")
+        .expect("read delivery")
+        .expect("stored delivery")
+        .delivery;
+
+    let mut snapshot_b = delivery.tasks[1].clone();
+    snapshot_b.title = "Caller-supplied B".into();
+    let replay = index
+        .import_with_supplied_snapshots(delivery.clone(), vec![snapshot_b.clone()])
+        .expect("add B on replay");
+    assert!(!replay.inserted);
+    let with_b = index
+        .delivery("snapshot-replay")
+        .expect("read delivery")
+        .expect("stored delivery");
+    assert_eq!(with_b.delivery, observed);
+    assert_eq!(with_b.supplied_snapshots, vec![snapshot_b.clone()]);
+
+    assert!(
+        !index
+            .import_with_supplied_snapshots(delivery.clone(), vec![snapshot_b.clone()])
+            .expect("exact snapshot replay")
+            .inserted
+    );
+    let mut snapshot_a = delivery.tasks[0].clone();
+    snapshot_a.title = "Caller-supplied A".into();
+    let mut conflicting_b = snapshot_b.clone();
+    conflicting_b.title = "Different caller-supplied B".into();
+    let error = index
+        .import_with_supplied_snapshots(delivery.clone(), vec![snapshot_a.clone(), conflicting_b])
+        .expect_err("conflicting snapshot refuses whole replay");
+    assert!(
+        error
+            .to_string()
+            .contains("task B already has a different supplied snapshot")
+    );
+    assert_eq!(
+        index
+            .delivery("snapshot-replay")
+            .expect("read after refusal"),
+        Some(with_b.clone())
+    );
+    let conn = Connection::open(index.database_path()).expect("open history db");
+    let stored_snapshots: i64 = conn
+        .query_row(
+            "SELECT count(*) FROM history_supplied_task_snapshots WHERE delivery_id='snapshot-replay'",
+            [],
+            |row| row.get(0),
+        )
+        .expect("count snapshots after refusal");
+    assert_eq!(stored_snapshots, 1);
+
+    assert!(
+        !index
+            .import_with_supplied_snapshots(
+                delivery.clone(),
+                vec![snapshot_a.clone(), snapshot_b.clone()],
+            )
+            .expect("add A with exact B replay")
+            .inserted
+    );
+    assert!(
+        !index
+            .import(delivery)
+            .expect("replay without snapshots")
+            .inserted
+    );
+    let with_both = index
+        .delivery("snapshot-replay")
+        .expect("read final delivery")
+        .expect("stored delivery");
+    assert_eq!(with_both.delivery, observed);
+    assert_eq!(with_both.supplied_snapshots, vec![snapshot_b, snapshot_a]);
+}
+
+#[test]
 fn imported_symbol_signatures_redact_default_argument_credentials() {
     let token = "ghp_12345678901234567890";
     let repo = fixture_repo();
