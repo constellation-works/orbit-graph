@@ -1836,7 +1836,7 @@ fn insert_delivery(
     ).optional().map_err(|source| GraphError::sqlite("check duplicate history delivery", source))?;
     let symbol_count = change.files.iter().map(|file| file.symbols.len()).sum();
     if let Some((before, after, existing_payload)) = existing {
-        let previous: DeliveredChange =
+        let mut previous: DeliveredChange =
             serde_json::from_str(&existing_payload).map_err(|error| {
                 GraphError::invalid_data("decode existing history delivery", error.to_string())
             })?;
@@ -1852,6 +1852,52 @@ fn insert_delivery(
                     delivery.delivery_id
                 ),
             ));
+        }
+        let mut additions = Vec::new();
+        for snapshot in &change.supplied_snapshots {
+            if let Some(stored) = previous
+                .supplied_snapshots
+                .iter()
+                .find(|stored| stored.task_id == snapshot.task_id)
+            {
+                if stored != snapshot {
+                    return Err(GraphError::invalid_data(
+                        "deduplicate caller-supplied task snapshot",
+                        format!(
+                            "task {} already has a different supplied snapshot",
+                            snapshot.task_id
+                        ),
+                    ));
+                }
+            } else {
+                additions.push(snapshot.clone());
+            }
+        }
+        if !additions.is_empty() {
+            previous
+                .supplied_snapshots
+                .extend(additions.iter().cloned());
+            let updated = serde_json::to_string(&previous).map_err(|error| {
+                GraphError::invalid_data("encode delivery with task snapshots", error.to_string())
+            })?;
+            tx.execute(
+                "UPDATE history_deliveries SET payload_json=?4 WHERE repository=?1 AND landing_branch=?2 AND delivery_id=?3",
+                params![delivery.repository, delivery.landing_branch, delivery.delivery_id, updated],
+            )
+            .map_err(|source| GraphError::sqlite("update delivery task snapshots", source))?;
+            for snapshot in &additions {
+                let snapshot_json = serde_json::to_string(snapshot).map_err(|error| {
+                    GraphError::invalid_data(
+                        "encode caller-supplied task snapshot",
+                        error.to_string(),
+                    )
+                })?;
+                tx.execute(
+                    "INSERT INTO history_supplied_task_snapshots(repository,landing_branch,delivery_id,task_id,provenance,payload_json) VALUES(?1,?2,?3,?4,'caller_supplied',?5)",
+                    params![delivery.repository, delivery.landing_branch, delivery.delivery_id, snapshot.task_id, snapshot_json],
+                )
+                .map_err(|source| GraphError::sqlite("insert caller-supplied task snapshot", source))?;
+            }
         }
         return Ok(HistoryImportReport {
             delivery_id: delivery.delivery_id.clone(),
