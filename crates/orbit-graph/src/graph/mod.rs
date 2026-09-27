@@ -87,10 +87,10 @@ impl Graph {
     /// ```
     pub fn open_existing_read_only(worktree_root: &Path) -> Result<Self, GraphError> {
         let db_path = store::resolve_worktree_db_path(worktree_root)?;
-        if !db_path.path().is_file() {
+        let Some(physical_db) = store::existing_physical_db(worktree_root, db_path.path())? else {
             return Err(store::missing_graph_index(worktree_root, db_path.path()));
-        }
-        Self::open_observed(worktree_root, db_path)
+        };
+        Self::open_observed(worktree_root, db_path, physical_db.as_path())
     }
 
     /// Read the graph selected by a checkout identity already pinned by the caller.
@@ -105,10 +105,10 @@ impl Graph {
             target,
             crate::EXTRACTOR_VERSION,
         );
-        if !db_path.path().is_file() {
+        let Some(physical_db) = store::existing_physical_db(worktree_root, db_path.path())? else {
             return Err(store::missing_graph_index(worktree_root, db_path.path()));
-        }
-        Self::open_observed(worktree_root, db_path)
+        };
+        Self::open_observed(worktree_root, db_path, physical_db.as_path())
     }
 
     /// Open a graph for a synthetic or detached tree identified by `revision`.
@@ -205,11 +205,17 @@ impl Graph {
     /// identity is not the one this build reads.
     pub fn open_read_only(worktree_root: &Path, db_path: &Path) -> Result<Self, GraphError> {
         let db_path = store::existing_db_path(worktree_root, db_path)?;
-        Self::open_observed(worktree_root, db_path)
+        let physical_db = store::existing_physical_db(worktree_root, db_path.path())?
+            .unwrap_or_else(|| db_path.path().to_path_buf());
+        Self::open_observed(worktree_root, db_path, physical_db.as_path())
     }
 
-    fn open_observed(worktree_root: &Path, db_path: GraphDbPath) -> Result<Self, GraphError> {
-        let read_conn = store::open_observational(db_path.path(), "open graph database read-only")?;
+    fn open_observed(
+        worktree_root: &Path,
+        db_path: GraphDbPath,
+        physical_db: &Path,
+    ) -> Result<Self, GraphError> {
+        let read_conn = store::open_observational(physical_db, "open graph database read-only")?;
         store::schema::validate_identity(&read_conn, db_path.path())?;
         let last_auto_sync_at = read_last_incremental_at(
             &read_conn,
@@ -232,7 +238,10 @@ impl Graph {
         policy: SyncPolicy,
         opened: store::OpenedGraph,
     ) -> Result<Self, GraphError> {
-        let read_conn = open_read_connection(opened.db_path.path(), "open graph read connection")?;
+        let read_conn = configure_read_connection(store::open_writer(
+            opened.physical_db.as_path(),
+            "open graph read connection",
+        )?)?;
         let last_auto_sync_at = read_last_incremental_at(
             &read_conn,
             "read graph last incremental sync metadata at open",
@@ -672,6 +681,10 @@ pub(crate) fn open_read_connection(
     operation: &'static str,
 ) -> Result<Connection, GraphError> {
     let conn = Connection::open(db_path).map_err(|source| GraphError::sqlite(operation, source))?;
+    configure_read_connection(conn)
+}
+
+fn configure_read_connection(conn: Connection) -> Result<Connection, GraphError> {
     conn.pragma_update(None, "busy_timeout", 5_000)
         .map_err(|source| GraphError::sqlite("set busy_timeout for graph read", source))?;
     conn.pragma_update(None, "foreign_keys", "ON")

@@ -206,7 +206,10 @@ did not record, such as the empty `graph.<extractor>.db` older plugin versions
 left in plugin state. It reports those files in `result.unowned_files` instead.
 The index directory is created owner-only (`0700`) and every file in it
 `0600`, whatever the process umask, and a symbolic link in place of the
-directory or its lock file is refused.
+directory or its lock file is refused. A refusal is a `graph_error` whose
+message starts `refusing orbit-graph state path <path>:` and names the reason;
+the plugin error codes are unchanged. Every other index file is opened without
+following a symbolic link, and the pointer files are replaced atomically.
 
 The response's `code_index` names the plugin state `directory` it wrote, and
 `orbit.graph.status` reports the same object: `state` is `missing`,

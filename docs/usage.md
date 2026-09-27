@@ -114,6 +114,30 @@ library caller is never marked, and neither is any parent created on the way. An
 `.gitignore` is left as it is. `orbit-graph db-path` prints
 the exact path and whether a database `exists` there, without creating one.
 
+Repository content can neither redirect nor pre-populate this state. Every
+command that uses `.orbit-graph/` (`sync`, `clean`, the queries, `history`,
+`recommend`) resolves it on the physical path and refuses it, exiting 1 with
+code `unsafe_state_path` and naming the path and the reason, when
+`.orbit-graph` or a directory below it is a symbolic link (dangling or not)
+or owned by another user, when `.orbit-graph/` directly holds a symbolic link
+(a linked database, lock or history file), or when the Git index tracks
+`.orbit-graph` or anything under it:
+
+```text
+refusing orbit-graph state path /work/widgets/.orbit-graph: it is a symbolic link, and orbit-graph never follows a link in its state path
+```
+
+Remove the link, or untrack the directory with `git rm -r --cached
+.orbit-graph`, and retry. State is created owner-only whatever the umask:
+directories `0700` and databases, sidecars, locks and pointers `0600`, each
+opened without following a symbolic link. A writer (`sync`, `history sync`)
+repairs a looser mode it finds, such as a `0644` database, and logs a warning;
+a reader never changes a mode. `show`, `search`, `refs` and `callees` decide
+whether a stored source path is inside the worktree on the physical path, so
+a directory replaced by a symbolic link to somewhere else is refused rather
+than read. `evaluate` clones each case into a fresh, randomly named `0700`
+directory under the system temporary directory.
+
 Only `sync` builds an index. Every other command (`search`, `show`, `refs`,
 `callees`, `impact`, `trace`, `overview`, `implementors`, `deps`, `db-path`,
 `recommend` and `history status`) only reads: it creates, initializes and

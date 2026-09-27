@@ -766,10 +766,21 @@ fn plugin_index_dir(repository: &std::path::Path) -> Result<Option<PathBuf>, Gra
             "ORBIT_PLUGIN_STATE must not be empty when set",
         ));
     }
-    Ok(Some(index_dir_in(
-        std::path::Path::new(&state_root),
-        repository,
-    )))
+    let state_root = std::path::Path::new(&state_root);
+    let index_dir = index_dir_in(state_root, repository);
+    // An existing per-repository directory is checked before any tool reads
+    // or writes it: a symlink or another user's directory is refused
+    // (STD-05 §R6, §R9). Writers create it owner-only when missing.
+    if state_root.exists()
+        && let Some(name) = index_dir.file_name()
+    {
+        orbit_graph::private_state_dir(
+            state_root,
+            std::path::Path::new(name),
+            orbit_graph::StateAccess::Read,
+        )?;
+    }
+    Ok(Some(index_dir))
 }
 
 fn default_branch() -> String {

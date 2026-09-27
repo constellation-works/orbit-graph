@@ -119,12 +119,16 @@ fn symlinked_scratch_dir_is_never_written_through() {
     symlink("..", repo.join(".orbit-graph")).expect("symlink to parent");
 
     for worktree in [root.path(), repo.as_path()] {
-        create_index_dir(
+        let refused = create_index_dir(
             &worktree.join(".orbit-graph"),
             scratch(worktree),
             "create test directory",
         )
-        .expect("a symlinked scratch dir still opens");
+        .expect_err("a symlinked scratch dir is refused (STD-05 §R7)");
+        assert!(
+            matches!(refused, crate::GraphError::UnsafeStatePath { .. }),
+            "{refused}"
+        );
     }
 
     assert!(!outside.join(".gitignore").exists());

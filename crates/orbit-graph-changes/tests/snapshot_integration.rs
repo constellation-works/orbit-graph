@@ -4,6 +4,10 @@
 //! so the resolved commit SHAs are stable across machines and runs.
 
 #![allow(clippy::expect_used)]
+#![allow(
+    clippy::disallowed_methods,
+    reason = "fixtures are written with fs::write; clippy.toml bans it only from shipped code"
+)]
 
 use std::collections::BTreeMap;
 use std::fs;

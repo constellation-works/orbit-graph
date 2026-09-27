@@ -1,6 +1,11 @@
 // A library prints nothing: diagnostics go through `tracing` (STD-02 §R15).
 #![deny(clippy::print_stderr, clippy::print_stdout)]
-#![cfg_attr(test, allow(clippy::expect_used, clippy::unwrap_used))]
+// Test fixtures write files with `fs::write`, which `clippy.toml` bans from
+// shipped code in favour of `orbit_graph::atomic_write` (STD-03 §R5).
+#![cfg_attr(
+    test,
+    allow(clippy::expect_used, clippy::unwrap_used, clippy::disallowed_methods)
+)]
 
 //! SQLite-backed source-code graph store and query API.
 //!
@@ -17,6 +22,7 @@ mod live_evaluation;
 mod lock;
 mod query;
 mod recommend;
+mod state_dir;
 mod store;
 mod sync;
 
@@ -87,8 +93,17 @@ pub use recommend::{
 // per-repository state directory; see each item's documentation.
 #[doc(hidden)]
 pub use recommend::StructureIndex;
+pub use state_dir::{atomic_write, atomic_write_temp_pid};
 #[doc(hidden)]
 pub use store::create_plugin_state_dir;
+// Hidden helpers the change-analysis library's snapshot cache and the CLI's
+// plugin protocol use to keep their own state physically contained and
+// owner-only; see each item's documentation.
+#[doc(hidden)]
+pub use state_dir::{
+    StateAccess, check_state_file, chosen_state_dir, create_private_dir_all, open_state_file,
+    private_state_dir, scratch_state_dir, write_new_private_file,
+};
 
 /// Extractor/storage compatibility version embedded in graph database names.
 ///

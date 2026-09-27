@@ -58,6 +58,16 @@ pub enum GraphError {
         /// Actionable message naming the stored and expected identities.
         reason: String,
     },
+    /// A state directory or file was refused before anything was read or
+    /// written through it: a symlink, something other than the expected
+    /// directory or regular file, another user's file, or repository content
+    /// tracked by Git (`STD-05 §R6`, `§R7`, `§R9`).
+    UnsafeStatePath {
+        /// The path that was refused.
+        path: PathBuf,
+        /// Why it was refused.
+        reason: String,
+    },
     /// A history index uses an older extractor or import contract.
     VersionMismatch(Box<VersionMismatchDetails>),
     /// Placeholder variant until storage, sync, and query errors are defined.
@@ -107,6 +117,16 @@ impl GraphError {
     }
 }
 
+impl GraphError {
+    /// Build a [`GraphError::UnsafeStatePath`] refusal of `path`.
+    pub fn unsafe_state_path(path: impl Into<PathBuf>, reason: impl Into<String>) -> Self {
+        Self::UnsafeStatePath {
+            path: path.into(),
+            reason: reason.into(),
+        }
+    }
+}
+
 impl Display for GraphError {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
@@ -120,6 +140,11 @@ impl Display for GraphError {
             Self::IndexMissing { reason, .. } | Self::IndexIncompatible { reason, .. } => {
                 f.write_str(reason)
             }
+            Self::UnsafeStatePath { path, reason } => write!(
+                f,
+                "refusing orbit-graph state path {}: {reason}",
+                path.display()
+            ),
             Self::VersionMismatch(details) => write!(
                 f,
                 "history index {} has {key}={found}; expected {expected}; run `{command}`",

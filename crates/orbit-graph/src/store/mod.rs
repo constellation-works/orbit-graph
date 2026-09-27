@@ -4,19 +4,24 @@ pub(crate) mod history;
 pub(crate) mod schema;
 
 use std::fs;
+use std::io::ErrorKind;
 use std::io::Read;
-use std::path::{Path, PathBuf};
 #[cfg(unix)]
-use std::{io::ErrorKind, os::unix::fs::OpenOptionsExt};
+use std::os::unix::fs::OpenOptionsExt;
+use std::path::{Path, PathBuf};
 
 use git2::Repository;
 use rusqlite::{Connection, OpenFlags};
 
+use crate::state_dir::{SCRATCH_DIR_NAME, StateAccess, open_state_file};
 use crate::sync::scanner::DbLockGuard;
 use crate::{EXTRACTOR_VERSION, GraphDbPath, GraphError, SyncPolicy, resolve_db_path_for_commit};
 
 pub(crate) struct OpenedGraph {
     pub(crate) db_path: GraphDbPath,
+    /// The database's physical path: its directory checked by
+    /// [`create_index_dir`], so SQLite opens it with `SQLITE_OPEN_NOFOLLOW`.
+    pub(crate) physical_db: PathBuf,
 }
 
 pub(crate) fn open(worktree_root: &Path, _policy: SyncPolicy) -> Result<OpenedGraph, GraphError> {
@@ -97,46 +102,74 @@ pub(crate) fn existing_db_path(
     ))
 }
 
+/// The physical path of the existing database `db_path` for a read-only
+/// open, or `None` when it does not exist. Its directory is checked as
+/// [`existing_index_dir`] describes and the file itself must be a regular
+/// file the current user owns, not a symlink (`STD-05 §R6`, `§R9`). Nothing
+/// is created or changed.
+pub(crate) fn existing_physical_db(
+    worktree_root: &Path,
+    db_path: &Path,
+) -> Result<Option<PathBuf>, GraphError> {
+    let Some(file_name) = db_path.file_name() else {
+        return Ok(None);
+    };
+    let Some(dir) = existing_index_dir(worktree_root, db_path)? else {
+        return Ok(None);
+    };
+    let physical = dir.join(file_name);
+    if !crate::state_dir::check_state_file(physical.as_path())? {
+        return Ok(None);
+    }
+    check_sidecars(physical.as_path())?;
+    Ok(Some(physical))
+}
+
+/// Refuse a database whose `-wal`, `-shm` or `.lock` sidecar is a symlink,
+/// not a regular file, or another user's, without changing anything.
+pub(crate) fn check_sidecars(physical_db: &Path) -> Result<(), GraphError> {
+    for suffix in ["-wal", "-shm", ".lock"] {
+        let mut name = physical_db.as_os_str().to_os_string();
+        name.push(suffix);
+        crate::state_dir::check_state_file(Path::new(&name))?;
+    }
+    Ok(())
+}
+
 fn open_at_path(
     db_path: GraphDbPath,
     git: &GitContext,
     owner: IndexDirOwner<'_>,
 ) -> Result<OpenedGraph, GraphError> {
-    if let Some(parent) = db_path.path().parent() {
-        create_index_dir(parent, owner, "create graph database directory")?;
-    }
+    let (Some(parent), Some(file_name)) = (db_path.path().parent(), db_path.path().file_name())
+    else {
+        return Err(GraphError::invalid_data(
+            "validate graph database path",
+            format!(
+                "database path must name a file: {}",
+                db_path.path().display()
+            ),
+        ));
+    };
+    let physical_db =
+        create_index_dir(parent, owner, "create graph database directory")?.join(file_name);
 
     // SQLite's default creation mode can expose indexed source text. Create
-    // the database atomically with private permissions before SQLite opens it.
-    #[cfg(unix)]
-    match fs::OpenOptions::new()
-        .write(true)
-        .create_new(true)
-        .mode(0o600)
-        .open(db_path.path())
-    {
-        Ok(_) => {}
-        Err(source) if source.kind() == ErrorKind::AlreadyExists => {}
-        Err(source) => {
-            return Err(GraphError::io(
-                "create private graph database",
-                db_path.path(),
-                source,
-            ));
-        }
-    }
+    // the database with private permissions before SQLite opens it, repair an
+    // existing one to 0600, and refuse a symlink in its name (STD-05 §R7-§R9);
+    // SQLite gives the -wal and -shm sidecars the database's mode.
+    drop(open_state_file(physical_db.as_path(), StateAccess::Write)?);
 
     // Switching a new file to WAL needs the database to itself, and SQLite
     // answers a concurrent switch with SQLITE_BUSY instead of waiting. First
     // opens therefore serialize on the sync lock until the file is a WAL
     // database; an initialized one needs no lock (STD-03 §R6).
-    let setup_lock = if database_uses_wal(db_path.path(), "read graph database header")? {
+    let setup_lock = if database_uses_wal(physical_db.as_path(), "read graph database header")? {
         None
     } else {
-        Some(DbLockGuard::acquire(db_path.path())?)
+        Some(DbLockGuard::acquire(physical_db.as_path())?)
     };
-    let mut conn = Connection::open(db_path.path())
-        .map_err(|source| GraphError::sqlite("open graph database", source))?;
+    let mut conn = open_writer(physical_db.as_path(), "open graph database")?;
     configure_connection(&conn)?;
 
     // The emptiness check is repeated inside the schema transaction, so
@@ -156,7 +189,17 @@ fn open_at_path(
     // (STD-03 §R10).
     schema::validate_identity(&conn, db_path.path())?;
 
-    Ok(OpenedGraph { db_path })
+    Ok(OpenedGraph {
+        db_path,
+        physical_db,
+    })
+}
+
+/// Open the physical database `path` read-write with `SQLITE_OPEN_NOFOLLOW`,
+/// so SQLite refuses a symlink anywhere in the path it is given.
+pub(crate) fn open_writer(path: &Path, operation: &'static str) -> Result<Connection, GraphError> {
+    Connection::open_with_flags(path, OpenFlags::default() | OpenFlags::SQLITE_OPEN_NOFOLLOW)
+        .map_err(|source| GraphError::sqlite(operation, source))
 }
 
 // Recovered from the graph crate's local SQLite setup. WAL is a hard
@@ -360,9 +403,6 @@ pub(crate) fn configure_sync_writer(
     Ok(())
 }
 
-/// Name of the scratch directory orbit-graph keeps in a worktree root.
-const SCRATCH_DIR_NAME: &str = ".orbit-graph";
-
 /// The `.gitignore` orbit-graph writes into a directory it owns. `*` also
 /// matches the file itself, so the directory never shows up as untracked.
 const OWNED_DIR_GITIGNORE: &str =
@@ -386,53 +426,108 @@ pub(crate) enum IndexDirOwner<'a> {
     Caller,
 }
 
-/// Creates `dir`, with any missing parents, to hold an index, and marks it
-/// with a `.gitignore` containing `*` when orbit-graph owns it.
+/// Creates `dir`, with any missing parents, to hold an index, marks it with a
+/// `.gitignore` containing `*` when orbit-graph owns it, and returns its
+/// physical path, which every later open of a file in it uses.
 ///
 /// orbit-graph owns exactly two kinds of directory: the canonical
 /// `<worktree>/.orbit-graph` scratch directory and its own per-repository
-/// state directory ([`IndexDirOwner::PluginState`]). A caller-chosen directory
-/// ([`IndexDirOwner::Caller`]) and the parents created on the way to any
-/// directory are never marked, so a `.gitignore` cannot land in a directory
-/// that holds the user's files.
+/// state directory ([`IndexDirOwner::PluginState`]). Both are resolved through
+/// [`crate::state_dir`]: decided on the physical path, never through a
+/// symlink, refused when another user owns them or (for the scratch
+/// directory) when Git tracks them, created owner-only (`0700`) and repaired
+/// to `0700` whatever the umask (`STD-05 §R6`–`§R9`). A caller-chosen
+/// directory ([`IndexDirOwner::Caller`]) and the parents created on the way to
+/// it keep the default mode and are never marked, so a `.gitignore` cannot
+/// land in a directory that holds the user's files. A `Scratch` directory
+/// that is not directly under its worktree is treated like a caller's.
 ///
-/// The scratch rule is decided on the physical path (STD-05 §R6): the
-/// directory must be a real directory that canonicalizes to
-/// `<canonical worktree>/.orbit-graph`. The write itself never follows a
-/// symlink in the directory's own name and never replaces an existing
-/// `.gitignore` (STD-05 §R7; see [`write_new_gitignore`]). Failing to mark
-/// the directory is logged, not fatal: the index works without it.
-///
-/// The directories orbit-graph owns are created owner-only (`0700`, with any
-/// missing parents) whatever the umask (STD-05 §R8); an existing directory
-/// keeps its mode. A caller-chosen directory gets the default mode.
+/// The marker write never replaces an existing `.gitignore` (`STD-05 §R7`;
+/// see [`write_new_gitignore`]). Failing to mark the directory is logged, not
+/// fatal: the index works without it.
 pub(crate) fn create_index_dir(
     dir: &Path,
     owner: IndexDirOwner<'_>,
     operation: &'static str,
-) -> Result<(), GraphError> {
-    let mut builder = fs::DirBuilder::new();
-    builder.recursive(true);
-    #[cfg(unix)]
-    if !matches!(owner, IndexDirOwner::Caller) {
-        std::os::unix::fs::DirBuilderExt::mode(&mut builder, 0o700);
-    }
-    builder
-        .create(dir)
-        .map_err(|source| GraphError::io(operation, dir, source))?;
-    let owned = match owner {
-        IndexDirOwner::Scratch { worktree_root } => is_canonical_scratch_dir(dir, worktree_root),
-        IndexDirOwner::PluginState => true,
-        IndexDirOwner::Caller => false,
+) -> Result<PathBuf, GraphError> {
+    let physical = match owner {
+        IndexDirOwner::Scratch { worktree_root }
+            if dir.parent() == Some(worktree_root)
+                && dir.file_name() == Some(std::ffi::OsStr::new(SCRATCH_DIR_NAME)) =>
+        {
+            Some(scratch_dir(worktree_root, StateAccess::Write)?)
+        }
+        IndexDirOwner::PluginState => Some(plugin_state_dir(dir, StateAccess::Write)?),
+        IndexDirOwner::Scratch { .. } | IndexDirOwner::Caller => None,
     };
-    if owned && let Err(error) = write_new_gitignore(dir, OWNED_DIR_GITIGNORE.as_bytes()) {
+    let Some(physical) = physical.flatten() else {
+        fs::create_dir_all(dir).map_err(|source| GraphError::io(operation, dir, source))?;
+        return dir
+            .canonicalize()
+            .map_err(|source| GraphError::io(operation, dir, source));
+    };
+    if let Err(error) = write_new_gitignore(physical.as_path(), OWNED_DIR_GITIGNORE.as_bytes()) {
         tracing::warn!(
-            path = %dir.join(".gitignore").display(),
+            path = %physical.join(".gitignore").display(),
             error = %error,
             "could not write .gitignore for orbit-graph index directory"
         );
     }
-    Ok(())
+    Ok(physical)
+}
+
+/// The physical `<worktree_root>/.orbit-graph`, checked by
+/// [`crate::state_dir::scratch_state_dir`]; `None` for a reader when it does
+/// not exist.
+pub(crate) fn scratch_dir(
+    worktree_root: &Path,
+    access: StateAccess,
+) -> Result<Option<PathBuf>, GraphError> {
+    crate::state_dir::scratch_state_dir(worktree_root, Path::new(""), access)
+}
+
+/// The physical plugin state directory `dir`: its parent, the plugin state
+/// root, is trusted (and created owner-only by a writer when missing), and
+/// `dir` itself is checked as orbit-graph's own state.
+pub(crate) fn plugin_state_dir(
+    dir: &Path,
+    access: StateAccess,
+) -> Result<Option<PathBuf>, GraphError> {
+    let (Some(root), Some(name)) = (dir.parent(), dir.file_name()) else {
+        return Err(GraphError::unsafe_state_path(
+            dir,
+            "a plugin state directory must be a named directory under the state root",
+        ));
+    };
+    if access == StateAccess::Write && !root.exists() {
+        crate::state_dir::create_private_dir_all(root)
+            .map_err(|source| GraphError::io("create plugin state root", root, source))?;
+    }
+    if access == StateAccess::Read && !root.exists() {
+        return Ok(None);
+    }
+    crate::state_dir::private_state_dir(root, Path::new(name), access)
+}
+
+/// The physical directory holding the database `db_path`, checked for a
+/// reader as [`create_index_dir`] checks it for a writer. `None` when it does
+/// not exist. A database outside `<worktree_root>/.orbit-graph` is a
+/// caller-chosen or plugin path and its directory is taken as given.
+pub(crate) fn existing_index_dir(
+    worktree_root: &Path,
+    db_path: &Path,
+) -> Result<Option<PathBuf>, GraphError> {
+    let Some(parent) = db_path.parent() else {
+        return Ok(None);
+    };
+    if parent == worktree_root.join(SCRATCH_DIR_NAME) {
+        return scratch_dir(worktree_root, StateAccess::Read);
+    }
+    match parent.canonicalize() {
+        Ok(physical) => Ok(Some(physical)),
+        Err(source) if source.kind() == ErrorKind::NotFound => Ok(None),
+        Err(source) => Err(GraphError::io("resolve index directory", parent, source)),
+    }
 }
 
 /// Create `dir`, orbit-graph's own per-repository state directory, owner-only
@@ -444,27 +539,7 @@ pub(crate) fn create_index_dir(
 /// code-graph index directory with it; the store module itself stays private.
 #[doc(hidden)]
 pub fn create_plugin_state_dir(dir: &Path, operation: &'static str) -> Result<(), GraphError> {
-    create_index_dir(dir, IndexDirOwner::PluginState, operation)
-}
-
-/// Whether `dir` is, physically, the `.orbit-graph` directory directly under
-/// `worktree_root`. A `.orbit-graph` that is a symlink, or that resolves
-/// anywhere else, is not.
-fn is_canonical_scratch_dir(dir: &Path, worktree_root: &Path) -> bool {
-    let is_real_dir = fs::symlink_metadata(dir).is_ok_and(|metadata| metadata.is_dir());
-    let physical = dir.canonicalize();
-    let expected = worktree_root
-        .canonicalize()
-        .map(|root| root.join(SCRATCH_DIR_NAME));
-    let owned = is_real_dir
-        && matches!((&physical, &expected), (Ok(physical), Ok(expected)) if physical == expected);
-    if !owned {
-        tracing::warn!(
-            path = %dir.display(),
-            "not marking the orbit-graph scratch directory: it is not a real directory directly under the worktree"
-        );
-    }
-    owned
+    create_index_dir(dir, IndexDirOwner::PluginState, operation).map(drop)
 }
 
 /// Atomically creates `<dir>/.gitignore` holding `contents`, unless an entry

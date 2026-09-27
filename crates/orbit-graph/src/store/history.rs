@@ -1,9 +1,7 @@
 //! Rebuildable SQLite index for verified and Git-only delivery history.
 
 use std::collections::BTreeSet;
-use std::fs::{self, File, OpenOptions};
 #[cfg(unix)]
-use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -20,6 +18,7 @@ use rusqlite::{Connection, OptionalExtension, Transaction, TransactionBehavior, 
 use serde::Serialize;
 
 use crate::error::VersionMismatchDetails;
+use crate::state_dir::{StateAccess, open_state_file};
 use crate::{GraphError, lock};
 
 /// Version of the history SQLite schema.
@@ -189,21 +188,14 @@ impl HistoryIndex {
         }
         if !confirm {
             index.read_only = true;
-            if index.db_path.is_file() {
+            if let Some(physical) = index.existing_physical_db(None)? {
+                index.db_path = physical;
                 let conn = index.open_connection()?;
                 index.validate_schema_version(&conn)?;
             }
             return Ok(index);
         }
-        if let Some(parent) = index.db_path.parent() {
-            super::create_index_dir(
-                parent,
-                super::IndexDirOwner::Scratch {
-                    worktree_root: index.repo_root.as_path(),
-                },
-                "create history index directory",
-            )?;
-        }
+        index.create_physical_dir(None)?;
         let _guard = HistoryLock::acquire(index.db_path.as_path(), "history rebuild open")?;
         let conn = index.open_connection()?;
         if history_database_is_empty(&conn)? {
@@ -246,7 +238,9 @@ impl HistoryIndex {
     ) -> Result<Self, GraphError> {
         let mut index = Self::resolve(repo_root, landing_branch, index_dir)?;
         index.read_only = true;
-        if !index.db_path.is_file() {
+        if let Some(physical) = index.existing_physical_db(index_dir)? {
+            index.db_path = physical;
+        } else {
             return Err(GraphError::IndexMissing {
                 path: index.db_path.clone(),
                 reason: format!(
@@ -283,19 +277,8 @@ impl HistoryIndex {
         landing_branch: &str,
         index_dir: Option<&Path>,
     ) -> Result<Self, GraphError> {
-        let index = Self::resolve(repo_root, landing_branch, index_dir)?;
-        // An explicit index directory is orbit-graph's own per-repository
-        // state directory; otherwise the index lives in
-        // the worktree's scratch directory.
-        let owner = match index_dir {
-            Some(_) => super::IndexDirOwner::PluginState,
-            None => super::IndexDirOwner::Scratch {
-                worktree_root: index.repo_root.as_path(),
-            },
-        };
-        if let Some(parent) = index.db_path.parent() {
-            super::create_index_dir(parent, owner, "create history index directory")?;
-        }
+        let mut index = Self::resolve(repo_root, landing_branch, index_dir)?;
+        index.create_physical_dir(index_dir)?;
         let _lock = HistoryLock::acquire(index.db_path.as_path(), "history open")?;
         let mut conn = index.open_connection()?;
         if history_database_is_empty(&conn)? {
@@ -345,6 +328,47 @@ impl HistoryIndex {
             read_only: false,
         };
         Ok(index)
+    }
+
+    /// Create the index directory as orbit-graph state and point `db_path` at
+    /// its physical path. An explicit index directory is orbit-graph's own
+    /// per-repository state directory; otherwise the index lives in the
+    /// worktree's scratch directory.
+    fn create_physical_dir(&mut self, index_dir: Option<&Path>) -> Result<(), GraphError> {
+        let owner = match index_dir {
+            Some(_) => super::IndexDirOwner::PluginState,
+            None => super::IndexDirOwner::Scratch {
+                worktree_root: self.repo_root.as_path(),
+            },
+        };
+        let (Some(parent), Some(name)) = (self.db_path.parent(), self.db_path.file_name()) else {
+            return Ok(());
+        };
+        let name = name.to_os_string();
+        let physical = super::create_index_dir(parent, owner, "create history index directory")?;
+        self.db_path = physical.join(name);
+        Ok(())
+    }
+
+    /// The physical path of the existing index, checked without changing
+    /// anything, or `None` when it does not exist.
+    fn existing_physical_db(
+        &self,
+        index_dir: Option<&Path>,
+    ) -> Result<Option<PathBuf>, GraphError> {
+        let dir = match index_dir {
+            Some(dir) => super::plugin_state_dir(dir, StateAccess::Read)?,
+            None => super::scratch_dir(self.repo_root.as_path(), StateAccess::Read)?,
+        };
+        let (Some(dir), Some(name)) = (dir, self.db_path.file_name()) else {
+            return Ok(None);
+        };
+        let physical = dir.join(name);
+        if !crate::state_dir::check_state_file(physical.as_path())? {
+            return Ok(None);
+        }
+        super::check_sidecars(physical.as_path())?;
+        Ok(Some(physical))
     }
 
     fn refuse_read_only(&self, operation: &'static str) -> Result<(), GraphError> {
@@ -399,7 +423,7 @@ impl HistoryIndex {
         ));
         let outcome = if populated > 0 {
             "skipped: index already populated".to_string()
-        } else if !previous.is_file() {
+        } else if !crate::state_dir::check_state_file(previous.as_path())? {
             "skipped: no previous index".to_string()
         } else {
             match read_previous_schema(previous.as_path())? {
@@ -1159,11 +1183,12 @@ impl HistoryIndex {
         if self.read_only {
             return super::open_observational(self.db_path.as_path(), "open history index");
         }
-        // Create privately before SQLite opens the path, and tighten older
-        // databases that SQLite may have created with the process umask.
-        let _file = open_private_history_file(self.db_path.as_path())?;
-        let conn = Connection::open(self.db_path.as_path())
-            .map_err(|source| GraphError::sqlite("open history index", source))?;
+        // Create privately before SQLite opens the path, tighten older
+        // databases that SQLite may have created with the process umask, and
+        // refuse a symlink (STD-05 §R7-§R9). The path is physical, so SQLite
+        // also refuses a symlink anywhere in it.
+        drop(open_state_file(self.db_path.as_path(), StateAccess::Write)?);
+        let conn = super::open_writer(self.db_path.as_path(), "open history index")?;
         conn.pragma_update(None, "busy_timeout", 5_000)
             .map_err(|source| GraphError::sqlite("set history busy timeout", source))?;
         conn.pragma_update(None, "foreign_keys", "ON")
@@ -1726,7 +1751,6 @@ struct HistoryLock {
 impl HistoryLock {
     fn acquire(db_path: &Path, activity: &str) -> Result<Self, GraphError> {
         let path = db_path.with_extension("sqlite3.lock");
-        let _private_file = open_private_history_file(path.as_path())?;
         let guard = lock::FileLockGuard::acquire(
             path.as_path(),
             lock::holder_label(activity).as_str(),
@@ -1735,20 +1759,6 @@ impl HistoryLock {
         )?;
         Ok(Self { _guard: guard })
     }
-}
-
-fn open_private_history_file(path: &Path) -> Result<File, GraphError> {
-    let mut options = OpenOptions::new();
-    options.create(true).read(true).write(true);
-    #[cfg(unix)]
-    options.mode(0o600);
-    let file = options
-        .open(path)
-        .map_err(|source| GraphError::io("open private history file", path, source))?;
-    #[cfg(unix)]
-    file.set_permissions(fs::Permissions::from_mode(0o600))
-        .map_err(|source| GraphError::io("restrict history file permissions", path, source))?;
-    Ok(file)
 }
 
 #[cfg(test)]

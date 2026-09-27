@@ -1,9 +1,7 @@
 //! Leakage-safe chronological evaluation over versioned public delivery data.
 
 use std::collections::{BTreeMap, BTreeSet};
-use std::fs;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Instant;
 
 use git2::{Oid, Repository};
@@ -18,8 +16,6 @@ use crate::{
     RecommendationEngine, RecommendationInput, RecommendationLevel, RecommendationRequest,
     RecommendationVariant, SyncMode, SyncPolicy, TaskAssociation, TemporalFact, TemporalStatus,
 };
-
-static EVALUATION_SEQUENCE: AtomicU64 = AtomicU64::new(0);
 
 /// Version of the chronological evaluation report JSON contract.
 ///
@@ -696,7 +692,14 @@ fn mean_latency_ms(samples_micros: &[u128]) -> Option<f64> {
     Some(total as f64 / samples_micros.len() as f64 / 1_000.0)
 }
 
+/// An isolated clone for one evaluation case.
+///
+/// The clone lives in a fresh directory that `tempfile` creates under the
+/// system temporary directory with a random name and mode `0700`
+/// (`STD-05 §R8`), so no other user can pre-create, read or redirect it, and
+/// dropping the workspace removes only that directory.
 struct EvaluationWorkspace {
+    _dir: tempfile::TempDir,
     path: PathBuf,
 }
 
@@ -707,12 +710,14 @@ impl EvaluationWorkspace {
         landing_branch: &str,
         target_revision: &str,
     ) -> Result<Self, GraphError> {
-        let sequence = EVALUATION_SEQUENCE.fetch_add(1, Ordering::Relaxed);
-        let path = std::env::temp_dir().join(format!(
-            "orbit-graph-evaluation-{}-{sequence}",
-            std::process::id()
-        ));
-        let workspace = Self { path };
+        let dir = tempfile::Builder::new()
+            .prefix("orbit-graph-evaluation-")
+            .tempdir()
+            .map_err(|source| {
+                GraphError::io("create evaluation workspace", std::env::temp_dir(), source)
+            })?;
+        let path = dir.path().join("repository");
+        let workspace = Self { _dir: dir, path };
         let source_text = source.to_str().ok_or_else(|| {
             GraphError::invalid_data(
                 "clone evaluation repository",
@@ -767,11 +772,5 @@ impl EvaluationWorkspace {
 
     fn path(&self) -> &Path {
         self.path.as_path()
-    }
-}
-
-impl Drop for EvaluationWorkspace {
-    fn drop(&mut self) {
-        let _ = fs::remove_dir_all(self.path.as_path());
     }
 }

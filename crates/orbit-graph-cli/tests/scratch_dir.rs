@@ -2,6 +2,10 @@
 //! the packaged `orbit-graph` executable.
 
 #![allow(clippy::expect_used)]
+#![allow(
+    clippy::disallowed_methods,
+    reason = "fixtures are written with fs::write; clippy.toml bans it only from shipped code"
+)]
 
 mod common;
 
@@ -91,12 +95,10 @@ fn sync_never_writes_a_gitignore_through_a_symlinked_scratch_dir() {
     git(&child, &["commit", "-q", "-m", "child"]);
     std::os::unix::fs::symlink("..", child.join(".orbit-graph")).expect("symlink scratch dir");
 
-    let sync = run(&child, ["sync"]);
-    assert!(
-        sync.status.success(),
-        "{}",
-        String::from_utf8_lossy(&sync.stderr)
-    );
+    let sync = run(&child, ["sync", "--json"]);
+    assert!(!sync.status.success(), "a symlinked scratch dir is refused");
+    let error: Value = serde_json::from_slice(&sync.stderr).expect("JSON error");
+    assert_eq!(error["code"], "unsafe_state_path", "{error}");
 
     assert!(
         !umbrella.path().join(".gitignore").exists(),

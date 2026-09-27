@@ -5,4 +5,7 @@ disallowed-methods = [
   # STD-03 §R2: every channel between threads is bounded, and its
   # construction site says what a producer does when it is full.
   { path = "std::sync::mpsc::channel", reason = "unbounded; use std::sync::mpsc::sync_channel with a capacity and state the full-queue policy (STD-03 §R2)" },
+  # STD-03 §R5 / STD-05 §R8: state is replaced atomically and created
+  # owner-only; `fs::write` truncates in place and follows a symlink.
+  { path = "std::fs::write", reason = "not atomic, follows symlinks and ignores the file mode; use orbit_graph::atomic_write (STD-03 §R5, STD-05 §R8)" },
 ]

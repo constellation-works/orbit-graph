@@ -198,6 +198,20 @@ version's entry, an entry of unknown age under a retention policy, and an entry
 whose commit Git cannot look up for any other reason. `lookup` applies the
 same rules. `clean` never removes anything outside the cache directory, and it
 never touches the inspected repository's own `.orbit-graph/*.db` files.
+Repository content can neither redirect nor pre-populate the cache
+(STD-05 §R6–§R9): the default directory is resolved through the same checks as
+`.orbit-graph/` itself, so a symlinked or dangling component, a link directly
+in `.orbit-graph/`, or a tracked `.orbit-graph/explorer/snapshots/<sha>/` is
+refused. A refused cache is not fatal: both sides are indexed into temporary
+trees, `cache_outcome` is `disabled`, and the comparison's cache note names the
+refused path and the reason. Directories are created `0700` and locks, the
+marker, `entry.json`, `last_used` and materialized blobs `0600`; `entry.json`
+and `last_used` are replaced atomically, and a torn or empty `last_used`
+counts as absent, so the age falls back to `published_at`. An entry is trusted
+only while its directory and `entry.json` belong to the cache's owner with no
+group or other permission bits: `lookup` rebuilds, and `clean` removes as
+`untrusted`, a looser entry of ours, and both keep one that is a symlink or
+another user's.
 
 **Dirty working trees are detected and reported, never indexed.** A comparison
 inspects the repository status (untracked files included, ignored files

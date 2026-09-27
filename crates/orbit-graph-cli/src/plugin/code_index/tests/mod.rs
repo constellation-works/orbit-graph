@@ -294,6 +294,7 @@ fn orphaned_staging_files_are_reclaimed_and_others_kept() {
     for name in [
         "graph.current.json.4242.tmp",
         "graph.owned.json.99.tmp",
+        "graph.current.json.tmp-4242-0",
         "graph.current.json.x.tmp",
         "other.json.1.tmp",
     ] {
@@ -302,9 +303,12 @@ fn orphaned_staging_files_are_reclaimed_and_others_kept() {
     sync(repo.path(), state.path(), request(false)).expect("build");
     assert!(!state.path().join("graph.current.json.4242.tmp").exists());
     assert!(!state.path().join("graph.owned.json.99.tmp").exists());
+    assert!(!state.path().join("graph.current.json.tmp-4242-0").exists());
     assert!(state.path().join("graph.current.json.x.tmp").exists());
     assert!(state.path().join("other.json.1.tmp").exists());
     assert!(is_staging_name("graph.owned.json.1.tmp"));
+    assert!(is_staging_name("graph.owned.json.tmp-1-2"));
+    assert!(!is_staging_name("graph.owned.json.tmp-1-"));
     assert!(!is_staging_name("graph.owned.json..tmp"));
     assert!(!is_staging_name("graph.owned.json.tmp"));
 }
