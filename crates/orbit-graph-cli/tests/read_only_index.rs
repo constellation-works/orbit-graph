@@ -216,14 +216,36 @@ fn reads_on_a_never_synced_repository_report_index_missing_and_create_nothing() 
 }
 
 /// Sixteen first syncs racing on a fresh repository all succeed: none sees
-/// the schema half-created by another ("table files already exists").
+/// the schema half-created by another ("table files already exists"), and
+/// none refuses the index because another writer's WAL close unlinked `-shm`
+/// before `-wal`.
 #[test]
 fn sixteen_concurrent_first_syncs_all_succeed() {
     let repo = fixture_repository();
-    let children = (0..16)
+    assert_concurrent_syncs_succeed(repo.path(), 16, "first sync");
+    let search = run_json(repo.path(), &["search", "helper"]);
+    assert!(search.is_object(), "{search}");
+}
+
+/// Concurrent syncs on an index that is already in WAL mode. Each process
+/// opens, syncs, and closes. Closing the last connection unlinks `-shm`
+/// before `-wal`; the opener must wait on the database lock that covers that
+/// close, not on a sleep.
+#[test]
+fn concurrent_syncs_on_an_initialized_wal_index_all_succeed() {
+    const ITERATIONS: usize = 200;
+    let repo = fixture_repository();
+    run_json(repo.path(), &["sync"]);
+    for iteration in 1..=ITERATIONS {
+        assert_concurrent_syncs_succeed(repo.path(), 16, &format!("iteration {iteration}"));
+    }
+}
+
+fn assert_concurrent_syncs_succeed(repo: &Path, writers: usize, label: &str) {
+    let children = (0..writers)
         .map(|_| {
             Command::new(env!("CARGO_BIN_EXE_orbit-graph"))
-                .current_dir(repo.path())
+                .current_dir(repo)
                 .args(["--format", "json", "sync"])
                 .stdin(Stdio::null())
                 .stdout(Stdio::piped())
@@ -237,12 +259,14 @@ fn sixteen_concurrent_first_syncs_all_succeed() {
         let stderr = String::from_utf8_lossy(&output.stderr);
         assert!(
             output.status.success(),
-            "a concurrent sync failed: {stderr}"
+            "{label}: a concurrent sync failed: {stderr}"
         );
-        assert!(!stderr.contains("already exists"), "{stderr}");
+        assert!(!stderr.contains("already exists"), "{label}: {stderr}");
+        assert!(
+            !stderr.contains("wal-index is missing"),
+            "{label}: read-only pre-check raced a writer close: {stderr}"
+        );
     }
-    let search = run_json(repo.path(), &["search", "helper"]);
-    assert!(search.is_object(), "{search}");
 }
 
 /// A newer database is never removed; a strictly older one is removed only

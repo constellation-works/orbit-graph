@@ -214,20 +214,20 @@ fn open_at_path(
     let existing = existing_physical_db(worktree_root, db_path.path())?;
     let mut setup_lock = None;
     let needs_initialization = if let Some(path) = existing.as_deref() {
-        let initialized = match validate_nonempty_identity(path, db_path.path(), expected_branch) {
-            Ok(initialized) => initialized,
-            // A first writer can briefly leave WAL frames without a wal-index
-            // while closing. Wait on the setup lock and inspect again before
-            // touching the database or its directory.
-            Err(GraphError::InvalidData {
-                operation: "open index read-only",
-                ..
-            }) => {
-                setup_lock = Some(DbLockGuard::acquire(path)?);
-                validate_after_transient_wal(path, db_path.path(), expected_branch)?
-            }
-            Err(error) => return Err(error),
-        };
+        let initialized =
+            match validate_nonempty_identity(path, db_path.path(), expected_branch, false) {
+                Ok(initialized) => initialized,
+                // SQLite's last-connection close unlinks `-shm` and then `-wal`
+                // inside `sqlite3_close`. Sampling those sidecars separately
+                // reports a torn pair that is not a schema refusal. The writer
+                // holds this lock until that close returns, so acquiring it
+                // happens after the close. Revalidate once while holding it.
+                Err(error) if torn_wal_sidecars(&error) => {
+                    setup_lock = Some(DbLockGuard::acquire(path)?);
+                    validate_nonempty_identity(path, db_path.path(), expected_branch, true)?
+                }
+                Err(error) => return Err(error),
+            };
         !initialized
     } else {
         true
@@ -237,8 +237,10 @@ fn open_at_path(
 
     // Switching a new file to WAL needs the database to itself, and SQLite
     // answers a concurrent switch with SQLITE_BUSY instead of waiting. First
-    // opens therefore serialize on the sync lock until the schema is ready;
-    // an initialized WAL database needs no lock (STD-03 §R6).
+    // opens therefore serialize on the sync lock until the schema is ready.
+    // An initialized WAL database needs no lock for that switch (STD-03 §R6).
+    // Connection close still takes the lock below: the `-shm`/`-wal` gap is
+    // inside `sqlite3_close`, and a concurrent pre-check waits on this lock.
     let setup_lock = if setup_lock.is_some() {
         setup_lock
     } else if !needs_initialization
@@ -251,7 +253,7 @@ fn open_at_path(
     // Another first opener may have initialized the database while we waited
     // for the setup lock. Recheck its identity before any writable open.
     if setup_lock.is_some() {
-        validate_after_transient_wal(physical_db.as_path(), db_path.path(), expected_branch)?;
+        validate_nonempty_identity(physical_db.as_path(), db_path.path(), expected_branch, true)?;
     }
     // SQLite's default creation mode can expose indexed source text. Create
     // the database with private permissions before SQLite opens it, repair an
@@ -276,7 +278,14 @@ fn open_at_path(
     // A database whose stored schema identity differs is never written
     // (STD-03 §R10).
     schema::validate_identity(&conn, db_path.path(), expected_branch)?;
-    drop(setup_lock);
+    // Close while the lock is held. `flock` is not reentrant, so take it
+    // here only when this open does not already hold it.
+    if let Some(lock) = setup_lock {
+        drop(conn);
+        drop(lock);
+    } else {
+        close_connection_under_lock(conn, physical_db.as_path())?;
+    }
 
     Ok(OpenedGraph {
         db_path,
@@ -286,10 +295,15 @@ fn open_at_path(
 
 /// Return whether an existing database has a complete, compatible schema.
 /// An empty SQLite database is left for initialization under the setup lock.
+///
+/// `lock_held` is true when the caller already holds the database lock.
+/// A compatible WAL connection is closed under that lock: it may be the last
+/// connection, and SQLite then unlinks `-shm` before `-wal`.
 fn validate_nonempty_identity(
     path: &Path,
     db_path: &Path,
     expected_branch: Option<&str>,
+    lock_held: bool,
 ) -> Result<bool, GraphError> {
     let Some(file) = open_state_file(path, StateAccess::Read)? else {
         return Ok(false);
@@ -307,27 +321,59 @@ fn validate_nonempty_identity(
         return Ok(false);
     }
     schema::validate_identity(&conn, db_path, expected_branch)?;
+    if !lock_held && database_uses_wal(path, "read graph database header")? {
+        close_connection_under_lock(conn, path)?;
+    }
     Ok(true)
 }
 
-/// Another WAL writer can close between the header and sidecar observations.
-/// The setup lock serializes first opens, while an established WAL connection
-/// does not hold it. Retry that one transient state for at most one second.
-fn validate_after_transient_wal(
-    path: &Path,
+/// The read-only pre-check saw a `-wal`/`-shm` pair that cannot be opened
+/// without writing. That is the gap inside SQLite's last-connection close,
+/// not a decision about schema identity.
+fn torn_wal_sidecars(error: &GraphError) -> bool {
+    matches!(
+        error,
+        GraphError::InvalidData {
+            operation: "open index read-only",
+            ..
+        }
+    )
+}
+
+/// Close `conn` while holding the database lock, then release the lock.
+///
+/// SQLite unlinks the `-shm` wal-index and then the `-wal` file before
+/// `sqlite3_close` returns. Releasing the lock only after that return orders
+/// a concurrent opener's pre-check after the gap. The caller must not already
+/// hold the lock: `flock` on a second descriptor of this process blocks.
+pub(crate) fn close_connection_under_lock(
+    conn: Connection,
     db_path: &Path,
-    expected_branch: Option<&str>,
-) -> Result<bool, GraphError> {
-    for attempt in 0..=20 {
-        match validate_nonempty_identity(path, db_path, expected_branch) {
-            Err(GraphError::InvalidData {
-                operation: "open index read-only",
-                ..
-            }) if attempt < 20 => std::thread::sleep(std::time::Duration::from_millis(50)),
-            result => return result,
+) -> Result<(), GraphError> {
+    match DbLockGuard::acquire(db_path) {
+        Ok(lock) => {
+            drop(conn);
+            drop(lock);
+            Ok(())
+        }
+        Err(error) => {
+            drop(conn);
+            Err(error)
         }
     }
-    unreachable!("the final attempt always returns")
+}
+
+/// Close a writer connection from a destructor, which cannot return the lock
+/// error. The connection is closed either way, so the descriptor is not
+/// leaked when the lock times out.
+pub(crate) fn close_writer_connection(conn: Connection, db_path: &Path) {
+    if let Err(error) = close_connection_under_lock(conn, db_path) {
+        tracing::warn!(
+            path = %db_path.display(),
+            %error,
+            "closed a graph writer without holding the database lock across WAL teardown"
+        );
+    }
 }
 
 /// Open the physical database `path` read-write with `SQLITE_OPEN_NOFOLLOW`,
