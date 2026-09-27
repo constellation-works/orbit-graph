@@ -604,6 +604,136 @@ fn import_of_a_same_named_symbol_in_another_module_is_a_naming_heuristic_not_an_
 }
 
 #[test]
+fn same_basename_module_import_is_not_an_import_relationship_for_the_other_package() {
+    // pkg_a/run.py and pkg_b/run.py share a basename. Reducing an import to
+    // that basename presents tests/test_other.py, which imports pkg_b.run, as
+    // an import relationship for a changed symbol in pkg_a/run.py.
+    let repository = tempfile::TempDir::new().expect("create repository");
+    let repo = git2::Repository::init(repository.path()).expect("init repository");
+    let base_files = [
+        ("pkg_a/run.py", "def main():\n    return \"a\"\n"),
+        ("pkg_b/run.py", "def main():\n    return \"b\"\n"),
+        (
+            "tests/test_other.py",
+            "import pkg_b.run\n\n\ndef test_other():\n    assert pkg_b.run.main() == \"b\"\n",
+        ),
+        (
+            "tests/test_pkg_a.py",
+            "import pkg_a.run\n\n\ndef test_pkg_a():\n    assert pkg_a.run.main() == \"a\"\n",
+        ),
+        (
+            "tests/test_ambiguous.py",
+            "import run\n\n\ndef test_bare_run():\n    assert run is not None\n",
+        ),
+    ];
+    let base = commit_all(
+        &repo,
+        repository.path(),
+        &base_files,
+        "base: two run modules",
+        0,
+    );
+    let mut head_files = base_files;
+    head_files[0].1 = "def main():\n    return \"a-changed\"\n";
+    let head = commit_all(
+        &repo,
+        repository.path(),
+        &head_files,
+        "head: change pkg_a.run.main",
+        1,
+    );
+    drop(repo);
+
+    let comparison =
+        Comparison::open(repository.path(), base.as_str(), head.as_str()).expect("open comparison");
+    let changed = ChangedSymbols::compute(&comparison).expect("compute changed symbols");
+    let selector = "symbol:pkg_a/run.py#main:function";
+    let row = changed.entries_for(selector);
+    assert_eq!(row.len(), 1, "{:?}", changed.symbols);
+    assert_eq!(row[0].status, ChangeStatus::Modified);
+
+    let mut collector =
+        EvidenceCollector::new(&comparison, SnapshotSide::Head).expect("build evidence collector");
+    let candidates = collector
+        .candidate_tests(selector, &direct_query(), changed.out_of_scope.clone())
+        .expect("candidate tests");
+    let for_file = |file: &str| {
+        candidates
+            .candidates
+            .iter()
+            .filter(|candidate| candidate.test.selector == format!("file:{file}"))
+            .collect::<Vec<_>>()
+    };
+
+    let other = for_file("tests/test_other.py");
+    assert!(
+        other
+            .iter()
+            .all(|candidate| candidate.source != CandidateSource::ImportRelationship),
+        "a test importing pkg_b.run must not be an import_relationship for pkg_a/run.py: {other:?}"
+    );
+
+    let actual = for_file("tests/test_pkg_a.py");
+    assert!(
+        actual.iter().any(|candidate| {
+            candidate.source == CandidateSource::ImportRelationship
+                && candidate.category == EvidenceCategory::ImportRelationship
+        }),
+        "an import of pkg_a.run must stay an import_relationship: {actual:?}"
+    );
+
+    let ambiguous = for_file("tests/test_ambiguous.py");
+    assert!(
+        ambiguous
+            .iter()
+            .all(|candidate| candidate.source != CandidateSource::ImportRelationship),
+        "a bare import of run must not be promoted to import_relationship: {ambiguous:?}"
+    );
+    assert!(
+        ambiguous.iter().any(|candidate| {
+            candidate.source == CandidateSource::NamingHeuristic
+                && candidate.category == EvidenceCategory::HeuristicMatch
+                && candidate
+                    .note
+                    .as_deref()
+                    .unwrap_or("")
+                    .contains("unresolved")
+                && candidate.note.as_deref().unwrap_or("").contains("basename")
+        }),
+        "a bare import of run must be disclosed as an unresolved basename heuristic: \
+         {ambiguous:?}"
+    );
+
+    let other_selector = "symbol:pkg_b/run.py#main:function";
+    let mut other_collector =
+        EvidenceCollector::new(&comparison, SnapshotSide::Head).expect("build evidence collector");
+    let other_module = other_collector
+        .candidate_tests(
+            other_selector,
+            &direct_query(),
+            changed.out_of_scope.clone(),
+        )
+        .expect("candidate tests for pkg_b");
+    assert!(
+        other_module.candidates.iter().any(|candidate| {
+            candidate.source == CandidateSource::ImportRelationship
+                && candidate.category == EvidenceCategory::ImportRelationship
+                && candidate.test.selector == "file:tests/test_other.py"
+        }),
+        "an import of pkg_b.run must stay an import_relationship for pkg_b/run.py: {:?}",
+        other_module.candidates
+    );
+    assert!(
+        other_module.candidates.iter().all(|candidate| {
+            candidate.test.selector != "file:tests/test_pkg_a.py"
+                || candidate.source != CandidateSource::ImportRelationship
+        }),
+        "an import of pkg_a.run must not be an import_relationship for pkg_b/run.py: {:?}",
+        other_module.candidates
+    );
+}
+
+#[test]
 fn every_case_produces_a_deterministic_payload() {
     for case_id in corpus::CASES {
         let case = Case::open(case_id);

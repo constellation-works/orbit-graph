@@ -2128,16 +2128,6 @@ impl<'a> EvidenceCollector<'a> {
         Ok((candidates, report.truncated))
     }
 
-    /// Source 2: an import edge from a test file to the symbol's module.
-    ///
-    /// A module match (the import's specifier resolves to the changed
-    /// symbol's file) is the only case that earns `import_relationship`: it
-    /// is an observed file-level edge. An import whose bare `target_symbol`
-    /// happens to equal the changed symbol's name, but whose specifier names
-    /// a different module, asserts no relationship to this file at all — it
-    /// may be an unrelated symbol that merely shares a name — so it is
-    /// reported as a `naming_heuristic` `heuristic_match` instead, never
-    /// promoted to `import_relationship`.
     /// Outbound imports of every indexed test file, read once per collector.
     ///
     /// One `deps` query per top-level directory that holds a test file, not
@@ -2205,13 +2195,24 @@ impl<'a> EvidenceCollector<'a> {
         Ok(self.test_invocations.clone().unwrap_or_default())
     }
 
+    /// Source 2: an import edge from a test file to the symbol's module.
+    ///
+    /// The specifier earns `import_relationship` only when its concrete
+    /// segments identify this file's module path (`pkg_a.run` for
+    /// `pkg_a/run.py`; a leading `crate::` aligns with the path after `src/`).
+    /// A specifier that shares only the file stem (`run` for `pkg_a/run.py`)
+    /// does not: another module with that basename is equally consistent, so
+    /// the match stays a `naming_heuristic` and is never promoted. A specifier
+    /// whose parents disagree (`pkg_b.run` for `pkg_a/run.py`) asserts no
+    /// relationship to this file. An import whose bare `target_symbol` equals
+    /// the changed symbol's name, and which matched neither way, is the same
+    /// name-only `naming_heuristic`.
     fn import_candidates(
         &mut self,
         selector: &str,
         symbol_path: &str,
         symbol_name: &str,
     ) -> Result<Vec<CandidateTest>, EvidenceError> {
-        let module_keys = module_keys(symbol_path);
         let side_label = self.side_label();
         let test_file_imports = self.test_file_imports()?;
 
@@ -2226,24 +2227,36 @@ impl<'a> EvidenceCollector<'a> {
                 label: file.clone(),
                 origin: origin_label(ImpactOrigin::File).to_string(),
             };
-            if let Some(matched) = imports
-                .iter()
-                .find(|edge| module_keys.contains(&import_key(edge.target_path.as_str())))
-            {
+            if let Some((matched, module_match)) = best_module_import(imports, symbol_path) {
+                let (source, category, note) = match module_match {
+                    ModuleMatch::Identified => (
+                        CandidateSource::ImportRelationship,
+                        EvidenceCategory::ImportRelationship,
+                        format!(
+                            "imports `{}`; an import is a file-level relationship, not a call",
+                            matched.target_path
+                        ),
+                    ),
+                    ModuleMatch::BasenameOnly => (
+                        CandidateSource::NamingHeuristic,
+                        EvidenceCategory::HeuristicMatch,
+                        format!(
+                            "imports `{}`, which shares this file's module basename but does not \
+                             name its path; an unresolved basename match, possibly a different \
+                             module",
+                            matched.target_path
+                        ),
+                    ),
+                };
                 candidates.push(CandidateTest {
                     test,
-                    source: CandidateSource::ImportRelationship,
-                    label: CandidateSource::ImportRelationship
-                        .corpus_label()
-                        .to_string(),
-                    category: EvidenceCategory::ImportRelationship,
+                    source,
+                    label: source.corpus_label().to_string(),
+                    category,
                     path_id: None,
                     changed_symbols: vec![selector.to_string()],
                     truncated: false,
-                    note: Some(format!(
-                        "imports `{}`; an import is a file-level relationship, not a call",
-                        matched.target_path
-                    )),
+                    note: Some(note),
                 });
                 continue;
             }
@@ -3065,34 +3078,103 @@ fn file_stem(path: &str) -> String {
     file.split('.').next().unwrap_or(file).to_string()
 }
 
-/// Last segment of an import specifier, however the language spells it.
-fn import_key(target_path: &str) -> String {
-    target_path
-        .replace("::", "/")
-        .replace('.', "/")
-        .rsplit('/')
-        .find(|segment| !segment.is_empty())
-        .unwrap_or(target_path)
-        .to_string()
+/// How an import specifier relates to one source file's module path.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ModuleMatch {
+    /// The specifier's segments identify this file.
+    Identified,
+    /// Only the file stem matches, so a sibling module with the same basename
+    /// is equally consistent.
+    BasenameOnly,
 }
 
-/// Keys an import specifier may plausibly use to name `path`.
-fn module_keys(path: &str) -> BTreeSet<String> {
-    let mut keys = BTreeSet::new();
-    if path.is_empty() {
-        return keys;
+/// Prefer a path-identifying import over a basename-only one.
+fn best_module_import<'a>(
+    imports: &'a [DepEdge],
+    symbol_path: &str,
+) -> Option<(&'a DepEdge, ModuleMatch)> {
+    let mut basename = None;
+    for edge in imports {
+        match classify_module_import(symbol_path, edge.target_path.as_str()) {
+            Some(ModuleMatch::Identified) => return Some((edge, ModuleMatch::Identified)),
+            Some(ModuleMatch::BasenameOnly) if basename.is_none() => basename = Some(edge),
+            _ => {}
+        }
     }
-    let stem = file_stem(path);
-    if !stem.is_empty() {
-        keys.insert(stem);
+    basename.map(|edge| (edge, ModuleMatch::BasenameOnly))
+}
+
+/// Whether `target_path` names the module at `symbol_path`.
+///
+/// Segments are compared in order. A leading `crate`/`super`/`self` is not a
+/// directory name; `crate::` then matches the path after `src/` when that
+/// anchor is present, and the repository-relative path otherwise. A specifier
+/// that keeps only the stem of a longer module path is [`ModuleMatch::BasenameOnly`].
+fn classify_module_import(symbol_path: &str, target_path: &str) -> Option<ModuleMatch> {
+    let (crate_rooted, concrete) = concrete_specifier(target_path);
+    if concrete.is_empty() {
+        return None;
     }
-    if let Some((directory, _)) = path.rsplit_once('/')
-        && let Some(parent) = directory.rsplit('/').next()
-        && !parent.is_empty()
-    {
-        keys.insert(parent.to_string());
+    let full = module_segments(symbol_path);
+    if full.is_empty() {
+        return None;
     }
-    keys
+    if crate_rooted && let Some(index) = full.iter().rposition(|segment| segment == "src") {
+        let after_src = &full[index + 1..];
+        if after_src.is_empty() {
+            return None;
+        }
+        return classify_suffix(after_src, concrete.as_slice());
+    }
+    classify_suffix(full.as_slice(), concrete.as_slice())
+}
+
+fn concrete_specifier(target_path: &str) -> (bool, Vec<String>) {
+    let raw = specifier_segments(target_path);
+    let crate_rooted = raw.first().is_some_and(|segment| segment == "crate");
+    let concrete = raw
+        .into_iter()
+        .skip_while(|segment| matches!(segment.as_str(), "crate" | "super" | "self"))
+        .collect();
+    (crate_rooted, concrete)
+}
+
+fn specifier_segments(target_path: &str) -> Vec<String> {
+    target_path
+        .split(['/', '.', ':'])
+        .filter(|segment| !segment.is_empty())
+        .map(str::to_string)
+        .collect()
+}
+
+/// Directories plus the file stem. `pkg/__init__.py` and `pkg/mod.rs` are the
+/// module `pkg`.
+fn module_segments(path: &str) -> Vec<String> {
+    let mut segments: Vec<String> = path
+        .split('/')
+        .filter(|segment| !segment.is_empty())
+        .map(str::to_string)
+        .collect();
+    let Some(file) = segments.pop() else {
+        return segments;
+    };
+    let stem = file.split('.').next().unwrap_or(file.as_str());
+    let package_index = stem == "__init__" || (stem == "mod" && file.ends_with(".rs"));
+    if !stem.is_empty() && !package_index {
+        segments.push(stem.to_string());
+    }
+    segments
+}
+
+fn classify_suffix(module: &[String], import: &[String]) -> Option<ModuleMatch> {
+    if !module.ends_with(import) {
+        return None;
+    }
+    if import.len() == 1 && import.len() < module.len() {
+        Some(ModuleMatch::BasenameOnly)
+    } else {
+        Some(ModuleMatch::Identified)
+    }
 }
 
 #[cfg(test)]
@@ -3226,19 +3308,58 @@ mod tests {
     }
 
     #[test]
-    fn import_keys_use_the_last_specifier_segment() {
-        assert_eq!(import_key("mod"), "mod");
-        assert_eq!(import_key("formatting.formatter"), "formatter");
-        assert_eq!(import_key("orbit_core::scheduler"), "scheduler");
-        assert_eq!(import_key("./utils/foo"), "foo");
-    }
-
-    #[test]
-    fn module_keys_cover_stem_and_parent_directory() {
-        let keys = module_keys("formatting/formatter.py");
-        assert!(keys.contains("formatter"), "{keys:?}");
-        assert!(keys.contains("formatting"), "{keys:?}");
-        assert!(module_keys("").is_empty());
+    fn module_import_keeps_path_identity_and_downgrades_a_bare_basename() {
+        assert_eq!(
+            classify_module_import("pkg_a/run.py", "pkg_a.run"),
+            Some(ModuleMatch::Identified)
+        );
+        assert_eq!(classify_module_import("pkg_a/run.py", "pkg_b.run"), None);
+        assert_eq!(
+            classify_module_import("pkg_a/run.py", "run"),
+            Some(ModuleMatch::BasenameOnly)
+        );
+        assert_eq!(
+            classify_module_import("mod.py", "mod"),
+            Some(ModuleMatch::Identified)
+        );
+        assert_eq!(
+            classify_module_import("formatting/formatter.py", "formatting.formatter"),
+            Some(ModuleMatch::Identified)
+        );
+        assert_eq!(
+            classify_module_import("formatting/formatter.py", "formatting"),
+            None
+        );
+        assert_eq!(
+            classify_module_import("src/sync.rs", "crate::sync"),
+            Some(ModuleMatch::Identified)
+        );
+        assert_eq!(
+            classify_module_import("src/foo/sync.rs", "crate::foo::sync"),
+            Some(ModuleMatch::Identified)
+        );
+        assert_eq!(
+            classify_module_import("src/foo/sync.rs", "crate::sync"),
+            Some(ModuleMatch::BasenameOnly)
+        );
+        assert_eq!(
+            classify_module_import("src/sync/mod.rs", "crate::sync"),
+            Some(ModuleMatch::Identified)
+        );
+        assert_eq!(
+            classify_module_import("pkg_a/__init__.py", "pkg_a"),
+            Some(ModuleMatch::Identified)
+        );
+        assert_eq!(
+            classify_module_import("utils/foo.ts", "./utils/foo"),
+            Some(ModuleMatch::Identified)
+        );
+        assert_eq!(
+            classify_module_import("scheduler.rs", "orbit_core::scheduler"),
+            None
+        );
+        assert_eq!(classify_module_import("", "mod"), None);
+        assert_eq!(classify_module_import("mod.py", ""), None);
     }
 
     #[test]
