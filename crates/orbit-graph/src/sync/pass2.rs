@@ -28,6 +28,8 @@
 //! re-resolves exactly those refs in the same transaction, from the resolution
 //! inputs stored with each ref (`extracted_qualified`, `unresolved_receiver`,
 //! `spelled_path`), so every ref ends up as a full sync would store it.
+//! A changed Cargo manifest can also rename the crate alias used by refs in
+//! unchanged files, so sync re-resolves all refs when one changes.
 //!
 //! This transaction is also the single point where the files pass 1 wrote
 //! become current (`STD-03 §R8`): it stamps their real content hash and mtime,
@@ -89,12 +91,12 @@ pub(crate) enum Reresolve<'a> {
 /// then re-resolves the refs elsewhere that `reresolve` selects.
 pub(crate) fn run(
     db_path: &Path,
+    worktree_root: &Path,
     mode: SyncMode,
     refs_by_file: Vec<ExtractedFileRefs>,
     reresolve: Reresolve<'_>,
     observer: Option<&dyn SyncObserver>,
-    files_seen: usize,
-    current_path: Option<String>,
+    progress: Progress,
 ) -> Result<(), GraphError> {
     let mut conn = open_writer_connection(db_path)?;
     let tx = conn
@@ -107,10 +109,16 @@ pub(crate) fn run(
         .sum();
     let mut units_done = 0usize;
     if let Some(observer) = observer {
-        report_resolving_progress(observer, files_seen, &current_path, units_done, units_total);
+        report_resolving_progress(
+            observer,
+            progress.files_seen,
+            &progress.current_path,
+            units_done,
+            units_total,
+        );
     }
 
-    let mut resolver = Resolver::new(&tx);
+    let mut resolver = Resolver::new(&tx, worktree_root);
     let mut rewritten_files = BTreeSet::new();
     let midway = refs_by_file.len() / 2;
     for (index, file_refs) in refs_by_file.into_iter().enumerate() {
@@ -129,8 +137,8 @@ pub(crate) fn run(
             {
                 report_resolving_progress(
                     observer,
-                    files_seen,
-                    &current_path,
+                    progress.files_seen,
+                    &progress.current_path,
                     units_done,
                     units_total,
                 );
@@ -149,7 +157,13 @@ pub(crate) fn run(
     }
 
     if let Some(observer) = observer {
-        report_resolving_progress(observer, files_seen, &current_path, units_done, units_total);
+        report_resolving_progress(
+            observer,
+            progress.files_seen,
+            &progress.current_path,
+            units_done,
+            units_total,
+        );
     }
 
     update_sync_meta(&tx, mode)?;
@@ -157,6 +171,11 @@ pub(crate) fn run(
     tx.commit()
         .map_err(|source| GraphError::sqlite("commit pass2 refs transaction", source))?;
     Ok(())
+}
+
+pub(crate) struct Progress {
+    pub(crate) files_seen: usize,
+    pub(crate) current_path: Option<String>,
 }
 
 /// What a set of files defines: each file's symbol rows. Captured before
@@ -644,6 +663,8 @@ type TraitImpls = Rc<[(String, NamedCandidate)]>;
 /// `new` reloaded every candidate file's symbols for every ref naming it.
 struct Resolver<'a, 'conn> {
     tx: &'a Transaction<'conn>,
+    worktree_root: &'a Path,
+    packages_by_file: HashMap<String, Option<Rc<type_member::PackageIdentity>>>,
     file_prefixes: HashMap<String, Rc<BTreeSet<String>>>,
     candidates_by_name: HashMap<String, Rc<[NamedCandidate]>>,
     /// Trait impl blocks by Self type name, loaded on first use.
@@ -652,9 +673,11 @@ struct Resolver<'a, 'conn> {
 }
 
 impl<'a, 'conn> Resolver<'a, 'conn> {
-    fn new(tx: &'a Transaction<'conn>) -> Self {
+    fn new(tx: &'a Transaction<'conn>, worktree_root: &'a Path) -> Self {
         Self {
             tx,
+            worktree_root,
+            packages_by_file: HashMap::new(),
             file_prefixes: HashMap::new(),
             candidates_by_name: HashMap::new(),
             trait_impls: None,

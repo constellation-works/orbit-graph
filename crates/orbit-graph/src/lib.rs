@@ -162,7 +162,10 @@ pub use store::create_plugin_state_dir;
 /// current, so an interrupted sync is repaired by the next one. It also
 /// rebuilds indexes that earlier interrupted syncs left with files marked
 /// current but missing their refs.
-pub const EXTRACTOR_VERSION: u32 = 18;
+///
+/// Version 19 rebuilds refs so package-qualified Rust type-member calls from
+/// integration tests and examples resolve against their library crate.
+pub const EXTRACTOR_VERSION: u32 = 19;
 
 /// SQLite schema version used by the graph store.
 ///
