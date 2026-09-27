@@ -47,6 +47,43 @@ const LATENCY_MARGIN: Duration = Duration::from_secs(10);
 /// that waited for one instead of timing out cannot pass.
 const STUCK_PAST_CEILING: Duration = Duration::from_secs(10);
 
+#[test]
+fn maintain_import_redacts_task_text_in_history_database() {
+    let fixture = evaluation_fixture();
+    let token = "glpat-12345678901234567890";
+    let mut delivery = fixture_delivery(fixture.path(), "training");
+    delivery["tasks"][0]["title"] = json!(format!("release {token}"));
+    delivery["tasks"][0]["description"] =
+        json!("https://deploy:very-private-password@gitlab.example/repo");
+    delivery["tasks"][0]["acceptance_criteria"] = json!(["Authorization: Bearer abc.def.ghi"]);
+    plugin_json(
+        fixture.path(),
+        MAINTAIN_TOOL_NAME,
+        json!({
+            "schema_version": 1,
+            "operation": "import",
+            "repository": fixture.path().canonicalize().expect("canonical fixture"),
+            "branch": "main",
+            "delivery": delivery,
+        }),
+    );
+    let index =
+        orbit_graph::HistoryIndex::open_read_only(fixture.path(), "main").expect("history index");
+    let stored = index
+        .delivery("fixture:training")
+        .expect("read delivery")
+        .expect("delivery");
+    assert!(stored.delivery.tasks[0].title.contains("[REDACTED_SECRET]"));
+    let bytes = fs::read(index.database_path()).expect("read history database");
+    for secret in [token, "very-private-password", "abc.def.ghi"] {
+        assert!(
+            !bytes
+                .windows(secret.len())
+                .any(|window| window == secret.as_bytes())
+        );
+    }
+}
+
 /// The longest a call bounded by [`ADAPTER_TIMEOUT_SECONDS`] may take.
 fn adapter_latency_ceiling() -> Duration {
     Duration::from_secs(ADAPTER_TIMEOUT_SECONDS) + LATENCY_MARGIN
@@ -2442,7 +2479,11 @@ fn orbit_sync_can_store_a_later_supplied_snapshot_without_replacing_observed_tex
         .delivery("orbit-run:RUN-1:TASK-PRIOR")
         .expect("read delivery")
         .expect("observed delivery");
-    let snapshot = task_snapshot("TASK-PRIOR", "earlier caller text", 5);
+    let snapshot = task_snapshot(
+        "TASK-PRIOR",
+        "earlier caller text ghp_12345678901234567890",
+        5,
+    );
     let backfill = sync(Some(snapshot.clone()));
     assert_eq!(backfill["outcomes"][0]["status"], "already_indexed");
     assert_eq!(backfill["outcomes"][0]["supplied_snapshot"], "inserted");
@@ -2450,6 +2491,18 @@ fn orbit_sync_can_store_a_later_supplied_snapshot_without_replacing_observed_tex
         .delivery("orbit-run:RUN-1:TASK-PRIOR")
         .expect("read updated delivery")
         .expect("updated delivery");
+    assert!(
+        stored.supplied_snapshots[0]
+            .title
+            .contains("[REDACTED_SECRET]")
+    );
+    let db_bytes = fs::read(index.database_path()).expect("read history database");
+    let secret = b"ghp_12345678901234567890";
+    assert!(
+        !db_bytes
+            .windows(secret.len())
+            .any(|window| window == secret)
+    );
     assert_eq!(stored.delivery, original.delivery);
     assert_eq!(stored.files, original.files);
     let conn = rusqlite::Connection::open(index.database_path()).expect("open history rows");

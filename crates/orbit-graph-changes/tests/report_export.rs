@@ -15,6 +15,37 @@ use common::corpus;
 
 const GENERATED_AT: &str = "2024-01-01T00:00:00Z";
 
+#[test]
+fn exported_source_excerpts_redact_credentials() {
+    let fixture = common::build_fixture();
+    let repo = git2::Repository::open(fixture.path()).expect("open fixture");
+    let token = "glpat-12345678901234567890";
+    let head = common::commit_tree(
+        &repo,
+        fixture.path(),
+        &format!(
+            "pub fn entry() -> i32 {{\n    let secret = \"{token}\";\n    let url = \"https://deploy:very-private-password@gitlab.example/repo\";\n    8\n}}\n"
+        ),
+        "head with credential-shaped source",
+        2,
+    );
+    let comparison = Comparison::open(fixture.path(), &fixture.base, &head).expect("comparison");
+    for mode in [ExcerptMode::Controlled, ExcerptMode::FullSpan] {
+        let report = build_report(
+            &comparison,
+            &ReportOptions {
+                excerpts: mode,
+                ..ReportOptions::default()
+            },
+        )
+        .expect("build report");
+        let json = serde_json::to_string(&report).expect("serialize report");
+        assert!(json.contains("[REDACTED_SECRET]"), "{json}");
+        assert!(!json.contains(token));
+        assert!(!json.contains("very-private-password"));
+    }
+}
+
 fn report(case_id: &str, configure: impl FnOnce(&mut ReportOptions)) -> Value {
     let case = corpus::build_case(case_id);
     let comparison =

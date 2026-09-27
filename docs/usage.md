@@ -170,6 +170,12 @@ cannot look up for any other reason (an ambiguous prefix, an unreadable
 object, an unreadable ref) is kept and reported as `unverifiable`, with a
 `detail` naming the failure.
 
+Extractor version 21 writes redacted graph strings. Run
+`orbit-graph clean --confirm` to remove older graph databases that may contain credential-shaped
+values. A subsequent `sync` builds the current index. History text is redacted
+when imported or rebuilt; after a history extractor version mismatch, run
+`orbit-graph history rebuild --branch <name> --confirm` to rewrite stored rows.
+
 **`clean` reports by default.** This is a deliberate change: earlier releases
 deleted as soon as `clean` ran. Without `--confirm`, `clean` prints
 `{graph_dir, would_delete: [{path, reason}], kept: [{path, reason, detail?}],

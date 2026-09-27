@@ -758,6 +758,7 @@ fn render_location(
     } else {
         lines[start.saturating_sub(1)..end].join("\n")
     };
+    let text = orbit_graph::redaction::redact(&text).into_owned();
     let truncated = file_truncated && matches!(mode, ExcerptMode::FullSpan);
     if truncated {
         state.note_truncation(
@@ -805,6 +806,7 @@ fn render_symbol_location(
     };
     let text = String::from_utf8_lossy(view.bytes.as_slice()).into_owned();
     let line_count = text.lines().count().max(1);
+    let text = orbit_graph::redaction::redact(&text).into_owned();
     if view.metadata.truncated {
         state.note_truncation(
             what.to_string(),

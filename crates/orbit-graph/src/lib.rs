@@ -22,6 +22,7 @@ mod live_evaluation;
 mod lock;
 mod query;
 mod recommend;
+pub mod redaction;
 mod state_dir;
 mod store;
 mod sync;
@@ -183,7 +184,9 @@ pub use state_dir::{
 ///
 /// Version 20 records public Rust re-export scope and original names and
 /// follows those imports for spelled module-path calls.
-pub const EXTRACTOR_VERSION: u32 = 20;
+///
+/// Version 21 redacts credential-shaped values before graph strings are stored.
+pub const EXTRACTOR_VERSION: u32 = 21;
 
 /// SQLite schema version used by the graph store.
 ///

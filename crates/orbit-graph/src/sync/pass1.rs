@@ -692,6 +692,7 @@ fn insert_strings(
     symbol_ids: &BTreeMap<String, i64>,
 ) -> Result<(), GraphError> {
     for string in strings {
+        let value = crate::redaction::redact(&string.value);
         let context_symbol = string
             .context_symbol
             .as_ref()
@@ -703,7 +704,7 @@ fn insert_strings(
             params![
                 string.file_path,
                 usize_to_i64("convert string line", string.line)?,
-                string.value,
+                value.as_ref(),
                 context_symbol
             ],
         )
@@ -711,7 +712,7 @@ fn insert_strings(
         let string_id = tx.last_insert_rowid();
         tx.execute(
             "INSERT INTO strings_fts (rowid, value) VALUES (?1, ?2)",
-            params![string_id, string.value],
+            params![string_id, value.as_ref()],
         )
         .map_err(|source| GraphError::sqlite("insert graph string fts row", source))?;
     }

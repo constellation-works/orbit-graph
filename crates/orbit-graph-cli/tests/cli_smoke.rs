@@ -2442,7 +2442,10 @@ fn real_binary_imports_syncs_reports_and_rebuilds_history() {
         status["schema_version"],
         orbit_graph::HISTORY_INDEX_SCHEMA_VERSION
     );
-    assert_eq!(status["extractor_version"], 2);
+    assert_eq!(
+        status["extractor_version"],
+        orbit_graph::CHANGE_EXTRACTOR_VERSION
+    );
     assert_eq!(status["verified_deliveries"], 1);
     assert_eq!(status["git_only_deliveries"], 1);
     assert_eq!(status["task_associations"], 2);
@@ -2568,6 +2571,24 @@ fn real_binary_recovers_each_history_contract_version_mismatch() {
         let synced = run_json(fixture.path(), ["history", "sync", "--branch", "main"]);
         let path = synced["database_path"].as_str().expect("history path");
         let conn = rusqlite::Connection::open(path).expect("open history fixture");
+        // Model a pre-redaction index: rebuild must sanitize stored envelopes,
+        // not merely stamp a new extractor version on the same task text.
+        let payload: String = conn
+            .query_row(
+                "SELECT payload_json FROM history_deliveries WHERE delivery_id='VERSION-VERIFIED'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("read old delivery payload");
+        let mut payload: Value = serde_json::from_str(&payload).expect("decode old delivery");
+        let old_secret = "ghp_12345678901234567890";
+        payload["delivery"]["tasks"][0]["title"] =
+            Value::String(format!("Repair helper {old_secret}"));
+        conn.execute(
+            "UPDATE history_deliveries SET payload_json=?1 WHERE delivery_id='VERSION-VERIFIED'",
+            [payload.to_string()],
+        )
+        .expect("seed old unredacted task payload");
         conn.execute("UPDATE history_meta SET value='0' WHERE key=?1", [key])
             .expect("seed old version");
         let rejected = run_explicit_json(fixture.path(), ["history", "status", "--branch", "main"]);
@@ -2575,14 +2596,19 @@ fn real_binary_recovers_each_history_contract_version_mismatch() {
         let error: Value = serde_json::from_slice(&rejected.stderr).expect("JSON error");
         assert_eq!(error["code"], "version_mismatch", "{key}: {error}");
         let message = error["error"].as_str().expect("error message");
+        let expected_version = if key == "extractor_version" {
+            orbit_graph::CHANGE_EXTRACTOR_VERSION
+        } else {
+            orbit_graph::DELIVERY_IMPORT_SCHEMA_VERSION
+        };
         for expected in [
-            key,
-            "=0",
-            "expected 2",
-            path,
-            "orbit-graph history rebuild --branch main --confirm",
+            key.to_string(),
+            "=0".to_string(),
+            format!("expected {expected_version}"),
+            path.to_string(),
+            "orbit-graph history rebuild --branch main --confirm".to_string(),
         ] {
-            assert!(message.contains(expected), "{key}: {message}");
+            assert!(message.contains(expected.as_str()), "{key}: {message}");
         }
         let preview = run_json(fixture.path(), ["history", "rebuild", "--branch", "main"]);
         assert_eq!(preview["confirmed"], false);
@@ -2602,6 +2628,15 @@ fn real_binary_recovers_each_history_contract_version_mismatch() {
         assert_eq!(rebuilt["removed_verified_deliveries"], 0);
         let status = run_json(fixture.path(), ["history", "status", "--branch", "main"]);
         assert_eq!(status["verified_deliveries"], 1);
+        let repaired: String = conn
+            .query_row(
+                "SELECT payload_json FROM history_deliveries WHERE delivery_id='VERSION-VERIFIED'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("read rebuilt delivery payload");
+        assert!(repaired.contains("[REDACTED_SECRET]"));
+        assert!(!repaired.contains(old_secret));
         let recommended = run_json(
             fixture.path(),
             ["recommend", "--query", "helper", "--branch", "main"],

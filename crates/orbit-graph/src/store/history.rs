@@ -19,7 +19,7 @@ use serde::Serialize;
 
 use crate::error::VersionMismatchDetails;
 use crate::state_dir::{StateAccess, open_state_file};
-use crate::{GraphError, lock};
+use crate::{GraphError, lock, redaction};
 
 /// Version of the history SQLite schema.
 ///
@@ -524,10 +524,11 @@ impl HistoryIndex {
     pub fn add_supplied_snapshot(
         &self,
         delivery_id: &str,
-        snapshot: TaskAssociation,
+        mut snapshot: TaskAssociation,
     ) -> Result<bool, GraphError> {
         self.refuse_read_only("store caller-supplied task snapshot")?;
         validate_task_association(&snapshot)?;
+        redact_task(&mut snapshot);
         let _lock = HistoryLock::acquire(self.db_path.as_path(), "store task snapshot")?;
         let mut conn = self.open_connection()?;
         let tx = conn
@@ -1457,6 +1458,16 @@ fn insert_delivery(
     tx: &Transaction<'_>,
     change: &DeliveredChange,
 ) -> Result<HistoryImportReport, GraphError> {
+    // This is the final boundary shared by imports, Git sync, schema copy and
+    // rebuild. Redact both the normalized columns and serialized payload.
+    let mut redacted = change.clone();
+    for task in &mut redacted.delivery.tasks {
+        redact_task(task);
+    }
+    for task in &mut redacted.supplied_snapshots {
+        redact_task(task);
+    }
+    let change = &redacted;
     let delivery = &change.delivery;
     let payload = serde_json::to_string(change)
         .map_err(|error| GraphError::invalid_data("encode history delivery", error.to_string()))?;
@@ -1668,8 +1679,9 @@ fn normalize_branch(branch: &str) -> String {
 fn normalize_tasks(tasks: &mut Vec<TaskAssociation>) -> Result<(), GraphError> {
     tasks.sort_by(|left, right| left.task_id.cmp(&right.task_id));
     let mut normalized: Vec<TaskAssociation> = Vec::with_capacity(tasks.len());
-    for task in tasks.drain(..) {
+    for mut task in tasks.drain(..) {
         validate_task_association(&task)?;
+        redact_task(&mut task);
         if let Some(previous) = normalized.last()
             && previous.task_id == task.task_id
         {
@@ -1685,6 +1697,14 @@ fn normalize_tasks(tasks: &mut Vec<TaskAssociation>) -> Result<(), GraphError> {
     }
     *tasks = normalized;
     Ok(())
+}
+
+fn redact_task(task: &mut TaskAssociation) {
+    task.title = redaction::redact(&task.title).into_owned();
+    task.description = redaction::redact(&task.description).into_owned();
+    for criterion in &mut task.acceptance_criteria {
+        *criterion = redaction::redact(criterion).into_owned();
+    }
 }
 
 fn temporal_status(status: TemporalStatus) -> &'static str {

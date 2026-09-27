@@ -154,7 +154,7 @@ fn validate_timestamp(field: &str, timestamp: &str) -> Result<(), ExtractError> 
 pub const DELIVERY_IMPORT_SCHEMA_VERSION: u32 = 2;
 
 /// Version of the historical change extractor.
-pub const CHANGE_EXTRACTOR_VERSION: u32 = 2;
+pub const CHANGE_EXTRACTOR_VERSION: u32 = 3;
 
 /// Maximum commits processed by one default incremental history sync.
 pub const DEFAULT_HISTORY_SYNC_LIMIT: usize = 1_000;
