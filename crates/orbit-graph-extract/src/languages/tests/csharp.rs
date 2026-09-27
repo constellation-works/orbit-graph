@@ -95,3 +95,69 @@ interface IWorker
     }));
     assert_byte_spans(&file, source);
 }
+
+#[test]
+fn dotted_calls_skip_strings_and_comments_and_keep_real_calls() {
+    let source = r#"
+class Demo
+{
+    void Fake() {}
+    void Real(Helper helper)
+    {
+        string s = "obj.Fake()";
+        string verbatim = @"obj.Fake()";
+        string raw = """obj.Fake()""";
+        string bare = $"obj.Fake()";
+        // obj.Fake()
+        /* obj.Fake() */
+        helper.Execute();
+        helper . Finish ();
+        string live = $"prefix {helper.Keep()} obj.Fake()";
+        string formatted = $"{helper.Again():obj.Fake()}";
+        string verbatimLive = $@"pre {helper.Once()} obj.Fake()";
+    }
+}
+"#;
+
+    let file = extract(source);
+    assert_dotted_call(source, &file, "helper.Execute()", "Execute");
+    assert_dotted_call(source, &file, "helper . Finish ()", "Finish");
+    assert_dotted_call(source, &file, "helper.Keep()", "Keep");
+    assert_dotted_call(source, &file, "helper.Again()", "Again");
+    assert_dotted_call(source, &file, "helper.Once()", "Once");
+    assert_eq!(
+        call_names(&file),
+        vec!["Execute", "Finish", "Keep", "Again", "Once"],
+        "string and comment text must not become calls: {:?}",
+        file.refs
+    );
+    assert_byte_spans(&file, source);
+}
+
+fn assert_dotted_call(source: &str, file: &crate::ExtractedFile, snippet: &str, name: &str) {
+    assert_eq!(source.matches(snippet).count(), 1, "snippet {snippet}");
+    let at = source.find(snippet).expect(snippet);
+    let relative = snippet.find(name).expect(name);
+    let start = at + relative;
+    let end = start + name.len();
+    assert!(
+        file.refs.iter().any(|reference| {
+            reference.kind == "call"
+                && reference.target_name == name
+                && reference.target_qualified.is_none()
+                && reference.confidence == "fuzzy_name"
+                && reference.from_span_start == start
+                && reference.from_span_end == end
+        }),
+        "missing {name} at {start}..{end} in {snippet}; refs={:?}",
+        file.refs
+    );
+}
+
+fn call_names(file: &crate::ExtractedFile) -> Vec<&str> {
+    file.refs
+        .iter()
+        .filter(|reference| reference.kind == "call")
+        .map(|reference| reference.target_name.as_str())
+        .collect()
+}

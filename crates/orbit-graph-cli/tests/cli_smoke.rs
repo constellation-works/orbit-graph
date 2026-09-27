@@ -3558,6 +3558,91 @@ fn run_with_deadline(
     }
 }
 
+#[test]
+fn real_binary_java_string_and_comment_text_is_not_a_call() {
+    let fixture = TempDir::new().expect("create java call fixture");
+    let root = fixture.path();
+    run_git(root, ["init", "-b", "main"]);
+    run_git(root, ["config", "user.email", "graph@example.invalid"]);
+    run_git(root, ["config", "user.name", "Graph Test"]);
+    fs::write(
+        root.join("Demo.java"),
+        "class Demo {\n    void fake() {}\n    void real() {\n        Helper helper = null;\n        String s = \"obj.fake()\";\n        /* obj.fake() */\n        helper.execute();\n    }\n}\n",
+    )
+    .expect("write java fixture");
+    run_git(root, ["add", "Demo.java"]);
+    run_git(root, ["commit", "-m", "java call fixture"]);
+
+    let sync = run_json(root, ["sync", "--full"]);
+    assert!(
+        sync["files_indexed"]
+            .as_u64()
+            .is_some_and(|count| count >= 1),
+        "{sync}"
+    );
+
+    let real = "symbol:Demo.java#Demo::real#0:method";
+    let fake = "symbol:Demo.java#Demo::fake#0:method";
+    let callees = run_json(root, ["callees", real, "--include-unresolved"]);
+    let names = callees["callees"]
+        .as_array()
+        .expect("callees")
+        .iter()
+        .map(|edge| edge["target_name"].as_str().expect("target name"))
+        .collect::<Vec<_>>();
+    assert_eq!(
+        names,
+        ["execute"],
+        "literal and comment text are not callees: {callees}"
+    );
+    assert_eq!(
+        callees["callees"][0]["confidence"], "fuzzy_name",
+        "{callees}"
+    );
+    assert_eq!(callees["callees"][0]["line"], 7, "{callees}");
+
+    let refs = run_json(root, ["refs", fake, "--confidence", "fuzzy"]);
+    assert!(
+        refs["refs"].as_array().is_some_and(|rows| rows.is_empty()),
+        "fake has no call refs from strings or comments: {refs}"
+    );
+    assert!(
+        refs["relations"]
+            .as_array()
+            .is_some_and(|rows| rows.is_empty()),
+        "{refs}"
+    );
+
+    let impact = run_json(
+        root,
+        [
+            "impact",
+            fake,
+            "--direction",
+            "inbound",
+            "--confidence",
+            "fuzzy",
+        ],
+    );
+    let mentions_real = |nodes: &Value| {
+        nodes.as_array().is_some_and(|nodes| {
+            nodes.iter().any(|node| {
+                node["selector"] == real
+                    || node["qualified_name"] == "Demo::real#0"
+                    || node["name"] == "real"
+            })
+        })
+    };
+    assert!(
+        !mentions_real(&impact["touched"]),
+        "impact must not follow a fabricated call into real: {impact}"
+    );
+    assert!(
+        !mentions_real(&impact["fallback"]["touched"]),
+        "fallback impact must not follow a fabricated call into real: {impact}"
+    );
+}
+
 fn fixture_repository() -> TempDir {
     let fixture = TempDir::new().expect("create fixture repository");
     run_git(fixture.path(), ["init", "-b", "main"]);

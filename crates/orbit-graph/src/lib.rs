@@ -194,7 +194,11 @@ pub use state_dir::{
 /// argument; symbol names and qualified names stay unchanged.
 ///
 /// Version 23 rebuilds config keys with their actual source lines.
-pub const EXTRACTOR_VERSION: u32 = 23;
+///
+/// Version 24 rebuilds stored refs so Java, C#, and Kotlin dotted-call scans
+/// skip comments and string or character literal text. A call inside a string
+/// template's interpolation hole is still stored.
+pub const EXTRACTOR_VERSION: u32 = 24;
 
 /// SQLite schema version used by the graph store.
 ///
