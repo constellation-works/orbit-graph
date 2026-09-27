@@ -6,6 +6,144 @@ use tempfile::TempDir;
 use super::*;
 
 #[test]
+fn schema_statement_failure_leaves_no_partial_history_index() {
+    let repo = fixture_repo();
+    write(repo.path(), "a.rs", "fn root() {}\n");
+    commit(repo.path(), "root");
+    let index = HistoryIndex::resolve(repo.path(), "main", None).expect("resolve index");
+    fs::create_dir_all(index.db_path.parent().expect("index parent")).expect("create index dir");
+    let mut conn = Connection::open(&index.db_path).expect("open database");
+    // One STRICT table fits, but a later CREATE in HISTORY_SCHEMA runs out of pages.
+    conn.pragma_update(None, "max_page_count", 3)
+        .expect("limit database pages");
+    conn.execute_batch(
+        "SAVEPOINT first_statement_probe;
+         CREATE TABLE history_meta (key TEXT PRIMARY KEY, value TEXT NOT NULL) STRICT;
+         ROLLBACK TO first_statement_probe;
+         RELEASE first_statement_probe;",
+    )
+    .expect("first schema statement fits within page limit");
+    assert!(initialize_schema(&mut conn).is_err());
+    drop(conn);
+
+    let reopened = Connection::open(&index.db_path).expect("reopen database");
+    assert!(history_database_is_empty(&reopened).expect("inspect schema"));
+    drop(reopened);
+    let opened = HistoryIndex::open(repo.path(), "main").expect("retry initialization");
+    assert_eq!(
+        opened.status().expect("status").schema_version,
+        HISTORY_INDEX_SCHEMA_VERSION
+    );
+}
+
+#[test]
+fn version_insert_failure_rolls_back_schema_and_earlier_versions() {
+    let repo = fixture_repo();
+    write(repo.path(), "a.rs", "fn root() {}\n");
+    commit(repo.path(), "root");
+    let index = HistoryIndex::resolve(repo.path(), "main", None).expect("resolve index");
+    fs::create_dir_all(index.db_path.parent().expect("index parent")).expect("create index dir");
+    let mut conn = Connection::open(&index.db_path).expect("open database");
+    conn.execute_batch(
+        "CREATE TABLE history_meta (key TEXT PRIMARY KEY, value TEXT NOT NULL) STRICT;
+         CREATE TRIGGER fail_second_version BEFORE INSERT ON history_meta
+         WHEN NEW.key = 'extractor_version'
+         BEGIN SELECT RAISE(ABORT, 'injected version failure'); END;",
+    )
+    .expect("install insert failure");
+    assert!(initialize_schema(&mut conn).is_err());
+    drop(conn);
+
+    let reopened = Connection::open(&index.db_path).expect("reopen database");
+    let versions: i64 = reopened
+        .query_row("SELECT count(*) FROM history_meta", [], |row| row.get(0))
+        .expect("count versions");
+    assert_eq!(versions, 0);
+    let tables: i64 = reopened
+        .query_row(
+            "SELECT count(*) FROM sqlite_master WHERE type='table'",
+            [],
+            |row| row.get(0),
+        )
+        .expect("count tables");
+    assert_eq!(tables, 1, "only the injected history_meta table remains");
+    reopened
+        .execute_batch("DROP TRIGGER fail_second_version; DROP TABLE history_meta;")
+        .expect("remove injected failure");
+    drop(reopened);
+    let opened = HistoryIndex::open(repo.path(), "main").expect("retry initialization");
+    assert_eq!(
+        opened.status().expect("status").schema_version,
+        HISTORY_INDEX_SCHEMA_VERSION
+    );
+}
+
+#[test]
+fn concurrent_fresh_opens_initialize_once() {
+    let repo = fixture_repo();
+    write(repo.path(), "a.rs", "fn root() {}\n");
+    commit(repo.path(), "root");
+    let barrier = std::sync::Arc::new(std::sync::Barrier::new(4));
+    let handles = (0..4)
+        .map(|_| {
+            let barrier = barrier.clone();
+            let root = repo.path().to_path_buf();
+            std::thread::spawn(move || {
+                barrier.wait();
+                HistoryIndex::open(&root, "main")
+                    .and_then(|index| index.status())
+                    .map(|status| status.schema_version)
+            })
+        })
+        .collect::<Vec<_>>();
+    for handle in handles {
+        assert_eq!(
+            handle.join().expect("open thread").expect("fresh open"),
+            HISTORY_INDEX_SCHEMA_VERSION
+        );
+    }
+}
+
+#[test]
+fn unrelated_nonempty_database_is_refused_without_history_writes() {
+    let repo = fixture_repo();
+    write(repo.path(), "a.rs", "fn root() {}\n");
+    commit(repo.path(), "root");
+    let index = HistoryIndex::resolve(repo.path(), "main", None).expect("resolve index");
+    fs::create_dir_all(index.db_path.parent().expect("index parent")).expect("create index dir");
+    let conn = Connection::open(&index.db_path).expect("open database");
+    conn.execute_batch("CREATE TABLE unrelated (id INTEGER PRIMARY KEY) STRICT;")
+        .expect("create unrelated table");
+    drop(conn);
+
+    for error in [
+        HistoryIndex::open(repo.path(), "main").expect_err("refuse unrelated database"),
+        HistoryIndex::open_for_rebuild(repo.path(), "main", true)
+            .expect_err("rebuild refuses unrelated database"),
+    ] {
+        assert!(
+            matches!(
+                error,
+                GraphError::Sqlite {
+                    operation: "read history index version",
+                    ..
+                }
+            ),
+            "unexpected refusal: {error}"
+        );
+    }
+    let conn = Connection::open(&index.db_path).expect("inspect database");
+    let tables: Vec<String> = conn
+        .prepare("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name")
+        .expect("prepare table list")
+        .query_map([], |row| row.get(0))
+        .expect("query table list")
+        .collect::<Result<_, _>>()
+        .expect("read table list");
+    assert_eq!(tables, ["unrelated"]);
+}
+
+#[test]
 fn credentialed_scope_collision_fails_closed_and_pending_purge_retries() {
     let repo = fixture_repo();
     write(repo.path(), "src/lib.rs", "pub fn root() {}\n");

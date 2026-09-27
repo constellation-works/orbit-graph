@@ -213,7 +213,7 @@ impl HistoryIndex {
         let _guard = HistoryLock::acquire(index.db_path.as_path(), "history rebuild open")?;
         let mut conn = index.open_connection()?;
         if history_database_is_empty(&conn)? {
-            initialize_schema(&conn)?;
+            initialize_schema(&mut conn)?;
         } else {
             index.validate_schema_version(&conn)?;
             index.refuse_unsupported_contracts(&conn)?;
@@ -302,7 +302,7 @@ impl HistoryIndex {
         let _lock = HistoryLock::acquire(index.db_path.as_path(), "history open")?;
         let mut conn = index.open_connection()?;
         if history_database_is_empty(&conn)? {
-            initialize_schema(&conn)?;
+            initialize_schema(&mut conn)?;
         }
         index.validate_schema_version(&conn)?;
         if read_pending_identity_purge(&conn)? {
@@ -1789,20 +1789,25 @@ fn history_database_is_empty(conn: &Connection) -> Result<bool, GraphError> {
     Ok(tables == 0)
 }
 
-fn initialize_schema(conn: &Connection) -> Result<(), GraphError> {
-    conn.execute_batch(HISTORY_SCHEMA)
+fn initialize_schema(conn: &mut Connection) -> Result<(), GraphError> {
+    let tx = conn
+        .transaction_with_behavior(TransactionBehavior::Immediate)
+        .map_err(|source| GraphError::sqlite("begin history schema transaction", source))?;
+    tx.execute_batch(HISTORY_SCHEMA)
         .map_err(|source| GraphError::sqlite("initialize history schema", source))?;
     for (key, value) in [
         ("schema_version", HISTORY_INDEX_SCHEMA_VERSION),
         ("extractor_version", CHANGE_EXTRACTOR_VERSION),
         ("import_schema_version", DELIVERY_IMPORT_SCHEMA_VERSION),
     ] {
-        conn.execute(
+        tx.execute(
             "INSERT OR IGNORE INTO history_meta(key,value) VALUES(?1,?2)",
             params![key, value.to_string()],
         )
         .map_err(|source| GraphError::sqlite("initialize history version", source))?;
     }
+    tx.commit()
+        .map_err(|source| GraphError::sqlite("commit history schema transaction", source))?;
     Ok(())
 }
 
