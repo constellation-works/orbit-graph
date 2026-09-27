@@ -11,7 +11,8 @@ use orbit_graph_extract::history::{
     DEFAULT_HISTORY_SYNC_LIMIT, DELIVERY_IMPORT_SCHEMA_VERSION, DeliveredChange, DeliveryEvidence,
     DeliveryImport, FileChange, FileChangeKind, Provenance, RevisionSide, SymbolIdentity,
     TaskAssociation, TaskTextAvailability, TemporalFact, TemporalStatus, branch_tip,
-    extract_delivery, repository_identity, validate_task_association,
+    extract_delivery, repository_identity, repository_identity_without_credentials,
+    validate_task_association,
 };
 use orbit_graph_extract::languages;
 use rusqlite::{Connection, OptionalExtension, Transaction, TransactionBehavior, params};
@@ -32,6 +33,9 @@ const PREVIOUS_HISTORY_INDEX_SCHEMA_VERSION: u32 = 4;
 
 /// `history_meta` key recording that the one-time previous-schema copy was attempted.
 const LEGACY_COPY_META_KEY: &str = "legacy_copy";
+
+/// A committed identity rewrite is not complete until old SQLite pages are purged.
+const ORIGIN_PURGE_META_KEY: &str = "origin_identity_purge_pending";
 
 /// Extraction contracts that stored delivery payloads were produced under.
 ///
@@ -201,18 +205,20 @@ impl HistoryIndex {
                 let conn = index.open_connection()?;
                 index.validate_schema_version(&conn)?;
                 index.refuse_unsupported_contracts(&conn)?;
+                index.refuse_credentialed_scope(&conn)?;
             }
             return Ok(index);
         }
         index.create_physical_dir(None)?;
         let _guard = HistoryLock::acquire(index.db_path.as_path(), "history rebuild open")?;
-        let conn = index.open_connection()?;
+        let mut conn = index.open_connection()?;
         if history_database_is_empty(&conn)? {
             initialize_schema(&conn)?;
         } else {
             index.validate_schema_version(&conn)?;
             index.refuse_unsupported_contracts(&conn)?;
         }
+        index.migrate_credentialed_scopes(&mut conn)?;
         Ok(index)
     }
 
@@ -266,6 +272,8 @@ impl HistoryIndex {
             });
         }
         let conn = index.open_connection()?;
+        index.validate_schema_version(&conn)?;
+        index.refuse_credentialed_scope(&conn)?;
         index.validate_versions(&conn)?;
         Ok(index)
     }
@@ -296,9 +304,201 @@ impl HistoryIndex {
         if history_database_is_empty(&conn)? {
             initialize_schema(&conn)?;
         }
-        index.validate_versions(&conn)?;
+        index.validate_schema_version(&conn)?;
+        if read_pending_identity_purge(&conn)? {
+            index.finish_identity_purge(&conn)?;
+        }
+        if index.credentialed_repositories(&conn)?.is_empty() {
+            index.validate_versions(&conn)?;
+        } else {
+            index.refuse_unsupported_contracts(&conn)?;
+        }
         index.copy_previous_schema_once(&mut conn)?;
+        index.migrate_credentialed_scopes(&mut conn)?;
+        index.validate_versions(&conn)?;
         Ok(index)
+    }
+
+    fn credentialed_repositories(&self, conn: &Connection) -> Result<Vec<String>, GraphError> {
+        let mut stmt = conn
+            .prepare("SELECT repository FROM history_scopes UNION SELECT repository FROM history_deliveries")
+            .map_err(|source| GraphError::sqlite("prepare legacy history identities", source))?;
+        let repositories = stmt
+            .query_map([], |row| row.get::<_, String>(0))
+            .map_err(|source| GraphError::sqlite("query legacy history identities", source))?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|source| GraphError::sqlite("read legacy history identities", source))?;
+        Ok(repositories
+            .into_iter()
+            .filter(|repository| {
+                repository != &self.repository
+                    && repository_identity_without_credentials(repository) == self.repository
+            })
+            .collect())
+    }
+
+    fn refuse_credentialed_scope(&self, conn: &Connection) -> Result<(), GraphError> {
+        if read_pending_identity_purge(conn)? {
+            return Err(GraphError::invalid_data(
+                "open history index",
+                "history identity purge is pending; close readers and run `orbit-graph history sync` before reading status",
+            ));
+        }
+        if self.credentialed_repositories(conn)?.is_empty() {
+            return Ok(());
+        }
+        Err(GraphError::invalid_data(
+            "open history index",
+            "a legacy credential-bearing history scope exists; run `orbit-graph history sync --branch <branch>` to migrate it before reading status",
+        ))
+    }
+
+    /// Move legacy origin-keyed data to the credential-free identity. Reinsert
+    /// payloads so every derived table and serialized envelope uses the new key.
+    /// A collision is refused before writing: merging independently indexed
+    /// scopes could silently discard verified imports or cursor progress.
+    fn migrate_credentialed_scopes(&self, conn: &mut Connection) -> Result<(), GraphError> {
+        let legacy = self.credentialed_repositories(conn)?;
+        if legacy.is_empty() {
+            return self.finish_identity_purge(conn);
+        }
+        let tx = conn
+            .transaction_with_behavior(TransactionBehavior::Immediate)
+            .map_err(|source| GraphError::sqlite("begin history identity migration", source))?;
+        let mut branches = BTreeSet::new();
+        for repository in &legacy {
+            let mut stmt = tx
+                .prepare("SELECT landing_branch FROM history_scopes WHERE repository=?1 UNION SELECT landing_branch FROM history_deliveries WHERE repository=?1")
+                .map_err(|source| GraphError::sqlite("prepare legacy history branches", source))?;
+            let source_branches = stmt
+                .query_map([repository], |row| row.get::<_, String>(0))
+                .map_err(|source| GraphError::sqlite("query legacy history branches", source))?
+                .collect::<Result<Vec<_>, _>>()
+                .map_err(|source| GraphError::sqlite("read legacy history branches", source))?;
+            for branch in source_branches {
+                let existing: i64 = tx
+                    .query_row(
+                        "SELECT (SELECT count(*) FROM history_scopes WHERE repository=?1 AND landing_branch=?2) + (SELECT count(*) FROM history_deliveries WHERE repository=?1 AND landing_branch=?2)",
+                        params![self.repository, branch],
+                        |row| row.get(0),
+                    )
+                    .map_err(|source| GraphError::sqlite("check history identity collision", source))?;
+                if existing != 0 || !branches.insert(branch) {
+                    return Err(GraphError::invalid_data(
+                        "migrate history identity",
+                        "credential-free history scopes collide; back up the index and original verified-delivery envelopes, move the old index out of .orbit-graph, then run history sync and reimport envelopes with credential-free repository identities",
+                    ));
+                }
+            }
+        }
+
+        for repository in &legacy {
+            let mut stmt = tx
+                .prepare("SELECT payload_json FROM history_deliveries WHERE repository=?1 ORDER BY landing_branch, delivery_id")
+                .map_err(|source| GraphError::sqlite("prepare legacy history deliveries", source))?;
+            let payloads = stmt
+                .query_map([repository], |row| row.get::<_, String>(0))
+                .map_err(|source| GraphError::sqlite("query legacy history deliveries", source))?
+                .collect::<Result<Vec<_>, _>>()
+                .map_err(|source| GraphError::sqlite("read legacy history deliveries", source))?;
+            for payload in payloads {
+                let mut change: DeliveredChange = serde_json::from_str(&payload).map_err(|_| {
+                    GraphError::invalid_data(
+                        "migrate history identity",
+                        "invalid legacy delivery payload; index left unchanged",
+                    )
+                })?;
+                change.delivery.repository.clone_from(&self.repository);
+                insert_delivery(&tx, &change)?;
+            }
+            tx.execute(
+                "INSERT INTO history_scopes(repository,landing_branch,cursor,bootstrap_tip,bootstrap_frontier) SELECT ?1,landing_branch,cursor,bootstrap_tip,bootstrap_frontier FROM history_scopes WHERE repository=?2",
+                params![self.repository, repository],
+            )
+            .map_err(|source| GraphError::sqlite("copy legacy history cursors", source))?;
+            for (key, _) in CONTRACT_VERSIONS {
+                let prefix = format!("{key}@");
+                let mut stmt = tx
+                    .prepare("SELECT key,value FROM history_meta WHERE key LIKE ?1")
+                    .map_err(|source| {
+                        GraphError::sqlite("prepare legacy history scope versions", source)
+                    })?;
+                let rows = stmt
+                    .query_map([format!("{prefix}%")], |row| {
+                        Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+                    })
+                    .map_err(|source| {
+                        GraphError::sqlite("query legacy history scope versions", source)
+                    })?
+                    .collect::<Result<Vec<_>, _>>()
+                    .map_err(|source| {
+                        GraphError::sqlite("read legacy history scope versions", source)
+                    })?;
+                for (old_key, value) in rows {
+                    let Some(branch) = branches
+                        .iter()
+                        .find(|branch| old_key == scope_version_key(key, repository, branch))
+                    else {
+                        continue;
+                    };
+                    tx.execute(
+                        "INSERT INTO history_meta(key,value) VALUES(?1,?2)",
+                        params![scope_version_key(key, &self.repository, branch), value],
+                    )
+                    .map_err(|source| {
+                        GraphError::sqlite("copy legacy history scope version", source)
+                    })?;
+                    tx.execute("DELETE FROM history_meta WHERE key=?1", [old_key])
+                        .map_err(|source| {
+                            GraphError::sqlite("delete legacy history scope version", source)
+                        })?;
+                }
+            }
+            tx.execute(
+                "DELETE FROM history_deliveries WHERE repository=?1",
+                [repository],
+            )
+            .map_err(|source| GraphError::sqlite("delete legacy history deliveries", source))?;
+            tx.execute(
+                "DELETE FROM history_scopes WHERE repository=?1",
+                [repository],
+            )
+            .map_err(|source| GraphError::sqlite("delete legacy history scopes", source))?;
+        }
+        tx.execute(
+            "INSERT INTO history_meta(key,value) VALUES(?1,'pending') ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+            [ORIGIN_PURGE_META_KEY],
+        )
+        .map_err(|source| GraphError::sqlite("record history identity purge", source))?;
+        tx.commit()
+            .map_err(|source| GraphError::sqlite("commit history identity migration", source))?;
+        self.finish_identity_purge(conn)
+    }
+
+    fn finish_identity_purge(&self, conn: &Connection) -> Result<(), GraphError> {
+        if !read_pending_identity_purge(conn)? {
+            return Ok(());
+        }
+        // Repack the database and truncate WAL pages that held the old origin.
+        conn.execute_batch("VACUUM")
+            .map_err(|source| GraphError::sqlite("purge legacy history identity", source))?;
+        let busy: i64 = conn
+            .query_row("PRAGMA wal_checkpoint(TRUNCATE)", [], |row| row.get(0))
+            .map_err(|source| {
+                GraphError::sqlite("checkpoint history identity migration", source)
+            })?;
+        if busy != 0 {
+            return Err(GraphError::invalid_data(
+                "checkpoint history identity migration",
+                "a reader prevented purging the old history WAL; close readers and reopen the index",
+            ));
+        }
+        conn.execute(
+            "DELETE FROM history_meta WHERE key=?1",
+            [ORIGIN_PURGE_META_KEY],
+        )
+        .map_err(|source| GraphError::sqlite("complete history identity purge", source))?;
+        Ok(())
     }
 
     /// Resolves the repository, branch scope and database path, touching
@@ -1362,10 +1562,11 @@ impl HistoryIndex {
     }
 
     fn unsupported_contract(&self, key: &str, found: &str, expected: u32) -> GraphError {
+        let safe_key = key.split_once('@').map_or(key, |(base, _)| base);
         GraphError::IndexIncompatible {
             path: self.db_path.clone(),
             reason: format!(
-                "history index {} has {key}={found}; expected at most {expected}; it was written by a newer or unknown orbit-graph, so this binary neither reads nor rebuilds it",
+                "history index {} has {safe_key}={found}; expected at most {expected}; it was written by a newer or unknown orbit-graph, so this binary neither reads nor rebuilds it",
                 self.db_path.display()
             ),
         }
@@ -1409,6 +1610,17 @@ fn read_meta(conn: &Connection, key: &str) -> Result<String, GraphError> {
         |row| row.get(0),
     )
     .map_err(|source| GraphError::sqlite("read history index version", source))
+}
+
+fn read_pending_identity_purge(conn: &Connection) -> Result<bool, GraphError> {
+    conn.query_row(
+        "SELECT 1 FROM history_meta WHERE key=?1",
+        [ORIGIN_PURGE_META_KEY],
+        |row| row.get::<_, i64>(0),
+    )
+    .optional()
+    .map(|value| value.is_some())
+    .map_err(|source| GraphError::sqlite("read history identity purge state", source))
 }
 
 /// `history_meta` key holding `key` for one scope rebuilt while other stored

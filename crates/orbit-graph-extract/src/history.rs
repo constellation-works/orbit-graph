@@ -508,10 +508,10 @@ pub enum CurrentSymbolStatus {
 #[doc(hidden)]
 pub fn repository_identity(repo: &Repository) -> Result<String, ExtractError> {
     if let Ok(remote) = repo.find_remote("origin")
-        && let Some(url) = remote.url().map_or(None, |url| Some(url.to_string()))
+        && let Ok(url) = remote.url()
         && !url.trim().is_empty()
     {
-        return Ok(url);
+        return Ok(repository_identity_without_credentials(url));
     }
     let workdir = repo.workdir().ok_or_else(|| {
         ExtractError::invalid_data(
@@ -523,6 +523,29 @@ pub fn repository_identity(repo: &Repository) -> Result<String, ExtractError> {
         .canonicalize()
         .map(|path| path.to_string_lossy().into_owned())
         .map_err(|source| ExtractError::io("canonicalize history repository", workdir, source))
+}
+
+/// Remove Git remote userinfo before an origin is used as a history key.
+/// Handles both URL authorities and Git's `user@host:path` SSH form.
+#[doc(hidden)]
+pub fn repository_identity_without_credentials(identity: &str) -> String {
+    if let Some((scheme, rest)) = identity.split_once("://") {
+        let end = rest.find(['/', '?', '#']).unwrap_or(rest.len());
+        let (authority, suffix) = rest.split_at(end);
+        let host = authority
+            .rsplit_once('@')
+            .map_or(authority, |(_, host)| host);
+        return format!("{scheme}://{host}{suffix}");
+    }
+    if let Some((userinfo, host_path)) = identity.split_once('@')
+        && !userinfo.contains('/')
+        && host_path
+            .split_once(':')
+            .is_some_and(|(host, _)| !host.is_empty() && !host.contains('/'))
+    {
+        return host_path.to_string();
+    }
+    identity.to_string()
 }
 
 pub(crate) fn resolve_commit(repo: &Repository, revision: &str) -> Result<Oid, ExtractError> {
@@ -595,10 +618,7 @@ pub(crate) fn validate_delivery(
     if delivery.repository != detected {
         return Err(ExtractError::invalid_data(
             "validate delivery repository",
-            format!(
-                "repository mismatch: envelope={} local={detected}",
-                delivery.repository
-            ),
+            "repository mismatch: envelope must use the local credential-free origin identity",
         ));
     }
     let before = resolve_commit(repo, delivery.before_revision.as_str())?;

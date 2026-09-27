@@ -6,6 +6,39 @@ use tempfile::TempDir;
 use super::*;
 
 #[test]
+fn credentialed_scope_collision_fails_closed_and_pending_purge_retries() {
+    let repo = fixture_repo();
+    write(repo.path(), "src/lib.rs", "pub fn root() {}\n");
+    commit(repo.path(), "root");
+    let old = "https://old-user:synthetic-collision-secret@example.invalid/repo.git";
+    git(repo.path(), &["remote", "add", "origin", old]);
+    let index = HistoryIndex::open(repo.path(), "main").expect("open history");
+    index.sync(Some(10)).expect("sync history");
+    let db = index.database_path();
+
+    set_meta(db, ORIGIN_PURGE_META_KEY, "pending");
+    let pending = HistoryIndex::open_read_only(repo.path(), "main")
+        .expect_err("pending purge blocks observational reads");
+    assert!(pending.to_string().contains("purge is pending"));
+    HistoryIndex::open(repo.path(), "main").expect("retry purge");
+    assert!(!meta(db).contains_key(ORIGIN_PURGE_META_KEY));
+
+    Connection::open(db)
+        .expect("open index")
+        .execute(
+            "INSERT INTO history_scopes(repository,landing_branch,cursor) VALUES(?1,'main',NULL)",
+            [old],
+        )
+        .expect("seed colliding legacy scope");
+    let before = scope_rows(db, "main");
+    let error = HistoryIndex::open(repo.path(), "main").expect_err("collision must fail");
+    let message = error.to_string();
+    assert!(message.contains("scopes collide"), "{message}");
+    assert!(!message.contains("synthetic-collision-secret"), "{message}");
+    assert_eq!(scope_rows(db, "main"), before);
+}
+
+#[test]
 fn import_is_idempotent_and_preserves_multi_task_provenance() {
     let repo = fixture_repo();
     write(

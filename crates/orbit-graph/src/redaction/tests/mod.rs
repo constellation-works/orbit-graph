@@ -54,10 +54,15 @@ fn persisted_text_writer_inventory_is_explicit() {
 
     // Delivery payloads, task columns and caller snapshots carry task prose.
     // Symbol signatures are free text and are redacted with that payload.
-    // Scope, path and cursor rows stay structured metadata.
+    // Scope, path and cursor rows stay structured metadata. The history_meta
+    // inserts move a numeric contract version to a credential-free scope key
+    // and record that old SQLite pages still need purging.
     assert_eq!(
         sql_targets(history, "INSERT INTO "),
         [
+            "history_scopes",
+            "history_meta",
+            "history_meta",
             "history_scopes",
             "history_supplied_task_snapshots",
             "history_deliveries",
@@ -72,7 +77,7 @@ fn persisted_text_writer_inventory_is_explicit() {
     );
     assert_eq!(
         sql_targets(history, "UPDATE "),
-        ["history_deliveries", "SET", "SET"]
+        ["SET", "history_deliveries", "SET", "SET"]
     );
     assert!(history.contains("let change = &redacted;"));
     assert!(history.contains("redact_task(&mut snapshot)"));
