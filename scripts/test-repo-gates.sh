@@ -68,7 +68,9 @@ edit() { sed -i.bak "$2" "$case_dir/$1"; rm -f "$case_dir/$1.bak"; }
 # allow <entry>: seed an ALLOW entry into the copied terminal guard.
 allow() {
   local guard="$case_dir/scripts/check-terminal-guard.sh"
-  ENTRY="$1" awk '{ print } $0 == "read -r -d \x27\x27 ALLOW <<\x27EOF\x27 || true" { print ENVIRON["ENTRY"] }' "$guard" >"$guard.new"
+  # The marker comes in through ENVIRON: BSD awk (macOS) has no \x escapes.
+  MARKER="read -r -d '' ALLOW <<'EOF' || true" ENTRY="$1" \
+    awk '{ print } $0 == ENVIRON["MARKER"] { print ENVIRON["ENTRY"] }' "$guard" >"$guard.new"
   mv "$guard.new" "$guard"
   grep -qF -- "$1" "$guard" || { echo "allow: could not seed $1" >&2; exit 1; }
 }
