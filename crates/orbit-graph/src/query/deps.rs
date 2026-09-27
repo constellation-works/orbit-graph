@@ -25,7 +25,7 @@ enum ImportScope {
     /// Imports declared by exactly this file.
     FileEq(String),
     /// Imports declared by any file under this directory prefix.
-    DirLike(String),
+    DirPrefix(String),
 }
 
 impl ImportScope {
@@ -33,7 +33,7 @@ impl ImportScope {
         match sel {
             Selector::File { path } => Ok(Self::FileEq(path.clone())),
             Selector::Dir { path } => {
-                Ok(Self::DirLike(format!("{}/%", path.trim_end_matches('/'))))
+                Ok(Self::DirPrefix(format!("{}/", path.trim_end_matches('/'))))
             }
             Selector::Symbol { .. } | Selector::Module { .. } | Selector::Command { .. } => {
                 Err(GraphError::invalid_input(
@@ -49,7 +49,10 @@ impl ImportScope {
 fn query_imports(conn: &Connection, scope: &ImportScope) -> Result<Vec<DepEdge>, GraphError> {
     let (predicate, param) = match scope {
         ImportScope::FileEq(path) => ("from_file = ?1", path.as_str()),
-        ImportScope::DirLike(pattern) => ("from_file LIKE ?1", pattern.as_str()),
+        ImportScope::DirPrefix(prefix) => (
+            "substr(from_file, 1, length(?1)) COLLATE BINARY = ?1",
+            prefix.as_str(),
+        ),
     };
     let sql = format!(
         "SELECT from_file, target_path, target_symbol

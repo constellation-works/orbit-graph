@@ -99,6 +99,53 @@ fn implementors_matches_trailing_trait_segment() {
 }
 
 #[test]
+fn implementors_matches_literal_case_sensitive_trait_segment() {
+    let worktree = TestWorktree::new("impl-literal-trait-segment");
+    let graph = open_graph(&worktree, SyncPolicy::Manual);
+    let conn = open_connection(&worktree);
+    insert_file(&conn, "crates/x/src/traits.rs", "rust", "");
+    insert_relation(
+        &conn,
+        "crates/x/src/traits.rs",
+        "ExactType",
+        "Trait_A",
+        "impl",
+    );
+    insert_relation(
+        &conn,
+        "crates/x/src/traits.rs",
+        "QualifiedType",
+        "pkg::Trait_A",
+        "implements",
+    );
+    insert_relation(
+        &conn,
+        "crates/x/src/traits.rs",
+        "SuffixDecoy",
+        "pkg::TraitBA",
+        "impl",
+    );
+    insert_relation(
+        &conn,
+        "crates/x/src/traits.rs",
+        "CaseDecoy",
+        "pkg::trait_a",
+        "impl",
+    );
+
+    let result = graph
+        .implementors(&trait_selector("crates/x/src/traits.rs", "Trait_A"))
+        .expect("implementors query");
+    let matches: Vec<&str> = result
+        .implementors
+        .iter()
+        .map(|item| item.trait_matched.as_str())
+        .collect();
+
+    assert_eq!(matches, vec!["Trait_A", "pkg::Trait_A"]);
+}
+
+#[test]
 fn implementors_empty_for_non_trait_selector() {
     let worktree = TestWorktree::new("impl-nontrait");
     let graph = open_graph(&worktree, SyncPolicy::Manual);

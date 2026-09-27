@@ -89,6 +89,55 @@ fn deps_aggregates_imports_under_a_directory() {
 }
 
 #[test]
+fn deps_directory_scope_matches_literal_case_sensitive_prefixes() {
+    let worktree = TestWorktree::new("deps-literal-dir");
+    let graph = open_graph(&worktree, SyncPolicy::Manual);
+    let conn = open_connection(&worktree);
+    for (path, target) in [
+        ("a_b/one.rs", "a_b_target"),
+        ("aXb/two.rs", "aXb_target"),
+        ("a_b_extra/three.rs", "extra_target"),
+        ("percent%dir/four.rs", "percent_target"),
+        ("percentZdir/five.rs", "percent_z_target"),
+        ("Foo/upper.rs", "upper_target"),
+        ("foo/lower.rs", "lower_target"),
+        ("src/main.rs", "main_target"),
+    ] {
+        insert_file(&conn, path, "rust", "");
+        insert_import(&conn, path, target, None);
+    }
+
+    for (directory, expected) in [
+        ("a_b", "a_b/one.rs"),
+        ("percent%dir", "percent%dir/four.rs"),
+        ("Foo", "Foo/upper.rs"),
+        ("foo", "foo/lower.rs"),
+        ("src", "src/main.rs"),
+    ] {
+        let result = graph
+            .deps(&Selector::Dir {
+                path: directory.to_string(),
+            })
+            .expect("scoped deps query");
+        let froms: Vec<&str> = result
+            .imports
+            .iter()
+            .map(|edge| edge.from_file.as_str())
+            .collect();
+
+        assert_eq!(froms, vec![expected], "directory {directory}");
+    }
+
+    let file_result = graph
+        .deps(&Selector::File {
+            path: "src/main.rs".to_string(),
+        })
+        .expect("file-scoped deps query");
+    assert_eq!(file_result.imports.len(), 1);
+    assert_eq!(file_result.imports[0].from_file, "src/main.rs");
+}
+
+#[test]
 fn deps_rejects_non_path_selector() {
     let worktree = TestWorktree::new("deps-reject");
     let graph = open_graph(&worktree, SyncPolicy::Manual);

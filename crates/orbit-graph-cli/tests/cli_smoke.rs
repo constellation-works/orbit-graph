@@ -161,6 +161,54 @@ fn real_binary_indexes_and_queries_a_fixture() {
     assert_eq!(db_path["branch"], "main", "{db_path}");
 }
 
+#[test]
+fn real_binary_scopes_overview_and_deps_to_literal_directory_paths() {
+    let fixture = fixture_repository();
+    for (path, contents) in [
+        ("a_b/one.rs", "use std::fmt::Display;\n"),
+        ("aXb/two.rs", "use std::fmt::Debug;\n"),
+        ("a_b_extra/three.rs", "use std::fmt::Write;\n"),
+        ("percent%dir/four.rs", "use std::io::Read;\n"),
+        ("percentZdir/five.rs", "use std::io::Write;\n"),
+    ] {
+        let file = fixture.path().join(path);
+        fs::create_dir_all(file.parent().expect("fixture file parent"))
+            .expect("create fixture directory");
+        fs::write(file, contents).expect("write fixture source");
+    }
+    run_git(fixture.path(), ["add", "."]);
+    run_git(
+        fixture.path(),
+        ["commit", "-m", "literal selector fixtures"],
+    );
+    let sync = run_json(fixture.path(), ["sync", "--full"]);
+    assert!(
+        sync["files_indexed"]
+            .as_u64()
+            .is_some_and(|count| count >= 5)
+    );
+
+    for (directory, expected) in [
+        ("a_b", "a_b/one.rs"),
+        ("percent%dir", "percent%dir/four.rs"),
+    ] {
+        let selector = format!("dir:{directory}");
+        let overview = run_json(
+            fixture.path(),
+            ["overview", selector.as_str(), "--detail", "full"],
+        );
+        let files = overview["files"].as_array().expect("overview files");
+        assert_eq!(overview["total_files"], 1, "{overview}");
+        assert_eq!(files.len(), 1, "{overview}");
+        assert_eq!(files[0]["path"], expected, "{overview}");
+
+        let deps = run_json(fixture.path(), ["deps", selector.as_str()]);
+        let imports = deps["imports"].as_array().expect("deps imports");
+        assert_eq!(imports.len(), 1, "{deps}");
+        assert_eq!(imports[0]["from_file"], expected, "{deps}");
+    }
+}
+
 #[cfg(unix)]
 /// Agent-facing query fields (ORB-13099): every impacted node and every
 /// reference carries enough to open or `show` it, `refs` states whether it
