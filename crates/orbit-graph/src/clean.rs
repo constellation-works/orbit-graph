@@ -23,8 +23,9 @@ pub fn plan_clean_old_databases(worktree_root: &Path) -> Result<CleanReport, Gra
 ///
 /// Removes databases from strictly older extractor versions, plus detached-HEAD
 /// databases whose commit is no longer reachable from any local ref, each with
-/// its `-wal`, `-shm` and `.db.lock` sidecars. A database is removed only while
-/// this call holds its `.db.lock`, so one another process is syncing is kept;
+/// its `-wal`, `-shm`, `.db.lock` and `.db.close.lock` sidecars. A database is
+/// removed only while this call holds both locks, so one another process is
+/// syncing or closing is kept;
 /// a newer extractor version's database is never removed (STD-03 §R10). A
 /// detached database is removed only when Git proves its commit is gone or
 /// unreachable; any other Git error keeps it and reports why (STD-03 §R29).
@@ -140,22 +141,24 @@ fn clean_old_databases_excluding(
 }
 
 /// The files of `db_path`'s family that exist, or `None` when another process
-/// holds its `.db.lock`. Nothing is created or removed: a lock file that does
-/// not exist is not held by anyone.
+/// holds its `.db.lock` or `.db.close.lock`. Nothing is created or removed: a
+/// lock file that does not exist is not held by anyone.
 fn existing_graph_db_family_files_if_unlocked(
     db_path: &Path,
 ) -> Result<Option<Vec<PathBuf>>, GraphError> {
-    let lock_path = graph_db_sidecar(db_path, ".lock");
-    if let Some(lock) = open_state_file(&lock_path, StateAccess::Read)? {
-        match lock.try_lock() {
-            Ok(()) => drop(lock),
-            Err(fs::TryLockError::WouldBlock) => return Ok(None),
-            Err(fs::TryLockError::Error(source)) => {
-                return Err(GraphError::io(
-                    "lock old graph database",
-                    &lock_path,
-                    source,
-                ));
+    for suffix in [".lock", ".close.lock"] {
+        let lock_path = graph_db_sidecar(db_path, suffix);
+        if let Some(lock) = open_state_file(&lock_path, StateAccess::Read)? {
+            match lock.try_lock() {
+                Ok(()) => drop(lock),
+                Err(fs::TryLockError::WouldBlock) => return Ok(None),
+                Err(fs::TryLockError::Error(source)) => {
+                    return Err(GraphError::io(
+                        "lock old graph database",
+                        &lock_path,
+                        source,
+                    ));
+                }
             }
         }
     }
@@ -168,24 +171,27 @@ fn existing_graph_db_family_files_if_unlocked(
     Ok(Some(existing))
 }
 
-fn graph_db_family_files(db_path: &Path) -> [PathBuf; 4] {
+fn graph_db_family_files(db_path: &Path) -> [PathBuf; 5] {
     [
         db_path.to_path_buf(),
         graph_db_sidecar(db_path, "-wal"),
         graph_db_sidecar(db_path, "-shm"),
         graph_db_sidecar(db_path, ".lock"),
+        graph_db_sidecar(db_path, ".close.lock"),
     ]
 }
 
-/// Removes `db_path` and its sidecars while holding its `.db.lock`, and
-/// returns the paths removed. When another process holds the lock, as a sync
-/// of that database does, nothing is removed and `None` is returned.
+/// Removes `db_path` and its sidecars while holding both locks, and returns
+/// the paths removed. When another process holds either lock, nothing is
+/// removed and `None` is returned.
 fn delete_graph_db_family_if_unlocked(db_path: &Path) -> Result<Option<Vec<PathBuf>>, GraphError> {
     let lock_path = graph_db_sidecar(db_path, ".lock");
+    let close_lock_path = graph_db_sidecar(db_path, ".close.lock");
     // A lock file this call creates only to take the lock is not reported.
     // Every file of the family is checked before any is removed: a symlink
     // among them is refused, never followed (STD-05 §R7).
     let lock_existed = crate::state_dir::check_state_file(&lock_path)?;
+    let close_lock_existed = crate::state_dir::check_state_file(&close_lock_path)?;
     for path in graph_db_family_files(db_path) {
         crate::state_dir::check_state_file(&path)?;
     }
@@ -209,9 +215,30 @@ fn delete_graph_db_family_if_unlocked(db_path: &Path) -> Result<Option<Vec<PathB
             ));
         }
     }
+    let Some(close_lock) = open_state_file(&close_lock_path, StateAccess::Write)? else {
+        return Ok(None);
+    };
+    match close_lock.try_lock() {
+        Ok(()) => {}
+        Err(fs::TryLockError::WouldBlock) => {
+            tracing::info!(
+                path = %db_path.display(),
+                "kept an old graph database whose close lock another process holds"
+            );
+            return Ok(None);
+        }
+        Err(fs::TryLockError::Error(source)) => {
+            return Err(GraphError::io(
+                "lock old graph database close",
+                &close_lock_path,
+                source,
+            ));
+        }
+    }
     let mut deleted = Vec::new();
     for path in graph_db_family_files(db_path) {
-        let report = path != lock_path || lock_existed;
+        let report =
+            (path != lock_path || lock_existed) && (path != close_lock_path || close_lock_existed);
         match fs::remove_file(&path) {
             Ok(()) if report => deleted.push(path),
             Ok(()) => {}
@@ -225,6 +252,7 @@ fn delete_graph_db_family_if_unlocked(db_path: &Path) -> Result<Option<Vec<PathB
             }
         }
     }
+    drop(close_lock);
     drop(lock);
     Ok(Some(deleted))
 }
@@ -309,6 +337,7 @@ fn graph_db_file_metadata(file_name: &str) -> Option<GraphDbFileMetadata> {
         .strip_suffix(".db")
         .or_else(|| file_name.strip_suffix(".db-wal"))
         .or_else(|| file_name.strip_suffix(".db-shm"))
+        .or_else(|| file_name.strip_suffix(".db.close.lock"))
         .or_else(|| file_name.strip_suffix(".db.lock"))?;
     let (stem, version) = db_name.rsplit_once('.')?;
     let extractor_version = version.parse().ok()?;
@@ -331,7 +360,7 @@ fn graph_db_base_path(path: &Path) -> PathBuf {
     let Some(file_name) = path.file_name().and_then(|name| name.to_str()) else {
         return path.to_path_buf();
     };
-    for suffix in [".db-wal", ".db-shm", ".db.lock"] {
+    for suffix in [".db-wal", ".db-shm", ".db.lock", ".db.close.lock"] {
         if let Some(stem) = file_name.strip_suffix(suffix) {
             return path.with_file_name(format!("{stem}.db"));
         }
