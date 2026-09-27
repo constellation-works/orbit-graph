@@ -22,7 +22,7 @@
 
 use std::collections::BTreeSet;
 
-use orbit_graph::Confidence;
+use orbit_graph::{Confidence, DEFAULT_SHOW_MAX_BYTES};
 use orbit_graph_changes::changes::{ChangeStatus, ChangedSymbols, Pairing, PairingEvidence};
 use orbit_graph_changes::evidence::{
     CandidateSource, EvidenceBounds, EvidenceCategory, EvidenceCollector, EvidenceQuery,
@@ -345,6 +345,50 @@ fn renamed_file_pairs_as_moved_not_as_an_unrelated_remove_and_add() {
             "use",
         );
     }
+}
+
+#[test]
+fn truncated_moved_symbol_does_not_claim_full_content_equality() {
+    let repository = tempfile::TempDir::new().expect("create repository");
+    let repo = git2::Repository::init(repository.path()).expect("init repository");
+    let padding = "x".repeat(DEFAULT_SHOW_MAX_BYTES);
+    let base_source = format!("pub fn large() {{\n    // {padding}\n    let _tail = 1;\n}}\n");
+    let head_source = format!("pub fn large() {{\n    // {padding}\n    let _tail = 2;\n}}\n");
+    let base = commit_all(
+        &repo,
+        repository.path(),
+        &[("src/large.rs", base_source.as_str())],
+        "base: large symbol",
+        0,
+    );
+    std::fs::remove_file(repository.path().join("src/large.rs"))
+        .expect("remove original path to model a rename");
+    let head = commit_all(
+        &repo,
+        repository.path(),
+        &[("src/renamed.rs", head_source.as_str())],
+        "head: move and edit large symbol",
+        1,
+    );
+    drop(repo);
+
+    let comparison = Comparison::open(repository.path(), &base, &head).expect("open comparison");
+    let changed = ChangedSymbols::compute(&comparison).expect("compute changed symbols");
+    let moved_entries = changed.entries_for("symbol:src/large.rs#large:function");
+    let moved = moved_entries.first().expect("moved symbol entry");
+    assert_eq!(moved.status, ChangeStatus::Moved);
+    assert_eq!(moved.pairing_evidence, PairingEvidence::GitRename);
+    assert_eq!(
+        moved.head.as_ref().map(|symbol| symbol.selector.as_str()),
+        Some("symbol:src/renamed.rs#large:function")
+    );
+    let note = moved.note.as_deref().unwrap_or_default();
+    assert!(note.contains("available source prefixes match"), "{note}");
+    assert!(
+        note.contains("full content equality could not be established"),
+        "{note}"
+    );
+    assert!(!note.contains("byte-identical across the move"), "{note}");
 }
 
 #[test]
