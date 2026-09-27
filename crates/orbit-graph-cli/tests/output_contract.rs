@@ -31,6 +31,49 @@ use orbit_graph::{
 const HELPER: &str = "symbol:src/lib.rs#helper:function";
 
 #[test]
+fn markdown_credentials_are_redacted_before_search_and_database_write() {
+    let fixture = fixture_repository();
+    let token = "ghp_12345678901234567890";
+    let password = "very-private-password";
+    write(
+        fixture.path(),
+        "README.md",
+        &format!(
+            "```sh\nexport GITHUB_TOKEN={token}\nsk-learn-utils task-ORB-1 risk-assessment\n```\n[deploy](https://deploy:{password}@gitlab.example/repo)\n"
+        ),
+    );
+    commit(fixture.path());
+    json(fixture.path(), &["sync", "--full"]);
+    let search = json(fixture.path(), &["search", "GITHUB_TOKEN"]);
+    let rendered = search.to_string();
+    assert!(rendered.contains("[REDACTED_SECRET]"), "{search}");
+    assert!(!rendered.contains(token), "{search}");
+    for (query, word) in [
+        ("learn", "sk-learn-utils"),
+        ("ORB", "task-ORB-1"),
+        ("risk", "risk-assessment"),
+    ] {
+        let result = json(fixture.path(), &["search", query]);
+        assert!(result.to_string().contains(word), "{result}");
+    }
+    let db = json(fixture.path(), &["db-path"]);
+    let path = db["path"].as_str().expect("database path");
+    let bytes = fs::read(path).expect("read graph database");
+    for secret in [token, password] {
+        assert!(
+            !bytes
+                .windows(secret.len())
+                .any(|window| window == secret.as_bytes())
+        );
+    }
+    assert!(
+        bytes
+            .windows(b"[REDACTED_SECRET]".len())
+            .any(|window| window == b"[REDACTED_SECRET]")
+    );
+}
+
+#[test]
 fn json_flag_is_byte_identical_to_format_json_for_every_command() {
     let fixture = synced_fixture();
     let commands: &[&[&str]] = &[
