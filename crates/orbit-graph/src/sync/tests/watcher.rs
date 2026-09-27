@@ -5,10 +5,13 @@ use std::sync::{Arc, Condvar, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
 
-use notify::event::{AccessKind, AccessMode, CreateKind, DataChange, ModifyKind, RemoveKind};
+use notify::event::{AccessKind, AccessMode, CreateKind, DataChange, Flag, ModifyKind, RemoveKind};
 use notify::{Event, EventKind};
 
-use super::{event_loop, event_requires_sync, forward_event, spawn_stoppable, stop_and_join};
+use super::{
+    EVENT_CHANNEL_CAPACITY, event_loop, event_requires_sync, forward_event, spawn_stoppable,
+    stop_and_join,
+};
 
 fn source_event() -> notify::Result<Event> {
     Ok(Event::new(EventKind::Any).add_path("/repo/src/lib.rs".into()))
@@ -52,6 +55,14 @@ fn reads_do_not_require_a_sync_but_changes_and_rescans_do() {
         event_requires_sync(root, &Event::new(EventKind::Other)),
         "an event without paths asks for a rescan"
     );
+    assert!(
+        event_requires_sync(
+            root,
+            &event(EventKind::Access(AccessKind::Read), ".orbit-graph/graph.db")
+                .set_flag(Flag::Rescan)
+        ),
+        "a rescan flag overrides read and ignored-path filtering"
+    );
 }
 
 #[test]
@@ -59,9 +70,9 @@ fn full_event_channel_drops_and_counts_events_without_blocking() {
     let (event_tx, event_rx) = mpsc::sync_channel(1);
     let dropped = AtomicU64::new(0);
 
-    forward_event(&event_tx, &dropped, source_event());
-    forward_event(&event_tx, &dropped, source_event());
-    forward_event(&event_tx, &dropped, source_event());
+    forward_event(&event_tx, &dropped, Path::new("/repo"), source_event());
+    forward_event(&event_tx, &dropped, Path::new("/repo"), source_event());
+    forward_event(&event_tx, &dropped, Path::new("/repo"), source_event());
 
     assert_eq!(dropped.load(Ordering::Relaxed), 2);
     assert!(event_rx.try_recv().is_ok());
@@ -69,10 +80,72 @@ fn full_event_channel_drops_and_counts_events_without_blocking() {
 }
 
 #[test]
+fn irrelevant_events_cannot_fill_the_queue_or_schedule_overflow_recovery() {
+    let (event_tx, event_rx) = mpsc::sync_channel(EVENT_CHANNEL_CAPACITY);
+    let dropped = AtomicU64::new(0);
+    let root = Path::new("/repo");
+
+    for _ in 0..EVENT_CHANNEL_CAPACITY + 1 {
+        forward_event(
+            &event_tx,
+            &dropped,
+            root,
+            Ok(Event::new(EventKind::Access(AccessKind::Read)).add_path(root.join("src/lib.rs"))),
+        );
+        forward_event(
+            &event_tx,
+            &dropped,
+            root,
+            Ok(Event::new(EventKind::Modify(ModifyKind::Any))
+                .add_path(root.join(".orbit-graph/graph.db"))),
+        );
+    }
+
+    assert!(
+        event_rx.try_recv().is_err(),
+        "irrelevant events stay out of the queue"
+    );
+    assert_eq!(dropped.load(Ordering::Relaxed), 0);
+}
+
+#[test]
+fn notify_errors_and_rescan_flags_reach_the_event_loop() {
+    let (event_tx, event_rx) = mpsc::sync_channel(2);
+    let dropped = AtomicU64::new(0);
+    let root = Path::new("/repo");
+    forward_event(
+        &event_tx,
+        &dropped,
+        root,
+        Ok(Event::new(EventKind::Access(AccessKind::Read))
+            .add_path(root.join(".orbit-graph/graph.db"))
+            .set_flag(Flag::Rescan)),
+    );
+    forward_event(
+        &event_tx,
+        &dropped,
+        root,
+        Err(notify::Error::generic("watch backend lost events")),
+    );
+
+    assert!(event_rx.try_recv().expect("rescan event queued").is_ok());
+    assert!(event_rx.try_recv().expect("error queued").is_err());
+    assert_eq!(dropped.load(Ordering::Relaxed), 0);
+}
+
+#[test]
 fn dropped_events_schedule_a_full_rescan() {
     // No event is ever delivered: only the overflow count can trigger a sync.
-    let (_event_tx, event_rx) = mpsc::sync_channel::<notify::Result<Event>>(1);
-    let dropped = Arc::new(AtomicU64::new(1));
+    let (event_tx, event_rx) = mpsc::sync_channel::<notify::Result<Event>>(1);
+    let dropped = Arc::new(AtomicU64::new(0));
+    for _ in 0..EVENT_CHANNEL_CAPACITY + 1 {
+        forward_event(&event_tx, &dropped, Path::new("/repo"), source_event());
+    }
+    assert!(dropped.load(Ordering::Relaxed) > 0);
+    assert!(
+        event_rx.try_recv().is_ok(),
+        "discard the queued source event"
+    );
     let stop = Arc::new(AtomicBool::new(false));
     let (synced_tx, synced_rx) = mpsc::sync_channel(1);
 
