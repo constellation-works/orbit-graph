@@ -447,6 +447,102 @@ fn rename_chain_and_deleted_files_resolve_from_persisted_lineage_without_query_d
 }
 
 #[test]
+fn historical_support_follows_file_identity_when_paths_are_reused() {
+    let fixture = fixture_repo();
+    let root = fixture.path();
+    fs::write(
+        root.join("src/a.rs"),
+        "pub fn ledger_total() -> i32 { 1 }\n",
+    )
+    .expect("a");
+    fs::write(
+        root.join("src/retired.rs"),
+        "pub fn retired_total() -> i32 { 1 }\n",
+    )
+    .expect("retired");
+    fs::write(
+        root.join("src/stable.rs"),
+        "pub fn stable_total() -> i32 { 1 }\n",
+    )
+    .expect("stable");
+    commit_all(root, "base");
+    let base = head(root);
+
+    for name in ["a", "retired", "stable"] {
+        fs::write(
+            root.join(format!("src/{name}.rs")),
+            format!("pub fn {name}_total() -> i32 {{ 2 }}\n"),
+        )
+        .expect("historical edit");
+    }
+    commit_all(root, "delivery A");
+    let delivery_a = head(root);
+
+    git(root, &["mv", "src/a.rs", "src/b.rs"]);
+    fs::remove_file(root.join("src/retired.rs")).expect("delete retired");
+    commit_all(root, "delivery B");
+    let delivery_b = head(root);
+
+    fs::write(root.join("src/a.rs"), "pub fn unrelated() {}\n").expect("new a");
+    fs::write(
+        root.join("src/retired.rs"),
+        "pub fn unrelated_retired() {}\n",
+    )
+    .expect("new retired");
+    commit_all(root, "delivery C");
+    let delivery_c = head(root);
+
+    let index = HistoryIndex::open(root, "main").expect("history");
+    import(
+        &index,
+        &base,
+        &delivery_a,
+        "D-A",
+        "TASK-A",
+        "Fix ledger totals",
+        10,
+    );
+    import(
+        &index,
+        &delivery_a,
+        &delivery_b,
+        "D-B",
+        "TASK-B",
+        "Move ledger module",
+        20,
+    );
+    import(
+        &index,
+        &delivery_b,
+        &delivery_c,
+        "D-C",
+        "TASK-C",
+        "Add unrelated files",
+        30,
+    );
+
+    let engine = RecommendationEngine::open(root, "main").expect("engine");
+    reset_query_tree_diffs();
+    let result = engine
+        .recommend(&query_request("fix ledger totals", &delivery_c, None))
+        .expect("recommend");
+    assert_eq!(query_tree_diffs(), 0, "indexed lineage is sufficient");
+    let moved = historical_support(&result, "file:src/b.rs")
+        .expect("historical edit follows the renamed file");
+    assert!(moved.supporting_delivery_ids.contains(&"D-A".to_string()));
+    let stable = historical_support(&result, "file:src/stable.rs")
+        .expect("unchanged path retains historical support");
+    assert!(stable.supporting_delivery_ids.contains(&"D-A".to_string()));
+    for selector in ["file:src/a.rs", "file:src/retired.rs"] {
+        assert!(
+            historical_support(&result, selector)
+                .is_none_or(|item| !item.supporting_delivery_ids.contains(&"D-A".to_string())),
+            "old delivery was attached to an unrelated incarnation of {selector}"
+        );
+    }
+}
+
+#[test]
 fn first_parent_distances_match_revwalk_distances_across_merges() {
     let fixture = fixture_repo();
     let root = fixture.path();
