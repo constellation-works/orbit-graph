@@ -200,7 +200,12 @@ fn categorize(kind: RefKind, confidence: RefConfidence) -> EvidenceCategory {
             EvidenceCategory::ResolvedCall
         }
         RefKind::Use => EvidenceCategory::ImportRelationship,
-        _ => EvidenceCategory::ObservedReference,
+        RefKind::Call
+        | RefKind::Type
+        | RefKind::TraitBound
+        | RefKind::Impl
+        | RefKind::Extends
+        | RefKind::Implements => EvidenceCategory::ObservedReference,
     }
 }
 
@@ -936,7 +941,10 @@ impl<'a> EvidenceCollector<'a> {
             // and is labelled as one rather than promoted.
             origin: origin_label(match parsed {
                 Selector::Symbol { .. } => ImpactOrigin::Symbol,
-                _ => ImpactOrigin::File,
+                Selector::Dir { .. }
+                | Selector::File { .. }
+                | Selector::Module { .. }
+                | Selector::Command { .. } => ImpactOrigin::File,
             })
             .to_string(),
         };
@@ -1208,7 +1216,10 @@ impl<'a> EvidenceCollector<'a> {
             label: target_label.clone(),
             origin: origin_label(match parsed {
                 Selector::Symbol { .. } => ImpactOrigin::Symbol,
-                _ => ImpactOrigin::File,
+                Selector::Dir { .. }
+                | Selector::File { .. }
+                | Selector::Module { .. }
+                | Selector::Command { .. } => ImpactOrigin::File,
             })
             .to_string(),
         };
@@ -1431,7 +1442,10 @@ impl<'a> EvidenceCollector<'a> {
         let node_label = endpoint_label(&parsed);
         let node_file = match &parsed {
             Selector::Symbol { path, .. } => path.clone(),
-            other => other.path().to_string(),
+            other @ (Selector::Dir { .. }
+            | Selector::File { .. }
+            | Selector::Module { .. }
+            | Selector::Command { .. }) => other.path().to_string(),
         };
         let callees = self
             .snapshot()
@@ -2017,7 +2031,10 @@ impl<'a> EvidenceCollector<'a> {
         let side_label = self.side_label();
         let (symbol_path, symbol_name) = match &parsed {
             Selector::Symbol { path, symbol, .. } => (path.clone(), symbol.clone()),
-            other => (other.path().to_string(), String::new()),
+            other @ (Selector::Dir { .. }
+            | Selector::File { .. }
+            | Selector::Module { .. }
+            | Selector::Command { .. }) => (other.path().to_string(), String::new()),
         };
 
         let mut candidates = Vec::new();
@@ -2839,7 +2856,10 @@ fn symbol_address(selector: &str) -> Option<SymbolAddress> {
             name: symbol,
             kind,
         }),
-        _ => None,
+        Selector::Dir { .. }
+        | Selector::File { .. }
+        | Selector::Module { .. }
+        | Selector::Command { .. } => None,
     }
 }
 
@@ -2941,7 +2961,10 @@ fn parse_selector(selector: &str) -> Result<Selector, EvidenceError> {
 fn endpoint_label(selector: &Selector) -> String {
     match selector {
         Selector::Symbol { path, symbol, .. } => format!("{path}#{symbol}"),
-        other => other.to_string(),
+        other @ (Selector::Dir { .. }
+        | Selector::File { .. }
+        | Selector::Module { .. }
+        | Selector::Command { .. }) => other.to_string(),
     }
 }
 

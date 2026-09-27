@@ -124,8 +124,12 @@ A failed call returns `error.code` `invalid_request` (fix the request: unknown
 field, unsupported `schema_version`, out-of-range bound, missing required
 field), `repository_unavailable` (the routed `repository` is missing or not a
 Git repository), `index_missing` / `index_incompatible` (query tools: run
-`graph_sync`, with `full: true` for incompatible), or `graph_error` (an index,
-Git, or callback failure; read the message).
+`graph_sync`, with `full: true` for incompatible), `not_found` (a named
+revision does not exist), `timeout` (a lock wait or Orbit callback ran out of
+time; `retryable: true`, so retry), `orbit_refused` (Orbit refused a callback;
+its own code is `error.orbit.code`), or `graph_error` (an index, Git, or
+subprocess failure; read the message). Retry only when `error.retryable` is
+true.
 
 Maintenance is deliberate. `orbit.graph.maintain` supports:
 

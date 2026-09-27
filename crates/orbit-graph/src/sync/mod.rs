@@ -14,6 +14,7 @@ use std::time::{Duration, Instant};
 use rusqlite::Connection;
 
 use crate::lock::{self, LockHolder};
+use crate::runtime::SyncFaultPoint;
 use crate::{GraphError, SyncFailure, SyncMode, SyncObserver, SyncOutcome, SyncReport, SyncSkip};
 
 pub(crate) fn run(
@@ -21,7 +22,7 @@ pub(crate) fn run(
     worktree_root: &Path,
     mode: SyncMode,
 ) -> Result<SyncReport, GraphError> {
-    let timeout = lock::lock_timeout()?;
+    let timeout = lock::lock_timeout();
     coalesced(db_path, timeout, || {
         run_once(db_path, worktree_root, mode, timeout)
     })
@@ -120,7 +121,7 @@ fn write(
         report.duration = started.elapsed();
         return Ok(SyncOutcome::Cancelled(report));
     }
-    inject_fault(FaultPoint::AfterPass1);
+    inject_fault(SyncFaultPoint::AfterPass1);
     let reresolve = match &before {
         Some(before) => pass2::Reresolve::Dependents(before),
         None => pass2::Reresolve::All,
@@ -221,7 +222,12 @@ pub(crate) fn graph_failure(path: &Path, error: &GraphError) -> SyncFailure {
         GraphError::IndexIncompatible { .. } => ("open graph index", "index_incompatible"),
         GraphError::VersionMismatch(_) => ("open history index", "version_mismatch"),
         GraphError::UnsafeStatePath { .. } => ("check state path", "unsafe_state_path"),
-        GraphError::Unimplemented => ("sync", "unimplemented"),
+        GraphError::Git { operation, .. } => (*operation, "git"),
+        GraphError::InvalidInput { operation, .. } => (*operation, "invalid_input"),
+        GraphError::NotFound { operation, .. } => (*operation, "not_found"),
+        GraphError::Timeout { operation, .. } => (*operation, "timeout"),
+        GraphError::OrbitRefused { .. } => ("call Orbit", "orbit_refused"),
+        GraphError::Subprocess { operation, .. } => (*operation, "subprocess"),
     };
     SyncFailure {
         path: display_rel_path(path),
@@ -250,32 +256,10 @@ fn display_rel_path(path: &Path) -> String {
     }
 }
 
-/// Environment variable naming a point where the sync process aborts, for
-/// tests that interrupt a sync through the real `orbit-graph` binary:
-/// `after-pass1` aborts once pass 1 has committed, `mid-pass2` halfway
-/// through pass 2's refs, before its commit. An abort stands in for a kill.
-/// Unset, or any other value, injects nothing.
-pub(crate) const FAULT_INJECT_ENV: &str = "ORBIT_GRAPH_FAULT_INJECT";
-
-/// A point [`FAULT_INJECT_ENV`] can name.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum FaultPoint {
-    AfterPass1,
-    MidPass2,
-}
-
-impl FaultPoint {
-    fn name(self) -> &'static str {
-        match self {
-            Self::AfterPass1 => "after-pass1",
-            Self::MidPass2 => "mid-pass2",
-        }
-    }
-}
-
-/// Aborts the process when [`FAULT_INJECT_ENV`] names `point`.
-pub(crate) fn inject_fault(point: FaultPoint) {
-    if std::env::var_os(FAULT_INJECT_ENV).is_some_and(|value| value == point.name()) {
+/// Aborts the process when the installed [`crate::RuntimeConfig`] names
+/// `point`.
+pub(crate) fn inject_fault(point: SyncFaultPoint) {
+    if crate::runtime::runtime().sync_fault == Some(point) {
         std::process::abort();
     }
 }

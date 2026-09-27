@@ -288,9 +288,8 @@ pub fn evaluate_live_git(
     request: &LiveGitEvaluation,
 ) -> Result<LiveGitReport, GraphError> {
     validate_request(request)?;
-    let repo = Repository::open(repo_root).map_err(|error| {
-        GraphError::invalid_data("open repository for live evaluation", error.to_string())
-    })?;
+    let repo = Repository::open(repo_root)
+        .map_err(|error| GraphError::git("open repository for live evaluation", error))?;
     let start = match request.revision.as_deref() {
         Some(revision) => resolve_revision(&repo, revision)?,
         None => branch_tip(&repo, request.branch.trim())?,
@@ -431,20 +430,23 @@ pub fn evaluate_live_git(
 
 fn validate_request(request: &LiveGitEvaluation) -> Result<(), GraphError> {
     if request.branch.trim().is_empty() {
-        return Err(GraphError::invalid_data(
+        return Err(GraphError::invalid_input(
             "validate live evaluation",
+            "branch",
             "branch must be non-empty",
         ));
     }
     if request.limit == 0 || request.limit > 5_000 {
-        return Err(GraphError::invalid_data(
+        return Err(GraphError::invalid_input(
             "validate live evaluation",
+            "limit",
             "limit must be between 1 and 5000",
         ));
     }
     if !(1..=MAX_RECOMMENDATION_LIMIT).contains(&request.k) {
-        return Err(GraphError::invalid_data(
+        return Err(GraphError::invalid_input(
             "validate live evaluation",
+            "k",
             format!("k must be between 1 and {MAX_RECOMMENDATION_LIMIT}"),
         ));
     }
@@ -656,9 +658,8 @@ fn prohibited_ids(
     let target_pos = position.get(&target).copied();
     let mut ids = BTreeSet::new();
     for delivery in deliveries {
-        let after = Oid::from_str(delivery.delivery.after_revision.as_str()).map_err(|error| {
-            GraphError::invalid_data("parse indexed delivery revision", error.to_string())
-        })?;
+        let after = Oid::from_str(delivery.delivery.after_revision.as_str())
+            .map_err(|error| GraphError::git("parse indexed delivery revision", error))?;
         let prohibited = match (target_pos, position.get(&after).copied()) {
             (Some(target_pos), Some(after_pos)) => after_pos < target_pos,
             _ => {
@@ -745,31 +746,9 @@ fn read_loadavg() -> Option<f64> {
 }
 
 fn git_error(operation: &'static str) -> impl FnOnce(git2::Error) -> GraphError {
-    move |error| GraphError::invalid_data(operation, error.to_string())
+    move |error| GraphError::git(operation, error)
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn precision_reserves_k_and_an_empty_cohort_is_null() {
-        let spec = &VARIANTS[2];
-        let mut accumulator = MetricAccumulator::default();
-        accumulator.add(2, 1, 0.5, 10.0);
-        accumulator.add(2, 0, 0.0, 30.0);
-        let metric = accumulator.finish("all", spec, 10);
-        assert_eq!(metric.cases, 2);
-        assert_eq!(metric.relevant, 4);
-        assert_eq!(metric.true_positives, 1);
-        assert!((metric.recall_at_k.expect("recall") - 0.25).abs() < 1e-12);
-        assert!((metric.precision_at_k.expect("precision") - 0.05).abs() < 1e-12);
-        assert!((metric.mrr_at_k.expect("mrr") - 0.25).abs() < 1e-12);
-        let empty = MetricAccumulator::default().finish("all", spec, 10);
-        assert!(empty.recall_at_k.is_none());
-        assert!(empty.precision_at_k.is_none());
-        assert!(empty.mrr_at_k.is_none());
-        assert!(subject_cites_task_id("fix: title [ORB-12] (#1)"));
-        assert!(!subject_cites_task_id("fix: title without an id"));
-    }
-}
+#[path = "live_evaluation/tests/mod.rs"]
+mod tests;

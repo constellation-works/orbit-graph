@@ -35,10 +35,13 @@ impl ImportScope {
             Selector::Dir { path } => {
                 Ok(Self::DirLike(format!("{}/%", path.trim_end_matches('/'))))
             }
-            _ => Err(GraphError::invalid_data(
-                "resolve deps selector",
-                "deps scope must be a `file:` or `dir:` selector",
-            )),
+            Selector::Symbol { .. } | Selector::Module { .. } | Selector::Command { .. } => {
+                Err(GraphError::invalid_input(
+                    "resolve deps selector",
+                    "selector",
+                    "deps scope must be a `file:` or `dir:` selector",
+                ))
+            }
         }
     }
 }

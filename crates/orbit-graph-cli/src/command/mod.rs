@@ -9,12 +9,13 @@ use std::env;
 use std::path::PathBuf;
 
 use clap::{Parser, Subcommand};
-use orbit_graph::{Graph, GraphError, SelectorParseError, SyncPolicy};
+use orbit_graph::{Graph, GraphError, GraphErrorClass, SelectorParseError, SyncPolicy};
 use serde::Serialize;
 use serde_json::Value;
 use thiserror::Error;
 
 use crate::output::{CommandOutput, LegacyDetail};
+use crate::plugin::ToolErrorCode;
 
 mod callees;
 mod changes;
@@ -114,7 +115,22 @@ impl Cli {
     pub fn apply_legacy_overview_detail(&mut self, detail: LegacyDetail) -> Result<(), CliError> {
         match &mut self.command {
             Command::Overview(command) => command.apply_legacy_detail(detail),
-            _ => Err(CliError::Usage(format!(
+            Command::Sync(_)
+            | Command::Search(_)
+            | Command::Show(_)
+            | Command::Refs(_)
+            | Command::Callees(_)
+            | Command::Impact(_)
+            | Command::Changes(_)
+            | Command::Recommend(_)
+            | Command::History(_)
+            | Command::Evaluate(_)
+            | Command::Trace(_)
+            | Command::Implementors(_)
+            | Command::Deps(_)
+            | Command::DbPath(_)
+            | Command::Clean(_)
+            | Command::Version(_) => Err(CliError::Usage(format!(
                 "--format {} is accepted only by overview",
                 detail.as_str()
             ))),
@@ -290,6 +306,15 @@ pub enum CliError {
     /// A selector or name resolved to nothing in the index.
     #[error("{0}")]
     NotFound(String),
+    /// Input the CLI read itself, such as a JSON file named by `--input`,
+    /// could not be decoded.
+    #[error("{operation}: {reason}")]
+    Input {
+        /// What was being read.
+        operation: &'static str,
+        /// Why it was refused.
+        reason: String,
+    },
     /// The process working directory could not be read.
     #[error("failed to determine current directory: {0}")]
     CurrentDir(std::io::Error),
@@ -325,19 +350,55 @@ impl CliError {
         match self {
             Self::Clap(_) | Self::Usage(_) => "argument_error",
             Self::NotFound(_) => "not_found",
+            Self::Input { .. } => "invalid_input",
             Self::CurrentDir(_) => "current_dir_error",
             Self::Stdin(_) => "stdin_error",
-            Self::Graph(GraphError::IndexMissing { .. }) => "index_missing",
-            Self::Graph(GraphError::IndexIncompatible { .. }) => "index_incompatible",
-            Self::Graph(GraphError::VersionMismatch(_)) => "version_mismatch",
-            Self::Graph(GraphError::UnsafeStatePath { .. }) => "unsafe_state_path",
-            Self::Graph(_) => "graph_error",
+            Self::Graph(error) => report_graph_error(error).cli_code,
             Self::Tool(error) => error.code().as_str(),
             Self::Changes(error) => changes::error_code(error),
             Self::Selector(_) => "selector_parse_error",
             Self::Json(_) => "json_error",
             Self::Stdout(_) => "stdout_error",
             Self::Stderr(_) => "stderr_error",
+        }
+    }
+
+    /// Whether retrying the same call can succeed: only a timeout or a
+    /// transient I/O failure of the graph.
+    pub fn retryable(&self) -> bool {
+        match self {
+            Self::Graph(error) => report_graph_error(error).retryable,
+            Self::Tool(error) => error.retryable(),
+            Self::Clap(_)
+            | Self::Usage(_)
+            | Self::NotFound(_)
+            | Self::Input { .. }
+            | Self::CurrentDir(_)
+            | Self::Stdin(_)
+            | Self::Changes(_)
+            | Self::Selector(_)
+            | Self::Json(_)
+            | Self::Stdout(_)
+            | Self::Stderr(_) => false,
+        }
+    }
+
+    /// The graph error behind this failure, if there is one.
+    pub fn graph_error(&self) -> Option<&GraphError> {
+        match self {
+            Self::Graph(error) => Some(error),
+            Self::Tool(error) => Some(error.source_error()),
+            Self::Clap(_)
+            | Self::Usage(_)
+            | Self::NotFound(_)
+            | Self::Input { .. }
+            | Self::CurrentDir(_)
+            | Self::Stdin(_)
+            | Self::Changes(_)
+            | Self::Selector(_)
+            | Self::Json(_)
+            | Self::Stdout(_)
+            | Self::Stderr(_) => None,
         }
     }
 
@@ -348,12 +409,65 @@ impl CliError {
             Self::Clap(error) => error.exit_code(),
             Self::Usage(_) => 2,
             Self::Changes(error) if changes::is_usage_error(error) => 2,
-            _ => 1,
+            Self::Changes(_)
+            | Self::NotFound(_)
+            | Self::Input { .. }
+            | Self::CurrentDir(_)
+            | Self::Stdin(_)
+            | Self::Graph(_)
+            | Self::Tool(_)
+            | Self::Selector(_)
+            | Self::Json(_)
+            | Self::Stdout(_)
+            | Self::Stderr(_) => 1,
         }
     }
 
     /// Whether this error is a closed stdout pipe, which is a successful stop.
     pub fn is_broken_pipe(&self) -> bool {
         crate::output::pipe::is_broken_pipe(self)
+    }
+}
+
+/// How one graph failure is reported on each surface: its CLI `code`, its
+/// plugin envelope `code`, and whether a retry can succeed.
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct ReportedFailure {
+    pub(crate) cli_code: &'static str,
+    pub(crate) plugin_code: ToolErrorCode,
+    pub(crate) retryable: bool,
+}
+
+/// The one translator from a [`GraphError`] to the CLI and plugin codes
+/// (STD-02 §R12). It decides from the error's class, never its message
+/// (§R10), and `retryable` is true only for a timeout or transient I/O.
+pub(crate) fn report_graph_error(error: &GraphError) -> ReportedFailure {
+    let (cli_code, plugin_code, retryable) = match error.class() {
+        GraphErrorClass::InvalidInput => ("invalid_input", ToolErrorCode::InvalidRequest, false),
+        GraphErrorClass::NotFound => ("not_found", ToolErrorCode::NotFound, false),
+        GraphErrorClass::Timeout => ("timeout", ToolErrorCode::Timeout, true),
+        GraphErrorClass::OrbitRefused => ("orbit_refused", ToolErrorCode::OrbitRefused, false),
+        GraphErrorClass::IndexMissing => ("index_missing", ToolErrorCode::IndexMissing, false),
+        GraphErrorClass::IndexIncompatible => (
+            "index_incompatible",
+            ToolErrorCode::IndexIncompatible,
+            false,
+        ),
+        GraphErrorClass::UnsafeStatePath => {
+            ("unsafe_state_path", ToolErrorCode::UnsafeStatePath, false)
+        }
+        GraphErrorClass::VersionMismatch => {
+            ("version_mismatch", ToolErrorCode::VersionMismatch, false)
+        }
+        GraphErrorClass::Io { transient } => ("graph_error", ToolErrorCode::GraphError, transient),
+        GraphErrorClass::Git
+        | GraphErrorClass::Sqlite
+        | GraphErrorClass::InvalidData
+        | GraphErrorClass::Subprocess => ("graph_error", ToolErrorCode::GraphError, false),
+    };
+    ReportedFailure {
+        cli_code,
+        plugin_code,
+        retryable,
     }
 }

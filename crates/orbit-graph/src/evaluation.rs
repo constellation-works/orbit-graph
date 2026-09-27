@@ -214,13 +214,13 @@ pub fn evaluate_corpus(
     corpus: &EvaluationCorpus,
 ) -> Result<EvaluationReport, GraphError> {
     validate_corpus(corpus)?;
-    let source_repo = Repository::open(repo_root).map_err(|error| {
-        GraphError::invalid_data("open evaluation repository", error.to_string())
-    })?;
+    let source_repo = Repository::open(repo_root)
+        .map_err(|error| GraphError::git("open evaluation repository", error))?;
     let routed_identity = repository_identity(&source_repo)?;
     if routed_identity != corpus.repository {
-        return Err(GraphError::invalid_data(
+        return Err(GraphError::invalid_input(
             "validate evaluation repository routing",
+            "repository",
             format!(
                 "corpus repository {:?} does not match routed repository {:?}",
                 corpus.repository, routed_identity
@@ -374,7 +374,7 @@ pub fn evaluate_corpus(
         .head()
         .and_then(|head| head.peel_to_commit())
         .map(|commit| commit.id().to_string())
-        .map_err(|error| GraphError::invalid_data("resolve evaluation HEAD", error.to_string()))?;
+        .map_err(|error| GraphError::git("resolve evaluation HEAD", error))?;
     Ok(EvaluationReport {
         schema_version: EVALUATION_SCHEMA_VERSION,
         repository: corpus.repository.clone(),
@@ -402,8 +402,9 @@ pub fn evaluate_corpus(
 
 fn validate_corpus(corpus: &EvaluationCorpus) -> Result<(), GraphError> {
     if corpus.schema_version != EVALUATION_CORPUS_SCHEMA_VERSION {
-        return Err(GraphError::invalid_data(
+        return Err(GraphError::invalid_input(
             "validate evaluation schema",
+            "schema_version",
             format!(
                 "expected schema_version {EVALUATION_CORPUS_SCHEMA_VERSION}, got {}",
                 corpus.schema_version
@@ -416,8 +417,9 @@ fn validate_corpus(corpus: &EvaluationCorpus) -> Result<(), GraphError> {
         || corpus.k == 0
         || corpus.k > 100
     {
-        return Err(GraphError::invalid_data(
+        return Err(GraphError::invalid_input(
             "validate evaluation corpus",
+            "corpus",
             "repository, landing_branch, source.system, and 1..=100 k are required",
         ));
     }
@@ -529,19 +531,16 @@ fn validate_case(
     }) {
         exclusions.push("target_task_delivery_present_in_training_index".to_string());
     }
-    let repo = Repository::open(repo_root).map_err(|error| {
-        GraphError::invalid_data("open evaluation repository", error.to_string())
-    })?;
-    let target = Oid::from_str(case.target_revision.as_str()).map_err(|error| {
-        GraphError::invalid_data("parse evaluation target revision", error.to_string())
-    })?;
-    let before = Oid::from_str(held_out.before_revision.as_str()).map_err(|error| {
-        GraphError::invalid_data("parse held-out before revision", error.to_string())
-    })?;
+    let repo = Repository::open(repo_root)
+        .map_err(|error| GraphError::git("open evaluation repository", error))?;
+    let target = Oid::from_str(case.target_revision.as_str())
+        .map_err(|error| GraphError::git("parse evaluation target revision", error))?;
+    let before = Oid::from_str(held_out.before_revision.as_str())
+        .map_err(|error| GraphError::git("parse held-out before revision", error))?;
     if target != before
-        && !repo.graph_descendant_of(before, target).map_err(|error| {
-            GraphError::invalid_data("check prospective revision ancestry", error.to_string())
-        })?
+        && !repo
+            .graph_descendant_of(before, target)
+            .map_err(|error| GraphError::git("check prospective revision ancestry", error))?
     {
         exclusions.push("target_revision_not_ancestor_of_held_out_base".to_string());
     }
@@ -710,12 +709,20 @@ impl EvaluationWorkspace {
         landing_branch: &str,
         target_revision: &str,
     ) -> Result<Self, GraphError> {
-        let dir = tempfile::Builder::new()
-            .prefix("orbit-graph-evaluation-")
-            .tempdir()
-            .map_err(|source| {
-                GraphError::io("create evaluation workspace", std::env::temp_dir(), source)
-            })?;
+        let mut builder = tempfile::Builder::new();
+        builder.prefix("orbit-graph-evaluation-");
+        let temp_dir = crate::runtime::runtime().temp_dir.as_deref();
+        let dir = match temp_dir {
+            Some(temp_dir) => builder.tempdir_in(temp_dir),
+            None => builder.tempdir(),
+        }
+        .map_err(|source| {
+            GraphError::io(
+                "create evaluation workspace",
+                temp_dir.unwrap_or(Path::new("the system temporary directory")),
+                source,
+            )
+        })?;
         let path = dir.path().join("repository");
         let workspace = Self { _dir: dir, path };
         let source_text = source.to_str().ok_or_else(|| {
@@ -724,47 +731,36 @@ impl EvaluationWorkspace {
                 "repository path is not UTF-8",
             )
         })?;
-        let repo = Repository::clone(source_text, workspace.path()).map_err(|error| {
-            GraphError::invalid_data("clone isolated evaluation repository", error.to_string())
-        })?;
-        Repository::remote_set_url(&repo, "origin", repository_identity).map_err(|error| {
-            GraphError::invalid_data("set isolated evaluation identity", error.to_string())
-        })?;
-        let source_repo = Repository::open(source).map_err(|error| {
-            GraphError::invalid_data("open evaluation source repository", error.to_string())
-        })?;
+        let repo = Repository::clone(source_text, workspace.path())
+            .map_err(|error| GraphError::git("clone isolated evaluation repository", error))?;
+        Repository::remote_set_url(&repo, "origin", repository_identity)
+            .map_err(|error| GraphError::git("set isolated evaluation identity", error))?;
+        let source_repo = Repository::open(source)
+            .map_err(|error| GraphError::git("open evaluation source repository", error))?;
         let branch = landing_branch.trim_start_matches("refs/heads/");
         let branch_tip = source_repo
             .revparse_single(format!("refs/heads/{branch}").as_str())
             .and_then(|object| object.peel_to_commit())
             .map(|commit| commit.id())
-            .map_err(|error| {
-                GraphError::invalid_data("resolve evaluation landing branch", error.to_string())
-            })?;
+            .map_err(|error| GraphError::git("resolve evaluation landing branch", error))?;
         repo.reference(
             format!("refs/heads/{branch}").as_str(),
             branch_tip,
             true,
             "frozen evaluation landing branch",
         )
-        .map_err(|error| {
-            GraphError::invalid_data("create isolated evaluation branch", error.to_string())
-        })?;
-        let target = Oid::from_str(target_revision).map_err(|error| {
-            GraphError::invalid_data("parse evaluation target revision", error.to_string())
-        })?;
+        .map_err(|error| GraphError::git("create isolated evaluation branch", error))?;
+        let target = Oid::from_str(target_revision)
+            .map_err(|error| GraphError::git("parse evaluation target revision", error))?;
         let target_object = repo.find_object(target, None).map_err(|error| {
             GraphError::invalid_data("load isolated evaluation target", error.to_string())
         })?;
-        repo.set_head_detached(target).map_err(|error| {
-            GraphError::invalid_data("detach isolated evaluation HEAD", error.to_string())
-        })?;
+        repo.set_head_detached(target)
+            .map_err(|error| GraphError::git("detach isolated evaluation HEAD", error))?;
         let mut checkout = git2::build::CheckoutBuilder::new();
         checkout.force().remove_untracked(true);
         repo.checkout_tree(&target_object, Some(&mut checkout))
-            .map_err(|error| {
-                GraphError::invalid_data("materialize isolated target tree", error.to_string())
-            })?;
+            .map_err(|error| GraphError::git("materialize isolated target tree", error))?;
         drop(target_object);
         drop(repo);
         Ok(workspace)

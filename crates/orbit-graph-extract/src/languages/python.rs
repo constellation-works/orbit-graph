@@ -851,7 +851,9 @@ fn program_from_argv(
                     ArgvItem::Literal(program) if !program.ends_with(".py") => {
                         Some(program.clone())
                     }
-                    _ => launched_script(after, source, script_constants),
+                    ArgvItem::Literal(_) | ArgvItem::Interpreter | ArgvItem::Expression(_) => {
+                        launched_script(after, source, script_constants)
+                    }
                 };
             }
             (!program.is_empty()).then(|| program.clone())

@@ -15,7 +15,7 @@ use rusqlite::{Connection, OpenFlags};
 
 use crate::state_dir::{SCRATCH_DIR_NAME, StateAccess, open_state_file};
 use crate::sync::scanner::DbLockGuard;
-use crate::{EXTRACTOR_VERSION, GraphDbPath, GraphError, SyncPolicy, resolve_db_path_for_commit};
+use crate::{EXTRACTOR_VERSION, GraphDbPath, GraphError, resolve_db_path_for_commit};
 
 pub(crate) struct OpenedGraph {
     pub(crate) db_path: GraphDbPath,
@@ -24,7 +24,7 @@ pub(crate) struct OpenedGraph {
     pub(crate) physical_db: PathBuf,
 }
 
-pub(crate) fn open(worktree_root: &Path, _policy: SyncPolicy) -> Result<OpenedGraph, GraphError> {
+pub(crate) fn open(worktree_root: &Path) -> Result<OpenedGraph, GraphError> {
     let git = GitContext::for_worktree(worktree_root)?;
     let db_path = git.db_path(worktree_root);
     open_at_path(db_path, &git, IndexDirOwner::Scratch { worktree_root })

@@ -45,7 +45,7 @@
       "type": "object"
     },
     "coverage": {
-      "description": "What this call covered and how to resume a partial result. graph_sync: complete, state (published or budget_exhausted), phase reached when the budget ran out, and a resume hint.",
+      "description": "What this call covered and how to resume a partial result. graph_sync: complete, state (published or budget_exhausted), phase reached when the budget ran out, and a resume hint. orbit_sync: the runs and tasks examined, with excluded (runs examined and judged ineligible) and failed (tasks and runs that could not be examined) counted separately.",
       "type": "object"
     },
     "result": {
@@ -53,7 +53,7 @@
       "type": "object"
     },
     "outcomes": {
-      "description": "orbit_sync: per-run outcome (inserted, already_indexed, or excluded with a reason).",
+      "description": "orbit_sync: per-run or per-task outcome, identified by run_id or task_id: inserted, already_indexed, excluded with a reason (a verdict on the run), or failed with a reason and a structured error {code, message, retryable, orbit?} (the item could not be examined; the rest of the batch continues).",
       "type": "array",
       "items": {
         "type": "object"

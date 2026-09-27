@@ -208,7 +208,9 @@ impl FileChangeKind {
         match self {
             Self::Renamed => "rename",
             Self::Copied => "copy",
-            other => other.label(),
+            Self::Added | Self::Deleted | Self::Modified | Self::TypeChanged | Self::Other => {
+                self.label()
+            }
         }
     }
 
@@ -264,7 +266,7 @@ impl OutOfScopeReason {
             ExclusionReason::Submodule => Self::Submodule,
             ExclusionReason::OversizeBlob { .. } => Self::OversizeBlob,
             ExclusionReason::UnsafeName => Self::UnsafeName,
-            _ => Self::UnsupportedKind,
+            ExclusionReason::UnsupportedKind => Self::UnsupportedKind,
         }
     }
 }
@@ -655,11 +657,21 @@ fn changed_files(comparison: &Comparison) -> Result<ChangedFiles, ChangesError> 
         let kind = FileChangeKind::from_delta(delta.status());
         let base_path = match kind {
             FileChangeKind::Added => None,
-            _ => path_of(delta.old_file().path()),
+            FileChangeKind::Deleted
+            | FileChangeKind::Modified
+            | FileChangeKind::Renamed
+            | FileChangeKind::Copied
+            | FileChangeKind::TypeChanged
+            | FileChangeKind::Other => path_of(delta.old_file().path()),
         };
         let head_path = match kind {
             FileChangeKind::Deleted => None,
-            _ => path_of(delta.new_file().path()),
+            FileChangeKind::Added
+            | FileChangeKind::Modified
+            | FileChangeKind::Renamed
+            | FileChangeKind::Copied
+            | FileChangeKind::TypeChanged
+            | FileChangeKind::Other => path_of(delta.new_file().path()),
         };
         if base_path.is_none() && head_path.is_none() {
             continue;
@@ -889,7 +901,12 @@ impl<'a> Pairer<'a> {
         for (base_path, head_path, kind) in pairs {
             let evidence = match kind {
                 FileChangeKind::Copied => PairingEvidence::GitCopy,
-                _ => PairingEvidence::GitRename,
+                FileChangeKind::Renamed
+                | FileChangeKind::Added
+                | FileChangeKind::Deleted
+                | FileChangeKind::Modified
+                | FileChangeKind::TypeChanged
+                | FileChangeKind::Other => PairingEvidence::GitRename,
             };
             self.pair_moved_in_file(&base_path, &head_path, kind, evidence)?;
             self.pair_renamed_in_file(&base_path, &head_path, kind, evidence)?;
@@ -1238,7 +1255,11 @@ impl<'a> Pairer<'a> {
         let note = match evidence {
             PairingEvidence::BodyHash =>
                 "Paired by a unique same-file normalized body hash after replacing each identifier. A pairing label is evidence about identity, not about behavior.".to_string(),
-            _ => format!(
+            PairingEvidence::Selector
+            | PairingEvidence::Signature
+            | PairingEvidence::GitRename
+            | PairingEvidence::GitCopy
+            | PairingEvidence::None => format!(
                 "Sole remaining symbol of this kind on each side of a Git {} of the containing \
                  file. A pairing label is evidence about identity, not about behavior.",
                 kind.noun()

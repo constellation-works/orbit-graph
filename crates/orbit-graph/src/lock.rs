@@ -19,7 +19,7 @@
 use std::fmt::{Display, Formatter};
 use std::fs::{File, TryLockError};
 use std::io::{Read, Seek, Write};
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -27,13 +27,6 @@ use serde::{Deserialize, Serialize};
 
 use crate::GraphError;
 use crate::state_dir::{StateAccess, open_state_file};
-
-/// Default wait for a graph lock before failing (`STD-03 §R7`).
-pub(crate) const DEFAULT_LOCK_TIMEOUT: Duration = Duration::from_secs(30);
-
-/// Environment variable overriding [`DEFAULT_LOCK_TIMEOUT`], in whole
-/// milliseconds. `0` tries the lock once without waiting.
-pub(crate) const LOCK_TIMEOUT_ENV: &str = "ORBIT_GRAPH_LOCK_TIMEOUT_MS";
 
 const FIRST_POLL_INTERVAL: Duration = Duration::from_millis(1);
 const MAX_POLL_INTERVAL: Duration = Duration::from_millis(50);
@@ -133,38 +126,14 @@ impl FileLockGuard {
     }
 }
 
-/// The lock wait configured by [`LOCK_TIMEOUT_ENV`], or the default.
-pub(crate) fn lock_timeout() -> Result<Duration, GraphError> {
-    match std::env::var(LOCK_TIMEOUT_ENV) {
-        Ok(value) => value
-            .trim()
-            .parse::<u64>()
-            .map(Duration::from_millis)
-            .map_err(|error| {
-                GraphError::invalid_data(
-                    "read graph lock timeout",
-                    format!("{LOCK_TIMEOUT_ENV} must be whole milliseconds: {error}"),
-                )
-            }),
-        Err(std::env::VarError::NotPresent) => Ok(DEFAULT_LOCK_TIMEOUT),
-        Err(error) => Err(GraphError::invalid_data(
-            "read graph lock timeout",
-            format!("{LOCK_TIMEOUT_ENV}: {error}"),
-        )),
-    }
+/// The lock wait the composition layer installed, or the default.
+pub(crate) fn lock_timeout() -> Duration {
+    crate::runtime::runtime().lock_timeout
 }
 
 /// A holder label naming this executable and `activity`.
 pub(crate) fn holder_label(activity: &str) -> String {
-    let program = std::env::args_os()
-        .next()
-        .and_then(|arg0| {
-            Path::new(&arg0)
-                .file_name()
-                .map(|name| name.to_string_lossy().into_owned())
-        })
-        .unwrap_or_else(|| "orbit-graph".to_string());
-    format!("{program} {activity}")
+    format!("{} {activity}", crate::runtime::runtime().program_name)
 }
 
 /// The error for a wait on `path` that outlived `timeout`.
@@ -178,14 +147,11 @@ pub(crate) fn timeout_error(
         || "holder unknown: no readable holder record".to_string(),
         ToString::to_string,
     );
-    GraphError::Io {
+    GraphError::timeout(
         operation,
-        path: PathBuf::from(path),
-        reason: format!(
-            "timed out after {} ms waiting for the lock; {holder}",
-            timeout.as_millis()
-        ),
-    }
+        timeout,
+        format!("waiting for the lock at {}; {holder}", path.display()),
+    )
 }
 
 fn write_holder(mut file: &File, holder: &LockHolder) -> std::io::Result<()> {

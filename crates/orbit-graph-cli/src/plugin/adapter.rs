@@ -1,14 +1,13 @@
 use std::collections::BTreeMap;
-use std::env;
 use std::io::{BufRead, BufReader, Read, Write};
 use std::path::{Path, PathBuf};
-use std::process::{Child, ChildStdin, Command, Stdio};
+use std::process::{Child, ChildStdin, Command, ExitStatus, Stdio};
 use std::sync::mpsc::{self, Receiver, RecvTimeoutError};
 use std::thread;
 use std::time::{Duration, Instant};
 
 #[cfg(unix)]
-use std::os::unix::process::CommandExt;
+use std::os::unix::process::{CommandExt, ExitStatusExt};
 
 use git2::{Oid, Repository};
 use serde_json::{Value, json};
@@ -21,9 +20,14 @@ use orbit_graph::{
 
 use super::{json_error, string_field};
 
-const DEFAULT_ORBIT_TIMEOUT_SECONDS: u64 = 10;
-const MAX_ORBIT_TIMEOUT_SECONDS: u64 = 60;
 const ORBIT_OUTPUT_LIMIT: u64 = 1_048_576;
+/// Bytes of a failed child's stderr quoted in its error.
+const STDERR_EXCERPT_LIMIT: usize = 4_096;
+/// How long a terminated `orbit` process group has to exit after SIGTERM
+/// before it is killed (STD-03 §R13).
+const TERMINATION_GRACE: Duration = Duration::from_secs(5);
+/// Poll interval while waiting on a child or its readers.
+const POLL_INTERVAL: Duration = Duration::from_millis(10);
 /// MCP protocol revision announced to `orbit mcp serve`.
 const MCP_PROTOCOL_VERSION: &str = "2025-06-18";
 const MCP_INITIALIZE_ID: u64 = 1;
@@ -32,13 +36,39 @@ const MCP_CALL_ID: u64 = 2;
 pub(super) struct OrbitAdapter<'a> {
     repository: &'a Path,
     workspace: Option<&'a str>,
+    /// The bound on each Orbit call, resolved once from the environment.
+    timeout: Duration,
+}
+
+/// What `orbit_sync` concluded about one run.
+pub(super) enum RunVerdict {
+    /// A verified delivery, ready to import.
+    Deliverable(Box<VerifiedDelivery>),
+    /// The run was examined and is not an eligible delivery; the reason says
+    /// which check it failed.
+    Excluded(String),
+}
+
+/// A run's verified delivery.
+pub(super) struct VerifiedDelivery {
+    /// The delivery the run attests.
+    pub(super) delivery: DeliveryImport,
+    /// The caller's snapshot of its task, if one was supplied.
+    pub(super) supplied_snapshot: Option<TaskAssociation>,
+}
+
+/// Hits from `orbit.search`, and how many malformed results were dropped.
+pub(super) struct HybridSearch {
+    pub(super) hits: Vec<HybridTaskHit>,
+    pub(super) dropped: usize,
 }
 
 impl<'a> OrbitAdapter<'a> {
-    pub(super) fn new(repository: &'a Path, workspace: Option<&'a str>) -> Self {
+    pub(super) fn new(repository: &'a Path, workspace: Option<&'a str>, timeout: Duration) -> Self {
         Self {
             repository,
             workspace,
+            timeout,
         }
     }
 
@@ -46,8 +76,9 @@ impl<'a> OrbitAdapter<'a> {
         self.workspace
             .filter(|workspace| !workspace.trim().is_empty())
             .ok_or_else(|| {
-                GraphError::invalid_data(
+                GraphError::invalid_input(
                     "route authoritative Orbit request",
+                    "workspace",
                     "workspace is required; ORBIT_TOOL_WORKSPACE_ROOT and cwd are not authority selectors",
                 )
             })
@@ -78,21 +109,24 @@ impl<'a> OrbitAdapter<'a> {
                     || string_field(item, "name") == Some(workspace)
             })
             .ok_or_else(|| {
-                GraphError::invalid_data(
+                GraphError::invalid_input(
                     "validate Orbit workspace authority",
+                    "workspace",
                     format!("workspace {workspace:?} is not registered in the explicit authority"),
                 )
             })?;
         let actual_id = required_string(selected, "id")?;
         if string_field(selected, "status").is_some_and(|status| status != "active") {
-            return Err(GraphError::invalid_data(
+            return Err(GraphError::invalid_input(
                 "validate Orbit workspace authority",
+                "workspace",
                 format!("workspace {actual_id:?} is not active"),
             ));
         }
         let remote = string_field(selected, "git_remote").ok_or_else(|| {
-            GraphError::invalid_data(
+            GraphError::invalid_input(
                 "validate Orbit workspace repository",
+                "workspace",
                 format!(
                     "workspace {actual_id:?} publishes no git_remote, so the requested repository cannot be bound to it"
                 ),
@@ -125,7 +159,7 @@ impl<'a> OrbitAdapter<'a> {
         &self,
         query: &str,
         limit: usize,
-    ) -> Result<Vec<HybridTaskHit>, GraphError> {
+    ) -> Result<HybridSearch, GraphError> {
         let workspace = self.require_workspace()?;
         let value = self.tool_run(
             "orbit.search",
@@ -138,18 +172,23 @@ impl<'a> OrbitAdapter<'a> {
                 "model": "codex",
             }),
         )?;
-        Ok(value
+        let results = value
             .get("results")
             .and_then(Value::as_array)
-            .into_iter()
-            .flatten()
+            .map_or(&[][..], Vec::as_slice);
+        let hits = results
+            .iter()
             .filter_map(|item| {
                 Some(HybridTaskHit {
                     task_id: item.get("id")?.as_str()?.to_string(),
                     score: item.get("score")?.as_f64()?,
                 })
             })
-            .collect())
+            .collect::<Vec<_>>();
+        Ok(HybridSearch {
+            dropped: results.len() - hits.len(),
+            hits,
+        })
     }
 
     pub(super) fn delivery_from_run(
@@ -158,7 +197,7 @@ impl<'a> OrbitAdapter<'a> {
         branch: &str,
         supplied_snapshots: &BTreeMap<String, TaskAssociation>,
         repository_identity: &str,
-    ) -> Result<(DeliveryImport, Option<TaskAssociation>), GraphError> {
+    ) -> Result<RunVerdict, GraphError> {
         let route = self.require_authority()?;
         let run = self.tool_run("orbit.workflow.run.show", json!({"id": run_id}))?;
         let state = run
@@ -166,38 +205,38 @@ impl<'a> OrbitAdapter<'a> {
             .or_else(|| run.get("state"))
             .and_then(Value::as_str);
         if state != Some("success") {
-            return Err(GraphError::invalid_data(
-                "verify Orbit delivery run",
-                format!("run {run_id} is not successful"),
-            ));
+            return Ok(RunVerdict::Excluded(format!(
+                "run {run_id} is not successful"
+            )));
         }
-        let commit = run
+        let Some(commit) = run
             .pointer("/pipeline_state/step_outputs/2")
             .or_else(|| run.pointer("/pipeline_state/pipeline/commit"))
-            .ok_or_else(|| {
-                GraphError::invalid_data(
-                    "verify Orbit delivery run",
-                    format!("run {run_id} has no public commit step output"),
-                )
-            })?;
+        else {
+            return Ok(RunVerdict::Excluded(format!(
+                "run {run_id} has no public commit step output"
+            )));
+        };
         if commit.get("committed").and_then(Value::as_bool) != Some(true)
             || string_field(commit, "phase") != Some("commit")
         {
-            return Err(GraphError::invalid_data(
-                "verify Orbit delivery commit",
-                format!("run {run_id} did not attest a committed output"),
-            ));
+            return Ok(RunVerdict::Excluded(format!(
+                "run {run_id} did not attest a committed output"
+            )));
         }
         let task_id = required_string(commit, "task_id")?;
         let before = required_string(commit, "base_sha")?;
         let after = required_string(commit, "commit_sha")?;
-        verify_git_delivery(self.repository, branch, before, after)?;
-        verify_run_workspace(&run, self.repository)?;
+        if let Some(reason) = verify_git_delivery(self.repository, branch, before, after)? {
+            return Ok(RunVerdict::Excluded(reason));
+        }
+        if let Some(reason) = verify_run_workspace(&run, self.repository)? {
+            return Ok(RunVerdict::Excluded(reason));
+        }
         let current_task = self.task_show(task_id)?;
         if required_string(&current_task, "id")? != task_id {
-            return Err(GraphError::invalid_data(
-                "verify Orbit run task workspace",
-                "selected workspace returned a different task ID",
+            return Ok(RunVerdict::Excluded(
+                "selected workspace returned a different task ID".to_string(),
             ));
         }
         let task = task_snapshot_from_value(&current_task, route.workspace_id.as_str())?;
@@ -206,8 +245,8 @@ impl<'a> OrbitAdapter<'a> {
             .pointer("/run/finished_at")
             .and_then(Value::as_str)
             .map(str::to_string);
-        Ok((
-            DeliveryImport {
+        Ok(RunVerdict::Deliverable(Box::new(VerifiedDelivery {
+            delivery: DeliveryImport {
                 schema_version: orbit_graph::DELIVERY_IMPORT_SCHEMA_VERSION,
                 repository: repository_identity.to_string(),
                 landing_branch: branch.to_string(),
@@ -231,17 +270,21 @@ impl<'a> OrbitAdapter<'a> {
                 tasks: vec![task],
             },
             supplied_snapshot,
-        ))
+        })))
     }
 
     fn tool_run(&self, name: &str, input: Value) -> Result<Value, GraphError> {
         let encoded = serde_json::to_string(&input).map_err(json_error)?;
-        self.orbit_json(&["tool", "run", name, "--input", encoded.as_str(), "--full"])
+        self.orbit_json(
+            name,
+            &["tool", "run", name, "--input", encoded.as_str(), "--full"],
+        )
     }
 
-    /// Configure an `orbit` child that stays in the caller's process group,
-    /// inherits the caller's environment (including any host-issued callback
-    /// credential), and dies with its parent on Linux.
+    /// Configure an `orbit` child that leads its own process group, so the
+    /// whole group, grandchildren included, can be terminated together
+    /// (STD-03 §R11); inherits the caller's environment (including any
+    /// host-issued callback credential); and dies with its parent on Linux.
     fn orbit_command(&self, args: &[&str]) -> Command {
         let mut command = Command::new("orbit");
         command
@@ -250,65 +293,93 @@ impl<'a> OrbitAdapter<'a> {
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
         #[cfg(unix)]
-        unsafe {
-            command.pre_exec(|| {
-                #[cfg(target_os = "linux")]
-                if libc::prctl(libc::PR_SET_PDEATHSIG, libc::SIGKILL) != 0 {
-                    return Err(std::io::Error::last_os_error());
-                }
-                Ok(())
-            });
+        {
+            command.process_group(0);
+            // SAFETY: the closure runs in the forked child before exec and
+            // only calls the async-signal-safe `prctl`.
+            unsafe {
+                command.pre_exec(|| {
+                    #[cfg(target_os = "linux")]
+                    if libc::prctl(libc::PR_SET_PDEATHSIG, libc::SIGKILL) != 0 {
+                        return Err(std::io::Error::last_os_error());
+                    }
+                    Ok(())
+                });
+            }
         }
         command
     }
 
-    fn orbit_json(&self, args: &[&str]) -> Result<Value, GraphError> {
-        let timeout = orbit_timeout()?;
-        let mut command = self.orbit_command(args);
-        let mut child = command
-            .spawn()
-            .map_err(|source| GraphError::io("invoke public Orbit CLI", self.repository, source))?;
-        let stdout = child.stdout.take().ok_or_else(|| {
-            GraphError::invalid_data("invoke public Orbit CLI", "stdout pipe was not available")
-        })?;
-        let stderr = child.stderr.take().ok_or_else(|| {
-            GraphError::invalid_data("invoke public Orbit CLI", "stderr pipe was not available")
-        })?;
+    /// Run `orbit <args>` for `tool` and decode its JSON stdout. A non-zero
+    /// exit that carries Orbit's structured `{"code", "error"}` refusal is
+    /// [`GraphError::OrbitRefused`]; any other is
+    /// [`GraphError::Subprocess`].
+    fn orbit_json(&self, tool: &str, args: &[&str]) -> Result<Value, GraphError> {
+        const OPERATION: &str = "invoke public Orbit CLI";
+        let deadline = Instant::now() + self.timeout;
+        let mut child = GroupChild::spawn(self.orbit_command(args), OPERATION, self.repository)?;
+        let (Some(stdout), Some(stderr)) = (child.child.stdout.take(), child.child.stderr.take())
+        else {
+            child.terminate();
+            return Err(GraphError::invalid_data(
+                OPERATION,
+                "stdio pipes were not available",
+            ));
+        };
         let stdout_reader = thread::spawn(move || read_bounded(stdout));
         let stderr_reader = thread::spawn(move || read_bounded(stderr));
-        let started = Instant::now();
-        let status = loop {
-            if let Some(status) = child.try_wait().map_err(|source| {
-                GraphError::io("wait for public Orbit CLI", self.repository, source)
-            })? {
-                break status;
+        loop {
+            match child.has_exited() {
+                Ok(true) => break,
+                Ok(false) => {}
+                Err(source) => {
+                    child.terminate();
+                    return Err(GraphError::io(
+                        "wait for public Orbit CLI",
+                        self.repository,
+                        source,
+                    ));
+                }
             }
-            if started.elapsed() >= timeout {
-                terminate_child(&mut child);
-                return Err(GraphError::invalid_data(
-                    "invoke public Orbit CLI",
-                    format!("timed out after {} seconds", timeout.as_secs()),
+            if Instant::now() >= deadline {
+                child.terminate();
+                return Err(GraphError::timeout(
+                    OPERATION,
+                    self.timeout,
+                    format!("orbit {tool} did not exit; its process group was terminated"),
                 ));
             }
-            thread::sleep(Duration::from_millis(10));
-        };
-        let stdout = join_capture(stdout_reader, "stdout", self.repository)?;
-        let stderr = join_capture(stderr_reader, "stderr", self.repository)?;
+            thread::sleep(POLL_INTERVAL);
+        }
+        // A descendant that outlived the leader may still hold the pipes:
+        // the sweep stops it before the readers are joined.
+        let status = child.reap().map_err(|source| {
+            GraphError::io("wait for public Orbit CLI", self.repository, source)
+        })?;
+        let stdout = join_capture(
+            stdout_reader,
+            "stdout",
+            self.repository,
+            deadline,
+            self.timeout,
+        )?;
+        let stderr = join_capture(
+            stderr_reader,
+            "stderr",
+            self.repository,
+            deadline,
+            self.timeout,
+        )?;
         if stdout.len() as u64 + stderr.len() as u64 > ORBIT_OUTPUT_LIMIT {
             return Err(GraphError::invalid_data(
-                "invoke public Orbit CLI",
+                OPERATION,
                 format!("combined stdout/stderr exceeded {ORBIT_OUTPUT_LIMIT} bytes"),
             ));
         }
         if !status.success() {
-            return Err(GraphError::invalid_data(
-                "invoke public Orbit CLI",
-                format!(
-                    "exit {}: {}",
-                    status.code().unwrap_or(1),
-                    bounded_text(stderr.as_slice())
-                ),
-            ));
+            return Err(orbit_refusal(tool, stderr.as_slice()).unwrap_or_else(|| {
+                GraphError::subprocess(OPERATION, describe_status(status), bounded_text(&stderr))
+            }));
         }
         serde_json::from_slice(stdout.as_slice()).map_err(json_error)
     }
@@ -320,17 +391,17 @@ impl<'a> OrbitAdapter<'a> {
     /// lands on Orbit's own policy and plugin-callback gates. The whole session
     /// shares one timeout and one output bound with [`Self::orbit_json`].
     fn mcp_tool_call(&self, name: &str, arguments: Value) -> Result<Value, GraphError> {
-        let timeout = orbit_timeout()?;
+        let timeout = self.timeout;
         let deadline = Instant::now() + timeout;
         let mut command = self.orbit_command(&["mcp", "serve"]);
         command.stdin(Stdio::piped());
-        let mut child = command
-            .spawn()
-            .map_err(|source| GraphError::io("invoke Orbit MCP server", self.repository, source))?;
-        let (Some(stdin), Some(stdout), Some(stderr)) =
-            (child.stdin.take(), child.stdout.take(), child.stderr.take())
-        else {
-            terminate_child(&mut child);
+        let mut child = GroupChild::spawn(command, "invoke Orbit MCP server", self.repository)?;
+        let (Some(stdin), Some(stdout), Some(stderr)) = (
+            child.child.stdin.take(),
+            child.child.stdout.take(),
+            child.child.stderr.take(),
+        ) else {
+            child.terminate();
             return Err(GraphError::invalid_data(
                 "invoke Orbit MCP server",
                 "stdio pipes were not available",
@@ -355,7 +426,7 @@ impl<'a> OrbitAdapter<'a> {
 
 /// One bounded `orbit mcp serve` child and its stdio.
 struct McpSession {
-    child: Child,
+    child: GroupChild,
     stdin: Option<ChildStdin>,
     messages: Receiver<StdoutLine>,
     stderr_reader: Option<thread::JoinHandle<std::io::Result<Vec<u8>>>>,
@@ -442,9 +513,10 @@ impl McpSession {
                     ));
                 }
                 Err(RecvTimeoutError::Timeout) => {
-                    return Err(GraphError::invalid_data(
+                    return Err(GraphError::timeout(
                         "invoke Orbit MCP server",
-                        format!("timed out after {} seconds", self.timeout.as_secs()),
+                        self.timeout,
+                        format!("no response to JSON-RPC request {id}"),
                     ));
                 }
                 Err(RecvTimeoutError::Disconnected) => {
@@ -482,29 +554,29 @@ impl McpSession {
     /// Wait briefly for the child to exit so its stderr can explain a failure.
     fn exit_detail(&mut self) -> String {
         self.stdin = None;
-        let status = loop {
-            match self.child.try_wait() {
-                Ok(Some(status)) => break Some(status),
-                Ok(None) if Instant::now() < self.deadline => {
-                    thread::sleep(Duration::from_millis(10));
-                }
-                _ => break None,
+        let exited = loop {
+            match self.child.has_exited() {
+                Ok(true) => break true,
+                Ok(false) if Instant::now() < self.deadline => thread::sleep(POLL_INTERVAL),
+                Ok(false) | Err(_) => break false,
             }
         };
-        let Some(status) = status else {
+        if !exited {
             return "server did not exit".to_string();
+        }
+        let Ok(status) = self.child.reap() else {
+            return "server exit status could not be read".to_string();
         };
         let stderr = self
             .stderr_reader
             .take()
-            .and_then(|reader| reader.join().ok())
-            .and_then(Result::ok)
-            .unwrap_or_default();
-        format!(
-            "exit {}: {}",
-            status.code().unwrap_or(1),
-            bounded_text(stderr.as_slice())
-        )
+            .and_then(|reader| join_by(reader, self.deadline))
+            .and_then(|joined| joined.ok())
+            .and_then(Result::ok);
+        match stderr {
+            Some(stderr) => format!("{}: {}", describe_status(status), bounded_text(&stderr)),
+            None => format!("{}; stderr was not captured", describe_status(status)),
+        }
     }
 
     /// Close stdin and reap the server; a server still running at the
@@ -513,13 +585,17 @@ impl McpSession {
         self.stdin = None;
         if graceful {
             while Instant::now() < self.deadline {
-                if !matches!(self.child.try_wait(), Ok(None)) {
-                    return;
+                match self.child.has_exited() {
+                    Ok(true) => {
+                        let _ = self.child.reap();
+                        return;
+                    }
+                    Ok(false) => thread::sleep(POLL_INTERVAL),
+                    Err(_) => break,
                 }
-                thread::sleep(Duration::from_millis(10));
             }
         }
-        terminate_child(&mut self.child);
+        self.child.terminate();
     }
 }
 
@@ -576,13 +652,10 @@ fn mcp_call_result(name: &str, result: Value) -> Result<Value, GraphError> {
             })?,
     };
     if result.get("isError").and_then(Value::as_bool) == Some(true) {
-        return Err(GraphError::invalid_data(
-            "invoke Orbit MCP server",
-            format!(
-                "{name} refused: {}: {}",
-                string_field(&payload, "code").unwrap_or("error"),
-                string_field(&payload, "message").unwrap_or("unspecified")
-            ),
+        return Err(GraphError::orbit_refused(
+            name,
+            string_field(&payload, "code").unwrap_or("error"),
+            string_field(&payload, "message").unwrap_or("unspecified"),
         ));
     }
     Ok(payload)
@@ -599,12 +672,12 @@ struct AuthorityRoute {
 /// compared after trimming a trailing `/` or `.git` only; they are never echoed,
 /// because a remote URL can carry credentials.
 fn verify_repository_remote(repository: &Path, workspace_remote: &str) -> Result<(), GraphError> {
-    let repo = Repository::discover(repository).map_err(|error| {
-        GraphError::invalid_data("open routed Git repository", error.to_string())
-    })?;
+    let repo = Repository::discover(repository)
+        .map_err(|error| GraphError::git("open routed Git repository", error))?;
     let origin = repo.find_remote("origin").map_err(|error| {
-        GraphError::invalid_data(
+        GraphError::invalid_input(
             "validate Orbit workspace repository",
+            "repository",
             format!(
                 "requested repository has no readable origin remote: {}",
                 error.message()
@@ -615,8 +688,9 @@ fn verify_repository_remote(repository: &Path, workspace_remote: &str) -> Result
         .url()
         .is_ok_and(|url| normalized_remote(url) == normalized_remote(workspace_remote));
     if !matches {
-        return Err(GraphError::invalid_data(
+        return Err(GraphError::invalid_input(
             "validate Orbit workspace repository",
+            "repository",
             "requested repository origin does not match the workspace's registered git_remote",
         ));
     }
@@ -628,13 +702,13 @@ fn normalized_remote(url: &str) -> &str {
     url.strip_suffix(".git").unwrap_or(url)
 }
 
-fn verify_same_repository(left: &Path, right: &Path) -> Result<(), GraphError> {
-    let left = Repository::discover(left).map_err(|error| {
-        GraphError::invalid_data("open routed Git repository", error.to_string())
-    })?;
-    let right = Repository::discover(right).map_err(|error| {
-        GraphError::invalid_data("open authority Git repository", error.to_string())
-    })?;
+/// Whether the run's checkout and the routed repository share Git object
+/// authority: `Some(reason)` when they do not.
+fn verify_same_repository(left: &Path, right: &Path) -> Result<Option<String>, GraphError> {
+    let left = Repository::discover(left)
+        .map_err(|error| GraphError::git("open routed Git repository", error))?;
+    let right = Repository::discover(right)
+        .map_err(|error| GraphError::git("open authority Git repository", error))?;
     let left_common = left.commondir().canonicalize().map_err(|source| {
         GraphError::io(
             "canonicalize routed Git common directory",
@@ -650,47 +724,26 @@ fn verify_same_repository(left: &Path, right: &Path) -> Result<(), GraphError> {
         )
     })?;
     if left_common != right_common {
-        return Err(GraphError::invalid_data(
-            "validate Orbit workspace repository",
-            "configured workspace checkout and requested repository do not share Git object authority",
+        return Ok(Some(
+            "configured workspace checkout and requested repository do not share Git object authority"
+                .to_string(),
         ));
     }
-    Ok(())
+    Ok(None)
 }
 
-fn verify_run_workspace(run: &Value, repository: &Path) -> Result<(), GraphError> {
-    let path = run
+/// Whether the run was prepared in a checkout of the routed repository:
+/// `Some(reason)` when it was not, or does not say.
+fn verify_run_workspace(run: &Value, repository: &Path) -> Result<Option<String>, GraphError> {
+    let Some(path) = run
         .pointer("/pipeline_state/step_outputs/0/workspace_path")
         .and_then(Value::as_str)
-        .ok_or_else(|| {
-            GraphError::invalid_data(
-                "verify Orbit run workspace",
-                "run omitted public prepare workspace_path",
-            )
-        })?;
-    verify_same_repository(Path::new(path), repository)
-}
-
-fn orbit_timeout() -> Result<Duration, GraphError> {
-    let seconds = match env::var("GRAPH_ORBIT_TIMEOUT_SECONDS") {
-        Ok(value) => value.parse::<u64>().map_err(|error| {
-            GraphError::invalid_data("parse Orbit subprocess timeout", error.to_string())
-        })?,
-        Err(env::VarError::NotPresent) => DEFAULT_ORBIT_TIMEOUT_SECONDS,
-        Err(error) => {
-            return Err(GraphError::invalid_data(
-                "read Orbit subprocess timeout",
-                error.to_string(),
-            ));
-        }
-    };
-    if seconds == 0 || seconds > MAX_ORBIT_TIMEOUT_SECONDS {
-        return Err(GraphError::invalid_data(
-            "validate Orbit subprocess timeout",
-            format!("timeout must be between 1 and {MAX_ORBIT_TIMEOUT_SECONDS} seconds"),
+    else {
+        return Ok(Some(
+            "run omitted public prepare workspace_path".to_string(),
         ));
-    }
-    Ok(Duration::from_secs(seconds))
+    };
+    verify_same_repository(Path::new(path), repository)
 }
 
 fn read_bounded(reader: impl Read) -> std::io::Result<Vec<u8>> {
@@ -701,13 +754,23 @@ fn read_bounded(reader: impl Read) -> std::io::Result<Vec<u8>> {
     Ok(bytes)
 }
 
+/// Join a pipe reader, waiting no later than `deadline`: a descendant that
+/// escaped the process group can hold the pipe open indefinitely.
 fn join_capture(
     reader: thread::JoinHandle<std::io::Result<Vec<u8>>>,
     stream: &str,
     repository: &Path,
+    deadline: Instant,
+    timeout: Duration,
 ) -> Result<Vec<u8>, GraphError> {
-    reader
-        .join()
+    let joined = join_by(reader, deadline).ok_or_else(|| {
+        GraphError::timeout(
+            "invoke public Orbit CLI",
+            timeout,
+            format!("its {stream} stayed open after it exited"),
+        )
+    })?;
+    joined
         .map_err(|_| {
             GraphError::invalid_data(
                 "invoke public Orbit CLI",
@@ -720,9 +783,155 @@ fn join_capture(
         })
 }
 
-fn terminate_child(child: &mut Child) {
-    let _ = child.kill();
-    let _ = child.wait();
+/// Join `handle` if it finishes by `deadline`; `None` leaves it detached.
+fn join_by<T>(handle: thread::JoinHandle<T>, deadline: Instant) -> Option<thread::Result<T>> {
+    while !handle.is_finished() {
+        if Instant::now() >= deadline {
+            return None;
+        }
+        thread::sleep(POLL_INTERVAL);
+    }
+    Some(handle.join())
+}
+
+/// An `orbit` child that leads its own process group (STD-03 §R11).
+///
+/// The leader is reaped only by [`GroupChild::reap`] or
+/// [`GroupChild::terminate`], after the last signal to its group: until then
+/// it is at worst a zombie whose PID, and so its group ID, the kernel cannot
+/// hand to another process (STD-03 §R14). Exit is observed without reaping.
+struct GroupChild {
+    child: Child,
+    /// Set once the leader has been reaped; nothing is signalled after.
+    reaped: Option<ExitStatus>,
+}
+
+impl GroupChild {
+    fn spawn(
+        mut command: Command,
+        operation: &'static str,
+        repository: &Path,
+    ) -> Result<Self, GraphError> {
+        command
+            .spawn()
+            .map(|child| Self {
+                child,
+                reaped: None,
+            })
+            .map_err(|source| GraphError::io(operation, repository, source))
+    }
+
+    /// Whether the leader has exited, observed without reaping it.
+    #[cfg(unix)]
+    fn has_exited(&mut self) -> std::io::Result<bool> {
+        if self.reaped.is_some() {
+            return Ok(true);
+        }
+        let pid = libc::id_t::from(self.child.id());
+        // SAFETY: an all-zero `siginfo_t` is a valid value, and `waitid`
+        // writes only into it. `WNOWAIT` leaves the child waitable.
+        let mut info: libc::siginfo_t = unsafe { std::mem::zeroed() };
+        let result = unsafe {
+            libc::waitid(
+                libc::P_PID,
+                pid,
+                &mut info,
+                libc::WEXITED | libc::WNOHANG | libc::WNOWAIT,
+            )
+        };
+        if result != 0 {
+            return Err(std::io::Error::last_os_error());
+        }
+        // With `WNOHANG`, `si_pid` stays zero while the child runs.
+        #[cfg(target_os = "linux")]
+        // SAFETY: `waitid` filled `info` for a child-state change.
+        let exited_pid = unsafe { info.si_pid() };
+        #[cfg(not(target_os = "linux"))]
+        let exited_pid = info.si_pid;
+        Ok(exited_pid != 0)
+    }
+
+    #[cfg(not(unix))]
+    fn has_exited(&mut self) -> std::io::Result<bool> {
+        if self.reaped.is_some() {
+            return Ok(true);
+        }
+        let status = self.child.try_wait()?;
+        self.reaped = status;
+        Ok(status.is_some())
+    }
+
+    /// Send `signal` to the whole group, while its leader is unreaped.
+    #[cfg(unix)]
+    fn signal_group(&self, signal: libc::c_int) {
+        if self.reaped.is_some() {
+            return;
+        }
+        let Ok(group) = libc::pid_t::try_from(self.child.id()) else {
+            return;
+        };
+        // SAFETY: `killpg` only sends a signal, to the group this child
+        // created at spawn and still leads: it has not been reaped, so its
+        // PID is not reused. ESRCH (nothing left to signal) is not an error.
+        unsafe {
+            libc::killpg(group, signal);
+        }
+    }
+
+    /// Reap an exited leader after sweeping its group: any member still
+    /// running, such as a grandchild holding the leader's stdout, is
+    /// SIGKILLed first (STD-03 §R13).
+    fn reap(&mut self) -> std::io::Result<ExitStatus> {
+        if let Some(status) = self.reaped {
+            return Ok(status);
+        }
+        #[cfg(unix)]
+        self.signal_group(libc::SIGKILL);
+        let status = self.child.wait()?;
+        self.reaped = Some(status);
+        Ok(status)
+    }
+
+    /// Stop the group: SIGTERM, up to [`TERMINATION_GRACE`] for the leader
+    /// to exit, then SIGKILL to the whole group whether or not anything
+    /// answered, and reap (STD-03 §R12, §R13).
+    fn terminate(&mut self) {
+        #[cfg(unix)]
+        {
+            self.signal_group(libc::SIGTERM);
+            let grace = Instant::now() + TERMINATION_GRACE;
+            while Instant::now() < grace && matches!(self.has_exited(), Ok(false)) {
+                thread::sleep(POLL_INTERVAL);
+            }
+        }
+        #[cfg(not(unix))]
+        let _ = self.child.kill();
+        let _ = self.reap();
+    }
+}
+
+/// How a child ended: `exit N`, or `signal N` for one killed by a signal
+/// (STD-02 §R29).
+fn describe_status(status: ExitStatus) -> String {
+    if let Some(code) = status.code() {
+        return format!("exit {code}");
+    }
+    #[cfg(unix)]
+    if let Some(signal) = status.signal() {
+        return format!("signal {signal}");
+    }
+    "an unknown exit status".to_string()
+}
+
+/// Orbit's structured refusal on a failed `orbit tool run`: a JSON object
+/// on stderr with a string `code` and an `error` (or `message`).
+fn orbit_refusal(tool: &str, stderr: &[u8]) -> Option<GraphError> {
+    let refusal: Value = serde_json::from_slice(stderr.trim_ascii()).ok()?;
+    let code = string_field(&refusal, "code")?;
+    let message = string_field(&refusal, "error")
+        .or_else(|| string_field(&refusal, "message"))
+        .unwrap_or("unspecified");
+    Some(GraphError::orbit_refused(tool, code, message))
 }
 
 fn task_snapshot_from_value(task: &Value, workspace: &str) -> Result<TaskAssociation, GraphError> {
@@ -791,32 +1000,30 @@ fn task_snapshot_from_value(task: &Value, workspace: &str) -> Result<TaskAssocia
     })
 }
 
+/// Whether `before..after` is a delivery on `branch`: `Some(reason)` when
+/// the revisions are not an ancestry the branch reaches.
 fn verify_git_delivery(
     repository: &Path,
     branch: &str,
     before: &str,
     after: &str,
-) -> Result<(), GraphError> {
-    let repo = Repository::open(repository).map_err(|error| {
-        GraphError::invalid_data("open routed delivery repository", error.to_string())
-    })?;
-    let before = Oid::from_str(before).map_err(|error| {
-        GraphError::invalid_data("parse Orbit base revision", error.to_string())
-    })?;
-    let after = Oid::from_str(after).map_err(|error| {
-        GraphError::invalid_data("parse Orbit commit revision", error.to_string())
-    })?;
+) -> Result<Option<String>, GraphError> {
+    let repo = Repository::open(repository)
+        .map_err(|error| GraphError::git("open routed delivery repository", error))?;
+    let before = Oid::from_str(before)
+        .map_err(|error| GraphError::git("parse Orbit base revision", error))?;
+    let after = Oid::from_str(after)
+        .map_err(|error| GraphError::git("parse Orbit commit revision", error))?;
     repo.find_commit(before)
-        .map_err(|error| GraphError::invalid_data("verify Orbit base commit", error.to_string()))?;
-    repo.find_commit(after).map_err(|error| {
-        GraphError::invalid_data("verify Orbit delivery commit", error.to_string())
-    })?;
-    if !repo.graph_descendant_of(after, before).map_err(|error| {
-        GraphError::invalid_data("verify Orbit commit ancestry", error.to_string())
-    })? {
-        return Err(GraphError::invalid_data(
-            "verify Orbit commit ancestry",
-            "commit_sha is not a strict descendant of base_sha",
+        .map_err(|error| GraphError::git("verify Orbit base commit", error))?;
+    repo.find_commit(after)
+        .map_err(|error| GraphError::git("verify Orbit delivery commit", error))?;
+    if !repo
+        .graph_descendant_of(after, before)
+        .map_err(|error| GraphError::git("verify Orbit commit ancestry", error))?
+    {
+        return Ok(Some(
+            "commit_sha is not a strict descendant of base_sha".to_string(),
         ));
     }
     let branch = branch.trim_start_matches("refs/heads/");
@@ -824,29 +1031,25 @@ fn verify_git_delivery(
         .revparse_single(format!("refs/heads/{branch}").as_str())
         .and_then(|object| object.peel_to_commit())
         .map(|commit| commit.id())
-        .map_err(|error| {
-            GraphError::invalid_data("resolve routed landing branch", error.to_string())
-        })?;
+        .map_err(|error| GraphError::git("resolve routed landing branch", error))?;
     if after != tip
-        && !repo.graph_descendant_of(tip, after).map_err(|error| {
-            GraphError::invalid_data("verify delivery reachability", error.to_string())
-        })?
+        && !repo
+            .graph_descendant_of(tip, after)
+            .map_err(|error| GraphError::git("verify delivery reachability", error))?
     {
-        return Err(GraphError::invalid_data(
-            "verify delivery reachability",
-            "commit_sha is not reachable from the configured landing branch",
+        return Ok(Some(
+            "commit_sha is not reachable from the configured landing branch".to_string(),
         ));
     }
-    Ok(())
+    Ok(None)
 }
 
 pub(super) fn canonical_repository(path: &Path) -> Result<PathBuf, GraphError> {
     let canonical = path
         .canonicalize()
         .map_err(|source| GraphError::io("canonicalize routed repository", path, source))?;
-    Repository::open(canonical.as_path()).map_err(|error| {
-        GraphError::invalid_data("open explicitly routed repository", error.to_string())
-    })?;
+    Repository::open(canonical.as_path())
+        .map_err(|error| GraphError::git("open explicitly routed repository", error))?;
     Ok(canonical)
 }
 
@@ -859,6 +1062,17 @@ fn required_string<'a>(value: &'a Value, field: &str) -> Result<&'a str, GraphEr
     })
 }
 
+/// The first [`STDERR_EXCERPT_LIMIT`] bytes of `bytes`, marked when cut.
 fn bounded_text(bytes: &[u8]) -> String {
-    String::from_utf8_lossy(&bytes[..bytes.len().min(4_096)]).into_owned()
+    let Some(cut) = bytes
+        .len()
+        .checked_sub(STDERR_EXCERPT_LIMIT)
+        .filter(|cut| *cut > 0)
+    else {
+        return String::from_utf8_lossy(bytes).into_owned();
+    };
+    format!(
+        "{}…[truncated {cut} bytes]",
+        String::from_utf8_lossy(&bytes[..STDERR_EXCERPT_LIMIT])
+    )
 }

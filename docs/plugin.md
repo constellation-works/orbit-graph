@@ -121,8 +121,21 @@ version's contract changes.
 The protocol lives in the executable's crate, `crates/orbit-graph-cli`
 (`src/plugin.rs` and `src/plugin/`): tool names, envelopes, dispatch, error
 codes, the Orbit subprocess adapter and the plugin-state code-graph index. The
-`orbit-graph` library has no plugin API and reads neither `ORBIT_PLUGIN_STATE`
-nor `GRAPH_ORBIT_TIMEOUT_SECONDS`.
+`orbit-graph` library has no plugin API and reads no environment variable:
+`crates/orbit-graph-cli/src/main.rs` resolves `ORBIT_PLUGIN_STATE`,
+`GRAPH_ORBIT_TIMEOUT_SECONDS` (1–60, default 10) and
+`ORBIT_GRAPH_LOCK_TIMEOUT_MS` once, before any tool runs, and refuses a
+malformed value with `invalid_request` naming the variable. The tool table,
+`TOOLS` in `src/plugin.rs`, is the one place a tool is named; a unit test
+checks it against `plugin.yaml`.
+
+Each Orbit callback runs `orbit` as the leader of its own process group. When
+it outlives `GRAPH_ORBIT_TIMEOUT_SECONDS` the whole group gets SIGTERM, then
+SIGKILL after a 5 s grace; after a clean exit any member still running, such
+as a grandchild holding the pipe, is stopped the same way, and output readers
+are joined no later than the deadline. A failed callback's stderr is quoted up
+to 4 KiB and ends `…[truncated N bytes]` when cut, and a child killed by a
+signal is reported as `signal N`.
 
 ## Configuration
 
@@ -457,8 +470,13 @@ whose incremental build fits the budget (see the timing note in the
 strict base ancestry, and landing-branch reachability in the explicitly routed
 Git repository. `orbit.workflow.run.show` requires Orbit's `operator`
 capability, which a plugin backend does not hold, so under the plugin each run
-is currently reported `excluded` with Orbit's `capability_denied` reason rather
-than imported. It reports partial
+is currently reported `failed` with Orbit's refusal (`error.code`
+`orbit_refused`, Orbit's own code under `error.orbit.code`) rather than
+imported. Each outcome is one of `inserted`, `already_indexed`, `excluded` (a
+verdict: the run was examined and is not an eligible delivery, with the check
+it failed as `reason`) or `failed` (infrastructure: the run or task could not be
+examined, with a structured `error`); one failed item never stops the batch,
+and `coverage` counts `excluded` and `failed` separately. It reports partial
 coverage: current Orbit has no cursor-paginated detailed delivery feed, so only
 explicit run IDs and each requested task's current `job_run_id` are processed.
 Retrying or submitting omitted IDs is safe because the immutable first-observed
@@ -479,9 +497,24 @@ resolve, or no default base to compare the working tree against),
 `repository_unavailable` when the routed `repository` is missing or not a Git
 repository, `index_missing` or `index_incompatible` when a query tool has no
 usable code-graph index, `index_missing` when `status` or `recommend` finds no
-history index, `incompatible_binary` from the launcher when the executable is
-stale or not the one `spec.backend.args` binds, and `graph_error` for every
-other index, Git, or callback failure.
+history index, `not_found` when something the request named, such as a
+`revision`, does not exist, `timeout` when a lock wait or an Orbit callback
+outlived its deadline, `orbit_refused` when Orbit refused a callback (the
+envelope keeps Orbit's own code and the refusing tool under
+`error.orbit.{code,tool}`), `unsafe_state_path` when a state path was refused as
+unsafe, `version_mismatch` when the history index was built under another
+contract, `incompatible_binary` from the launcher when the executable is stale
+or not the one `spec.backend.args` binds, and `graph_error` for every other
+index, Git, or subprocess failure. A well-formed selector of the wrong kind for
+the tool, such as a `symbol:` scope for `deps`, is `invalid_request`.
+
+`error.retryable` is `true` only when retrying the same call can succeed
+without any change: a `timeout`, or a transient I/O failure (interrupted, would
+block, timed out) reported as `graph_error`. Every other failure is `false`.
+The CLI's `--format json` errors use the same classes under their CLI names
+(`invalid_input`, `not_found`, `timeout`, `orbit_refused`, …); one translator,
+`report_graph_error` in `crates/orbit-graph-cli/src/command/mod.rs`, derives
+both.
 
 
 The bundled agent guidance is in

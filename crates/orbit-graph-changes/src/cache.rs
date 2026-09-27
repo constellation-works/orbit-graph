@@ -156,11 +156,11 @@ impl CacheError {
             GraphError::Io {
                 operation,
                 path,
-                reason,
+                source,
             } => Self::Io {
                 operation,
                 path,
-                reason,
+                reason: source.to_string(),
             },
             other => Self::Io {
                 operation,

@@ -623,7 +623,7 @@ fn real_binary_sync_times_out_naming_the_lock_holder() {
         "failed before the deadline"
     );
     let error: Value = serde_json::from_slice(&output.stderr).expect("JSON sync error");
-    assert_eq!(error["code"], "graph_error");
+    assert_eq!(error["code"], "timeout", "{error}");
     let message = error["error"].as_str().expect("error message");
     assert!(message.contains("timed out after 300 ms"), "{message}");
     assert!(
@@ -1515,7 +1515,7 @@ fn real_binary_recommends_in_file_and_symbol_modes_and_validates_top_k() {
     );
     assert!(!bad_limit.status.success());
     let error: Value = serde_json::from_slice(&bad_limit.stderr).expect("JSON error");
-    assert_eq!(error["code"], "graph_error");
+    assert_eq!(error["code"], "invalid_input");
 
     let both = run_explicit_json(
         fixture.path(),

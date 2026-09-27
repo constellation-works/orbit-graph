@@ -66,8 +66,9 @@ impl ScopeFilter {
                 kind: ScopeKind::DirLike(format!("{}/%", path.trim_end_matches('/'))),
                 echo: Some(path.clone()),
             }),
-            Some(_) => Err(GraphError::invalid_data(
+            Some(_) => Err(GraphError::invalid_input(
                 "resolve overview scope",
+                "scope",
                 "overview scope must be a `dir:` or `file:` selector",
             )),
         }

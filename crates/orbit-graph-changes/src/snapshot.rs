@@ -334,7 +334,7 @@ impl ExclusionReason {
     pub fn bytes(self) -> Option<u64> {
         match self {
             Self::OversizeBlob { bytes } => Some(bytes),
-            _ => None,
+            Self::Symlink | Self::Submodule | Self::UnsafeName | Self::UnsupportedKind => None,
         }
     }
 
@@ -1263,6 +1263,12 @@ impl Comparison {
     /// [`Comparison::cache_note`] and both snapshots fall back to task-owned
     /// temporary trees: an inspectable repository must not become
     /// un-inspectable because its cache directory is read-only.
+    // Invariant: `NoopComparisonProgress::is_cancelled` always returns
+    // false, so `open_with_progress` never reports cancellation for it.
+    #[allow(
+        clippy::unreachable,
+        reason = "a no-op progress never cancels (STD-02 §R13 invariant)"
+    )]
     pub fn open_with_options(
         repository: &Path,
         base_ref: &str,

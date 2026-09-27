@@ -115,14 +115,16 @@ pub(crate) fn run(graph: &Graph, q: &SearchQuery) -> Result<SearchResult, GraphE
     // Either would return an empty result that looks like "no matches"
     // (STD-01 §R29).
     if query.is_empty() {
-        return Err(GraphError::invalid_data(
+        return Err(GraphError::invalid_input(
             "validate graph search",
+            "query",
             "the search query must not be empty",
         ));
     }
     if limit == 0 {
-        return Err(GraphError::invalid_data(
+        return Err(GraphError::invalid_input(
             "validate graph search",
+            "limit",
             "the search limit must be at least 1",
         ));
     }

@@ -1,15 +1,16 @@
 //! Orbit external-tool protocol and public-authority adapter.
 
 use std::collections::BTreeSet;
-use std::env;
+use std::ffi::OsString;
 use std::path::PathBuf;
+use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
 use orbit_graph::{
-    DeliveryImport, EXTRACTOR_VERSION, GraphError, HISTORY_INDEX_SCHEMA_VERSION, HistoryIndex,
-    HybridTaskHit, RecommendationEngine, RecommendationInput, RecommendationLevel,
+    DeliveryImport, EXTRACTOR_VERSION, GraphError, GraphErrorClass, HISTORY_INDEX_SCHEMA_VERSION,
+    HistoryIndex, HybridTaskHit, RecommendationEngine, RecommendationInput, RecommendationLevel,
     RecommendationRequest, RecommendationVariant, STORE_SCHEMA_VERSION, TaskAssociation,
 };
 
@@ -19,43 +20,211 @@ mod code_index;
 mod error;
 mod query;
 
-use adapter::{OrbitAdapter, canonical_repository};
+use adapter::{OrbitAdapter, RunVerdict, canonical_repository};
 use code_index::{Incomplete, IndexState};
-pub use error::ToolError;
+pub(crate) use error::orbit_detail;
+pub use error::{ToolError, ToolErrorCode};
 use query::QueryTool;
 
-/// External tool name for recommendations and authoritative task lookup.
-pub const RECOMMEND_TOOL_NAME: &str = "orbit.graph.recommend";
-/// External tool name for index freshness/status.
-pub const STATUS_TOOL_NAME: &str = "orbit.graph.status";
-/// External tool name for bounded import and synchronization.
-pub const MAINTAIN_TOOL_NAME: &str = "orbit.graph.maintain";
-/// External tool name for deterministic build and schema version reporting.
-pub const VERSION_TOOL_NAME: &str = "orbit.graph.version";
 /// Version of every external-tool request and response envelope.
 pub const PLUGIN_SCHEMA_VERSION: u32 = 1;
 
-const V2_RECOMMEND_TOOL_NAME: &str = "graph.recommend";
-const V2_STATUS_TOOL_NAME: &str = "graph.status";
-const V2_MAINTAIN_TOOL_NAME: &str = "graph.maintain";
-const V2_VERSION_TOOL_NAME: &str = "graph.version";
+/// One external tool: its first-party name, the v2 alias Orbit uses for an
+/// unverified install, whether its input is routed to a `repository`, and
+/// the function that runs it.
+#[derive(Clone, Copy)]
+pub(crate) struct ToolSpec {
+    /// `orbit.graph.<verb>`, from a verified first-party install.
+    pub(crate) name: &'static str,
+    /// `graph.<verb>`, otherwise.
+    pub(crate) v2_alias: &'static str,
+    /// Whether a v2 envelope without `input.repository` is routed to
+    /// `context.workspace_root`.
+    pub(crate) needs_repository: bool,
+    handler: fn(&ToolCall<'_>) -> Result<Value, ToolError>,
+}
 
-/// Whether `name` selects one of this package's no-argv external tools.
-pub fn recognizes_tool(name: &str) -> bool {
-    QueryTool::from_tool_name(name).is_some()
-        || matches!(
-            name,
-            changes::TOOL_NAME
-                | changes::V2_TOOL_NAME
-                | RECOMMEND_TOOL_NAME
-                | STATUS_TOOL_NAME
-                | MAINTAIN_TOOL_NAME
-                | VERSION_TOOL_NAME
-                | V2_RECOMMEND_TOOL_NAME
-                | V2_STATUS_TOOL_NAME
-                | V2_MAINTAIN_TOOL_NAME
-                | V2_VERSION_TOOL_NAME
-        )
+impl ToolSpec {
+    /// Whether `name` selects this tool, in either spelling.
+    fn answers_to(&self, name: &str) -> bool {
+        self.name == name || self.v2_alias == name
+    }
+}
+
+const VERSION_TOOL: ToolSpec = ToolSpec {
+    name: "orbit.graph.version",
+    v2_alias: "graph.version",
+    needs_repository: false,
+    handler: |call| version(decode_input(call.input)?),
+};
+const STATUS_TOOL: ToolSpec = ToolSpec {
+    name: "orbit.graph.status",
+    v2_alias: "graph.status",
+    needs_repository: true,
+    handler: |call| status(call, decode_input(call.input)?),
+};
+const RECOMMEND_TOOL: ToolSpec = ToolSpec {
+    name: "orbit.graph.recommend",
+    v2_alias: "graph.recommend",
+    needs_repository: true,
+    handler: |call| recommend(call, decode_input(call.input)?),
+};
+const MAINTAIN_TOOL: ToolSpec = ToolSpec {
+    name: "orbit.graph.maintain",
+    v2_alias: "graph.maintain",
+    needs_repository: true,
+    handler: |call| maintain(call, decode_input(call.input)?),
+};
+const CHANGES_TOOL: ToolSpec = ToolSpec {
+    name: "orbit.graph.changes",
+    v2_alias: "graph.changes",
+    needs_repository: true,
+    handler: changes::execute,
+};
+
+/// Every external tool this backend serves, in manifest order: the one
+/// place a tool name is spelled (STD-02 §R24).
+pub(crate) const TOOLS: [ToolSpec; 13] = [
+    VERSION_TOOL,
+    STATUS_TOOL,
+    RECOMMEND_TOOL,
+    MAINTAIN_TOOL,
+    ToolSpec {
+        name: "orbit.graph.search",
+        v2_alias: "graph.search",
+        needs_repository: true,
+        handler: |call| query::execute(QueryTool::Search, call),
+    },
+    ToolSpec {
+        name: "orbit.graph.show",
+        v2_alias: "graph.show",
+        needs_repository: true,
+        handler: |call| query::execute(QueryTool::Show, call),
+    },
+    ToolSpec {
+        name: "orbit.graph.refs",
+        v2_alias: "graph.refs",
+        needs_repository: true,
+        handler: |call| query::execute(QueryTool::Refs, call),
+    },
+    ToolSpec {
+        name: "orbit.graph.callees",
+        v2_alias: "graph.callees",
+        needs_repository: true,
+        handler: |call| query::execute(QueryTool::Callees, call),
+    },
+    ToolSpec {
+        name: "orbit.graph.impact",
+        v2_alias: "graph.impact",
+        needs_repository: true,
+        handler: |call| query::execute(QueryTool::Impact, call),
+    },
+    ToolSpec {
+        name: "orbit.graph.trace",
+        v2_alias: "graph.trace",
+        needs_repository: true,
+        handler: |call| query::execute(QueryTool::Trace, call),
+    },
+    ToolSpec {
+        name: "orbit.graph.deps",
+        v2_alias: "graph.deps",
+        needs_repository: true,
+        handler: |call| query::execute(QueryTool::Deps, call),
+    },
+    ToolSpec {
+        name: "orbit.graph.overview",
+        v2_alias: "graph.overview",
+        needs_repository: true,
+        handler: |call| query::execute(QueryTool::Overview, call),
+    },
+    CHANGES_TOOL,
+];
+
+/// The tool `name` selects, in either spelling.
+pub(crate) fn find_tool(name: &str) -> Option<&'static ToolSpec> {
+    TOOLS.iter().find(|tool| tool.answers_to(name))
+}
+
+/// One decoded tool request and everything resolved for it.
+pub(crate) struct ToolCall<'a> {
+    /// Whether the request named the tool by its v2 alias.
+    v2: bool,
+    input: &'a [u8],
+    config: &'a PluginConfig,
+    environment: &'a PluginEnvironment,
+}
+
+impl ToolCall<'_> {
+    /// How `tool` is spelled for this caller: the alias when the caller used
+    /// aliases, so a remedy names a tool the caller can call (STD-01 §R21).
+    pub(crate) fn spelling(&self, tool: &ToolSpec) -> &'static str {
+        if self.v2 { tool.v2_alias } else { tool.name }
+    }
+}
+
+/// `ORBIT_PLUGIN_STATE`: the plugin state root Orbit grants a plugin tool.
+pub const PLUGIN_STATE_ENV: &str = "ORBIT_PLUGIN_STATE";
+/// `GRAPH_ORBIT_TIMEOUT_SECONDS`: the bound on each Orbit callback.
+pub const ORBIT_TIMEOUT_ENV: &str = "GRAPH_ORBIT_TIMEOUT_SECONDS";
+const DEFAULT_ORBIT_TIMEOUT_SECONDS: u64 = 10;
+const MAX_ORBIT_TIMEOUT_SECONDS: u64 = 60;
+
+/// The process settings a plugin call reads, resolved and validated once
+/// from the environment before any tool runs (STD-02 §R3, §R28).
+#[derive(Debug, Clone)]
+pub struct PluginEnvironment {
+    /// The plugin state root, when Orbit set one.
+    state_root: Option<PathBuf>,
+    /// How long each Orbit callback may take.
+    orbit_timeout: Duration,
+}
+
+impl PluginEnvironment {
+    /// Validate the raw values of [`PLUGIN_STATE_ENV`] and
+    /// [`ORBIT_TIMEOUT_ENV`]; a bad value is refused naming its variable.
+    pub fn resolve(
+        state_root: Option<OsString>,
+        orbit_timeout: Option<OsString>,
+    ) -> Result<Self, ToolError> {
+        let state_root = match state_root {
+            None => None,
+            Some(state_root) if state_root.is_empty() => {
+                return Err(ToolError::invalid_request(
+                    "read plugin environment",
+                    format!(
+                        "{PLUGIN_STATE_ENV} is set but empty; unset it or name the plugin \
+                         state directory"
+                    ),
+                ));
+            }
+            Some(state_root) => Some(PathBuf::from(state_root)),
+        };
+        let seconds = match orbit_timeout {
+            None => DEFAULT_ORBIT_TIMEOUT_SECONDS,
+            Some(value) => value
+                .to_str()
+                .and_then(|value| value.trim().parse::<u64>().ok())
+                .filter(|seconds| (1..=MAX_ORBIT_TIMEOUT_SECONDS).contains(seconds))
+                .ok_or_else(|| {
+                    ToolError::invalid_request(
+                        "read plugin environment",
+                        format!(
+                            "{ORBIT_TIMEOUT_ENV}={value:?} must be whole seconds between 1 and \
+                             {MAX_ORBIT_TIMEOUT_SECONDS}"
+                        ),
+                    )
+                })?,
+        };
+        Ok(Self {
+            state_root,
+            orbit_timeout: Duration::from_secs(seconds),
+        })
+    }
+
+    /// The plugin state root, when Orbit set one.
+    pub(crate) fn state_root(&self) -> Option<&std::path::Path> {
+        self.state_root.as_deref()
+    }
 }
 
 /// The plugin's effective `[plugins.graph]` configuration, which Orbit sends
@@ -117,34 +286,29 @@ const DEFAULT_BRANCH: &str = "main";
 
 /// Execute one no-argv Orbit external-tool request from JSON stdin bytes.
 ///
-/// Failures carry a stable [`error::ToolErrorCode`]: a request the tool refuses
-/// before touching any repository is [`error::ToolErrorCode::InvalidRequest`], a
-/// routed repository that cannot be opened is
-/// [`error::ToolErrorCode::RepositoryUnavailable`], a query tool without a usable
-/// code-graph index is [`error::ToolErrorCode::IndexMissing`] or
-/// [`error::ToolErrorCode::IndexIncompatible`], and every other failure is
-/// [`error::ToolErrorCode::GraphError`].
+/// `name` selects a [`TOOLS`] entry in either spelling. Failures carry a
+/// stable [`ToolErrorCode`]: a request refused before it is acted on is
+/// [`ToolErrorCode::InvalidRequest`], a routed repository that cannot be
+/// opened is [`ToolErrorCode::RepositoryUnavailable`], and a graph failure
+/// is classified by [`crate::command::report_graph_error`].
 pub fn execute_external_tool(
     name: &str,
     input: &[u8],
     config: &PluginConfig,
+    environment: &PluginEnvironment,
 ) -> Result<Value, ToolError> {
-    if let Some(tool) = QueryTool::from_tool_name(name) {
-        return query::execute(tool, name, input);
-    }
-    match name {
-        changes::TOOL_NAME | changes::V2_TOOL_NAME => changes::execute(input),
-        RECOMMEND_TOOL_NAME | V2_RECOMMEND_TOOL_NAME => {
-            recommend(name, decode_input(input)?, config)
-        }
-        STATUS_TOOL_NAME | V2_STATUS_TOOL_NAME => status(name, decode_input(input)?, config),
-        MAINTAIN_TOOL_NAME | V2_MAINTAIN_TOOL_NAME => maintain(decode_input(input)?, config),
-        VERSION_TOOL_NAME | V2_VERSION_TOOL_NAME => version(decode_input(input)?),
-        _ => Err(ToolError::invalid_request(
+    let tool = find_tool(name).ok_or_else(|| {
+        ToolError::invalid_request(
             "dispatch Orbit external tool",
             format!("unsupported ORBIT_TOOL_NAME {name:?}"),
-        )),
-    }
+        )
+    })?;
+    (tool.handler)(&ToolCall {
+        v2: tool.v2_alias == name,
+        input,
+        config,
+        environment,
+    })
 }
 
 /// Decode a tool's input. Every string the request schemas declare has
@@ -245,6 +409,10 @@ struct AdapterEvidence {
     workspace: Option<String>,
     task_text: String,
     hybrid_search: String,
+    /// Results of the authoritative hybrid search dropped as malformed;
+    /// `None` when no hybrid search ran.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    hybrid_hits_dropped: Option<usize>,
     warnings: Vec<String>,
 }
 
@@ -255,11 +423,7 @@ const MAX_RECOMMEND_LIMIT: usize = 100;
 const MAX_HYBRID_LIMIT: usize = 100;
 const DEFAULT_HYBRID_LIMIT: usize = 20;
 
-fn recommend(
-    name: &str,
-    input: RecommendToolInput,
-    config: &PluginConfig,
-) -> Result<Value, ToolError> {
+fn recommend(call: &ToolCall<'_>, input: RecommendToolInput) -> Result<Value, ToolError> {
     validate_schema(input.schema_version)?;
     if !input.hybrid && input.hybrid_limit.is_some() {
         // STD-01 R29: never accept a field and silently ignore it.
@@ -284,7 +448,7 @@ fn recommend(
             format!("limit must be between 1 and {MAX_RECOMMEND_LIMIT}"),
         ));
     }
-    let branch = config.branch(input.branch);
+    let branch = call.config.branch(input.branch);
     let (intent, mut snapshot, mut task_text_source) = match (input.query, input.task_id) {
         (Some(query), None) if !query.trim().is_empty() => (
             RecommendationInput::Query(query),
@@ -304,7 +468,11 @@ fn recommend(
         }
     };
     let repository = routed_repository(input.repository.as_path())?;
-    let adapter = OrbitAdapter::new(repository.as_path(), input.workspace.as_deref());
+    let adapter = OrbitAdapter::new(
+        repository.as_path(),
+        input.workspace.as_deref(),
+        call.environment.orbit_timeout,
+    );
     if let RecommendationInput::TaskId(task_id) = &intent {
         if input.cutoff.is_none() {
             let observed = adapter.task_snapshot(task_id)?;
@@ -335,9 +503,19 @@ fn recommend(
     };
     let mut warnings = Vec::new();
     let mut hybrid_hits = input.hybrid_hits;
+    let mut hybrid_hits_dropped = None;
     let hybrid_source = if input.hybrid {
         match adapter.hybrid_search(query_text.as_str(), hybrid_limit) {
-            Ok(mut hits) => {
+            Ok(search) => {
+                if search.dropped > 0 {
+                    warnings.push(format!(
+                        "dropped {} malformed orbit.search result(s) without a string id and a \
+                         numeric score",
+                        search.dropped
+                    ));
+                }
+                hybrid_hits_dropped = Some(search.dropped);
+                let mut hits = search.hits;
                 hits.append(&mut hybrid_hits);
                 hybrid_hits = hits;
                 "orbit.search_hybrid".to_string()
@@ -354,7 +532,7 @@ fn recommend(
     } else {
         "supplied_ranked_hits".to_string()
     };
-    let index_dir = plugin_index_dir(repository.as_path())?;
+    let index_dir = plugin_index_dir(call, repository.as_path())?;
     let engine = match index_dir.as_deref() {
         Some(index_dir) => RecommendationEngine::open_with_index_dir(
             repository.as_path(),
@@ -364,7 +542,7 @@ fn recommend(
         ),
         None => RecommendationEngine::open(repository.as_path(), branch.as_str()),
     }
-    .map_err(|error| history_read_error(error, name, branch.as_str()))?;
+    .map_err(|error| history_read_error(call, error, branch.as_str()))?;
     let result = engine.recommend(&RecommendationRequest {
         input: intent,
         level: input.level.into(),
@@ -385,6 +563,7 @@ fn recommend(
             workspace: input.workspace,
             task_text: task_text_source,
             hybrid_search: hybrid_source,
+            hybrid_hits_dropped,
             warnings,
         },
         "result": result,
@@ -402,11 +581,12 @@ struct StatusToolInput {
     branch: Option<String>,
 }
 
-fn status(name: &str, input: StatusToolInput, config: &PluginConfig) -> Result<Value, ToolError> {
+fn status(call: &ToolCall<'_>, input: StatusToolInput) -> Result<Value, ToolError> {
     validate_schema(input.schema_version)?;
-    let branch = config.branch(input.branch);
+    let branch = call.config.branch(input.branch);
     let repository = routed_repository(input.repository.as_path())?;
-    let index = match plugin_index_dir(repository.as_path())?.as_deref() {
+    let index_dir = plugin_index_dir(call, repository.as_path())?;
+    let index = match index_dir.as_deref() {
         Some(index_dir) => HistoryIndex::open_read_only_with_index_dir(
             repository.as_path(),
             branch.as_str(),
@@ -414,14 +594,14 @@ fn status(name: &str, input: StatusToolInput, config: &PluginConfig) -> Result<V
         ),
         None => HistoryIndex::open_read_only(repository.as_path(), branch.as_str()),
     }
-    .map_err(|error| history_read_error(error, name, branch.as_str()))?;
+    .map_err(|error| history_read_error(call, error, branch.as_str()))?;
     let mut response = json!({
         "schema_version": PLUGIN_SCHEMA_VERSION,
         "operation": "status",
         "repository": repository,
         "status": index.status()?,
     });
-    if let Some(index_dir) = plugin_index_dir(repository.as_path())? {
+    if let Some(index_dir) = index_dir {
         response["code_index"] = code_index_status(repository.as_path(), index_dir.as_path())?;
     }
     Ok(response)
@@ -524,7 +704,7 @@ const MAX_HISTORY_LIMIT: usize = 1_000;
 const DEFAULT_ORBIT_SYNC_LIMIT: usize = 25;
 const MAX_ORBIT_SYNC_LIMIT: usize = 100;
 
-fn maintain(mut input: MaintainToolInput, config: &PluginConfig) -> Result<Value, ToolError> {
+fn maintain(call: &ToolCall<'_>, mut input: MaintainToolInput) -> Result<Value, ToolError> {
     validate_schema(input.schema_version)?;
     let operation = input.operation;
     let inapplicable = input
@@ -584,7 +764,7 @@ fn maintain(mut input: MaintainToolInput, config: &PluginConfig) -> Result<Value
                     ),
                 ));
             }
-            if env::var_os("ORBIT_PLUGIN_STATE").is_none_or(|state| state.is_empty()) {
+            if call.environment.state_root().is_none() {
                 return Err(ToolError::invalid_request(
                     "validate graph_sync environment",
                     "graph_sync maintains the plugin's code-graph index and needs \
@@ -609,8 +789,8 @@ fn maintain(mut input: MaintainToolInput, config: &PluginConfig) -> Result<Value
         .collect::<Result<Vec<_>, _>>()
         .map_err(|error| ToolError::invalid_request("decode task_snapshots", error.to_string()))?;
     let repository = routed_repository(input.repository.as_path())?;
-    let branch = config.branch(input.branch.clone());
-    let history_index = || open_history_index(repository.as_path(), branch.as_str());
+    let branch = call.config.branch(input.branch.clone());
+    let history_index = || open_history_index(call, repository.as_path(), branch.as_str());
     match operation {
         MaintenanceOperation::HistorySync => {
             let limit = input.limit.unwrap_or(DEFAULT_HISTORY_LIMIT);
@@ -658,18 +838,30 @@ fn maintain(mut input: MaintainToolInput, config: &PluginConfig) -> Result<Value
         }
         MaintenanceOperation::OrbitSync => {
             let index = history_index()?;
-            sync_orbit(repository, branch.as_str(), index, input, task_snapshots)
-                .map_err(ToolError::graph)
+            sync_orbit(
+                call,
+                repository,
+                branch.as_str(),
+                index,
+                input,
+                task_snapshots,
+            )
+            .map_err(ToolError::graph)
         }
         MaintenanceOperation::GraphSync => {
-            graph_sync(repository, input.full.unwrap_or(false), budget_ms)
+            graph_sync(call, repository, input.full.unwrap_or(false), budget_ms)
         }
     }
 }
 
 /// Build and publish the plugin's code-graph index within `budget_ms`.
-fn graph_sync(repository: PathBuf, full: bool, budget_ms: u64) -> Result<Value, ToolError> {
-    let index_dir = plugin_index_dir(repository.as_path())?.ok_or_else(|| {
+fn graph_sync(
+    call: &ToolCall<'_>,
+    repository: PathBuf,
+    full: bool,
+    budget_ms: u64,
+) -> Result<Value, ToolError> {
+    let index_dir = plugin_index_dir(call, repository.as_path())?.ok_or_else(|| {
         ToolError::invalid_request(
             "resolve code-graph index directory",
             "graph_sync needs ORBIT_PLUGIN_STATE",
@@ -774,6 +966,7 @@ fn code_index_status(
 }
 
 fn sync_orbit(
+    call: &ToolCall<'_>,
     repository: PathBuf,
     branch: &str,
     index: HistoryIndex,
@@ -781,22 +974,33 @@ fn sync_orbit(
     task_snapshots: Vec<TaskAssociation>,
 ) -> Result<Value, GraphError> {
     let bound = input.limit.unwrap_or(DEFAULT_ORBIT_SYNC_LIMIT);
-    let adapter = OrbitAdapter::new(repository.as_path(), input.workspace.as_deref());
+    let adapter = OrbitAdapter::new(
+        repository.as_path(),
+        input.workspace.as_deref(),
+        call.environment.orbit_timeout,
+    );
     let requested_task_ids = input.task_ids.unwrap_or_default();
     let mut run_ids = input.run_ids.unwrap_or_default();
     let explicit_run_count = run_ids.len();
     let task_count = requested_task_ids.len();
     let mut task_ids_examined = 0;
     let mut truncated = false;
+    let mut outcomes = SyncOutcomes::default();
     for task_id in &requested_task_ids {
         if run_ids.len() >= bound {
             truncated = true;
             break;
         }
         task_ids_examined += 1;
-        let task = adapter.task_show(task_id)?;
-        if let Some(run_id) = string_field(&task, "job_run_id") {
-            run_ids.push(run_id.to_string());
+        // One unreadable task is reported and counted; the batch goes on
+        // (STD-02 §R32).
+        match adapter.task_show(task_id) {
+            Ok(task) => {
+                if let Some(run_id) = string_field(&task, "job_run_id") {
+                    run_ids.push(run_id.to_string());
+                }
+            }
+            Err(error) => outcomes.unverified(json!({"task_id": task_id}), &error),
         }
     }
     let mut seen = BTreeSet::new();
@@ -808,69 +1012,65 @@ fn sync_orbit(
         .into_iter()
         .map(|snapshot| (snapshot.task_id.clone(), snapshot))
         .collect::<std::collections::BTreeMap<_, _>>();
-    let mut outcomes = Vec::new();
     for run_id in &run_ids {
-        match adapter.delivery_from_run(run_id, branch, &snapshots, index.repository()) {
-            Ok((delivery, supplied_snapshot)) => {
-                let delivery_id = delivery.delivery_id.clone();
-                let task_ids = delivery
-                    .tasks
-                    .iter()
-                    .map(|task| task.task_id.clone())
-                    .collect::<Vec<_>>();
-                let existing = index.delivery(delivery_id.as_str())?;
-                if existing.as_ref().is_some_and(|existing| {
-                    existing.delivery.before_revision == delivery.before_revision
-                        && existing.delivery.after_revision == delivery.after_revision
-                }) {
-                    match supplied_snapshot {
-                        Some(snapshot) => match index.add_supplied_snapshot(&delivery_id, snapshot) {
-                            Ok(inserted) => outcomes.push(json!({
-                                "run_id": run_id,
-                                "delivery_id": delivery_id,
-                                "task_ids": task_ids,
-                                "status": "already_indexed",
-                                "supplied_snapshot": if inserted { "inserted" } else { "already_indexed" },
-                                "reason": "preserved first-observed delivery task text and provenance",
-                            })),
-                            Err(error) => outcomes.push(json!({
-                                "run_id": run_id,
-                                "status": "excluded",
-                                "reason": error.to_string(),
-                            })),
-                        },
-                        None => outcomes.push(json!({
-                            "run_id": run_id,
-                            "delivery_id": delivery_id,
-                            "task_ids": task_ids,
-                            "status": "already_indexed",
-                            "reason": "preserved immutable first-observed delivery envelope",
-                        })),
-                    }
+        let identity = json!({"run_id": run_id});
+        let (delivery, supplied_snapshot) =
+            match adapter.delivery_from_run(run_id, branch, &snapshots, index.repository()) {
+                Ok(RunVerdict::Deliverable(verified)) => {
+                    (verified.delivery, verified.supplied_snapshot)
+                }
+                Ok(RunVerdict::Excluded(reason)) => {
+                    outcomes.record_excluded(identity, reason);
                     continue;
                 }
-                match index.import_with_supplied_snapshots(
-                    delivery,
-                    supplied_snapshot.into_iter().collect(),
-                ) {
-                    Ok(report) => outcomes.push(json!({
+                Err(error) => {
+                    outcomes.unverified(identity, &error);
+                    continue;
+                }
+            };
+        let delivery_id = delivery.delivery_id.clone();
+        let task_ids = delivery
+            .tasks
+            .iter()
+            .map(|task| task.task_id.clone())
+            .collect::<Vec<_>>();
+        let existing = index.delivery(delivery_id.as_str())?;
+        if existing.as_ref().is_some_and(|existing| {
+            existing.delivery.before_revision == delivery.before_revision
+                && existing.delivery.after_revision == delivery.after_revision
+        }) {
+            match supplied_snapshot {
+                Some(snapshot) => match index.add_supplied_snapshot(&delivery_id, snapshot) {
+                    Ok(inserted) => outcomes.push(json!({
                         "run_id": run_id,
                         "delivery_id": delivery_id,
                         "task_ids": task_ids,
-                        "status": if report.inserted {"inserted"} else {"already_indexed"},
+                        "status": "already_indexed",
+                        "supplied_snapshot": if inserted { "inserted" } else { "already_indexed" },
+                        "reason": "preserved first-observed delivery task text and provenance",
                     })),
-                    Err(error) => outcomes.push(json!({
-                        "run_id": run_id,
-                        "status": "excluded",
-                        "reason": error.to_string(),
-                    })),
-                }
+                    Err(error) => outcomes.refused(identity, &error),
+                },
+                None => outcomes.push(json!({
+                    "run_id": run_id,
+                    "delivery_id": delivery_id,
+                    "task_ids": task_ids,
+                    "status": "already_indexed",
+                    "reason": "preserved immutable first-observed delivery envelope",
+                })),
             }
-            Err(error) => outcomes.push(json!({
+            continue;
+        }
+        match index
+            .import_with_supplied_snapshots(delivery, supplied_snapshot.into_iter().collect())
+        {
+            Ok(report) => outcomes.push(json!({
                 "run_id": run_id,
-                "status": "excluded",
-                "reason": error.to_string(),
+                "delivery_id": delivery_id,
+                "task_ids": task_ids,
+                "status": if report.inserted {"inserted"} else {"already_indexed"},
             })),
+            Err(error) => outcomes.refused(identity, &error),
         }
     }
     Ok(json!({
@@ -890,13 +1090,88 @@ fn sync_orbit(
             "task_ids_examined": task_ids_examined,
             "discovered_unique_runs": discovered_run_count,
             "processed": run_ids.len(),
+            "excluded": outcomes.excluded,
+            "failed": outcomes.failed,
             "truncated": truncated,
-            "note": "Only explicit run_ids and each requested task's current job_run_id are examined. Orbit exposes no cursor-paginated detailed delivery feed; older retries and unlisted tasks are not claimed as covered.",
-            "resume": "resubmit omitted run_ids or task_ids; delivery IDs are idempotent",
+            "note": "Only explicit run_ids and each requested task's current job_run_id are examined. Orbit exposes no cursor-paginated detailed delivery feed; older retries and unlisted tasks are not claimed as covered. excluded counts runs examined and judged ineligible; failed counts tasks and runs that could not be examined.",
+            "resume": "resubmit omitted or failed run_ids or task_ids; delivery IDs are idempotent",
         },
-        "outcomes": outcomes,
+        "outcomes": outcomes.entries,
         "status": index.status()?,
     }))
+}
+
+/// `orbit_sync`'s per-item outcomes and their counts. `excluded` is a
+/// verdict: the item was examined and is not an eligible delivery. `failed`
+/// is infrastructure: the item could not be examined (STD-02 §R30).
+#[derive(Default)]
+struct SyncOutcomes {
+    entries: Vec<Value>,
+    excluded: usize,
+    failed: usize,
+}
+
+impl SyncOutcomes {
+    fn push(&mut self, outcome: Value) {
+        self.entries.push(outcome);
+    }
+
+    fn record_excluded(&mut self, mut identity: Value, reason: String) {
+        identity["status"] = json!("excluded");
+        identity["reason"] = json!(reason);
+        self.excluded += 1;
+        self.entries.push(identity);
+    }
+
+    fn record_failed(&mut self, mut identity: Value, error: &GraphError) {
+        identity["status"] = json!("failed");
+        identity["reason"] = json!(error.to_string());
+        identity["error"] = error::failure_json(&ToolError::graph(error.clone()));
+        self.failed += 1;
+        self.entries.push(identity);
+    }
+
+    /// An item Orbit's authority could not vouch for: a verdict when the
+    /// request's workspace or repository does not hold that authority, a
+    /// failure when Orbit or Git could not be read.
+    fn unverified(&mut self, identity: Value, error: &GraphError) {
+        match error.class() {
+            GraphErrorClass::InvalidInput => self.record_excluded(identity, error.to_string()),
+            GraphErrorClass::InvalidData
+            | GraphErrorClass::NotFound
+            | GraphErrorClass::Git
+            | GraphErrorClass::Io { .. }
+            | GraphErrorClass::Sqlite
+            | GraphErrorClass::Timeout
+            | GraphErrorClass::OrbitRefused
+            | GraphErrorClass::Subprocess
+            | GraphErrorClass::IndexMissing
+            | GraphErrorClass::IndexIncompatible
+            | GraphErrorClass::UnsafeStatePath
+            | GraphErrorClass::VersionMismatch => self.record_failed(identity, error),
+        }
+    }
+
+    /// A delivery the history index refused to store: a verdict when the
+    /// index judged its content, a failure when it could not write it.
+    fn refused(&mut self, identity: Value, error: &GraphError) {
+        match error.class() {
+            GraphErrorClass::InvalidInput | GraphErrorClass::InvalidData => {
+                self.record_excluded(identity, error.to_string());
+            }
+            GraphErrorClass::NotFound
+            | GraphErrorClass::Git
+            | GraphErrorClass::Io { .. }
+            | GraphErrorClass::Sqlite
+            | GraphErrorClass::Timeout
+            | GraphErrorClass::OrbitRefused
+            | GraphErrorClass::Subprocess
+            | GraphErrorClass::IndexMissing
+            | GraphErrorClass::IndexIncompatible
+            | GraphErrorClass::UnsafeStatePath
+            | GraphErrorClass::VersionMismatch => self.record_failed(identity, error),
+        }
+    }
 }
 
 /// Check a request's `schema_version`. It stays `None` when the caller sent
@@ -940,31 +1215,26 @@ fn json_error(error: serde_json::Error) -> GraphError {
 /// A read-only tool's history-open failure; a missing index names the
 /// `history_sync` maintenance call that builds it, in the caller's own tool
 /// spelling (STD-01 §R21).
-fn history_read_error(error: GraphError, tool_name: &str, branch: &str) -> ToolError {
-    match error {
-        GraphError::IndexMissing { path, .. } => {
-            let maintain = if tool_name.starts_with("orbit.") {
-                MAINTAIN_TOOL_NAME
-            } else {
-                V2_MAINTAIN_TOOL_NAME
-            };
-            let call = json!({"operation": "history_sync", "branch": branch});
-            ToolError::history_index_missing(format!(
-                "no history index has been built for branch {branch} (none at {}); run \
-                 {maintain} with {call} and retry",
-                path.display()
-            ))
-        }
-        error => ToolError::graph(error),
+fn history_read_error(call: &ToolCall<'_>, error: GraphError, branch: &str) -> ToolError {
+    if let GraphError::IndexMissing { path, .. } = &error {
+        let maintain = call.spelling(&MAINTAIN_TOOL);
+        let request = json!({"operation": "history_sync", "branch": branch});
+        return ToolError::history_index_missing(format!(
+            "no history index has been built for branch {branch} (none at {}); run \
+             {maintain} with {request} and retry",
+            path.display()
+        ));
     }
+    ToolError::graph(error)
 }
 
 /// The writable history index `maintain` imports and synchronizes into.
 fn open_history_index(
+    call: &ToolCall<'_>,
     repository: &std::path::Path,
     branch: &str,
 ) -> Result<HistoryIndex, GraphError> {
-    match plugin_index_dir(repository)?.as_deref() {
+    match plugin_index_dir(call, repository)?.as_deref() {
         Some(index_dir) => HistoryIndex::open_with_index_dir(repository, branch, index_dir),
         None => HistoryIndex::open(repository, branch),
     }
@@ -976,17 +1246,13 @@ fn index_dir_in(state_root: &std::path::Path, repository: &std::path::Path) -> P
     state_root.join(repository_hash.to_hex().as_str())
 }
 
-fn plugin_index_dir(repository: &std::path::Path) -> Result<Option<PathBuf>, GraphError> {
-    let Some(state_root) = env::var_os("ORBIT_PLUGIN_STATE") else {
+fn plugin_index_dir(
+    call: &ToolCall<'_>,
+    repository: &std::path::Path,
+) -> Result<Option<PathBuf>, GraphError> {
+    let Some(state_root) = call.environment.state_root() else {
         return Ok(None);
     };
-    if state_root.is_empty() {
-        return Err(GraphError::invalid_data(
-            "resolve plugin index directory",
-            "ORBIT_PLUGIN_STATE must not be empty when set",
-        ));
-    }
-    let state_root = std::path::Path::new(&state_root);
     let index_dir = index_dir_in(state_root, repository);
     // An existing per-repository directory is checked before any tool reads
     // or writes it: a symlink or another user's directory is refused
