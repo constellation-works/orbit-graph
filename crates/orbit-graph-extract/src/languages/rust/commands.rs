@@ -16,7 +16,7 @@ pub(super) fn extract_commands(root: Node, source: &str, state: &mut ExtractionS
 
     for enum_index in 0..extraction.enums.len() {
         let prefix = command_prefix_for_enum(&extraction, enum_index, &state.file_path);
-        let mut visited = BTreeSet::new();
+        let mut active_enums = BTreeSet::new();
         emit_commands_for_enum(
             root,
             source,
@@ -24,7 +24,7 @@ pub(super) fn extract_commands(root: Node, source: &str, state: &mut ExtractionS
             enum_index,
             &prefix,
             state,
-            &mut visited,
+            &mut active_enums,
         );
     }
 }
@@ -232,14 +232,15 @@ fn emit_commands_for_enum(
     enum_index: usize,
     prefix: &[String],
     state: &mut ExtractionState,
-    visited: &mut BTreeSet<String>,
+    active_enums: &mut BTreeSet<usize>,
 ) {
-    let command_enum = &extraction.enums[enum_index];
-    let visit_key = format!("{}:{}", command_enum.qualified, prefix.join(" "));
-    if !visited.insert(visit_key) {
+    // An enum may appear under multiple command paths, but cannot expand again
+    // while it is already on this path.
+    if !active_enums.insert(enum_index) {
         return;
     }
 
+    let command_enum = &extraction.enums[enum_index];
     for variant in &command_enum.variants {
         let mut path = prefix.to_vec();
         path.push(variant.command_name.clone());
@@ -258,10 +259,11 @@ fn emit_commands_for_enum(
                 nested_index,
                 &path,
                 state,
-                visited,
+                active_enums,
             );
         }
     }
+    active_enums.remove(&enum_index);
 }
 
 fn find_command_enum(

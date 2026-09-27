@@ -440,6 +440,89 @@ fn review(_args: ReviewArgs) {}
 }
 
 #[test]
+fn recursive_clap_subcommand_stops_at_the_active_enum() {
+    let file = extract_at(
+        "crates/orbit-cli/src/main.rs",
+        r#"
+use clap::Subcommand;
+
+#[derive(Subcommand)]
+enum Command {
+    Again(Box<Command>),
+    Stop,
+}
+"#,
+    );
+
+    let names = file
+        .commands
+        .iter()
+        .map(|command| command.name.as_str())
+        .collect::<Vec<_>>();
+    assert_eq!(names, ["orbit-cli again", "orbit-cli stop"]);
+}
+
+#[test]
+fn mutually_recursive_clap_subcommands_stop_at_the_active_enum() {
+    let file = extract(
+        r#"
+use clap::Subcommand;
+
+#[derive(Subcommand)]
+enum RootSubcommand {
+    Enter(ChildSubcommand),
+    Done,
+}
+
+#[derive(Subcommand)]
+enum ChildSubcommand {
+    Back(Box<RootSubcommand>),
+    Leaf,
+}
+"#,
+    );
+
+    let names = file
+        .commands
+        .iter()
+        .map(|command| command.name.as_str())
+        .collect::<Vec<_>>();
+    assert_eq!(names.len(), 8);
+    assert!(names.contains(&"root enter back"));
+    assert!(names.contains(&"root enter leaf"));
+    assert!(names.contains(&"child back enter"));
+    assert!(names.contains(&"child back done"));
+}
+
+#[test]
+fn shared_clap_subcommand_expands_under_both_prefixes() {
+    let file = extract(
+        r#"
+use clap::Subcommand;
+
+#[derive(Subcommand)]
+enum RootSubcommand {
+    First(SharedSubcommand),
+    Second(SharedSubcommand),
+}
+
+#[derive(Subcommand)]
+enum SharedSubcommand {
+    Run,
+}
+"#,
+    );
+
+    let names = file
+        .commands
+        .iter()
+        .map(|command| command.name.as_str())
+        .collect::<Vec<_>>();
+    assert!(names.contains(&"root first run"));
+    assert!(names.contains(&"root second run"));
+}
+
+#[test]
 fn emits_clap_subcommand_when_arm_has_no_single_handler() {
     let file = extract(
         r#"
