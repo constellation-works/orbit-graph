@@ -34,6 +34,24 @@ const MAINTAIN_TOOL_NAME: &str = "orbit.graph.maintain";
 const VERSION_TOOL_NAME: &str = "orbit.graph.version";
 const CHANGES_TOOL_NAME: &str = "orbit.graph.changes";
 const PLUGIN_SCHEMA_VERSION: u32 = 1;
+
+#[cfg(unix)]
+#[derive(serde::Serialize)]
+struct LauncherProbeEnvelope {
+    ok: bool,
+    output: LauncherProbeOutput,
+}
+
+#[cfg(unix)]
+#[derive(serde::Serialize)]
+struct LauncherProbeOutput {
+    crate_version: &'static str,
+    extractor_version: u32,
+    history_schema_version: u32,
+    plugin_schema_version: u32,
+    store_schema_version: u32,
+}
+
 /// Tools of the root manifest that are not read-only code-graph queries.
 const NON_QUERY_TOOLS: [&str; 5] = ["version", "status", "recommend", "maintain", "changes"];
 /// `GRAPH_ORBIT_TIMEOUT_SECONDS` for the adapter tests that bound time.
@@ -751,8 +769,19 @@ fn launcher_runs_only_the_executable_its_manifest_binds() {
     executable(
         &fake,
         format!(
-            "#!/bin/sh\ncat >/dev/null\n: > '{}'\nprintf '%s\\n' '{{\"ok\":true,\"output\":{{\"plugin_schema_version\":{PLUGIN_SCHEMA_VERSION},\"extractor_version\":{EXTRACTOR_VERSION}}}}}'\n",
-            ran.display()
+            "#!/bin/sh\ncat >/dev/null\n: > '{}'\nprintf '%s\\n' '{}'\n",
+            ran.display(),
+            serde_json::to_string(&LauncherProbeEnvelope {
+                ok: true,
+                output: LauncherProbeOutput {
+                    crate_version: "fake",
+                    extractor_version: EXTRACTOR_VERSION,
+                    history_schema_version: orbit_graph::HISTORY_INDEX_SCHEMA_VERSION,
+                    plugin_schema_version: PLUGIN_SCHEMA_VERSION,
+                    store_schema_version: orbit_graph::STORE_SCHEMA_VERSION,
+                },
+            })
+            .expect("serialize version envelope")
         ),
     );
     let fake_path = format!("{}:/usr/bin:/bin", fake_dir.display());
@@ -814,6 +843,116 @@ fn launcher_runs_only_the_executable_its_manifest_binds() {
             "{launcher:?}: {notice}"
         );
         fs::remove_file(&ran).expect("reset the impostor marker");
+    }
+}
+
+#[cfg(unix)]
+#[test]
+fn launchers_reject_version_number_prefixes_before_the_real_request() {
+    let fixture = TempDir::new().expect("version probe fixture");
+    let fake_dir = fixture.path().join("fake");
+    fs::create_dir(&fake_dir).expect("fake directory");
+    let fake = fake_dir.join("orbit-graph");
+    let fake_path = format!("{}:/usr/bin:/bin", fake_dir.display());
+    let cases = [
+        ("a stale extractor version 21", 21, 1, true, false),
+        (
+            "current 23/1 envelope",
+            EXTRACTOR_VERSION,
+            PLUGIN_SCHEMA_VERSION,
+            true,
+            true,
+        ),
+        ("extractor version 210", 210, 1, true, false),
+        (
+            "an extractor version with the current numeric prefix",
+            EXTRACTOR_VERSION * 10,
+            1,
+            true,
+            false,
+        ),
+        (
+            "plugin schema version 10",
+            EXTRACTOR_VERSION,
+            10,
+            true,
+            false,
+        ),
+        (
+            "versions outside the supported envelope",
+            EXTRACTOR_VERSION,
+            PLUGIN_SCHEMA_VERSION,
+            false,
+            false,
+        ),
+    ];
+
+    for launcher_name in ["bin/orbit-graph", "plugin/bin/orbit-graph"] {
+        let launcher = repository_root().join(launcher_name);
+        for (
+            index,
+            (description, extractor_version, plugin_schema_version, supported_shape, compatible),
+        ) in cases.iter().enumerate()
+        {
+            let received_request = fixture.path().join(format!("real-request-{index}"));
+            let response = if *supported_shape {
+                serde_json::to_string(&LauncherProbeEnvelope {
+                    ok: true,
+                    output: LauncherProbeOutput {
+                        crate_version: "fake",
+                        extractor_version: *extractor_version,
+                        history_schema_version: 1,
+                        plugin_schema_version: *plugin_schema_version,
+                        store_schema_version: 1,
+                    },
+                })
+                .expect("serialize version envelope")
+            } else {
+                json!({
+                    "ok": true,
+                    "metadata": {
+                        "output": {
+                            "crate_version": "fake",
+                            "extractor_version": extractor_version,
+                            "store_schema_version": 1,
+                            "history_schema_version": 1,
+                            "plugin_schema_version": plugin_schema_version,
+                        }
+                    }
+                })
+                .to_string()
+            };
+            executable(
+                &fake,
+                format!(
+                    "#!/bin/sh\nif [ \"${{ORBIT_GRAPH_LAUNCHER_PROBING:-}}\" = 1 ]; then\n    cat >/dev/null\nelse\n    cat > '{}'\nfi\nprintf '%s\\n' '{}'\n",
+                    received_request.display(),
+                    response
+                ),
+            );
+
+            let refused = launcher_version(&launcher, &[UNBOUND], &fake_path, None);
+            let result: Value = serde_json::from_slice(&refused.stdout).expect("launcher response");
+            if *compatible {
+                assert_eq!(
+                    result["ok"], true,
+                    "{launcher_name}: {description}: {result}"
+                );
+                assert!(
+                    received_request.exists(),
+                    "{launcher_name}: {description}: launcher did not send the real request"
+                );
+            } else {
+                assert_eq!(
+                    result["error"]["code"], "incompatible_binary",
+                    "{launcher_name}: {description}: {result}"
+                );
+                assert!(
+                    !received_request.exists(),
+                    "{launcher_name}: {description}: launcher sent the real request"
+                );
+            }
+        }
     }
 }
 
