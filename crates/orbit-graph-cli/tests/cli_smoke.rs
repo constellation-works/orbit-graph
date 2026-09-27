@@ -30,6 +30,57 @@ use tempfile::TempDir;
 use orbit_graph::{HistoryIndex, TaskTextAvailability, TemporalStatus};
 
 #[test]
+fn real_binary_keeps_colliding_branch_indexes_separate() {
+    let fixture = TempDir::new().expect("create branch fixture");
+    let root = fixture.path();
+    run_git(root, ["init", "-b", "feat/foo"]);
+    fs::write(root.join("lib.rs"), "pub fn first_branch_only() {}\n").expect("write first source");
+    run_git(root, ["add", "lib.rs"]);
+    run_git(root, ["commit", "-m", "first"]);
+
+    let first_path = run_json(root, ["db-path"])["path"]
+        .as_str()
+        .expect("first database path")
+        .to_string();
+    run_json(root, ["sync", "--full"]);
+    assert!(
+        !run_json(root, ["search", "first_branch_only"])["matches"]
+            .as_array()
+            .expect("first search matches")
+            .is_empty()
+    );
+
+    run_git(root, ["checkout", "-b", "feat_foo"]);
+    fs::write(root.join("lib.rs"), "pub fn second_branch_only() {}\n")
+        .expect("write second source");
+    run_git(root, ["add", "lib.rs"]);
+    run_git(root, ["commit", "-m", "second"]);
+    let second_path = run_json(root, ["db-path"])["path"]
+        .as_str()
+        .expect("second database path")
+        .to_string();
+    assert_ne!(first_path, second_path);
+    let missing = run_explicit_json(root, ["search", "first_branch_only"]);
+    assert!(!missing.status.success());
+    let error: Value = serde_json::from_slice(&missing.stderr).expect("error JSON");
+    assert_eq!(error["code"], "index_missing", "{error}");
+
+    run_json(root, ["sync", "--full"]);
+    assert!(
+        !run_json(root, ["search", "second_branch_only"])["matches"]
+            .as_array()
+            .expect("second search matches")
+            .is_empty()
+    );
+    assert!(
+        run_json(root, ["search", "first_branch_only"])["matches"]
+            .as_array()
+            .expect("old symbol search matches")
+            .is_empty()
+    );
+}
+
+#[test]
 fn real_binary_indexes_and_queries_a_fixture() {
     let fixture = fixture_repository();
 

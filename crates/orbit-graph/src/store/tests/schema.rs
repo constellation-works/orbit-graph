@@ -479,8 +479,6 @@ fn reopening_existing_db_preserves_meta_rows() {
             [],
         )
         .expect("mutate meta before reopen");
-        conn.execute("UPDATE meta SET value = 'manual' WHERE key = 'branch'", [])
-            .expect("mutate branch before reopen");
     }
 
     let graph = Graph::open(worktree.path(), SyncPolicy::Manual).expect("second open");
@@ -492,7 +490,122 @@ fn reopening_existing_db_preserves_meta_rows() {
         meta.get("last_full_build_at").map(String::as_str),
         Some("kept")
     );
-    assert_eq!(meta.get("branch").map(String::as_str), Some("manual"));
+    assert_eq!(meta.get("branch").map(String::as_str), Some("main"));
+}
+
+#[test]
+fn default_index_refuses_a_mismatched_stored_branch() {
+    let worktree = TestWorktree::new("mismatched-meta-branch", "main");
+    worktree.init_git_repo();
+    let graph = Graph::open(worktree.path(), SyncPolicy::Manual).expect("open graph");
+    let path = graph.db_path().path().to_path_buf();
+    drop(graph);
+    let conn = open_test_connection(&path);
+    conn.execute("UPDATE meta SET value = 'other' WHERE key = 'branch'", [])
+        .expect("change stored branch");
+    drop(conn);
+
+    let read = Graph::open_existing_read_only(worktree.path())
+        .err()
+        .expect("read must refuse wrong branch");
+    assert!(
+        matches!(read, crate::GraphError::IndexIncompatible { .. }),
+        "{read}"
+    );
+    let write = Graph::open(worktree.path(), SyncPolicy::Manual)
+        .err()
+        .expect("writer must refuse wrong branch");
+    assert!(
+        matches!(write, crate::GraphError::IndexIncompatible { .. }),
+        "{write}"
+    );
+}
+
+#[test]
+fn colliding_branches_never_read_each_others_index_and_legacy_is_reused_safely() {
+    let worktree = TestWorktree::new("branch-collision", "feat/foo");
+    let first_commit = worktree.init_git_repo();
+    let first = Graph::open(worktree.path(), SyncPolicy::Manual).expect("open first branch");
+    let first_path = first.db_path().path().to_path_buf();
+    drop(first);
+
+    // A pre-hash database for feat/foo has the same old filename as feat_foo.
+    let legacy = crate::db_path::legacy_db_path(worktree.path(), "feat/foo", EXTRACTOR_VERSION);
+    fs::rename(&first_path, &legacy).expect("plant compatible legacy index");
+    assert_eq!(
+        crate::resolve_worktree_db_path(worktree.path())
+            .expect("resolve compatible legacy index")
+            .path(),
+        legacy
+    );
+    let compatible = Graph::open_existing_read_only(worktree.path()).expect("read legacy index");
+    assert_eq!(compatible.db_path().path(), legacy);
+    drop(compatible);
+
+    let repo = Repository::open(worktree.path()).expect("open repo");
+    let commit = repo
+        .find_commit(Oid::from_str(&first_commit).expect("first oid"))
+        .expect("find first commit");
+    repo.branch("feat_foo", &commit, false)
+        .expect("create colliding branch");
+    repo.set_head("refs/heads/feat_foo").expect("switch branch");
+    assert_ne!(
+        crate::resolve_worktree_db_path(worktree.path())
+            .expect("resolve colliding branch")
+            .path(),
+        legacy
+    );
+    let error = Graph::open_existing_read_only(worktree.path())
+        .err()
+        .expect("other branch cannot read legacy index");
+    assert!(
+        matches!(error, crate::GraphError::IndexMissing { .. }),
+        "{error}"
+    );
+    let other = Graph::open(worktree.path(), SyncPolicy::Manual).expect("create other index");
+    assert_ne!(other.db_path().path(), legacy);
+    assert_ne!(other.db_path().path(), first_path);
+    assert!(legacy.exists());
+}
+
+#[test]
+fn named_detached_like_branch_cannot_read_detached_head_index() {
+    let worktree = TestWorktree::new("named-detached", "main");
+    let commit = worktree.init_git_repo();
+    worktree.detach_head(&commit);
+    let detached = Graph::open(worktree.path(), SyncPolicy::Manual).expect("open detached index");
+    let detached_path = detached.db_path().path().to_path_buf();
+    drop(detached);
+
+    let repo = Repository::open(worktree.path()).expect("open repo");
+    let tip = repo
+        .find_commit(Oid::from_str(&commit).expect("oid"))
+        .expect("tip");
+    let branch = format!("detached-{}", &commit[..12]);
+    repo.branch(&branch, &tip, false)
+        .expect("create detached-like branch");
+    repo.set_head(&format!("refs/heads/{branch}"))
+        .expect("attach HEAD");
+    let error = Graph::open_existing_read_only(worktree.path())
+        .err()
+        .expect("named branch must not read detached index");
+    assert!(
+        matches!(error, crate::GraphError::IndexMissing { .. }),
+        "{error}"
+    );
+    let named = Graph::open(worktree.path(), SyncPolicy::Manual).expect("open named branch");
+    assert_ne!(named.db_path().path(), detached_path);
+    assert!(detached_path.exists());
+    let plan = crate::plan_clean_old_databases(worktree.path()).expect("plan cleanup");
+    assert!(
+        plan.would_delete.is_empty(),
+        "reachable detached index is retained"
+    );
+    // Cleanup reports physical paths; macOS temp dirs sit behind /var -> /private/var.
+    let detached_physical = detached_path
+        .canonicalize()
+        .expect("resolve detached index");
+    assert!(plan.kept.iter().any(|item| item.path == detached_physical));
 }
 
 #[cfg(unix)]

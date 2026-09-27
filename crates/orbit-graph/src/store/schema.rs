@@ -197,13 +197,17 @@ pub(crate) fn initialize_if_empty(
 }
 
 /// Checks the schema identity stored in `meta.schema_version` against
-/// [`SCHEMA_VERSION`].
+/// [`SCHEMA_VERSION`], and the branch when opening a worktree-selected index.
 ///
 /// A database that was never initialized is [`GraphError::IndexMissing`]; one
 /// with no identity, or another identity, is [`GraphError::IndexIncompatible`]
 /// naming the file. Neither is ever read or written as if it were current
 /// (STD-03 §R10).
-pub(crate) fn validate_identity(conn: &Connection, db_path: &Path) -> Result<(), GraphError> {
+pub(crate) fn validate_identity(
+    conn: &Connection,
+    db_path: &Path,
+    expected_branch: Option<&str>,
+) -> Result<(), GraphError> {
     if database_is_empty(conn)? {
         return Err(GraphError::IndexMissing {
             path: db_path.to_path_buf(),
@@ -233,10 +237,28 @@ pub(crate) fn validate_identity(conn: &Connection, db_path: &Path) -> Result<(),
         None
     };
     let expected = SCHEMA_VERSION.to_string();
-    match stored {
-        Some(stored) if stored == expected => Ok(()),
-        stored => Err(incompatible_schema(db_path, stored.as_deref())),
+    if stored.as_deref() != Some(expected.as_str()) {
+        return Err(incompatible_schema(db_path, stored.as_deref()));
     }
+    if let Some(expected_branch) = expected_branch {
+        let stored_branch: Option<String> = conn
+            .query_row("SELECT value FROM meta WHERE key = 'branch'", [], |row| {
+                row.get(0)
+            })
+            .optional()
+            .map_err(|source| GraphError::sqlite("read graph branch identity", source))?;
+        if stored_branch.as_deref() != Some(expected_branch) {
+            return Err(GraphError::IndexIncompatible {
+                path: db_path.to_path_buf(),
+                reason: format!(
+                    "the graph index at {} records branch {:?}, expected {expected_branch:?}; run `orbit-graph sync` for this branch",
+                    db_path.display(),
+                    stored_branch.as_deref()
+                ),
+            });
+        }
+    }
+    Ok(())
 }
 
 fn incompatible_schema(db_path: &Path, stored: Option<&str>) -> GraphError {

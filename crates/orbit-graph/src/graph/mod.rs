@@ -90,7 +90,7 @@ impl Graph {
         let Some(physical_db) = store::existing_physical_db(worktree_root, db_path.path())? else {
             return Err(store::missing_graph_index(worktree_root, db_path.path()));
         };
-        Self::open_observed(worktree_root, db_path, physical_db.as_path())
+        Self::open_observed(worktree_root, db_path, physical_db.as_path(), true)
     }
 
     /// Read the graph selected by a checkout identity already pinned by the caller.
@@ -99,16 +99,20 @@ impl Graph {
         branch: &str,
         target: &str,
     ) -> Result<Self, GraphError> {
-        let db_path = crate::resolve_db_path_for_commit(
+        let mut db_path = crate::resolve_db_path_for_commit(
             worktree_root,
             branch,
             target,
             crate::EXTRACTOR_VERSION,
         );
+        if store::existing_physical_db(worktree_root, db_path.path())?.is_none() {
+            db_path = store::existing_legacy_db_path_for_branch(worktree_root, branch)?
+                .unwrap_or(db_path);
+        }
         let Some(physical_db) = store::existing_physical_db(worktree_root, db_path.path())? else {
             return Err(store::missing_graph_index(worktree_root, db_path.path()));
         };
-        Self::open_observed(worktree_root, db_path, physical_db.as_path())
+        Self::open_observed(worktree_root, db_path, physical_db.as_path(), true)
     }
 
     /// Open a graph for a synthetic or detached tree identified by `revision`.
@@ -207,16 +211,18 @@ impl Graph {
         let db_path = store::existing_db_path(worktree_root, db_path)?;
         let physical_db = store::existing_physical_db(worktree_root, db_path.path())?
             .unwrap_or_else(|| db_path.path().to_path_buf());
-        Self::open_observed(worktree_root, db_path, physical_db.as_path())
+        Self::open_observed(worktree_root, db_path, physical_db.as_path(), false)
     }
 
     fn open_observed(
         worktree_root: &Path,
         db_path: GraphDbPath,
         physical_db: &Path,
+        check_branch: bool,
     ) -> Result<Self, GraphError> {
         let read_conn = store::open_observational(physical_db, "open graph database read-only")?;
-        store::schema::validate_identity(&read_conn, db_path.path())?;
+        let expected_branch = check_branch.then_some(db_path.branch());
+        store::schema::validate_identity(&read_conn, db_path.path(), expected_branch)?;
         let last_auto_sync_at = read_last_incremental_at(
             &read_conn,
             "read graph last incremental sync metadata at open",

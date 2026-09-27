@@ -269,7 +269,9 @@ fn judge_graph_db_family(path: &Path, repo: Result<&Repository, &String>) -> Cle
         std::cmp::Ordering::Equal => {}
     }
 
-    // Per-commit detached databases are pruned by Git reachability.
+    // Hashed branch names begin with `branch~`, so they cannot be mistaken
+    // for detached files. A legacy named branch can still look detached;
+    // its stored `meta.branch` must be HEAD before reachability pruning.
     let Some(commit_prefix) = metadata.detached_commit_prefix else {
         return CleanDecision::Keep(CleanReason::Current, None);
     };
