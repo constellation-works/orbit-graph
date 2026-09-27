@@ -37,7 +37,12 @@ fn persisted_text_writer_inventory_is_explicit() {
             "commands"
         ]
     );
-    assert_eq!(sql_targets(graph, "UPDATE "), ["symbols", "commands"]);
+    // Both `commands` updates store a symbol id or clear it. Command names
+    // and handler ids are structured metadata, not free text (STD-05 §R13).
+    assert_eq!(
+        sql_targets(graph, "UPDATE "),
+        ["commands", "symbols", "commands"]
+    );
     assert!(graph.contains("let value = crate::redaction::redact(&string.value)"));
 
     // Delivery payloads, task columns and caller snapshots carry task
