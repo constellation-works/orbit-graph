@@ -8,8 +8,8 @@ Orbit control-plane configuration, runtime state, or rendering crates.
 
 `crates/orbit-graph-cli/src/output/sink.rs` owns the one sink resolved for an
 invocation. It reads
-whether stdout is a terminal, terminal width, color controls, and output mode
-once. Command code does not inspect those process properties or write its
+whether stdout is a terminal, terminal width, and output mode once; no other
+file asks whether a stream is a terminal or how wide it is. Command code does not inspect those process properties or write its
 records directly.
 
 The supported modes are `auto`, `table`, `json`, and `ndjson`. Resolution uses
@@ -32,31 +32,38 @@ named fields.
 The sink has width zero when stdout is not a TTY, regardless of `COLUMNS`.
 Zero means no truncation. On a TTY, a positive `COLUMNS` value precedes the
 terminal query; an absent or invalid result also becomes zero rather than a
-guessed width. Color is never allowed off a TTY. On a TTY, `NO_COLOR` with a
-non-empty value and `TERM=dumb` disable it; `CLICOLOR_FORCE` cannot override
-`TERM=dumb`. No current view emits color, so these are policy inputs for later
-view migrations rather than a promise of colored output.
+guessed width. No output is styled: clap is built without its `color` feature,
+so help and usage errors carry no ANSI on a terminal either, and the sink
+resolves no color policy (STD-01 §R17).
 
-### The overview `--format` spelling
+### One meaning for `--format`
 
-`overview --format summary|full` predates output modes and retains its exact
-detail-selection meaning. Choose an output mode at the root when invoking that
-command:
+`--format` selects the output mode at every level, and `--json` is the same as
+`--format json` wherever it appears. Combining `--json` with a different
+`--format` is a usage error (exit 2), checked once after parsing. Overview's
+detail level is `overview --detail summary|full` (default `summary`).
+
+`overview --format summary|full` predates output modes. It remains a
+deprecated alias for `--detail` (STD-01 §R35): it still selects the detail
+level, writes a one-line deprecation warning to stderr, and leaves the output
+mode to the root option, `--json`, or the environment. Only `overview` accepts
+the two values, and combining them with a different `--detail` is a usage
+error.
 
 ```text
-orbit-graph --format json overview --format full
+orbit-graph overview --detail full --json
+orbit-graph --format json overview --format full   # deprecated, warns
 ```
-
-For commands without a local collision, the shared output option is accepted
-at the root or after the command. This placement rule makes the two meanings
-unambiguous and preserves existing overview invocations.
 
 ## Machine contracts
 
-`--format json` emits exactly one JSON document followed by a newline. Its
+`--format json` (or `--json`) emits exactly one JSON document followed by a
+newline. Its
 success document is the same `serde_json::Value` commands returned before
 output modes were introduced; field names, nesting, and value types are not
 changed by rendering. JSON is compact when redirected and pretty on a TTY.
+Output structs never skip a field: a value that is absent serializes as
+`null`, so every field of a command's JSON is always present.
 
 `--format ndjson` emits one complete compact JSON value per line and flushes
 after each record. A command that supplies record units through
@@ -66,10 +73,14 @@ record. This default avoids guessing that an arbitrary nested array is the
 command's record stream.
 
 The no-argument plugin protocol is separate from terminal rendering.
-`ORBIT_TOOL_NAME` recognition still precedes CLI parsing; recognized plugins
-read their JSON request from stdin and emit the same compact JSON response or
-error envelope as before. Output flags and `ORBIT_GRAPH_FORMAT` do not affect
-that protocol.
+`ORBIT_TOOL_NAME` is its explicit signal and is checked before CLI parsing:
+only then is stdin read, as the JSON request, and the compact `{"ok": ...}`
+response or error envelope goes to stdout unchanged. Without it, stdin is never
+read, so a bare `orbit-graph` prints help even with an open pipe on stdin. The
+protocol takes no arguments: `ORBIT_TOOL_NAME` with command-line arguments is a
+usage error naming the conflict (exit 2, nothing on stdout) rather than one of
+the two being silently ignored. Output flags and `ORBIT_GRAPH_FORMAT` do not
+affect that protocol.
 
 ## Human views and migration seam
 
@@ -86,12 +97,8 @@ writes. A command migration should therefore:
 4. add `with_ndjson_records(records)` only after identifying the command's
    stable record unit.
 
-`View::Document` is the explicit migration boundary. Commands not yet assigned
-a dedicated human view use it and render their complete JSON document in
-human modes. This keeps their information and schema intact while the two
-dependent command-group migrations add purposeful text and tables. New or
-migrated commands should not use `View::Document` merely to avoid defining a
-human view.
+Every command defines a dedicated human view; there is no fallback that
+renders the JSON document in human modes.
 
 The migrated recommendation, history, evaluation, and index commands use the
 following views:
@@ -115,10 +122,13 @@ following views:
 The exploration and relationship commands use these views:
 
 - `overview` renders aggregate counts, language and symbol-kind counts, files,
-  and (for `--format full`) a file-contextual symbol list.
+  and (for `--detail full`) a file-contextual symbol list.
 - `search` renders one row per match with kind, complete match text, path, and
   one-based source line. `show` renders resolved metadata followed by source;
-  non-UTF-8 source directs the reader to the byte-preserving JSON view.
+  non-UTF-8 source directs the reader to the byte-preserving JSON view. In
+  JSON, `source` is the text or `null`; `source_encoding` is `utf-8` or
+  `bytes`, and `source_bytes` carries the raw bytes only in the latter case.
+  A selector that resolves to no indexed source fails with `not_found`.
 - `refs` combines textual references, structural relations, and explicitly
   labelled fallback references without dropping any of the three sets. A
   reference row's `from` column is its enclosing symbol's selector (`-` at top
@@ -160,10 +170,10 @@ were added without removing or renaming any existing field:
   (for example minified) line is decoded. `from_selector` is accepted by the
   same commands as an `impact` selector.
 - `refs` and `impact` always carry a top-level `fallback_used` boolean. The
-  existing `fallback` object keeps its name and shape and is still present only
-  when used; the boolean exists so an agent that sees an empty `refs` or
-  `touched` list does not have to notice a missing key to learn that name-only
-  matches were returned instead.
+  `fallback` object keeps its name and shape and is `null` when unused; the
+  boolean exists so an agent that sees an empty `refs` or `touched` list learns
+  directly that name-only matches were returned instead. `impact` always
+  reports its `direction`, including the default `both`.
 - `callees` returns `{"callees": [...], "hidden_unresolved": N}`. By default it
   omits unresolved edges (`target_qualified: null`) whose call name has no
   indexed `function`, `method`, `class`, or `struct` anywhere in the graph —
@@ -177,6 +187,14 @@ records in every mode, JSON included, while stdout keeps only the payload
 (STD-01 §R12). `callees` uses one to echo its default filter whenever
 `hidden_unresolved` is non-zero (STD-01 §R33), so the count is visible even in
 NDJSON, whose record stream has no place for it.
+
+Capped lists say so (STD-01 §R29). `search` and `recommend` carry `total` and
+`truncated`; `impact` and `trace` carry the same pair for their node cap.
+`total` is the full count when known and `null` when the cap stopped counting
+(search reads one row past `--limit`, so it knows only that more exist). When
+`truncated` is `true`, a one-line notice such as `showing 5 of more than 5
+search matches; raise --limit to see more` names the remedy on stderr in every
+mode. `search` rejects an empty query and `--limit 0` as usage errors.
 
 ## Shared table width and record safety
 
@@ -217,8 +235,8 @@ The commands with natural repeated records declare these boundaries:
   object (including its nested symbols).
 - `search`: one unchanged match object per result. An empty result emits no
   records.
-- `show`: one unchanged detail document, including `null` for an unresolved
-  selector.
+- `show`: one unchanged detail document; an unresolved selector is a
+  `not_found` error, not a record.
 - `refs`: one `refs_context`, then the unchanged textual-reference and
   structural-relation records; an optional `refs_fallback_context` precedes the
   unchanged fallback-reference records.
@@ -245,15 +263,22 @@ Top-level help is a human-readable Clap template in
 `crates/orbit-graph-cli/src/command/mod.rs`. It uses
 named, borderless purpose sections. `orbit-graph`, `orbit-graph --help`, and
 `orbit-graph help` print that text to stdout and exit 0. Nested help does the
-same. Redirected help is complete and contains no ANSI styling.
+same. Help contains no ANSI styling, redirected or on a terminal.
 
 Successful payloads go to stdout. Diagnostics and errors go to stderr. Default
 usage errors are Clap's readable human text and usage, including bare command
 namespaces such as `history`; they exit 2. `refs` and `trace` without their
 required argument follow the same rule. In explicit JSON or NDJSON mode,
-usage and command errors instead use the existing object with nested
-`error.code` and `error.message`, plus `details` when available. Usage still
-exits 2, command failures exit 1, and stdout stays empty on failure.
+usage and command errors are instead one flat STD-01@2 §R19 object on stderr,
+`{"error": "<message>", "code": "<code>"}`; human modes print
+`error: <message>`. Usage exits 2, command failures exit 1, and stdout stays
+empty on failure. The plugin protocol keeps its own `{"ok": false, "error":
+{...}}` envelope on stdout.
+
+Logging goes to stderr through the subscriber installed in
+`crates/orbit-graph-cli/src/output/log.rs`, with no ANSI. The default filter is
+`warn`, so warnings such as a file skipped by the extraction byte cap are
+visible without configuration; `RUST_LOG` overrides it.
 
 A closed stdout pipe is a successful, silent stop. Both direct I/O errors and
 broken pipes reported through JSON serialization are recognized at the process
@@ -268,7 +293,11 @@ with Clap registration — the binary has no library target, so that assertion
 lives in the crate; adding a command requires both an inventory entry and
 real-workflow coverage. The plugin boundary is exercised separately by
 `crates/orbit-graph-cli/tests/plugin_integration.rs` with `ORBIT_TOOL_NAME` and
-JSON stdin.
+JSON stdin. `crates/orbit-graph-cli/tests/output_contract.rs` pins the output
+contract itself: `--json` byte-identity, the overview detail alias, token
+round-trips, truncation totals and notices, flat errors, `null` fields,
+`ORBIT_TOOL_NAME` conflicts, bare invocation with an open stdin, unstyled help
+on a terminal, and the default `warn` log filter.
 
 | Registered path | Executable behavior covered |
 | --- | --- |
@@ -281,19 +310,19 @@ JSON stdin.
 | `recommend` | File and symbol results, invalid inputs, empty state, table, JSON, and record-stream output. |
 | `evaluate` | Chronological corpus evaluation and live Git commit-text evaluation: human summary, JSON, and metric/case NDJSON. |
 | `search` | Match, empty state, plain, table, JSON, and per-match NDJSON output. |
-| `show` | Resolved source/detail output, malformed-selector failure, JSON, and one detail record. |
+| `show` | Resolved source/detail output, malformed-selector and `not_found` failures, JSON, and one detail record. |
 | `refs` | Filtered references, missing-argument failure, table, JSON, and context/reference NDJSON output; `from_selector` (including a top-level `null`), `snippet`, and `fallback_used` on precise and fallback results. |
 | `callees` | Returned calls and empty-state behavior in all three output formats; default hiding of unresolved calls with the `hidden_unresolved` count, its stderr notice, and `--include-unresolved`. |
 | `impact` | Bounded traversal in table, JSON, and context/impact NDJSON output; `selector`/`file`/`line` on touched entries; selectors printed by `impact` and `refs` round-trip through `show`, `callees`, `refs`, and `impact` past a nested same-name decoy. |
 | `trace` | Discovered command traversal, missing-argument failure, and lossless root record. |
-| `overview` | Summary/full views and the root output-format versus local detail-format compatibility rule. |
+| `overview` | Summary/full views, `--detail`, and the deprecated `--format summary\|full` alias. |
 | `implementors` | Implementations and empty-state behavior in table, JSON, and NDJSON output. |
 | `deps` | Import edges in table, JSON, and context/import NDJSON output. |
 | `db-path` | Human, JSON, and one NDJSON detail record. |
 | `clean` | Deleted-database records, human summary, and empty diagnostic routing. |
-| `version` | Environment/explicit mode precedence, color controls, JSON, and one NDJSON detail record. |
+| `version` | Environment/explicit mode precedence, JSON, and one NDJSON detail record. |
 
 The same suite also checks top-level and nested help, no-argument help,
 unknown-command and usage exits, TTY width adaptation, redirected plain output,
-color suppression, and a closed stdout pipe. These are representative fixture
+and a closed stdout pipe. These are representative fixture
 workflows rather than assertions against private live state.

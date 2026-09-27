@@ -30,6 +30,8 @@ fn search_result_shape_matches_golden_fixture() {
                 line: 12,
             },
         ],
+        total: Some(3),
+        truncated: false,
     };
 
     assert_json_matches_fixture(&result, include_str!("search.golden.json"));
@@ -138,7 +140,32 @@ fn search_defaults_to_twenty_matches_and_limit_overrides() {
         .expect("search override limit");
 
     assert_eq!(defaulted.matches.len(), 20);
+    assert!(defaulted.truncated, "25 matches exceed the default limit");
+    assert_eq!(
+        defaulted.total, None,
+        "the total past the limit is not counted"
+    );
     assert_eq!(overridden.matches.len(), 25);
+    assert!(!overridden.truncated);
+    assert_eq!(overridden.total, Some(25));
+}
+
+#[test]
+fn search_rejects_an_empty_query_and_a_zero_limit() {
+    let worktree = TestWorktree::new("search-invalid");
+    worktree.write("src/lib.rs", "pub fn needle() {}\n");
+    let graph = open_graph(&worktree, SyncPolicy::Manual);
+
+    for query in ["", "   "] {
+        assert!(graph.search(&SearchQuery::new(query)).is_err(), "{query:?}");
+    }
+    let zero = SearchQuery {
+        query: "needle".to_string(),
+        kind: None,
+        lang: None,
+        limit: Some(0),
+    };
+    assert!(graph.search(&zero).is_err());
 }
 
 #[test]

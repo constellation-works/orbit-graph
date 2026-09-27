@@ -174,8 +174,8 @@ pub struct EvaluationCaseResult {
     pub target_revision: String,
     /// Held-out delivery identifier when available.
     pub held_out_delivery_id: Option<String>,
-    /// Frozen target-tree graph provenance used by graph-bearing variants.
-    #[serde(skip_serializing_if = "Option::is_none")]
+    /// Frozen target-tree graph provenance used by graph-bearing variants,
+    /// or `null` when none was used.
     pub graph_snapshot: Option<Provenance>,
     /// Whether each graph-bearing query level actually applied frozen structure.
     pub graph_structure_applied: BTreeMap<String, bool>,

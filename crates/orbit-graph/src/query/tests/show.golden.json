@@ -1,5 +1,7 @@
 {
   "source": "pub fn handler() {}\n",
+  "source_bytes": null,
+  "source_encoding": "utf-8",
   "metadata": {
     "file": "src/lib.rs",
     "span": {

@@ -6,6 +6,7 @@
 //! process state once and is the only value a renderer needs.
 
 pub mod json;
+pub mod log;
 pub mod payload;
 pub mod pipe;
 pub mod render;
@@ -15,7 +16,10 @@ pub mod table;
 #[cfg(test)]
 mod tests;
 
+pub use log::init_logging;
 pub use payload::{CommandOutput, View, ViewBlock};
-pub use render::{emit, emit_error};
-pub use sink::{OutputSink, install_format_argument, requested_format, requested_format_from_args};
+pub use render::{emit_error, emit_help, emit_notice, emit_to_process};
+pub use sink::{
+    LegacyDetail, OutputSink, install_format_argument, requested_format_from_args, requested_output,
+};
 pub use table::{Column, TableView};

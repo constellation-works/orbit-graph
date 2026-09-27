@@ -3,7 +3,7 @@ use std::path::PathBuf;
 
 use orbit_graph_extract::Selector;
 use rusqlite::{Connection, params};
-use serde_json::json;
+use serde_json::{Value, json};
 
 use super::{DEFAULT_SHOW_MAX_BYTES, NodeMetadata, NodeView, SourceSpan};
 use crate::GraphError;
@@ -312,13 +312,9 @@ fn show_serializes_non_utf8_source_with_labeled_byte_fallback() {
         .expect("file resolves");
     let json = serde_json::to_value(&view).expect("serialize view");
 
-    assert_eq!(
-        json["source"],
-        json!({
-            "encoding": "bytes",
-            "bytes": source
-        })
-    );
+    assert_eq!(json["source"], Value::Null);
+    assert_eq!(json["source_encoding"], "bytes");
+    assert_eq!(json["source_bytes"], json!(source));
     assert!(json.get("bytes").is_none());
 }
 

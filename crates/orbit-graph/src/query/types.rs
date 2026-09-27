@@ -131,9 +131,9 @@ pub struct RefResult {
     /// missing key.
     pub fallback_used: bool,
     /// Lower-confidence references surfaced because the precise floor found no
-    /// textual `refs`. Present only when the precise result was empty and a
-    /// lower-confidence (`fuzzy_name`) match exists — see [`RefFallback`].
-    #[serde(skip_serializing_if = "Option::is_none")]
+    /// textual `refs`. Set only when the precise result was empty and a
+    /// lower-confidence (`fuzzy_name`) match exists — see [`RefFallback`];
+    /// otherwise `null`.
     pub fallback: Option<RefFallback>,
 }
 
@@ -159,8 +159,8 @@ pub struct RefFallback {
 pub struct RefTarget {
     /// Short symbol name requested or resolved.
     pub name: String,
-    /// Fully-qualified symbol name used as the graph query key.
-    #[serde(skip_serializing_if = "Option::is_none")]
+    /// Fully-qualified symbol name used as the graph query key, or `null`
+    /// when the target did not resolve.
     pub qualified: Option<String>,
 }
 
@@ -283,12 +283,14 @@ pub struct CalleeReport {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct ImpactResult {
     /// Traversal direction used to build this result.
-    #[serde(skip_serializing_if = "ImpactDirection::is_both")]
     pub direction: ImpactDirection,
     /// Impacted symbols in breadth-first order from the origin.
     pub touched: Vec<ImpactEntry>,
     /// Whether traversal stopped because [`crate::IMPACT_NODE_CAP`] was reached.
     pub truncated: bool,
+    /// Number of impacted symbols the traversal would reach: `visited_nodes`
+    /// when complete, or `None` when `truncated` stopped it before counting.
+    pub total: Option<usize>,
     /// Number of impacted symbols returned in `touched`.
     pub visited_nodes: usize,
     /// Whether `fallback` is present: `true` means the requested floor reached
@@ -296,9 +298,8 @@ pub struct ImpactResult {
     /// serialized.
     pub fallback_used: bool,
     /// Lower-confidence impact surfaced because the precise floor found no
-    /// touched nodes. Present only when a lower-confidence (`fuzzy_name`) match
-    /// exists; see [`ImpactFallback`].
-    #[serde(skip_serializing_if = "Option::is_none")]
+    /// touched nodes. Set only when a lower-confidence (`fuzzy_name`) match
+    /// exists; see [`ImpactFallback`]; otherwise `null`.
     pub fallback: Option<ImpactFallback>,
 }
 
@@ -328,7 +329,6 @@ pub struct ImpactEntry {
     /// Qualified symbol name reached by the traversal.
     pub qualified_name: String,
     /// Whether `qualified_name` names a symbol or a file-attributed call site.
-    #[serde(skip_serializing_if = "ImpactOrigin::is_symbol")]
     pub origin: ImpactOrigin,
     /// Breadth-first distance from the origin symbol.
     pub distance: usize,
@@ -359,12 +359,6 @@ pub enum ImpactDirection {
     Both,
 }
 
-impl ImpactDirection {
-    fn is_both(&self) -> bool {
-        *self == Self::Both
-    }
-}
-
 /// Origin represented by an [`ImpactEntry`].
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
@@ -376,12 +370,6 @@ pub enum ImpactOrigin {
     File,
 }
 
-impl ImpactOrigin {
-    fn is_symbol(&self) -> bool {
-        *self == Self::Symbol
-    }
-}
-
 /// Command trace result returned by [`crate::Graph::trace`].
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct TraceResult {
@@ -391,6 +379,9 @@ pub struct TraceResult {
     pub truncated: bool,
     /// Number of nodes returned in the trace tree, including the root.
     pub visited_nodes: usize,
+    /// Number of nodes the complete trace has: `visited_nodes` when complete,
+    /// or `None` when `truncated` stopped it before counting.
+    pub total: Option<usize>,
 }
 
 impl TraceResult {
@@ -399,6 +390,7 @@ impl TraceResult {
             root: None,
             truncated: false,
             visited_nodes: 0,
+            total: Some(0),
         }
     }
 }
@@ -432,7 +424,6 @@ pub struct OverviewResult {
     /// Format used to build this result.
     pub format: OverviewFormat,
     /// Scope path the summary was restricted to, or `None` for the whole worktree.
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub scope: Option<String>,
     /// Number of indexed files in scope.
     pub total_files: usize,
@@ -514,7 +505,6 @@ pub struct DepEdge {
     /// Imported module path or specifier (language-specific opaque string).
     pub target_path: String,
     /// Imported symbol, or `None` for a whole-module import.
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub target_symbol: Option<String>,
 }
 

@@ -201,8 +201,7 @@ pub struct Recommendation {
     pub selector: String,
     /// True for a file-level destination emitted because symbol evidence was unavailable.
     pub file_fallback: bool,
-    /// Explicit file-fallback reason in symbol mode.
-    #[serde(skip_serializing_if = "Option::is_none")]
+    /// Explicit file-fallback reason in symbol mode, otherwise `null`.
     pub fallback_reason: Option<String>,
     /// Stable task IDs contributing evidence.
     pub supporting_task_ids: Vec<String>,
@@ -210,8 +209,7 @@ pub struct Recommendation {
     pub supporting_delivery_ids: Vec<String>,
     /// Evidence cardinalities.
     pub counts: RecommendationCounts,
-    /// Strongest directional association expansion, when any.
-    #[serde(skip_serializing_if = "Option::is_none")]
+    /// Strongest directional association expansion, or `null` when none.
     pub association: Option<RecommendationAssociation>,
     /// Ordered additive score explanations.
     pub reasons: Vec<RecommendationReason>,
@@ -238,6 +236,11 @@ pub struct RecommendationResult {
     pub fallbacks: Vec<RecommendationFallback>,
     /// Ranked top-K destinations.
     pub recommendations: Vec<Recommendation>,
+    /// Number of ranked destinations before the limit was applied. Always
+    /// known here; typed as optional to match the other capped lists.
+    pub total: Option<usize>,
+    /// Whether `total` exceeds the destinations returned.
+    pub truncated: bool,
 }
 
 /// Repository-scoped recommendation engine.
@@ -537,6 +540,7 @@ impl RecommendationEngine {
         let total = eligible.len();
         let limit = request.limit.unwrap_or(DEFAULT_RECOMMENDATION_LIMIT);
         let mut recommendations = finalize(scored, total);
+        let ranked = recommendations.len();
         recommendations.truncate(limit);
         for (index, recommendation) in recommendations.iter_mut().enumerate() {
             recommendation.rank = index + 1;
@@ -550,7 +554,9 @@ impl RecommendationEngine {
             source_freshness: freshness,
             structure_applied: structure.applied,
             fallbacks,
+            truncated: ranked > recommendations.len(),
             recommendations,
+            total: Some(ranked),
         })
     }
 }

@@ -2,8 +2,8 @@
 //!
 //! `main` resolves the sink, dispatches, and hands the returned
 //! [`CommandOutput`] here. Records go to stdout in the resolved mode; every
-//! diagnostic — empty-state lines, dropped-column notices, and failures — goes
-//! to stderr.
+//! diagnostic — empty-state lines, dropped-column notices, truncation and
+//! deprecation notices, and failures — goes to stderr.
 
 use std::io::{self, Write};
 
@@ -12,6 +12,13 @@ use crate::output::json::{ErrorPayload, write_json};
 use crate::output::payload::{CommandOutput, View, ViewBlock};
 use crate::output::sink::{OutputMode, OutputSink};
 use crate::output::table::emit_table;
+
+/// Render a command output to the process's stdout and stderr.
+pub fn emit_to_process(output: &CommandOutput, sink: OutputSink) -> Result<(), CliError> {
+    let mut stdout = io::stdout().lock();
+    let mut stderr = io::stderr().lock();
+    emit(output, sink, &mut stdout, &mut stderr)
+}
 
 /// Render a command output to the two process streams selected by the contract.
 pub fn emit(
@@ -48,7 +55,6 @@ fn emit_records(
             }
         }
         OutputMode::Table | OutputMode::Plain => match &output.view {
-            View::Document => write_json(stdout, &output.document, true),
             View::Blocks(blocks) => emit_blocks(blocks, sink, stdout, stderr),
         },
     }
@@ -76,7 +82,9 @@ fn emit_blocks(
     stdout.flush().map_err(CliError::Stdout)
 }
 
-/// Write a command failure to stderr in the sink's selected protocol.
+/// Write a command failure to stderr in the sink's selected protocol: one
+/// flat `{"error", "code"}` JSON object in a machine mode, otherwise a first
+/// line starting `error:` (STD-01 §R19). stdout is never written.
 pub fn emit_error(error: &CliError, sink: OutputSink) {
     let mut stderr = io::stderr().lock();
     if sink.structured_errors() {
@@ -88,4 +96,19 @@ pub fn emit_error(error: &CliError, sink: OutputSink) {
         let _ = writeln!(stderr, "error: {error}");
     }
     let _ = stderr.flush();
+}
+
+/// Write one diagnostic line, such as a deprecation warning, to stderr.
+pub fn emit_notice(notice: &str) {
+    let mut stderr = io::stderr().lock();
+    let _ = writeln!(stderr, "{notice}");
+    let _ = stderr.flush();
+}
+
+/// Write the help or version text Clap produced for a successful exit to
+/// stdout. A closed stdout is a silent stop (STD-01 §R13).
+pub fn emit_help(help: &clap::Error) {
+    let mut stdout = io::stdout().lock();
+    let _ = write!(stdout, "{}", help.render());
+    let _ = stdout.flush();
 }

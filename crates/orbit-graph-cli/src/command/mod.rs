@@ -14,7 +14,7 @@ use serde::Serialize;
 use serde_json::Value;
 use thiserror::Error;
 
-use crate::output::CommandOutput;
+use crate::output::{CommandOutput, LegacyDetail};
 
 mod callees;
 mod clean;
@@ -101,6 +101,19 @@ impl Cli {
     pub fn run(&self) -> Result<CommandOutput, CliError> {
         let document = self.command.run()?;
         Ok(self.command.output(document))
+    }
+
+    /// Apply a detail level given through the deprecated `overview --format
+    /// summary|full` spelling. Only `overview` accepts those values, and a
+    /// different `--detail` alongside them is a usage error.
+    pub fn apply_legacy_overview_detail(&mut self, detail: LegacyDetail) -> Result<(), CliError> {
+        match &mut self.command {
+            Command::Overview(command) => command.apply_legacy_detail(detail),
+            _ => Err(CliError::Usage(format!(
+                "--format {} is accepted only by overview",
+                detail.as_str()
+            ))),
+        }
     }
 }
 
@@ -240,6 +253,26 @@ pub(crate) fn json_value<T: Serialize>(value: T) -> Result<Value, CliError> {
     serde_json::to_value(value).map_err(CliError::Json)
 }
 
+/// The one-line stderr notice for a capped list whose payload says
+/// `truncated: true` (STD-01 §R12, §R34), or `None` when nothing was cut.
+/// `returned` is the number of records in the payload and `total` the
+/// payload's `total`, which is `null` when the number of matches is unknown.
+pub(crate) fn truncation_notice(
+    document: &Value,
+    returned: usize,
+    noun: &str,
+    remedy: &str,
+) -> Option<String> {
+    if document["truncated"].as_bool() != Some(true) {
+        return None;
+    }
+    let total = document["total"].as_u64().map_or_else(
+        || format!("more than {returned}"),
+        |total| total.to_string(),
+    );
+    Some(format!("showing {returned} of {total} {noun}; {remedy}"))
+}
+
 pub(crate) fn display_value(value: &Value) -> String {
     match value {
         Value::Null => "-".to_owned(),
@@ -257,6 +290,13 @@ pub enum CliError {
     /// clap rejected the command line.
     #[error(transparent)]
     Clap(clap::Error),
+    /// The command line parsed but its combination of arguments or
+    /// environment is not usable.
+    #[error("{0}")]
+    Usage(String),
+    /// A selector or name resolved to nothing in the index.
+    #[error("{0}")]
+    NotFound(String),
     /// The process working directory could not be read.
     #[error("failed to determine current directory: {0}")]
     CurrentDir(std::io::Error),
@@ -287,7 +327,8 @@ impl CliError {
     /// The stable error code written to the JSON error payload.
     pub fn code(&self) -> &'static str {
         match self {
-            Self::Clap(_) => "argument_error",
+            Self::Clap(_) | Self::Usage(_) => "argument_error",
+            Self::NotFound(_) => "not_found",
             Self::CurrentDir(_) => "current_dir_error",
             Self::Stdin(_) => "stdin_error",
             Self::Graph(GraphError::IndexMissing { .. }) => "index_missing",
@@ -302,20 +343,13 @@ impl CliError {
         }
     }
 
-    /// The underlying reason, when the error carries one worth reporting
-    /// separately from the message.
-    pub fn details(&self) -> Option<&str> {
+    /// The process exit code for this failure: `2` for a usage error and `1`
+    /// for a command failure (STD-01 §R20).
+    pub fn exit_code(&self) -> i32 {
         match self {
-            Self::Graph(GraphError::InvalidData { reason, .. }) => Some(reason.as_str()),
-            Self::Graph(GraphError::Io { reason, .. }) => Some(reason.as_str()),
-            Self::Graph(GraphError::Sqlite { reason, .. }) => Some(reason.as_str()),
-            Self::Graph(
-                GraphError::IndexMissing { .. }
-                | GraphError::IndexIncompatible { .. }
-                | GraphError::VersionMismatch(_),
-            ) => None,
-            Self::Graph(GraphError::Unimplemented) => None,
-            _ => None,
+            Self::Clap(error) => error.exit_code(),
+            Self::Usage(_) => 2,
+            _ => 1,
         }
     }
 

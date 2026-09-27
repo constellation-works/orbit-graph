@@ -21,7 +21,10 @@ workspace = true
 
 [dependencies]
 blake3.workspace = true
-clap = { version = "4.5", features = ["derive"] }
+# Without clap's default `color` feature (and without `wrap_help`) clap never
+# queries the terminal itself; the output sink is the one place that does
+# (STD-01 §R17).
+clap = { version = "4.5", default-features = false, features = ["std", "derive", "help", "usage", "error-context", "suggestions"] }
 fs2.workspace = true
 git2.workspace = true
 libc.workspace = true

@@ -2,7 +2,7 @@ use clap::{Args, ValueEnum};
 use orbit_graph::{DEFAULT_TRACE_DEPTH, RefConfidence};
 use serde_json::{Value, json};
 
-use super::{CliError, CommandContext, json_value};
+use super::{CliError, CommandContext, json_value, truncation_notice};
 use crate::output::{Column, CommandOutput, TableView, View, ViewBlock};
 
 #[derive(Debug, Args)]
@@ -30,6 +30,12 @@ pub(crate) fn output(document: Value) -> CommandOutput {
     if let Some(root) = document.get("root").filter(|value| !value.is_null()) {
         append_trace_rows(&mut table, root, 0, &[]);
     }
+    let notice = truncation_notice(
+        &document,
+        usize::try_from(document["visited_nodes"].as_u64().unwrap_or(0)).unwrap_or(usize::MAX),
+        "trace nodes",
+        "the traversal stopped at its node cap; lower --depth",
+    );
     let mut context = document.clone();
     let root = context
         .as_object_mut()
@@ -38,13 +44,17 @@ pub(crate) fn output(document: Value) -> CommandOutput {
     if let Some(root) = root.filter(|value| !value.is_null()) {
         records.push(json!({"record_type": "trace_root", "root": root}));
     }
-    CommandOutput::with_view(
+    let mut output = CommandOutput::with_view(
         document,
         View::Blocks(vec![ViewBlock::table(
             table.with_empty_message("command handler was not found in the graph"),
         )]),
     )
-    .with_ndjson_records(records)
+    .with_ndjson_records(records);
+    if let Some(notice) = notice {
+        output = output.with_notice(notice);
+    }
+    output
 }
 
 fn append_trace_rows(table: &mut TableView, node: &Value, depth: usize, ancestors: &[String]) {

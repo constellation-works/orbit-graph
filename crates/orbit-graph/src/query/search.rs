@@ -66,8 +66,13 @@ impl SearchKind {
 /// Search output matching `GRAPH_SPEC.md` section 9.1.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct SearchResult {
-    /// Ranked matches.
+    /// Ranked matches, at most the query's limit.
     pub matches: Vec<Match>,
+    /// Number of matches: `matches.len()` when the result is complete, or
+    /// `None` when `truncated` and the rest were not counted.
+    pub total: Option<usize>,
+    /// Whether more matches exist than the limit returned.
+    pub truncated: bool,
 }
 
 /// Search match returned by [`Graph::search`].
@@ -107,18 +112,36 @@ pub enum Match {
 pub(crate) fn run(graph: &Graph, q: &SearchQuery) -> Result<SearchResult, GraphError> {
     let query = q.query.trim();
     let limit = q.limit();
-    if query.is_empty() || limit == 0 {
-        return Ok(SearchResult {
-            matches: Vec::new(),
-        });
+    // Either would return an empty result that looks like "no matches"
+    // (STD-01 §R29).
+    if query.is_empty() {
+        return Err(GraphError::invalid_data(
+            "validate graph search",
+            "the search query must not be empty",
+        ));
+    }
+    if limit == 0 {
+        return Err(GraphError::invalid_data(
+            "validate graph search",
+            "the search limit must be at least 1",
+        ));
     }
 
-    let raw_matches = graph.with_read_connection(|conn| query_matches(conn, q, query, limit))?;
+    // One match past the limit shows whether more exist without counting
+    // them all.
+    let mut raw_matches = graph
+        .with_read_connection(|conn| query_matches(conn, q, query, limit.saturating_add(1)))?;
+    let truncated = raw_matches.len() > limit;
+    raw_matches.truncate(limit);
     let matches = raw_matches
         .into_iter()
         .map(|raw| materialize_match(graph, raw))
         .collect::<Result<Vec<_>, _>>()?;
-    Ok(SearchResult { matches })
+    Ok(SearchResult {
+        total: (!truncated).then_some(matches.len()),
+        matches,
+        truncated,
+    })
 }
 
 fn query_matches(
@@ -237,12 +260,16 @@ struct RawMatch {
 }
 
 fn raw_match_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<RawMatch> {
-    let kind = match row.get::<_, String>(0)?.as_str() {
-        "symbol" => SearchKind::Symbol,
-        "string" => SearchKind::String,
-        "config" => SearchKind::Config,
-        _ => unreachable!("search query only emits known kinds"),
-    };
+    let kind = row.get::<_, String>(0)?;
+    // The SQL names only the three kinds, but a row is data, not an
+    // invariant: an unknown kind is an error, not a panic (STD-02 §R13).
+    let kind = SearchKind::parse(kind.as_str()).ok_or_else(|| {
+        rusqlite::Error::FromSqlConversionFailure(
+            0,
+            rusqlite::types::Type::Text,
+            format!("unknown graph search match kind {kind:?}").into(),
+        )
+    })?;
     Ok(RawMatch {
         kind,
         label: row.get(1)?,

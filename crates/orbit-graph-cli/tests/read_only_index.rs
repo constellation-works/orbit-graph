@@ -144,8 +144,8 @@ fn reads_on_a_never_synced_repository_report_index_missing_and_create_nothing() 
         let output = run_cli(repo.path(), args);
         assert_eq!(output.status.code(), Some(1), "{args:?}");
         let error: Value = serde_json::from_slice(&output.stderr).expect("JSON error");
-        assert_eq!(error["error"]["code"], "index_missing", "{args:?}: {error}");
-        let message = error["error"]["message"].as_str().expect("message");
+        assert_eq!(error["code"], "index_missing", "{args:?}: {error}");
+        let message = error["error"].as_str().expect("message");
         let builds = if matches!(args[0], "history" | "recommend") {
             "`orbit-graph history sync --branch main`"
         } else {
@@ -308,8 +308,8 @@ fn a_schema_version_mismatch_is_refused_naming_the_database() {
             let output = run_cli(repo.path(), args);
             assert_eq!(output.status.code(), Some(1), "{args:?} used {stored}");
             let error: Value = serde_json::from_slice(&output.stderr).expect("JSON error");
-            assert_eq!(error["error"]["code"], "index_incompatible", "{error}");
-            let message = error["error"]["message"].as_str().expect("message");
+            assert_eq!(error["code"], "index_incompatible", "{error}");
+            let message = error["error"].as_str().expect("message");
             assert!(message.contains(db.as_str()), "{message}");
             assert!(
                 message.contains(&format!("schema_version {stored}")),

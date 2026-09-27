@@ -11,12 +11,8 @@ use serde_json::Value;
 use crate::output::table::TableView;
 
 /// A command's human rendering, kept separate from its stable JSON document.
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub enum View {
-    /// Temporary compatibility boundary for commands awaiting a human view.
-    /// The complete JSON document is rendered without changing its schema.
-    #[default]
-    Document,
     /// Human prose and tables rendered in order.
     Blocks(Vec<ViewBlock>),
 }
@@ -53,20 +49,6 @@ pub struct CommandOutput {
 }
 
 impl CommandOutput {
-    /// Preserve the JSON document while a command awaits a dedicated view.
-    // Every command currently supplies a view; this constructor is the
-    // documented boundary for the ones that do not, and is exercised by the
-    // output tests.
-    #[allow(dead_code)]
-    pub fn document(document: Value) -> Self {
-        Self {
-            document,
-            view: View::Document,
-            ndjson_records: None,
-            notices: Vec::new(),
-        }
-    }
-
     /// Attach a human view to a stable JSON document.
     pub fn with_view(document: Value, view: View) -> Self {
         Self {

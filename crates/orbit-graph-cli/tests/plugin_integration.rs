@@ -182,10 +182,15 @@ fn plugin_v2_envelopes_wrap_all_tools_and_errors_while_v1_is_deprecated() {
         "input": {"repository": repository, "branch": "main"},
         "context": {"workspace_root": repository, "agent": "test", "model": "test"}
     });
+    // Only `ORBIT_TOOL_NAME` selects the plugin protocol; without it stdin is
+    // never read and a bare invocation prints help (STD-04 §R13).
     let without_environment_tool = plugin_raw_output(fixture.path(), None, request.clone(), &[]);
-    assert_eq!(
-        plugin_success(&without_environment_tool)["operation"],
-        "status"
+    assert!(without_environment_tool.status.success());
+    assert!(
+        String::from_utf8_lossy(&without_environment_tool.stdout)
+            .contains("Usage: orbit-graph [OPTIONS] <COMMAND>"),
+        "{}",
+        String::from_utf8_lossy(&without_environment_tool.stdout)
     );
 
     let mismatch = plugin_raw_output(fixture.path(), Some(RECOMMEND_TOOL_NAME), request, &[]);
@@ -2742,11 +2747,18 @@ fn plugin_raw_output(
         .spawn()
         .and_then(|mut child| {
             use std::io::Write;
-            child
+            let written = child
                 .stdin
                 .as_mut()
                 .expect("plugin stdin")
-                .write_all(request.to_string().as_bytes())?;
+                .write_all(request.to_string().as_bytes());
+            // A process that never reads stdin may exit before the write.
+            match written {
+                Err(error) if error.kind() != std::io::ErrorKind::BrokenPipe => {
+                    return Err(error);
+                }
+                _ => {}
+            }
             child.wait_with_output()
         })
         .expect("run plugin")

@@ -18,5 +18,7 @@
       "path": "crates/orbit-core/Cargo.toml",
       "line": 12
     }
-  ]
+  ],
+  "total": 3,
+  "truncated": false
 }

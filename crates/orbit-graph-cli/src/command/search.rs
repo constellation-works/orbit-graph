@@ -2,18 +2,38 @@ use clap::{Args, ValueEnum};
 use orbit_graph::{SearchKind, SearchQuery};
 use serde_json::Value;
 
-use super::{CliError, CommandContext, json_value};
+use super::{CliError, CommandContext, json_value, truncation_notice};
 use crate::output::{Column, CommandOutput, TableView, View, ViewBlock};
 
 #[derive(Debug, Args)]
 pub struct SearchCommand {
+    /// Text to search for; must not be empty.
+    #[arg(value_parser = parse_query)]
     query: String,
     #[arg(long, value_enum)]
     kind: Option<SearchKindArg>,
     #[arg(long)]
     lang: Option<String>,
-    #[arg(long)]
+    /// Maximum matches, at least 1 (default: 20).
+    #[arg(long, value_parser = parse_limit)]
     limit: Option<usize>,
+}
+
+/// Reject an empty or whitespace-only query before any work (STD-01 §R29).
+fn parse_query(raw: &str) -> Result<String, String> {
+    if raw.trim().is_empty() {
+        return Err("the search query must not be empty".to_owned());
+    }
+    Ok(raw.to_owned())
+}
+
+/// Reject a zero limit, which could only ever return nothing (STD-01 §R29).
+fn parse_limit(raw: &str) -> Result<usize, String> {
+    match raw.parse::<usize>() {
+        Ok(0) => Err("--limit must be at least 1".to_owned()),
+        Ok(limit) => Ok(limit),
+        Err(error) => Err(error.to_string()),
+    }
 }
 
 pub(crate) fn output(document: Value) -> CommandOutput {
@@ -34,13 +54,23 @@ pub(crate) fn output(document: Value) -> CommandOutput {
             super::display_value(&item["line"]),
         ]);
     }
-    CommandOutput::with_view(
+    let notice = truncation_notice(
+        &document,
+        matches.len(),
+        "search matches",
+        "raise --limit to see more",
+    );
+    let mut output = CommandOutput::with_view(
         document,
         View::Blocks(vec![ViewBlock::table(
             table.with_empty_message("no search matches"),
         )]),
     )
-    .with_ndjson_records(matches)
+    .with_ndjson_records(matches);
+    if let Some(notice) = notice {
+        output = output.with_notice(notice);
+    }
+    output
 }
 
 impl SearchCommand {
