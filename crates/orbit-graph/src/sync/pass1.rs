@@ -11,6 +11,12 @@
 //! Pass 2 and the final command transaction instead of being staged in the
 //! frozen schema.
 //!
+//! A command declared in a file this diff does not rewrite keeps its row.
+//! Replacing or deleting the handler's file clears `commands.handler_symbol`
+//! first so the symbol foreign key can be dropped. Symbol ids are not stable
+//! across that rewrite, so after the symbol writes settle those rows — and
+//! rows that never resolved — are bound again by qualified name.
+//!
 //! A file written here is not yet current (`STD-03 §R8`): its row carries
 //! [`PENDING_CONTENT_HASH`] and [`PENDING_MTIME_NS`], which no file on disk
 //! matches, and pass 2 stamps the real values in the transaction that writes
@@ -23,7 +29,7 @@
 //! [`Pass1Output::failed`] (`STD-02 §R32`) and keeps any rows it already has.
 
 use std::cell::Cell;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::{Display, Formatter};
 use std::fs;
 use std::ops::Range;
@@ -230,6 +236,13 @@ fn run_with_backend(
             }
         }
     }
+    rebind_unresolved_commands(
+        &mut conn,
+        worktree_root,
+        backend,
+        &mut failed,
+        &mut oversize,
+    )?;
     insert_commands_transaction(&mut conn, &commands)?;
 
     let files_indexed = count_files(&conn)?;
@@ -584,6 +597,103 @@ fn write_file_transaction(
     Ok(())
 }
 
+/// Binds command rows whose handler is NULL once every symbol write has settled.
+///
+/// Declaration files rewritten by this diff are absent here: their command rows
+/// were deleted with the file and [`insert_commands`] writes them afterwards.
+/// A file this pass already failed to extract is left unresolved and is not
+/// reported twice. Extraction failures are counted and skipped; the foreign-key
+/// clear has already committed, so the database stays consistent (`STD-02 §R32`).
+fn rebind_unresolved_commands(
+    conn: &mut Connection,
+    worktree_root: &Path,
+    backend: &dyn ExtractorBackend,
+    failed: &mut Vec<SyncFailure>,
+    oversize: &mut Vec<PathBuf>,
+) -> Result<(), GraphError> {
+    let skip = failed
+        .iter()
+        .map(|failure| failure.path.clone())
+        .chain(oversize.iter().map(|path| normalize_path(path)))
+        .collect::<BTreeSet<_>>();
+    let paths = unresolved_command_files(conn)?
+        .into_iter()
+        .filter(|path| !skip.contains(path))
+        .map(PathBuf::from)
+        .collect::<Vec<_>>();
+    if paths.is_empty() {
+        return Ok(());
+    }
+
+    let (extracted, errors) = extract_changed_files(worktree_root, &paths, backend);
+    for (path, error) in errors {
+        if error.kind == OVERSIZE_KIND {
+            oversize.push(path);
+        } else {
+            failed.push(error.into_failure(&path));
+        }
+    }
+    let commands = extracted
+        .into_iter()
+        .flat_map(|file| file.rows.commands)
+        .collect::<Vec<_>>();
+    if commands.is_empty() {
+        return Ok(());
+    }
+    rebind_commands_transaction(conn, &commands)
+}
+
+fn unresolved_command_files(conn: &Connection) -> Result<Vec<String>, GraphError> {
+    let mut stmt = conn
+        .prepare(
+            "SELECT DISTINCT file_path
+             FROM commands
+             WHERE handler_symbol IS NULL
+             ORDER BY file_path",
+        )
+        .map_err(|source| GraphError::sqlite("prepare unresolved command files", source))?;
+    let files = stmt
+        .query_map([], |row| row.get::<_, String>(0))
+        .map_err(|source| GraphError::sqlite("query unresolved command files", source))?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|source| GraphError::sqlite("collect unresolved command files", source))?;
+    Ok(files)
+}
+
+fn rebind_commands_transaction(
+    conn: &mut Connection,
+    commands: &[RawCommand],
+) -> Result<(), GraphError> {
+    let tx = conn
+        .transaction_with_behavior(TransactionBehavior::Immediate)
+        .map_err(|source| GraphError::sqlite("begin pass1 command rebind transaction", source))?;
+    for command in commands {
+        let Some(handler_symbol) = resolved_handler_symbol(&tx, command)? else {
+            continue;
+        };
+        tx.execute(
+            "UPDATE commands
+             SET handler_symbol = ?1
+             WHERE name = ?2 AND handler_symbol IS NULL",
+            params![handler_symbol, command.name],
+        )
+        .map_err(|source| GraphError::sqlite("rebind graph command handler", source))?;
+    }
+    tx.commit()
+        .map_err(|source| GraphError::sqlite("commit pass1 command rebind transaction", source))?;
+    Ok(())
+}
+
+fn resolved_handler_symbol(
+    tx: &Transaction<'_>,
+    command: &RawCommand,
+) -> Result<Option<i64>, GraphError> {
+    match command.handler_symbol.as_ref() {
+        Some(qualified) => unique_symbol_id_for_qualified(tx, qualified),
+        None => Ok(None),
+    }
+}
+
 fn insert_commands_transaction(
     conn: &mut Connection,
     commands: &[RawCommand],
@@ -743,7 +853,9 @@ fn insert_configs(tx: &Transaction<'_>, configs: &[RawConfig]) -> Result<(), Gra
 }
 
 fn delete_fts_for_file(tx: &Transaction<'_>, file_path: &str) -> Result<(), GraphError> {
-    // L-0056: cross-file command handler FKs must be cleared before refreshing symbol rows.
+    // L-0056: cross-file command handler FKs must be cleared before refreshing
+    // symbol rows. `rebind_unresolved_commands` restores the binding by
+    // qualified name after replacement symbols exist.
     tx.execute(
         "UPDATE commands
          SET handler_symbol = NULL
@@ -779,10 +891,7 @@ fn delete_fts_for_file(tx: &Transaction<'_>, file_path: &str) -> Result<(), Grap
 
 fn insert_commands(tx: &Transaction<'_>, commands: &[RawCommand]) -> Result<(), GraphError> {
     for command in commands {
-        let handler_symbol = match command.handler_symbol.as_ref() {
-            Some(qualified) => unique_symbol_id_for_qualified(tx, qualified)?,
-            None => None,
-        };
+        let handler_symbol = resolved_handler_symbol(tx, command)?;
         tx.execute(
             "INSERT INTO commands (name, file_path, span_start, handler_symbol)
              VALUES (?1, ?2, ?3, ?4)",

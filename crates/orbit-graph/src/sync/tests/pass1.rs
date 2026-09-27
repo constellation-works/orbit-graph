@@ -14,7 +14,8 @@ use super::{
 };
 use crate::sync::scanner::{Diff, MAX_FILE_BYTES};
 use crate::{
-    EXTRACTOR_VERSION, Graph, SyncMode, SyncObserver, SyncPolicy, SyncProgress, resolve_db_path,
+    DEFAULT_SHOW_MAX_BYTES, EXTRACTOR_VERSION, Graph, RefConfidence, Selector, SyncMode,
+    SyncObserver, SyncPolicy, SyncProgress, resolve_db_path,
 };
 
 #[test]
@@ -177,6 +178,171 @@ fn dispatch(command: TaskSubcommand) {
         )
         .expect("resolved task add handler");
     assert_eq!(handler, "<TaskAddArgs as Execute>::execute");
+}
+
+#[test]
+fn auto_sync_rebinds_cross_file_handler_after_handler_edit() {
+    let worktree = TestWorktree::new("cross-file-handler-edit");
+    let graph = Graph::open(worktree.path(), SyncPolicy::Manual).expect("open graph");
+    worktree.write("src/command.rs", COMMAND_SOURCE);
+    worktree.write("src/add.rs", &handler_source("helper"));
+
+    graph.sync(SyncMode::Full).expect("full sync");
+    assert_traced_callee(&graph, "helper");
+    assert_shown_handler(&graph, "helper");
+
+    worktree.write("src/add.rs", &handler_source("renamed_helper"));
+    graph
+        .sync(SyncMode::Auto)
+        .expect("auto sync after handler edit");
+
+    assert_traced_callee(&graph, "renamed_helper");
+    assert_shown_handler(&graph, "renamed_helper");
+}
+
+#[test]
+fn auto_sync_binds_added_cross_file_handler_and_clears_it_on_delete() {
+    let worktree = TestWorktree::new("cross-file-handler-add-delete");
+    let graph = Graph::open(worktree.path(), SyncPolicy::Manual).expect("open graph");
+    worktree.write("src/command.rs", COMMAND_SOURCE);
+
+    graph
+        .sync(SyncMode::Full)
+        .expect("full sync without handler");
+    assert!(
+        graph
+            .trace("task add", 3, RefConfidence::SameModule)
+            .expect("trace missing handler")
+            .root
+            .is_none()
+    );
+
+    worktree.write("src/add.rs", &handler_source("helper"));
+    graph
+        .sync(SyncMode::Auto)
+        .expect("auto sync after handler appears");
+    assert_traced_callee(&graph, "helper");
+    assert_shown_handler(&graph, "helper");
+
+    fs::remove_file(worktree.path().join("src/add.rs")).expect("delete handler file");
+    graph
+        .sync(SyncMode::Auto)
+        .expect("auto sync after handler delete");
+
+    assert!(
+        graph
+            .trace("task add", 3, RefConfidence::SameModule)
+            .expect("trace deleted handler")
+            .root
+            .is_none()
+    );
+    let shown = graph
+        .show(&task_add_selector(), DEFAULT_SHOW_MAX_BYTES)
+        .expect("show command")
+        .expect("command declaration remains");
+    assert_eq!(shown.metadata.file, "src/command.rs");
+    assert!(shown.metadata.qualified.is_none());
+
+    let conn = open_test_connection(worktree.path());
+    let handler: Option<i64> = conn
+        .query_row(
+            "SELECT handler_symbol FROM commands WHERE name = 'task add'",
+            [],
+            |row| row.get(0),
+        )
+        .expect("command row remains");
+    assert_eq!(handler, None);
+    let violations: i64 = conn
+        .query_row("SELECT count(*) FROM pragma_foreign_key_check", [], |row| {
+            row.get(0)
+        })
+        .expect("foreign key check");
+    assert_eq!(violations, 0);
+    let stale: i64 = conn
+        .query_row(
+            "SELECT count(*) FROM symbols WHERE qualified = '<TaskAddArgs as Execute>::execute'",
+            [],
+            |row| row.get(0),
+        )
+        .expect("count handler symbols");
+    assert_eq!(stale, 0);
+}
+
+const COMMAND_SOURCE: &str = r#"
+use clap::Subcommand;
+
+#[derive(Subcommand)]
+enum TaskSubcommand {
+    Add(TaskAddArgs),
+}
+
+fn dispatch(command: TaskSubcommand) {
+    match command {
+        TaskSubcommand::Add(args) => args.execute(),
+    }
+}
+"#;
+
+fn handler_source(callee: &str) -> String {
+    format!(
+        r#"
+struct TaskAddArgs;
+
+trait Execute {{
+    fn execute(self);
+}}
+
+impl Execute for TaskAddArgs {{
+    fn execute(self) {{
+        {callee}();
+    }}
+}}
+
+fn {callee}() {{}}
+"#
+    )
+}
+
+fn task_add_selector() -> Selector {
+    Selector::Command {
+        name: "task add".to_string(),
+    }
+}
+
+fn assert_traced_callee(graph: &Graph, callee: &str) {
+    let result = graph
+        .trace("task add", 3, RefConfidence::SameModule)
+        .expect("trace task add");
+    let root = result.root.expect("trace root");
+    assert_eq!(root.name, "execute");
+    assert_eq!(
+        root.qualified_name.as_deref(),
+        Some("<TaskAddArgs as Execute>::execute")
+    );
+    let children = root
+        .children
+        .iter()
+        .map(|child| child.name.as_str())
+        .collect::<Vec<_>>();
+    assert_eq!(children, vec![callee], "{root:?}");
+}
+
+fn assert_shown_handler(graph: &Graph, callee: &str) {
+    let shown = graph
+        .show(&task_add_selector(), DEFAULT_SHOW_MAX_BYTES)
+        .expect("show task add")
+        .expect("command resolves");
+    assert_eq!(shown.metadata.file, "src/add.rs");
+    assert_eq!(shown.metadata.kind, "command");
+    assert_eq!(
+        shown.metadata.qualified.as_deref(),
+        Some("<TaskAddArgs as Execute>::execute")
+    );
+    let source = String::from_utf8(shown.bytes).expect("handler source is utf-8");
+    assert!(
+        source.contains(callee),
+        "show source for {callee} was {source}"
+    );
 }
 
 #[test]
