@@ -1,7 +1,6 @@
 //! Outbound call-edge query.
 
 use std::collections::HashMap;
-use std::fs;
 use std::path::Path;
 
 use orbit_graph_extract::Selector;
@@ -136,13 +135,10 @@ fn materialize_edges(
     }
 
     let source_path = super::contained_worktree_source(worktree_root, file_path)?;
-    let bytes = fs::read(source_path.as_path()).map_err(|source| {
-        GraphError::io(
-            "read source file for graph callee line",
-            source_path,
-            source,
-        )
-    })?;
+    let bytes = super::source::read_indexed_source(
+        source_path.as_path(),
+        "read source file for graph callee line",
+    )?;
     let lines = LineIndex::new(bytes);
     edges
         .into_iter()

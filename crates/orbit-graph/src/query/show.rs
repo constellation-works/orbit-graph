@@ -1,6 +1,5 @@
 //! Selector resolution and bounded source reads.
 
-use std::fs;
 use std::str;
 
 use orbit_graph_extract::Selector;
@@ -197,64 +196,30 @@ fn materialize_view(
 ) -> Result<NodeView, GraphError> {
     let source_path =
         super::contained_worktree_source(graph.worktree_root.as_path(), resolved.file.as_str())?;
-    let source = fs::read(source_path.as_path())
-        .map_err(|source| GraphError::io("read source file for graph show", source_path, source))?;
-    let span = validate_span(
+    let window = super::source::read_show_window(
+        source_path.as_path(),
+        "read source file for graph show",
         "read source span for graph show",
         resolved.span_start,
         resolved.span_end,
-        source.len(),
+        max_bytes,
         resolved.file.as_str(),
     )?;
-    let full = &source[span.start..span.end];
-    let byte_count = bounded_source_len(full, max_bytes);
-    let bytes = full[..byte_count].to_vec();
-    let truncated = byte_count < full.len();
 
     Ok(NodeView {
-        bytes,
+        bytes: window.bytes,
         metadata: NodeMetadata {
             file: resolved.file,
-            span,
+            span: SourceSpan {
+                start: window.start,
+                end: window.end,
+            },
             kind: resolved.kind,
             name: resolved.name,
             qualified: resolved.qualified,
-            truncated,
+            truncated: window.truncated,
         },
     })
-}
-
-fn bounded_source_len(source: &[u8], max_bytes: usize) -> usize {
-    let mut byte_count = source.len().min(max_bytes);
-    let Ok(source) = str::from_utf8(source) else {
-        return byte_count;
-    };
-    while !source.is_char_boundary(byte_count) {
-        byte_count -= 1;
-    }
-    byte_count
-}
-
-fn validate_span(
-    operation: &'static str,
-    start: i64,
-    end: i64,
-    source_len: usize,
-    file: &str,
-) -> Result<SourceSpan, GraphError> {
-    let start = i64_to_usize(operation, start)?;
-    let end = i64_to_usize(operation, end)?;
-    if start > end || end > source_len {
-        return Err(GraphError::invalid_data(
-            operation,
-            format!("invalid span {start}..{end} for {file} with {source_len} bytes"),
-        ));
-    }
-    Ok(SourceSpan { start, end })
-}
-
-fn i64_to_usize(operation: &'static str, value: i64) -> Result<usize, GraphError> {
-    usize::try_from(value).map_err(|source| GraphError::invalid_data(operation, source.to_string()))
 }
 
 #[cfg(test)]

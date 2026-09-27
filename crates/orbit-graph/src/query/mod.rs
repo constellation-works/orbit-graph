@@ -13,6 +13,7 @@ pub(crate) mod refs;
 pub(crate) mod runtime;
 pub(crate) mod search;
 pub(crate) mod show;
+mod source;
 pub(crate) mod trace;
 pub(crate) mod types;
 
