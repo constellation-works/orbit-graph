@@ -47,7 +47,7 @@ help:
 	@echo "  make uninstall    Remove binary from INSTALL_BIN_DIR"
 	@echo "  make clean        Clean build artifacts"
 	@echo "  make watch        Continuous check + test (requires cargo-watch)"
-	@echo "  make plugin-bundle Build release binary and bundle it as bin/orbit-graph.bin"
+	@echo "  make plugin-bundle Build release binary and bundle it as .orbit-plugin/bin/orbit-graph.bin"
 	@echo "  make plugin-check Validate and run the plugin goldens with a fresh build"
 
 build:
@@ -151,18 +151,17 @@ watch:
 	$(CARGO) watch -x "check --workspace --locked" -x "nextest run --workspace --locked"
 
 # Bundle a freshly built release executable beside the plugin launcher
-# (bin/orbit-graph.bin, git-ignored), where it wins over PATH, and bind
-# plugin.yaml to its SHA-256 (`--backend-sha256`). That binding is local to
+# (.orbit-plugin/bin/orbit-graph.bin, git-ignored), where it wins over PATH, and bind
+# .orbit-plugin/plugin.yaml to its SHA-256 (`--backend-sha256`). That binding is local to
 # this host: re-approve with `orbit plugin add . --force` and do not commit the
-# rewritten plugin.yaml; `git checkout plugin.yaml` restores the override.
+# rewritten .orbit-plugin/plugin.yaml; restore the committed file after use.
 plugin-bundle: release
-	scripts/bundle-plugin-binary.sh --binary "$(CARGO_TARGET_DIR)/release/$(BINARY)" .
+	scripts/bundle-plugin-binary.sh --binary "$(CARGO_TARGET_DIR)/release/$(BINARY)" .orbit-plugin
 
 # Validate the manifest and run its conformance goldens as a verified
 # first-party checkout. A freshly built debug executable is put first on PATH;
-# a bundled bin/orbit-graph.bin, when present, still takes precedence.
+# a bundled .orbit-plugin/bin/orbit-graph.bin, when present, still takes precedence.
 plugin-check:
 	$(CARGO) build -p $(BINARY_PACKAGE) --bin $(BINARY) --locked --target-dir "$(CARGO_TARGET_DIR)"
-	$(ORBIT) plugin validate --first-party .
-	$(ORBIT) plugin validate --first-party plugin
-	PATH="$(abspath $(CARGO_TARGET_DIR))/debug:$$PATH" $(ORBIT) plugin test --first-party .
+	$(ORBIT) plugin validate --first-party .orbit-plugin
+	PATH="$(abspath $(CARGO_TARGET_DIR))/debug:$$PATH" $(ORBIT) plugin test --first-party .orbit-plugin

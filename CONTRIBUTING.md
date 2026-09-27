@@ -49,13 +49,12 @@ analysis library. After an intended report output change (including an
 `UPDATE_GOLDENS=1 cargo test -p orbit-graph-changes --test derived_artifacts --locked`
 and review the diff.
 
-The compatibility plugin tree under `plugin/` is generated from the root
-`plugin.yaml` and `skills/orbit-graph/`, and `plugin_contract` fails when it
-drifts. After changing the root manifest, a schema or the skill, regenerate it
-with
-`UPDATE_GOLDENS=1 cargo test -p orbit-graph-cli --test plugin_contract --locked`
-and review the diff; `bin/orbit-graph` and `plugin/bin/orbit-graph` must stay
-identical.
+The canonical Orbit plugin lives entirely under `.orbit-plugin/`. Its
+`plugin.yaml` refers to the launcher, schemas, skill, definitions, and
+conformance tests relative to that directory. `plugin_contract` checks that
+those paths resolve and that the plugin tree contains no symlinks. The legacy
+`orbit tool add` sidecars remain under `scripts/legacy-plugin/` for the
+deprecated installer; they are not part of the installed plugin.
 
 Two tests register the plugin with a real Orbit and are `#[ignore]`d in the
 normal run; CI's `plugin-conformance` job runs them against the pinned Orbit

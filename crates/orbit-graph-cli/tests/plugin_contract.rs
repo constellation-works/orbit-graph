@@ -1,7 +1,7 @@
 //! Consistency of the Orbit plugin's published contract with the crate.
 //!
-//! The plugin launcher, the legacy installer, the conformance goldens, and the
-//! manifests each restate versions the crate defines. These checks keep them
+//! The plugin launcher, the legacy installer, and the conformance goldens
+//! restate versions the crate defines. These checks keep them
 //! from drifting, and keep a released plugin version from silently changing
 //! the contract it pins (`tests/plugin-releases.json`).
 
@@ -18,15 +18,15 @@ use orbit_graph::{EXTRACTOR_VERSION, HISTORY_INDEX_SCHEMA_VERSION, STORE_SCHEMA_
 const CRATE_VERSION: &str = env!("CARGO_PKG_VERSION");
 
 /// Files that pin the executable contract the plugin launches.
-const PINNING_SCRIPTS: [&str; 3] = [
-    "bin/orbit-graph",
-    "plugin/bin/orbit-graph",
+const PINNING_SCRIPTS: [&str; 2] = [
+    ".orbit-plugin/bin/orbit-graph",
     "scripts/install-orbit-plugin.sh",
 ];
 
 #[test]
 fn manifests_declare_the_crate_version_and_first_party_origin() {
-    for path in ["plugin.yaml", "plugin/plugin.yaml"] {
+    {
+        let path = ".orbit-plugin/plugin.yaml";
         let manifest = read_yaml(path);
         assert_eq!(
             manifest["metadata"]["version"], CRATE_VERSION,
@@ -59,10 +59,8 @@ fn launchers_and_installer_pin_the_crate_contract() {
 
 #[test]
 fn version_goldens_match_the_crate_contract() {
-    for path in [
-        "tests/conformance/version.yaml",
-        "plugin/tests/conformance/version.yaml",
-    ] {
+    {
+        let path = ".orbit-plugin/tests/conformance/version.yaml";
         let golden = read_yaml(path);
         let case = golden["tests"]
             .as_array()
@@ -111,14 +109,14 @@ fn a_released_version_never_changes_its_contract() {
         assert_eq!(
             recorded, contract,
             "version {CRATE_VERSION} was released with a different contract; bump the \
-             workspace version and both manifests' metadata.version instead of reusing it"
+             workspace version and the manifest's metadata.version instead of reusing it"
         );
     }
 }
 
 #[test]
 fn every_tool_schema_property_is_described() {
-    let manifest = read_yaml("plugin.yaml");
+    let manifest = read_yaml(".orbit-plugin/plugin.yaml");
     let mut schemas = vec![
         manifest["spec"]["config"]["schema"]
             .as_str()
@@ -135,7 +133,7 @@ fn every_tool_schema_property_is_described() {
     }
     let mut undescribed = Vec::new();
     for path in schemas {
-        let schema: Value = serde_json::from_str(&read(&path)).expect("parse schema");
+        let schema: Value = serde_json::from_str(&read_plugin(&path)).expect("parse schema");
         collect_undescribed(&schema, &path, &mut undescribed);
     }
     assert!(
@@ -150,7 +148,7 @@ fn every_tool_schema_property_is_described() {
 /// does, so they pin validation and routing codes.
 #[test]
 fn changes_tool_is_declared_and_its_conformance_goldens_replay() {
-    let manifest = read_yaml("plugin.yaml");
+    let manifest = read_yaml(".orbit-plugin/plugin.yaml");
     let tool = manifest["spec"]["tools"]
         .as_array()
         .expect("tools")
@@ -164,7 +162,7 @@ fn changes_tool_is_declared_and_its_conformance_goldens_replay() {
         ("output_schema", "schemas/changes.response.json"),
     ] {
         assert_eq!(tool[key]["$ref"], path);
-        let schema: Value = serde_json::from_str(&read(path)).expect("parse schema");
+        let schema: Value = serde_json::from_str(&read_plugin(path)).expect("parse schema");
         assert_eq!(schema["type"], "object", "{path}");
         assert_eq!(schema["additionalProperties"], false, "{path}");
     }
@@ -176,7 +174,7 @@ fn changes_tool_is_declared_and_its_conformance_goldens_replay() {
         );
     }
 
-    let goldens = read_yaml("tests/conformance/changes.yaml");
+    let goldens = read_yaml(".orbit-plugin/tests/conformance/changes.yaml");
     let cases = goldens["tests"].as_array().expect("conformance tests");
     assert!(!cases.is_empty());
     let workspace = tempfile::TempDir::new().expect("conformance workspace");
@@ -332,102 +330,70 @@ fn repository_root() -> PathBuf {
         .to_path_buf()
 }
 
-/// How to regenerate the `plugin/` compatibility tree after the root plugin
-/// changes (STD-04 §R11).
-const REGENERATE: &str =
-    "UPDATE_GOLDENS=1 cargo test -p orbit-graph-cli --test plugin_contract --locked";
-
-/// Files of the root skill that `plugin/skills/orbit-graph` mirrors.
-const MIRRORED_SKILL_FILES: [&str; 2] = ["SKILL.md", "references/setup.md"];
-
-/// STD-01 §R25, STD-04 §R11: `plugin/plugin.yaml` is generated from the
-/// root manifest, not maintained by hand. It declares the same tools with
-/// the same input and output schemas, inlined because the compatibility
-/// tree has no `schemas/`, and ships the same skill. It omits the root
-/// plugin's definitions and config: the compatibility tree seeds no
-/// schedules (docs/design/plugin-surface/4_decisions.md). Only
-/// `spec.backend.args` may differ, because `scripts/bundle-plugin-binary.sh
-/// plugin` records a digest there.
+/// The source plugin is a single self-contained tree. Paths in the manifest
+/// stay relative to that tree, and Orbit refuses symlinks in it.
 #[test]
-fn plugin_tree_is_generated_from_the_root_plugin() {
-    let generated = generated_compatibility_manifest();
-    let update = std::env::var_os("UPDATE_GOLDENS").is_some_and(|value| value == "1");
-    if update {
-        write("plugin/plugin.yaml", &generated);
-        for file in MIRRORED_SKILL_FILES {
-            write(
-                &format!("plugin/skills/orbit-graph/{file}"),
-                &read(&format!("skills/orbit-graph/{file}")),
-            );
-        }
-    }
-    let committed = read("plugin/plugin.yaml");
-    let root_args = backend_args_line(&read("plugin.yaml"));
-    let committed_args = backend_args_line(&committed);
-    assert_eq!(
-        committed.replacen(&committed_args, &root_args, 1),
-        generated,
-        "plugin/plugin.yaml is stale; regenerate it with {REGENERATE}"
-    );
-
-    // The same tools, schemas resolved, in the same order.
-    let root = resolved_tools(&read_yaml("plugin.yaml"));
-    let compatibility = resolved_tools(&read_yaml("plugin/plugin.yaml"));
-    assert_eq!(
-        root.iter().map(|tool| &tool["name"]).collect::<Vec<_>>(),
-        compatibility
-            .iter()
-            .map(|tool| &tool["name"])
-            .collect::<Vec<_>>()
-    );
-    for (root_tool, tool) in root.iter().zip(&compatibility) {
+fn plugin_tree_is_self_contained() {
+    let root = repository_root();
+    let plugin = root.join(".orbit-plugin");
+    assert!(!root.join("plugin.yaml").exists());
+    assert!(!root.join("orbit_plugin.yaml").exists());
+    assert!(!root.join("plugin").exists());
+    let manifest = read_yaml(".orbit-plugin/plugin.yaml");
+    assert_eq!(manifest["spec"]["backend"]["command"], "bin/orbit-graph");
+    let mut paths = vec!["bin/orbit-graph".to_string()];
+    for tool in manifest["spec"]["tools"].as_array().expect("tools") {
         for key in ["input_schema", "output_schema"] {
-            assert_eq!(root_tool[key], tool[key], "{} {key}", tool["name"]);
+            paths.push(tool[key]["$ref"].as_str().expect("schema ref").to_string());
         }
     }
-
-    // One skill, one text: the mirror is byte-identical.
-    let mut mirrored = Vec::new();
-    collect_files(
-        &repository_root().join("plugin/skills/orbit-graph"),
-        "",
-        &mut mirrored,
+    paths.push(
+        manifest["spec"]["config"]["schema"]
+            .as_str()
+            .expect("config schema")
+            .to_string(),
     );
-    mirrored.sort();
-    assert_eq!(
-        mirrored,
-        MIRRORED_SKILL_FILES.map(str::to_string).to_vec(),
-        "plugin/skills/orbit-graph mirrors exactly the root skill's files"
-    );
-    for file in MIRRORED_SKILL_FILES {
-        assert_eq!(
-            read(&format!("plugin/skills/orbit-graph/{file}")),
-            read(&format!("skills/orbit-graph/{file}")),
-            "plugin/skills/orbit-graph/{file} is stale; regenerate it with {REGENERATE}"
-        );
+    for field in ["activities", "jobs", "routines"] {
+        for pattern in manifest["spec"]["definitions"][field]
+            .as_array()
+            .expect("definitions")
+        {
+            let pattern = pattern.as_str().expect("definition glob");
+            let directory = pattern.strip_suffix("*.yaml").expect("yaml glob");
+            let mut files = Vec::new();
+            collect_files(&plugin.join(directory), "", &mut files);
+            assert!(!files.is_empty(), "{pattern} has no files");
+        }
     }
-    let mut root_skill = Vec::new();
-    collect_files(
-        &repository_root().join("skills/orbit-graph"),
-        "",
-        &mut root_skill,
-    );
-    root_skill.sort();
-    assert_eq!(
-        root_skill,
-        MIRRORED_SKILL_FILES.map(str::to_string).to_vec(),
-        "add a new skill file to MIRRORED_SKILL_FILES"
-    );
-
-    // Both trees run the same launcher.
-    assert_eq!(read("plugin/bin/orbit-graph"), read("bin/orbit-graph"));
+    for field in ["skills", "tests"] {
+        for value in manifest["spec"][field].as_array().expect("paths") {
+            let path = value.as_str().expect("path");
+            let directory = path.strip_suffix("*.yaml").unwrap_or(path);
+            assert!(plugin.join(directory).exists(), "{path} is missing");
+        }
+    }
+    for path in paths {
+        assert!(plugin.join(&path).is_file(), "{path} is missing");
+    }
+    fn assert_no_symlinks(path: &Path) {
+        for entry in fs::read_dir(path).expect("read plugin directory") {
+            let entry = entry.expect("plugin entry");
+            let kind = entry.file_type().expect("file type");
+            assert!(!kind.is_symlink(), "symlink in plugin: {:?}", entry.path());
+            if kind.is_dir() {
+                assert_no_symlinks(&entry.path());
+            }
+        }
+    }
+    assert_no_symlinks(&plugin);
 }
 
 /// A release ships no executable, so the committed manifest cannot bind one:
 /// it carries the named override, and only a bundling step records a digest.
 #[test]
 fn committed_manifests_carry_the_named_unbound_override() {
-    for path in ["plugin.yaml", "plugin/plugin.yaml"] {
+    {
+        let path = ".orbit-plugin/plugin.yaml";
         let manifest = read_yaml(path);
         assert_eq!(
             manifest["spec"]["backend"]["args"],
@@ -443,8 +409,8 @@ fn committed_manifests_carry_the_named_unbound_override() {
 /// backend, which warns about any `context.config` key it does not read.
 #[test]
 fn every_config_key_is_consumed() {
-    let manifest = read_yaml("plugin.yaml");
-    let schema: Value = serde_json::from_str(&read(
+    let manifest = read_yaml(".orbit-plugin/plugin.yaml");
+    let schema: Value = serde_json::from_str(&read_plugin(
         manifest["spec"]["config"]["schema"]
             .as_str()
             .expect("config schema path"),
@@ -465,11 +431,15 @@ fn every_config_key_is_consumed() {
             "plugin.yaml defaults {key}, which config.json does not declare"
         );
     }
-    let mut templates = read("plugin.yaml");
+    let mut templates = read(".orbit-plugin/plugin.yaml");
     let mut definitions = Vec::new();
-    collect_files(&repository_root().join("definitions"), "", &mut definitions);
+    collect_files(
+        &repository_root().join(".orbit-plugin/definitions"),
+        "",
+        &mut definitions,
+    );
     for file in definitions {
-        templates.push_str(&read(&format!("definitions/{file}")));
+        templates.push_str(&read(&format!(".orbit-plugin/definitions/{file}")));
     }
     let workspace = tempfile::TempDir::new().expect("workspace");
     for key in keys {
@@ -515,7 +485,7 @@ fn request_schemas_equal_the_serde_structs_and_runtime_validation() {
     let state = tempfile::TempDir::new().expect("plugin state");
     let missing = workspace.path().join("missing-repository");
     let missing = missing.to_str().expect("UTF-8 path").to_string();
-    let manifest = read_yaml("plugin.yaml");
+    let manifest = read_yaml(".orbit-plugin/plugin.yaml");
     for tool in resolved_tools(&manifest) {
         let verb = tool["name"].as_str().expect("tool name");
         let name = format!("orbit.graph.{verb}");
@@ -681,7 +651,7 @@ fn backticked_after(message: &str, marker: &str) -> Vec<String> {
         .collect()
 }
 
-/// The root manifest's tools with every schema `$ref` resolved.
+/// The plugin manifest's tools with every schema `$ref` resolved.
 fn resolved_tools(manifest: &Value) -> Vec<Value> {
     manifest["spec"]["tools"]
         .as_array()
@@ -691,7 +661,7 @@ fn resolved_tools(manifest: &Value) -> Vec<Value> {
             let mut tool = tool.clone();
             for key in ["input_schema", "output_schema"] {
                 if let Some(path) = tool[key]["$ref"].as_str() {
-                    tool[key] = serde_json::from_str(&read(path))
+                    tool[key] = serde_json::from_str(&read_plugin(path))
                         .unwrap_or_else(|error| panic!("parse {path}: {error}"));
                 }
             }
@@ -700,43 +670,8 @@ fn resolved_tools(manifest: &Value) -> Vec<Value> {
         .collect()
 }
 
-/// `plugin/plugin.yaml` as generated from the root manifest.
-fn generated_compatibility_manifest() -> String {
-    let mut manifest = read_yaml("plugin.yaml");
-    manifest["spec"]["tools"] = Value::Array(resolved_tools(&manifest));
-    let spec = manifest["spec"].as_object_mut().expect("spec");
-    spec.remove("definitions");
-    spec.remove("config");
-    let body = serde_norway::to_string(&manifest).expect("serialize manifest");
-    // Keep `spec.backend.args` on the one flow-style line that
-    // scripts/bundle-plugin-binary.sh and the legacy installer read.
-    let mut lines = Vec::new();
-    let mut in_args = false;
-    for line in body.lines() {
-        if line == "    args:" {
-            lines.push(backend_args_line(&read("plugin.yaml")));
-            in_args = true;
-            continue;
-        }
-        if in_args && line.starts_with("    - ") {
-            continue;
-        }
-        in_args = false;
-        lines.push(line.to_string());
-    }
-    format!(
-        "# Generated from ../plugin.yaml; do not edit. Regenerate with\n# {REGENERATE}\n{}\n",
-        lines.join("\n")
-    )
-}
-
-/// The `spec.backend.args` line of a manifest's text.
-fn backend_args_line(manifest: &str) -> String {
-    manifest
-        .lines()
-        .find(|line| line.trim_start().starts_with("args:"))
-        .expect("spec.backend.args line")
-        .to_string()
+fn read_plugin(path: &str) -> String {
+    read(&format!(".orbit-plugin/{path}"))
 }
 
 /// Relative paths of every file under `directory`.
@@ -785,14 +720,4 @@ fn run_plugin_output(
         String::from_utf8_lossy(&output.stderr)
     );
     output
-}
-
-#[allow(
-    clippy::disallowed_methods,
-    reason = "regenerates a committed fixture under UPDATE_GOLDENS; clippy.toml bans fs::write only from shipped code"
-)]
-fn write(path: &str, contents: &str) {
-    let path = repository_root().join(path);
-    fs::create_dir_all(path.parent().expect("parent")).expect("create parent");
-    fs::write(&path, contents).unwrap_or_else(|error| panic!("write {path:?}: {error}"));
 }

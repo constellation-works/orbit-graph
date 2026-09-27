@@ -1,12 +1,13 @@
 # Orbit plugin
 
-orbit-graph ships an Orbit v2 plugin (`plugin.yaml`) that exposes read-only
+orbit-graph ships an Orbit v2 plugin (`.orbit-plugin/plugin.yaml`) that exposes read-only
 code-graph queries, leakage-safe change recommendations, and index maintenance
 as Orbit tools.
 
 ## Install
 
-The v2 Orbit plugin installs from a tagged repository release. Its manifest
+The v2 Orbit plugin lives in `.orbit-plugin/` in the source repository; only
+that directory is installed from a tagged repository release. Its manifest
 declares `publisher: constellation-works` and `origin: orbit`, which Orbit
 honours only for a verified first-party source: installed with
 `orbit plugin add git+https://github.com/constellation-works/orbit-graph#<tag>`,
@@ -19,7 +20,7 @@ claim from any other source (a local directory, an archive, a fork); such a
 copy must drop `origin: orbit` and then registers bare `graph.*` names. The
 executable accepts both spellings.
 
-The launcher `bin/orbit-graph` selects the executable in this order and probes
+The launcher `.orbit-plugin/bin/orbit-graph` selects the executable in this order and probes
 it with a v2 version envelope before forwarding the request:
 
 1. `bin/orbit-graph.bin` beside the launcher, when present;
@@ -59,7 +60,7 @@ cargo install --git https://github.com/constellation-works/orbit-graph --tag <ta
 orbit plugin add git+https://github.com/constellation-works/orbit-graph#<tag> --enable --grant fs,orbit_tools
 # Copy (never link) that executable into the installed tree as bin/orbit-graph.bin.
 plugin_root=$(orbit plugin show graph | sed -n 's/^Install path: //p')
-sh "$plugin_root/scripts/bundle-plugin-binary.sh" --unbound --binary "$HOME/.cargo/bin/orbit-graph"
+sh scripts/bundle-plugin-binary.sh --unbound --binary "$HOME/.cargo/bin/orbit-graph" "$plugin_root"
 orbit plugin test "$plugin_root"   # certifies the installed digest
 orbit plugin show graph
 ```
@@ -83,11 +84,11 @@ requested workspace/index access and bounded callbacks; the plugin requests no
 network access.
 
 For a checkout, `make plugin-check` builds the executable and runs
-`orbit plugin validate --first-party` on both manifests and
-`orbit plugin test --first-party .` with the fresh build first on `PATH`
+`orbit plugin validate --first-party .orbit-plugin` and
+`orbit plugin test --first-party .orbit-plugin` with the fresh build first on `PATH`
 (`--first-party` checks the checkout as it would load after a verified `git+`
 install); `make plugin-bundle` bundles a release build as the git-ignored
-`bin/orbit-graph.bin` and binds the checkout's `plugin.yaml` to it, a local
+`.orbit-plugin/bin/orbit-graph.bin` and binds the checkout's `.orbit-plugin/plugin.yaml` to it, a local
 change not to commit.
 
 The older `orbit tool add` installation path and
@@ -95,7 +96,7 @@ The older `orbit tool add` installation path and
 deprecated and remain available for one compatibility release. They register
 only the three v1 sidecars. The installer uses the bundled executable when
 present, then `--binary`, then `PATH`, verifies the v2 envelope, and applies
-the launcher's binding rule from `plugin/plugin.yaml` before registering
+the launcher's binding rule from `.orbit-plugin/plugin.yaml` before registering
 anything: a recorded `--backend-sha256` must match (otherwise it exits 1 with
 `incompatible_binary`), and the `--allow-unbound-backend` override is reported
 on stderr as `backend override: registering <path> unverified …`. It refuses a
@@ -108,14 +109,14 @@ derived `.orbit-graph/` indexes.
 ### Plugin versions
 
 `metadata.version` always equals the crate version that `orbit.graph.version`
-reports. Bump both (the workspace `version` in `Cargo.toml` and both manifests)
+reports. Bump both (the workspace `version` in `Cargo.toml` and the manifest)
 whenever the launcher's pinned `extractor_version` or `plugin_schema_version`
 changes after a release; a host that installed the previous version keeps its
 own launcher pin, so reusing a version would mix incompatible trees. Released
 contracts are recorded in `tests/plugin-releases.json` (append an entry when a
 version is tagged or installed), and
 `crates/orbit-graph-cli/tests/plugin_contract.rs` fails in CI when the launcher,
-installer, goldens, or manifests disagree with the crate, or when a released
+installer, goldens, or manifest disagree with the crate, or when a released
 version's contract changes.
 
 The protocol lives in the executable's crate, `crates/orbit-graph-cli`
@@ -127,7 +128,7 @@ codes, the Orbit subprocess adapter and the plugin-state code-graph index. The
 `ORBIT_GRAPH_LOCK_TIMEOUT_MS` once, before any tool runs, and refuses a
 malformed value with `invalid_request` naming the variable. The tool table,
 `TOOLS` in `src/plugin.rs`, is the one place a tool is named; a unit test
-checks it against `plugin.yaml`.
+checks it against `.orbit-plugin/plugin.yaml`.
 
 Each Orbit callback runs `orbit` as the leader of its own process group. When
 it outlives `GRAPH_ORBIT_TIMEOUT_SECONDS` the whole group gets SIGTERM, then
@@ -372,13 +373,10 @@ of returning an empty result:
 
 The error message names the exact call, in the caller's own tool spelling. The
 query tools use the existing `fs` read grant and request no new permissions.
-The deprecated `plugin/` compatibility tree advertises every tool of the root
-manifest; its v1 sidecars register only `recommend`, `status` and `maintain`.
-
-The `plugin/` tree is generated from the root `plugin.yaml` (schemas inlined,
-no routines, jobs or config, so it seeds no schedule), and its skill mirrors
-`skills/orbit-graph/` exactly. `plugin_contract` fails when either drifts; see
-CONTRIBUTING.md for the regeneration command.
+The canonical `.orbit-plugin/` tree advertises every tool. The deprecated v1
+sidecars under `scripts/legacy-plugin/` register only `recommend`, `status`
+and `maintain` through `scripts/install-orbit-plugin.sh`; they are outside the
+plugin root, so a v2 installation does not include them.
 
 ## Change analysis
 
@@ -518,4 +516,4 @@ both.
 
 
 The bundled agent guidance is in
-[`skills/orbit-graph/SKILL.md`](../skills/orbit-graph/SKILL.md).
+[`orbit-graph/SKILL.md`](../.orbit-plugin/skills/orbit-graph/SKILL.md).

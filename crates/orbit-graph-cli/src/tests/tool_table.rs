@@ -1,5 +1,5 @@
 //! The plugin's tool table is the one place a tool is named (STD-02 §R24);
-//! it must serve exactly the tools `plugin.yaml` declares.
+//! it must serve exactly the tools `.orbit-plugin/plugin.yaml` declares.
 
 use std::fs;
 use std::path::Path;
@@ -15,7 +15,8 @@ fn repository_root() -> &'static Path {
 #[test]
 fn the_tool_table_serves_exactly_the_tools_plugin_yaml_declares() {
     let manifest: serde_norway::Value = serde_norway::from_str(
-        &fs::read_to_string(repository_root().join("plugin.yaml")).expect("read plugin.yaml"),
+        &fs::read_to_string(repository_root().join(".orbit-plugin/plugin.yaml"))
+            .expect("read plugin.yaml"),
     )
     .expect("parse plugin.yaml");
     let declared = manifest["spec"]["tools"]
@@ -45,7 +46,8 @@ fn the_tool_table_serves_exactly_the_tools_plugin_yaml_declares() {
             .as_str()
             .expect("input_schema $ref");
         let schema: Value = serde_json::from_str(
-            &fs::read_to_string(repository_root().join(schema_path)).expect("read schema"),
+            &fs::read_to_string(repository_root().join(".orbit-plugin").join(schema_path))
+                .expect("read schema"),
         )
         .expect("parse schema");
         assert_eq!(

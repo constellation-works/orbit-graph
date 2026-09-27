@@ -17,7 +17,8 @@ As an Orbit plugin, the same queries (search, show, refs, callees, impact,
 trace, deps, overview) are read-only `orbit.graph.*` tools that answer from an
 index the plugin's `graph_sync` maintenance builds, and `orbit.graph.changes`
 analyses a change for affected callers and tests to run; see
-[docs/plugin.md](docs/plugin.md).
+[docs/plugin.md](docs/plugin.md). The installable source plugin is the
+`.orbit-plugin/` directory.
 
 ## Quick start
 
