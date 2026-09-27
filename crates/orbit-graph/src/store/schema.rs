@@ -51,10 +51,11 @@ CREATE INDEX symbols_parent    ON symbols(parent_symbol) WHERE parent_symbol IS 
 
 -- Textual references from a source location to a symbol name.
 -- Covers callers, type users, `use` statements, trait bounds — anything
--- anchored to (file, span). Resolution to a concrete symbol is by
--- `target_qualified` lookup, NOT by FK on symbols.id. `target_symbol_hint`
--- is a build-time cache that may go stale after incremental sync; queries
--- that need correctness re-resolve via `target_qualified`. See §6.3.
+-- anchored to (file, span). `target_symbol_hint` is a build-time cache, not a
+-- foreign key, and may go stale after incremental sync. Traversals can use it
+-- to distinguish definitions sharing `target_qualified`, but must check that
+-- the hinted row still has that qualified name and fall back to qualified-name
+-- lookup otherwise. See §6.3.
 CREATE TABLE refs (
     id                  INTEGER PRIMARY KEY,
     from_file           TEXT NOT NULL REFERENCES files(path) ON DELETE CASCADE,
