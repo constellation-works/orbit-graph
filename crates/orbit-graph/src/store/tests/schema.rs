@@ -248,6 +248,10 @@ fn graph_open_removes_nothing_and_clean_removes_only_strictly_older_unlocked_ver
         );
     }
 
+    // `clean` reports physical paths (`/private/var/...` for a temp root
+    // under `/var/...` on macOS), so compare against the resolved ones.
+    let physical = |path: &Path| path.canonicalize().expect("resolve planted db");
+    let (stale_main_physical, newer_main_physical) = (physical(&stale_main), physical(&newer_main));
     let report = crate::clean_old_databases(worktree.path()).expect("clean old databases");
 
     assert!(active_db.exists(), "the active DB is never removed");
@@ -265,12 +269,12 @@ fn graph_open_removes_nothing_and_clean_removes_only_strictly_older_unlocked_ver
             "a newer extractor's DB is never removed ({suffix})"
         );
     }
-    assert!(report.deleted.contains(&stale_main));
+    assert!(report.deleted.contains(&stale_main_physical));
     assert!(
         !report
             .deleted
             .iter()
-            .any(|path| path.starts_with(&newer_main))
+            .any(|path| path.starts_with(&newer_main_physical))
     );
 
     drop(held);
