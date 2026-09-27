@@ -1887,11 +1887,10 @@ impl PathLineage {
         after_revision: Oid,
         path: &str,
     ) -> Result<Option<String>, GraphError> {
-        if tree.files.contains_key(path) {
-            return Ok(Some(path.to_string()));
-        }
         let origin = self.distance(repo, after_revision)?;
         let mut current = path.to_string();
+        // A current file can reuse an old spelling after the historical file
+        // was renamed or deleted, so follow identity before checking the tree.
         for (distance, renames) in &self.steps {
             if *distance >= origin {
                 continue;
