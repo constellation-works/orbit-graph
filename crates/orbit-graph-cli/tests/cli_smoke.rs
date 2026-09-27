@@ -2646,6 +2646,55 @@ fn real_binary_recovers_each_history_contract_version_mismatch() {
 }
 
 #[test]
+fn real_binary_refuses_to_rebuild_a_newer_history_contract() {
+    for (key, current) in [
+        ("extractor_version", orbit_graph::CHANGE_EXTRACTOR_VERSION),
+        (
+            "import_schema_version",
+            orbit_graph::DELIVERY_IMPORT_SCHEMA_VERSION,
+        ),
+    ] {
+        let fixture = fixture_repository();
+        let synced = run_json(fixture.path(), ["history", "sync", "--branch", "main"]);
+        let path = synced["database_path"].as_str().expect("history path");
+        let newer = (current + 1).to_string();
+        let conn = rusqlite::Connection::open(path).expect("open history fixture");
+        conn.execute(
+            "UPDATE history_meta SET value=?2 WHERE key=?1",
+            [key, newer.as_str()],
+        )
+        .expect("seed newer version");
+        let snapshot = |conn: &rusqlite::Connection| -> String {
+            conn.query_row(
+                "SELECT (SELECT group_concat(key || '=' || value, ',') FROM (SELECT * FROM history_meta ORDER BY key)) || '|' || coalesce((SELECT group_concat(payload_json, ',') FROM (SELECT payload_json FROM history_deliveries ORDER BY delivery_id)), '') || '|' || coalesce((SELECT group_concat(landing_branch || '=' || coalesce(cursor, ''), ',') FROM history_scopes), '')",
+                [],
+                |row| row.get(0),
+            )
+            .expect("snapshot history")
+        };
+        let before = snapshot(&conn);
+        for output in [
+            run_explicit_json(fixture.path(), ["history", "rebuild", "--branch", "main"]),
+            run_explicit_json(
+                fixture.path(),
+                ["history", "rebuild", "--branch", "main", "--confirm"],
+            ),
+            run_explicit_json(fixture.path(), ["history", "status", "--branch", "main"]),
+        ] {
+            assert!(!output.status.success(), "{key}");
+            let error: Value = serde_json::from_slice(&output.stderr).expect("JSON error");
+            assert_eq!(error["code"], "index_incompatible", "{key}: {error}");
+            let message = error["error"].as_str().expect("error message");
+            assert!(
+                message.contains(format!("{key}={newer}").as_str()),
+                "{key}: {message}"
+            );
+        }
+        assert_eq!(snapshot(&conn), before, "{key}");
+    }
+}
+
+#[test]
 fn real_binary_refuses_history_rebuild_on_agent_main() {
     let fixture = fixture_repository();
     run_git(fixture.path(), ["branch", "agent-main"]);
