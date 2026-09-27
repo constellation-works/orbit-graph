@@ -3095,13 +3095,29 @@ fn best_module_import<'a>(
 ) -> Option<(&'a DepEdge, ModuleMatch)> {
     let mut basename = None;
     for edge in imports {
-        match classify_module_import(symbol_path, edge.target_path.as_str()) {
+        match classify_import_edge(symbol_path, edge) {
             Some(ModuleMatch::Identified) => return Some((edge, ModuleMatch::Identified)),
             Some(ModuleMatch::BasenameOnly) if basename.is_none() => basename = Some(edge),
             _ => {}
         }
     }
     basename.map(|edge| (edge, ModuleMatch::BasenameOnly))
+}
+
+/// Classify an import edge by its specifier, and by the specifier joined with
+/// the imported name: Python's `from pkg_a import run` is stored as
+/// `pkg_a` + `run` and imports the module `pkg_a/run.py`.
+fn classify_import_edge(symbol_path: &str, edge: &DepEdge) -> Option<ModuleMatch> {
+    let joined = edge.target_symbol.as_deref().and_then(|symbol| {
+        classify_module_import(symbol_path, &format!("{}.{symbol}", edge.target_path))
+    });
+    let bare = classify_module_import(symbol_path, edge.target_path.as_str());
+    match (joined, bare) {
+        (Some(ModuleMatch::Identified), _) | (_, Some(ModuleMatch::Identified)) => {
+            Some(ModuleMatch::Identified)
+        }
+        (joined, bare) => joined.or(bare),
+    }
 }
 
 /// Whether `target_path` names the module at `symbol_path`.
@@ -3305,6 +3321,38 @@ mod tests {
             "process_dynamic"
         );
         assert_eq!(normalize_test_name("lib"), "lib");
+    }
+
+    #[test]
+    fn from_import_of_a_module_identifies_it_by_specifier_and_name() {
+        let edge = |target_path: &str, target_symbol: Option<&str>| DepEdge {
+            from_file: "tests/test_run.py".to_string(),
+            target_path: target_path.to_string(),
+            target_symbol: target_symbol.map(str::to_string),
+        };
+        // `from pkg_a import run` imports the module `pkg_a/run.py`.
+        assert_eq!(
+            classify_import_edge("pkg_a/run.py", &edge("pkg_a", Some("run"))),
+            Some(ModuleMatch::Identified)
+        );
+        assert_eq!(
+            classify_import_edge("pkg_a/run.py", &edge("pkg_b", Some("run"))),
+            None
+        );
+        assert_eq!(
+            classify_import_edge("pkg_a/run.py", &edge("pkg_a", Some("other"))),
+            None
+        );
+        // `from run import main` still shares only the basename.
+        assert_eq!(
+            classify_import_edge("pkg_a/run.py", &edge("run", Some("main"))),
+            Some(ModuleMatch::BasenameOnly)
+        );
+        // `use crate::sync::Thing` names the module by its specifier alone.
+        assert_eq!(
+            classify_import_edge("src/sync.rs", &edge("crate::sync", Some("Thing"))),
+            Some(ModuleMatch::Identified)
+        );
     }
 
     #[test]
