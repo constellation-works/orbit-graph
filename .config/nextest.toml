@@ -1,0 +1,12 @@
+# cargo-nextest configuration. `make test` and CI run the suite through it.
+#
+# A test still running after a period is reported as slow; after five periods
+# it is terminated and fails, so a hung test ends the run with its name
+# instead of holding the job until the job timeout (STD-03 §R22). A test whose
+# child processes keep its output open past the leak timeout fails (STD-03
+# §R21). `retries` stays unset: a flaky test is fixed at its root cause, not
+# rerun (STD-04 §R9).
+
+[profile.default]
+slow-timeout = { period = "60s", terminate-after = 5 }
+leak-timeout = { period = "500ms", result = "fail" }

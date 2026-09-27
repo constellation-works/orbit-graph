@@ -1,5 +1,5 @@
 use std::path::{Path, PathBuf};
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use rusqlite::Connection;
@@ -21,7 +21,27 @@ pub struct Graph {
     read_only: bool,
     read_conn: Mutex<Connection>,
     last_auto_sync_at: Mutex<i64>,
+    /// Time source for the auto-sync timestamp the windowed policy checks.
+    clock: Arc<dyn Clock>,
     _watcher: Option<sync::watcher::SyncWatcher>,
+}
+
+/// The wall clock [`SyncPolicy::Windowed`] measures its window with.
+///
+/// Production handles use [`SystemClock`]; tests substitute a clock they
+/// advance explicitly, so a window elapses without a sleep.
+pub(crate) trait Clock: Send + Sync {
+    /// Nanoseconds since the Unix epoch.
+    fn now_epoch_nanos(&self, operation: &'static str) -> Result<i64, GraphError>;
+}
+
+/// [`Clock`] reading [`SystemTime::now`].
+pub(crate) struct SystemClock;
+
+impl Clock for SystemClock {
+    fn now_epoch_nanos(&self, operation: &'static str) -> Result<i64, GraphError> {
+        now_epoch_nanos(operation)
+    }
 }
 
 impl Graph {
@@ -202,6 +222,7 @@ impl Graph {
             read_only: true,
             read_conn: Mutex::new(read_conn),
             last_auto_sync_at: Mutex::new(last_auto_sync_at),
+            clock: Arc::new(SystemClock),
             _watcher: None,
         })
     }
@@ -233,6 +254,7 @@ impl Graph {
             read_only: false,
             read_conn: Mutex::new(read_conn),
             last_auto_sync_at: Mutex::new(last_auto_sync_at),
+            clock: Arc::new(SystemClock),
             _watcher: watcher,
         };
         if matches!(policy, SyncPolicy::Watch { .. }) {
@@ -357,7 +379,10 @@ impl Graph {
             SyncPolicy::OnRead => self.sync(SyncMode::Auto).map(|_| ()),
             SyncPolicy::Watch { .. } => Ok(()),
             SyncPolicy::Windowed { window } => {
-                if sync_window_elapsed(self.last_auto_sync_at(), window)? {
+                let now = self
+                    .clock
+                    .now_epoch_nanos("check graph sync policy window")?;
+                if sync_window_elapsed(self.last_auto_sync_at(), now, window)? {
                     self.sync(SyncMode::Auto)?;
                 }
                 Ok(())
@@ -372,8 +397,18 @@ impl Graph {
             .unwrap_or_else(std::sync::PoisonError::into_inner)
     }
 
+    /// Replaces the handle's clock, so a test decides when a sync window
+    /// elapses.
+    #[cfg(test)]
+    pub(crate) fn with_clock(mut self, clock: Arc<dyn Clock>) -> Self {
+        self.clock = clock;
+        self
+    }
+
     fn record_auto_sync_now(&self) -> Result<(), GraphError> {
-        let now = now_epoch_nanos("record graph auto sync timestamp")?;
+        let now = self
+            .clock
+            .now_epoch_nanos("record graph auto sync timestamp")?;
         let mut last_auto_sync_at = self
             .last_auto_sync_at
             .lock()
@@ -609,7 +644,11 @@ impl Graph {
     }
 }
 
-fn sync_window_elapsed(last_incremental_at: i64, window: Duration) -> Result<bool, GraphError> {
+fn sync_window_elapsed(
+    last_incremental_at: i64,
+    now: i64,
+    window: Duration,
+) -> Result<bool, GraphError> {
     if last_incremental_at < 0 {
         return Err(GraphError::invalid_data(
             "check graph sync policy window",
@@ -620,7 +659,6 @@ fn sync_window_elapsed(last_incremental_at: i64, window: Duration) -> Result<boo
         return Ok(true);
     }
 
-    let now = now_epoch_nanos("check graph sync policy window")?;
     let elapsed = now.saturating_sub(last_incremental_at);
     Ok(u128::try_from(elapsed).map_err(|source| {
         GraphError::invalid_data("check graph sync policy window", source.to_string())

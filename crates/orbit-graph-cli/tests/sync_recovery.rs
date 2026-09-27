@@ -6,10 +6,13 @@
 
 #![allow(clippy::expect_used)]
 
+mod common;
+
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 use std::sync::atomic::{AtomicUsize, Ordering};
+use std::time::Duration;
 
 use orbit_graph::{Graph, SyncMode, SyncObserver, SyncOutcome, SyncPolicy, SyncProgress};
 use serde_json::Value;
@@ -245,33 +248,17 @@ fn all_refs(db: &Path) -> Vec<String> {
     )
 }
 
-/// Rows of a one-column query, read with Python's sqlite3 as other tests of
-/// the executable do.
+/// Rows of a one-column text query.
 fn query(db: &Path, sql: &str) -> Vec<String> {
-    let script = r#"
-import sqlite3, sys
-conn = sqlite3.connect(sys.argv[1])
-conn.execute("PRAGMA busy_timeout=5000")
-for (value,) in conn.execute(sys.argv[2]):
-    print(value)
-"#;
-    let output = Command::new("python3")
-        .arg("-c")
-        .arg(script)
-        .arg(db)
-        .arg(sql)
-        .output()
-        .expect("run python3 sqlite query");
-    assert!(
-        output.status.success(),
-        "sqlite query failed: {}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-    String::from_utf8(output.stdout)
-        .expect("UTF-8 query output")
-        .lines()
-        .map(str::to_string)
-        .collect()
+    let conn = rusqlite::Connection::open(db).expect("open graph database");
+    conn.busy_timeout(Duration::from_secs(5))
+        .expect("set busy timeout");
+    let mut statement = conn.prepare(sql).expect("prepare query");
+    statement
+        .query_map([], |row| row.get(0))
+        .expect("run query")
+        .collect::<Result<_, _>>()
+        .expect("read query rows")
 }
 
 fn write(repo: &Path, path: &str, contents: &str) {
@@ -316,8 +303,7 @@ fn run_with_env(cwd: &Path, args: &[&str], env: &[(&str, &str)]) -> Output {
 }
 
 fn run_git(cwd: &Path, args: &[&str]) {
-    let status = Command::new("git")
-        .current_dir(cwd)
+    let status = common::git_command(cwd)
         .args(args)
         .status()
         .expect("run git");

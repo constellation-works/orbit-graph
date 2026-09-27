@@ -2565,7 +2565,6 @@ fn git_error(operation: &'static str) -> impl FnOnce(git2::Error) -> GraphError 
 mod tests {
     use super::*;
     use std::fs;
-    use std::process::Command;
 
     use crate::{DeliveryImport, Provenance, TaskAssociation, TemporalFact};
     use tempfile::TempDir;
@@ -4081,8 +4080,7 @@ mod tests {
     }
 
     fn head(root: &Path) -> String {
-        let output = Command::new("git")
-            .current_dir(root)
+        let output = crate::tests::support::git_command(root)
             .args(["rev-parse", "HEAD"])
             .output()
             .expect("git head");
@@ -4094,8 +4092,7 @@ mod tests {
     }
 
     fn git(root: &Path, args: &[&str]) {
-        let output = Command::new("git")
-            .current_dir(root)
+        let output = crate::tests::support::git_command(root)
             .args(args)
             .output()
             .expect("git");

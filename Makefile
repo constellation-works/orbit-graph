@@ -31,7 +31,7 @@ help:
 	@echo "  make run ARGS=... Run CLI through Cargo"
 	@echo "  make dev ARGS=... Build and run binary directly"
 	@echo "  make check        Type-check workspace"
-	@echo "  make test         Run all tests"
+	@echo "  make test         Run all tests (requires cargo-nextest)"
 	@echo "  make fmt          Format code"
 	@echo "  make fmt-check    Check formatting"
 	@echo "  make clippy       Lint all targets (deny warnings)"
@@ -65,8 +65,19 @@ dev: build
 check:
 	$(CARGO) check --workspace --locked
 
+# The suite runs under cargo-nextest with the timeouts and leak detection in
+# .config/nextest.toml (STD-03 R21/R22); nextest does not run doctests, so
+# cargo test runs those. A missing cargo-nextest fails here rather than
+# falling back to cargo test.
+CARGO_NEXTEST_VERSION := 0.9.136
 test:
-	$(CARGO) test --workspace --locked
+	@if ! $(CARGO) nextest --version >/dev/null 2>&1; then \
+		echo "error: cargo-nextest is not installed; make test needs it." >&2; \
+		echo "       install: cargo install cargo-nextest --version $(CARGO_NEXTEST_VERSION) --locked" >&2; \
+		exit 1; \
+	fi
+	$(CARGO) nextest run --workspace --locked --no-tests=fail
+	$(CARGO) test --workspace --doc --locked
 
 fmt:
 	$(CARGO) fmt --all
@@ -137,7 +148,7 @@ clean:
 	$(CARGO) clean --target-dir "$(CARGO_TARGET_DIR)"
 
 watch:
-	$(CARGO) watch -x "check --workspace --locked" -x "test --workspace --locked"
+	$(CARGO) watch -x "check --workspace --locked" -x "nextest run --workspace --locked"
 
 # Bundle a freshly built release executable beside the plugin launcher
 # (bin/orbit-graph.bin, git-ignored), where it wins over PATH.

@@ -12,6 +12,12 @@ fn write(root: &Path, path: &str, contents: &str) {
     fs::write(target, contents).expect("write file");
 }
 
+fn fixture_dir() -> tempfile::TempDir {
+    let dir = tempfile::tempdir().expect("tempdir");
+    crate::tests::support::set_discovery_boundary(dir.path());
+    dir
+}
+
 fn synced_graph(root: &Path) -> Graph {
     let graph = Graph::open(root, SyncPolicy::Manual).expect("open graph");
     graph.sync(SyncMode::Full).expect("sync graph");
@@ -20,7 +26,7 @@ fn synced_graph(root: &Path) -> Graph {
 
 #[test]
 fn runtime_invocations_report_program_line_and_enclosing_symbol() {
-    let dir = tempfile::tempdir().expect("tempdir");
+    let dir = fixture_dir();
     write(
         dir.path(),
         "tests/test_cli.py",
@@ -101,7 +107,7 @@ fn runtime_invocations_report_program_line_and_enclosing_symbol() {
 
 #[test]
 fn program_names_come_from_the_nearest_manifests() {
-    let dir = tempfile::tempdir().expect("tempdir");
+    let dir = fixture_dir();
     write(
         dir.path(),
         "Cargo.toml",

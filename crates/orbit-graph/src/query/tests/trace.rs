@@ -90,7 +90,14 @@ fn branching_factor_five_depth_five_caps_at_200_nodes() {
     let worktree = TestWorktree::new("trace-cap");
     let graph = open_graph(&worktree, SyncPolicy::Manual);
     let conn = open_connection(&worktree);
-    seed_branching_command(&conn, 5, 5);
+    // One transaction: committing each of the ~7,800 rows separately syncs
+    // the database file each time, which takes minutes on a disk-backed
+    // temporary directory.
+    let seed = conn
+        .unchecked_transaction()
+        .expect("begin seed transaction");
+    seed_branching_command(&seed, 5, 5);
+    seed.commit().expect("commit seed transaction");
 
     let result = graph
         .trace("wide-command", 5, RefConfidence::SameModule)

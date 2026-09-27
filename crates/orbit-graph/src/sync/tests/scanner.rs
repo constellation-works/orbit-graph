@@ -12,7 +12,9 @@ use super::{
     ContentHasher, DbLockGuard, MAX_FILE_BYTES, OrbitIgnoreMatcher, Scanner,
     add_default_orbitignore_patterns, collect_orbitignore_files, mtime_ns, scan_count, scan_diff,
 };
-use crate::sync::{SyncLeaderGate, set_sync_leader_gate, sync_leader_count};
+use crate::sync::{
+    SyncLeaderGate, install_sync_leader_gate, sync_leader_count, wait_for_sync_followers,
+};
 use crate::{EXTRACTOR_VERSION, Graph, SyncMode, SyncPolicy, resolve_db_path};
 
 #[test]
@@ -263,17 +265,19 @@ fn concurrent_same_worktree_sync_coalesces_to_one_scan() {
     let second_graph = Graph::open(worktree.path(), SyncPolicy::Manual).expect("open second graph");
     let db_path = graph_db_path(worktree.path());
     let gate = Arc::new(SyncLeaderGate::new());
-    set_sync_leader_gate(Some(Arc::clone(&gate)));
+    let _gate = install_sync_leader_gate(db_path.as_path(), Arc::clone(&gate));
 
     let first = thread::spawn(move || first_graph.sync(SyncMode::Auto).expect("first sync"));
-    assert!(gate.wait_started(Duration::from_secs(2)));
+    assert!(gate.wait_started(Duration::from_secs(10)));
     let second = thread::spawn(move || second_graph.sync(SyncMode::Auto).expect("second sync"));
-    thread::sleep(Duration::from_millis(50));
+    assert!(
+        wait_for_sync_followers(db_path.as_path(), 1, Duration::from_secs(10)),
+        "the second sync joins the held leader as a follower"
+    );
     gate.release();
 
     let first_report = first.join().expect("join first");
     let second_report = second.join().expect("join second");
-    set_sync_leader_gate(None);
 
     assert_eq!(first_report, second_report);
     assert_eq!(sync_leader_count(db_path.as_path()), 1);
@@ -480,6 +484,7 @@ impl TestWorktree {
             std::process::id()
         ));
         fs::create_dir_all(&path).expect("create test worktree");
+        crate::tests::support::set_discovery_boundary(&path);
         Self { path }
     }
 

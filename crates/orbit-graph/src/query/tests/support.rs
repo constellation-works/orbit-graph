@@ -24,6 +24,7 @@ impl TestWorktree {
             std::process::id()
         ));
         fs::create_dir_all(&path).expect("create test worktree");
+        crate::tests::support::set_discovery_boundary(&path);
         Self { path }
     }
 

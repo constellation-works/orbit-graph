@@ -9,6 +9,8 @@
 #![cfg(unix)]
 #![allow(clippy::expect_used)]
 
+mod common;
+
 use std::collections::BTreeMap;
 use std::fs;
 use std::os::unix::fs::PermissionsExt;
@@ -442,38 +444,24 @@ fn hold_lock(db: &Path) -> fs::File {
 }
 
 fn set_schema_version(db: &str, version: u32) {
-    python_sqlite(
-        db,
-        "conn.execute(\"UPDATE meta SET value=? WHERE key='schema_version'\", (arg,))\nconn.commit()",
-        &version.to_string(),
-    );
+    rusqlite::Connection::open(db)
+        .expect("open graph database")
+        .execute(
+            "UPDATE meta SET value=?1 WHERE key='schema_version'",
+            [version.to_string()],
+        )
+        .expect("set schema version");
 }
 
 fn schema_version(db: &str) -> String {
-    python_sqlite(
-        db,
-        "print(conn.execute(\"SELECT value FROM meta WHERE key='schema_version'\").fetchone()[0])",
-        "",
-    )
-}
-
-fn python_sqlite(db: &str, body: &str, arg: &str) -> String {
-    let script = format!(
-        "import sqlite3, sys\ndb, arg = sys.argv[1:3]\nconn = sqlite3.connect(db)\n{body}\nconn.close()\n"
-    );
-    let output = Command::new("python3")
-        .args(["-c", script.as_str(), db, arg])
-        .output()
-        .expect("run python3 sqlite3");
-    assert!(
-        output.status.success(),
-        "python3 sqlite3 failed: {}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-    String::from_utf8(output.stdout)
-        .expect("UTF-8 output")
-        .trim()
-        .to_string()
+    rusqlite::Connection::open(db)
+        .expect("open graph database")
+        .query_row(
+            "SELECT value FROM meta WHERE key='schema_version'",
+            [],
+            |row| row.get(0),
+        )
+        .expect("read schema version")
 }
 
 fn run_cli(cwd: &Path, args: &[&str]) -> Output {
@@ -540,8 +528,7 @@ fn plugin_ok(repo: &Path, state: Option<&Path>, tool: &str, input: Value) -> Val
 }
 
 fn run_git(cwd: &Path, args: &[&str]) {
-    let output = Command::new("git")
-        .current_dir(cwd)
+    let output = common::git_command(cwd)
         .args(args)
         .output()
         .expect("run git");

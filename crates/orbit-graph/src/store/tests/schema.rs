@@ -3,7 +3,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use git2::{Oid, Repository, RepositoryInitOptions, Signature, build::CheckoutBuilder};
+use git2::{Oid, Repository, Signature, build::CheckoutBuilder};
 use rusqlite::Connection;
 use tempfile::TempDir;
 
@@ -314,11 +314,31 @@ fn an_unreadable_head_fails_instead_of_selecting_the_head_family() {
 
 #[test]
 fn an_unborn_branch_and_a_directory_outside_git_select_the_head_family() {
+    // The fixture is a repository without commits.
     let unborn = TestWorktree::new("unborn-head", "main");
-    Repository::init(unborn.path()).expect("init repository without commits");
     let no_git = TempDir::new().expect("create non-git directory");
+    let mut roots = vec![unborn.path()];
+    // Discovery from a directory outside Git has no boundary a fixture can
+    // set, so that case runs only when the temporary directory is outside
+    // every repository, and says so when it cannot (`STD-04 §R8`).
+    if Repository::discover(no_git.path()).is_ok() {
+        assert!(
+            std::env::var_os("CI").is_none(),
+            "CI must run the outside-Git case, but {} is inside a Git repository",
+            no_git.path().display()
+        );
+        #[allow(clippy::print_stderr)]
+        {
+            eprintln!(
+                "skipped the outside-Git case: {} is inside a Git repository",
+                no_git.path().display()
+            );
+        }
+    } else {
+        roots.push(no_git.path());
+    }
 
-    for root in [unborn.path(), no_git.path()] {
+    for root in roots {
         let db_path = crate::resolve_worktree_db_path(root).expect("resolve HEAD family");
         assert_eq!(db_path.branch(), "HEAD");
         assert_eq!(
@@ -656,6 +676,7 @@ impl TestWorktree {
             .as_nanos();
         path.push(format!("orbit-graph-{name}-{}-{stamp}", std::process::id()));
         fs::create_dir_all(&path).expect("create test worktree");
+        crate::tests::support::init_fixture_repository(&path, branch);
         Self {
             path,
             branch: branch.to_string(),
@@ -667,9 +688,7 @@ impl TestWorktree {
     }
 
     fn init_git_repo(&self) -> String {
-        let mut opts = RepositoryInitOptions::new();
-        opts.initial_head(self.branch.as_str());
-        let repo = Repository::init_opts(&self.path, &opts).expect("init git repo");
+        let repo = Repository::open(&self.path).expect("open git repo");
         fs::write(self.path.join("README.md"), "test\n").expect("write initial file");
 
         let mut index = repo.index().expect("open repo index");

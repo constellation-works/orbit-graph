@@ -307,6 +307,7 @@ impl CachedEntry {
 /// it, and its `in_use.lock` shared, so the lock carries over into the
 /// published entry without a gap.
 #[derive(Debug)]
+#[must_use = "dropping a staged build releases its locks without publishing it"]
 pub struct StagedEntry {
     root: PathBuf,
     commit_sha: String,

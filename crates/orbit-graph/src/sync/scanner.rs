@@ -207,6 +207,7 @@ impl Scanner {
     }
 }
 
+#[must_use = "the database lock is released when the guard is dropped"]
 pub(crate) struct DbLockGuard {
     _lock: FileLockGuard,
 }

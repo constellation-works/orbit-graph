@@ -529,9 +529,17 @@ impl McpSession {
     }
 }
 
+/// Stdout lines buffered between the reader thread and the session.
+const MCP_LINE_QUEUE: usize = 64;
+
 /// Stream newline-delimited stdout, stopping after [`ORBIT_OUTPUT_LIMIT`] bytes.
+///
+/// The queue holds [`MCP_LINE_QUEUE`] lines. When it is full the reader
+/// waits, which backpressures the server through its stdout pipe
+/// (`STD-03 §R2`); once the session drops the receiver, the reader's next
+/// send fails and it stops.
 fn spawn_line_reader(stdout: impl Read + Send + 'static) -> Receiver<StdoutLine> {
-    let (sender, receiver) = mpsc::channel();
+    let (sender, receiver) = mpsc::sync_channel(MCP_LINE_QUEUE);
     thread::spawn(move || {
         let mut reader = BufReader::new(stdout).take(ORBIT_OUTPUT_LIMIT + 1);
         loop {

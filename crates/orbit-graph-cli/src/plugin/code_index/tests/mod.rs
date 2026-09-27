@@ -1,18 +1,12 @@
 use std::fs;
 use std::path::Path;
-use std::process::Command;
 use std::time::Duration;
 
 use super::*;
 
 fn git(root: &Path, args: &[&str]) {
-    let status = Command::new("git")
-        .current_dir(root)
+    let status = crate::tests::support::git_command(root)
         .args(args)
-        .env("GIT_AUTHOR_NAME", "t")
-        .env("GIT_AUTHOR_EMAIL", "t@example.invalid")
-        .env("GIT_COMMITTER_NAME", "t")
-        .env("GIT_COMMITTER_EMAIL", "t@example.invalid")
         .status()
         .expect("run git");
     assert!(status.success(), "git {args:?}");
@@ -37,7 +31,7 @@ fn fixture() -> tempfile::TempDir {
 /// (no polling), bounded so a lock that is never released fails the test.
 fn wait_for_abandoned_build(index_dir: &Path) {
     let lock = File::open(index_dir.join(LOCK_FILE)).expect("open lock");
-    let (sender, receiver) = std::sync::mpsc::channel();
+    let (sender, receiver) = std::sync::mpsc::sync_channel(1);
     std::thread::spawn(move || {
         let _ = sender.send(lock.lock_exclusive().map(|()| lock));
     });

@@ -439,7 +439,10 @@ fn caller() {
     let before = refs_for_file(&conn, "src/a.rs");
     drop(conn);
 
-    std::thread::sleep(Duration::from_millis(5));
+    let b_path = worktree.path().join("src/b.rs");
+    let indexed_mtime = fs::metadata(&b_path)
+        .and_then(|metadata| metadata.modified())
+        .expect("read indexed mtime");
     worktree.write(
         "src/b.rs",
         r#"
@@ -450,6 +453,13 @@ fn caller() {
 }
 "#,
     );
+    // The rewrite must look modified to the scanner however coarse the
+    // filesystem's timestamps are.
+    fs::File::options()
+        .write(true)
+        .open(&b_path)
+        .and_then(|file| file.set_modified(indexed_mtime + Duration::from_secs(1)))
+        .expect("advance rewritten mtime");
     graph.sync(SyncMode::Auto).expect("incremental sync");
 
     let conn = open_test_connection(worktree.path());
@@ -966,6 +976,7 @@ impl TestWorktree {
             std::process::id()
         ));
         fs::create_dir_all(&path).expect("create test worktree");
+        crate::tests::support::set_discovery_boundary(&path);
         Self { path }
     }
 

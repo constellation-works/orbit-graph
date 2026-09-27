@@ -142,16 +142,7 @@ impl Command {
     /// Dispatch this subcommand against a freshly discovered worktree context
     /// and return the JSON payload the caller is expected to emit.
     pub fn run(&self) -> Result<Value, CliError> {
-        let context = CommandContext::from_current_dir()?;
-        self.run_with_context(&context)
-    }
-
-    /// Dispatch this subcommand against an explicit worktree context.
-    ///
-    /// Split out from [`Command::run`] so tests can supply a fixture
-    /// [`CommandContext`] directly instead of relying on the process-wide
-    /// current directory.
-    pub(crate) fn run_with_context(&self, context: &CommandContext) -> Result<Value, CliError> {
+        let context = &CommandContext::from_current_dir()?;
         match self {
             Command::Sync(command) => command.run(context),
             Command::Search(command) => command.run(context),
@@ -222,14 +213,6 @@ impl CommandContext {
             .and_then(|repo| repo.workdir().map(PathBuf::from))
             .unwrap_or(current_dir);
         Ok(Self { worktree_root })
-    }
-
-    /// Build a context pinned to an explicit worktree root, bypassing the
-    /// process-wide current directory. Test-only: production callers always
-    /// discover the worktree from cwd via [`CommandContext::from_current_dir`].
-    #[cfg(test)]
-    pub(crate) fn for_worktree(worktree_root: PathBuf) -> Self {
-        Self { worktree_root }
     }
 
     /// Open the worktree's existing graph index for a query: nothing is

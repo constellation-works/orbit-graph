@@ -18,7 +18,8 @@ scripts/test-repo-gates.sh
 cargo deny --locked check
 cargo fmt --all --check
 cargo clippy --workspace --all-targets --locked -- -D warnings
-cargo test --workspace --locked
+cargo nextest run --workspace --locked --no-tests=fail
+cargo test --workspace --doc --locked
 RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps --locked
 cargo build --workspace --locked
 git diff --check
@@ -26,7 +27,13 @@ git diff --check
 
 `make ci` runs the same sequence. `cargo deny` needs cargo-deny 0.19.9
 (`cargo install cargo-deny --version 0.19.9 --locked`); CI installs that
-release from a SHA-256-pinned download. The layer model and what each
+release from a SHA-256-pinned download. Tests run under cargo-nextest 0.9.136
+(`cargo install cargo-nextest --version 0.9.136 --locked`), which CI also
+installs from a SHA-256-pinned download; `.config/nextest.toml` terminates a
+test that hangs, fails one whose child processes outlive it, and configures no
+retries, so fix a flaky test instead of rerunning it. Fixture `git` commands go
+through the crate's config-isolated `git_command` test helper, never a bare
+`Command::new("git")`. The layer model and what each
 `scripts/check-*.sh` gate enforces are in [ARCHITECTURE.md](ARCHITECTURE.md):
 a new crate or internal edge changes that file and
 `scripts/check-dependency-direction.sh` together, and a new stream writer

@@ -1,0 +1,8 @@
+# Workspace-wide clippy configuration. The lint levels live in
+# `[workspace.lints.clippy]` in Cargo.toml.
+
+disallowed-methods = [
+  # STD-03 §R2: every channel between threads is bounded, and its
+  # construction site says what a producer does when it is full.
+  { path = "std::sync::mpsc::channel", reason = "unbounded; use std::sync::mpsc::sync_channel with a capacity and state the full-queue policy (STD-03 §R2)" },
+]

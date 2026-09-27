@@ -6,6 +6,12 @@
 //! a sync. Every watcher sync rescans the whole worktree, so a dropped event
 //! loses no change. Dropping the watcher waits at most [`JOIN_TIMEOUT`] for the
 //! thread, then detaches it (`STD-03 §R22`).
+//!
+//! Only an event that can change the worktree schedules a sync. The notify
+//! backend also reports reads (on Linux, inotify's `IN_OPEN` for every file
+//! and directory a sync opens), so honouring them made each sync schedule the
+//! next one: an idle watched graph rescanned itself every debounce, forever
+//! (ORB-13169).
 
 use std::path::{Component, Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
@@ -14,7 +20,8 @@ use std::sync::{Arc, Condvar, Mutex};
 use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
 
-use notify::{Config, Event, RecommendedWatcher, RecursiveMode, Watcher};
+use notify::event::{AccessKind, AccessMode};
+use notify::{Config, Event, EventKind, RecommendedWatcher, RecursiveMode, Watcher};
 
 use crate::{GraphError, SyncMode};
 
@@ -38,6 +45,7 @@ const IGNORED_TOP_LEVEL_DIRS: &[&str] = &[
     "__pycache__",
 ];
 
+#[must_use = "dropping the watcher stops it"]
 pub(crate) struct SyncWatcher {
     stop: Arc<AtomicBool>,
     finished: Arc<Finished>,
@@ -182,7 +190,15 @@ fn watcher_thread(
             return;
         }
     };
-    if let Err(error) = watcher.watch(worktree_root.as_path(), RecursiveMode::Recursive) {
+    // Watch and filter on the resolved root: FSEvents reports resolved paths
+    // (`/private/var/...` for a root under `/var/...`), and an event path the
+    // root does not prefix would escape the ignored-directory filter, so the
+    // watcher's own index writes would schedule syncs. The sync itself keeps
+    // the caller's root.
+    let watch_root = worktree_root
+        .canonicalize()
+        .unwrap_or_else(|_| worktree_root.clone());
+    if let Err(error) = watcher.watch(watch_root.as_path(), RecursiveMode::Recursive) {
         notify_start(ready.as_ref(), Err(error.to_string()));
         return;
     }
@@ -191,7 +207,7 @@ fn watcher_thread(
         &event_rx,
         &dropped,
         &stop,
-        worktree_root.as_path(),
+        watch_root.as_path(),
         debounce,
         &mut || run_background_sync(db_path.as_path(), worktree_root.as_path()),
     );
@@ -237,6 +253,7 @@ fn event_loop(
     let mut sync_due: Option<Instant> = None;
     let schedule = |now: Instant| Some(now.checked_add(debounce).unwrap_or(now));
     while !stop.load(Ordering::Relaxed) {
+        probe::note_idle(worktree_root, sync_due.is_some());
         let dropped_events = dropped.swap(0, Ordering::Relaxed);
         if dropped_events > 0 {
             tracing::warn!(
@@ -251,6 +268,7 @@ fn event_loop(
         });
         match event_rx.recv_timeout(wait) {
             Ok(Ok(event)) => {
+                probe::note_event(worktree_root, &event);
                 if event_requires_sync(worktree_root, &event) {
                     sync_due = schedule(Instant::now());
                 }
@@ -284,7 +302,18 @@ fn run_background_sync(db_path: &Path, worktree_root: &Path) {
     }
 }
 
+/// Whether `event` may have changed what a sync would index.
+///
+/// An access that is not the close of a write reads the worktree without
+/// changing it, whatever its path; a sync's own reads are such accesses. Any
+/// other event, including an unclassified one or one without paths (a
+/// backend's rescan request), schedules a sync unless every path it names is
+/// in an ignored top-level directory.
 fn event_requires_sync(worktree_root: &Path, event: &Event) -> bool {
+    if matches!(event.kind, EventKind::Access(kind) if kind != AccessKind::Close(AccessMode::Write))
+    {
+        return false;
+    }
     event.paths.is_empty()
         || event
             .paths
@@ -300,6 +329,107 @@ fn path_requires_sync(worktree_root: &Path, path: &Path) -> bool {
             .iter()
             .any(|ignored| name == *ignored)
     )
+}
+
+/// Test hooks that observe the event loop of a watched worktree.
+///
+/// [`probe::wait_for_settled`] is the induced delay the watch-policy tests
+/// use in place of sleeps: it holds a test until the loop has classified a
+/// sentinel event and then reached a pass with no sync due, which is the state
+/// a loaded machine reaches when a test's reads outlast the debounce. Every
+/// event the worktree produced before the sentinel has been classified by
+/// then, and any sync they scheduled has run.
+#[cfg(test)]
+pub(crate) mod probe {
+    use std::collections::{HashMap, HashSet};
+    use std::path::{Path, PathBuf};
+    use std::sync::{Condvar, Mutex, OnceLock};
+    use std::time::Duration;
+
+    use notify::Event;
+
+    #[derive(Default)]
+    struct LoopState {
+        /// Paths named by events the loop has classified.
+        seen: HashSet<PathBuf>,
+        /// Seen paths after which the loop reached a pass with no sync due.
+        settled: HashSet<PathBuf>,
+    }
+
+    type Probes = (Mutex<HashMap<PathBuf, LoopState>>, Condvar);
+
+    fn probes() -> &'static Probes {
+        static PROBES: OnceLock<Probes> = OnceLock::new();
+        PROBES.get_or_init(|| (Mutex::new(HashMap::new()), Condvar::new()))
+    }
+
+    pub(super) fn note_event(worktree_root: &Path, event: &Event) {
+        let (states, changed) = probes();
+        let mut states = states
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        states
+            .entry(worktree_root.to_path_buf())
+            .or_default()
+            .seen
+            .extend(event.paths.iter().cloned());
+        changed.notify_all();
+    }
+
+    pub(super) fn note_idle(worktree_root: &Path, sync_due: bool) {
+        if sync_due {
+            return;
+        }
+        let (states, changed) = probes();
+        let mut states = states
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        if let Some(state) = states.get_mut(worktree_root) {
+            let seen = std::mem::take(&mut state.seen);
+            state.settled.extend(seen);
+            changed.notify_all();
+        }
+    }
+
+    /// Waits until the watcher of `worktree_root` has classified an event on
+    /// `sentinel` and then passed through its loop with no sync due. Returns
+    /// whether that happened within `timeout`.
+    ///
+    /// Both paths are resolved first, as the watcher resolves its root.
+    pub(crate) fn wait_for_settled(
+        worktree_root: &Path,
+        sentinel: &Path,
+        timeout: Duration,
+    ) -> bool {
+        let resolve = |path: &Path| path.canonicalize().unwrap_or_else(|_| path.to_path_buf());
+        let (worktree_root, sentinel) = (resolve(worktree_root), resolve(sentinel));
+        let (worktree_root, sentinel) = (worktree_root.as_path(), sentinel.as_path());
+        let (states, changed) = probes();
+        let states = states
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let (states, _) = changed
+            .wait_timeout_while(states, timeout, |states| {
+                !states
+                    .get(worktree_root)
+                    .is_some_and(|state| state.settled.contains(sentinel))
+            })
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        states
+            .get(worktree_root)
+            .is_some_and(|state| state.settled.contains(sentinel))
+    }
+}
+
+#[cfg(not(test))]
+mod probe {
+    use std::path::Path;
+
+    use notify::Event;
+
+    pub(super) fn note_event(_worktree_root: &Path, _event: &Event) {}
+
+    pub(super) fn note_idle(_worktree_root: &Path, _sync_due: bool) {}
 }
 
 #[cfg(test)]

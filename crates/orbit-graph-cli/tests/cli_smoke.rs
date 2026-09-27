@@ -2,6 +2,8 @@
 
 #![allow(clippy::expect_used)]
 
+mod common;
+
 use std::fs;
 #[cfg(unix)]
 use std::io::Read;
@@ -33,6 +35,7 @@ fn real_binary_indexes_and_queries_a_fixture() {
             .as_u64()
             .is_some_and(|count| count >= 1)
     );
+    assert_eq!(sync["files_removed"], 0, "{sync}");
 
     let search = run_json(
         fixture.path(),
@@ -59,6 +62,10 @@ fn real_binary_indexes_and_queries_a_fixture() {
             .as_str()
             .is_some_and(|source| source.contains("pub fn entry"))
     );
+    assert!(
+        show.get("bytes").is_none(),
+        "UTF-8 source has no byte fallback: {show}"
+    );
 
     let refs = run_json(
         fixture.path(),
@@ -72,6 +79,8 @@ fn real_binary_indexes_and_queries_a_fixture() {
         ],
     );
     assert!(refs["refs"].as_array().is_some_and(|refs| !refs.is_empty()));
+    assert!(refs["target"].is_object(), "{refs}");
+    assert!(refs["relations"].is_array(), "{refs}");
 
     let callees = run_json(
         fixture.path(),
@@ -83,12 +92,69 @@ fn real_binary_indexes_and_queries_a_fixture() {
             .is_some_and(|calls| !calls.is_empty())
     );
 
+    let impact = run_json(
+        fixture.path(),
+        [
+            "impact",
+            "symbol:src/lib.rs#entry:function",
+            "--depth",
+            "2",
+            "--confidence",
+            "same_module",
+        ],
+    );
+    assert!(impact["touched"].is_array(), "{impact}");
+    assert!(impact["visited_nodes"].is_u64(), "{impact}");
+
+    let missing = run_json(
+        fixture.path(),
+        [
+            "trace",
+            "missing-command",
+            "--depth",
+            "2",
+            "--confidence",
+            "same_module",
+        ],
+    );
+    assert!(missing["root"].is_null(), "{missing}");
+    assert_eq!(missing["visited_nodes"], 0, "{missing}");
+    let ship = run_json(
+        fixture.path(),
+        [
+            "trace",
+            "command:ship",
+            "--depth",
+            "2",
+            "--confidence",
+            "same_module",
+        ],
+    );
+    assert!(ship["root"].is_object(), "{ship}");
+    assert!(
+        ship["visited_nodes"]
+            .as_u64()
+            .is_some_and(|visited| visited > 0),
+        "{ship}"
+    );
+
+    let version = run_json(fixture.path(), ["version"]);
+    assert_eq!(version["crate_version"], env!("CARGO_PKG_VERSION"));
+    assert!(
+        version["extractor_version"]
+            .as_u64()
+            .is_some_and(|extractor_version| extractor_version > 0),
+        "{version}"
+    );
+
     let db_path = run_json(fixture.path(), ["db-path"]);
     assert!(
         db_path["path"]
             .as_str()
-            .is_some_and(|path| path.contains("/.orbit-graph/"))
+            .is_some_and(|path| path.contains("/.orbit-graph/") && path.ends_with(".db")),
+        "{db_path}"
     );
+    assert_eq!(db_path["branch"], "main", "{db_path}");
 }
 
 #[cfg(unix)]
@@ -502,8 +568,7 @@ fn real_binary_sync_never_runs_the_repository_fsmonitor() {
     );
 
     // Control: the fixture is armed, so Git itself does run the hook.
-    let _ = Command::new("git")
-        .current_dir(fixture.path())
+    let _ = common::git_command(fixture.path())
         .args(["status", "--porcelain"])
         .output()
         .expect("run git status");
@@ -980,41 +1045,29 @@ fn assert_show_hides_outside_source(repo: &Path, selector: &str, marker: &str) {
 }
 
 fn inject_outside_source_path(db_path: &str, from: &str, to: &str, symbol: &str, span_end: usize) {
-    let script = r#"
-import sqlite3, sys
-db, old, new, symbol, span_end = sys.argv[1:6]
-span_end = int(span_end)
-conn = sqlite3.connect(db)
-conn.execute("PRAGMA busy_timeout=5000")
-conn.execute("PRAGMA foreign_keys=OFF")
-symbols = conn.execute(
-    "UPDATE symbols SET file_path=?, span_start=0, span_end=? WHERE file_path=? AND name=? AND kind='function'",
-    (new, span_end, old, symbol),
-)
-files = conn.execute(
-    "UPDATE files SET path=?, byte_len=? WHERE path=?",
-    (new, span_end, old),
-)
-if symbols.rowcount != 1 or files.rowcount != 1:
-    raise SystemExit(
-        f"injection missed symbols={symbols.rowcount} files={files.rowcount} for {old}"
-    )
-conn.commit()
-"#;
-    let output = Command::new("python3")
-        .arg("-c")
-        .arg(script)
-        .arg(db_path)
-        .arg(from)
-        .arg(to)
-        .arg(symbol)
-        .arg(span_end.to_string())
-        .output()
-        .expect("run python3 sqlite injection");
-    assert!(
-        output.status.success(),
-        "sqlite injection failed: {}",
-        String::from_utf8_lossy(&output.stderr)
+    let conn = rusqlite::Connection::open(db_path).expect("open graph database");
+    conn.busy_timeout(Duration::from_secs(5))
+        .expect("set busy timeout");
+    conn.pragma_update(None, "foreign_keys", "OFF")
+        .expect("disable foreign keys");
+    let span_end = i64::try_from(span_end).expect("span end fits in i64");
+    let symbols = conn
+        .execute(
+            "UPDATE symbols SET file_path=?1, span_start=0, span_end=?2 \
+             WHERE file_path=?3 AND name=?4 AND kind='function'",
+            rusqlite::params![to, span_end, from, symbol],
+        )
+        .expect("move the symbol outside the worktree");
+    let files = conn
+        .execute(
+            "UPDATE files SET path=?1, byte_len=?2 WHERE path=?3",
+            rusqlite::params![to, span_end, from],
+        )
+        .expect("move the file outside the worktree");
+    assert_eq!(
+        (symbols, files),
+        (1, 1),
+        "injection missed symbols={symbols} files={files} for {from}"
     );
 }
 
@@ -2041,8 +2094,7 @@ fn real_binary_expands_corpus_cochanges_without_temporal_or_duplicate_leakage() 
 fn real_binary_live_default_cutoff_accepts_new_pending_snapshot() {
     let fixture = fixture_repository();
     let old_date = "2000-01-01T00:00:00Z";
-    let amended = Command::new("git")
-        .current_dir(fixture.path())
+    let amended = common::git_command(fixture.path())
         .env("GIT_AUTHOR_DATE", old_date)
         .env("GIT_COMMITTER_DATE", old_date)
         .args(["commit", "--amend", "--no-edit"])
@@ -3465,8 +3517,7 @@ fn real_binary_live_evaluation_excludes_held_out_and_later_deliveries() {
 }
 
 fn run_git<const N: usize>(cwd: &Path, args: [&str; N]) {
-    let output = Command::new("git")
-        .current_dir(cwd)
+    let output = common::git_command(cwd)
         .args(args)
         .output()
         .expect("run git");
@@ -3478,8 +3529,7 @@ fn run_git<const N: usize>(cwd: &Path, args: [&str; N]) {
 }
 
 fn git_stdout<const N: usize>(cwd: &Path, args: [&str; N]) -> String {
-    let output = Command::new("git")
-        .current_dir(cwd)
+    let output = common::git_command(cwd)
         .args(args)
         .output()
         .expect("run git");

@@ -3,6 +3,8 @@
 
 #![allow(clippy::expect_used)]
 
+mod common;
+
 use std::fs;
 use std::path::Path;
 use std::process::{Command, Output};
@@ -149,8 +151,7 @@ fn run<const N: usize>(cwd: &Path, args: [&str; N]) -> Output {
 }
 
 fn git(cwd: &Path, args: &[&str]) {
-    let status = Command::new("git")
-        .current_dir(cwd)
+    let status = common::git_command(cwd)
         .args(args)
         .status()
         .expect("run git");
@@ -158,8 +159,7 @@ fn git(cwd: &Path, args: &[&str]) {
 }
 
 fn git_stdout(cwd: &Path, args: &[&str]) -> String {
-    let output = Command::new("git")
-        .current_dir(cwd)
+    let output = common::git_command(cwd)
         .args(args)
         .output()
         .expect("run git");

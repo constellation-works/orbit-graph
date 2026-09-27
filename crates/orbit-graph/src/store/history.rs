@@ -1718,6 +1718,7 @@ thread_local! {
         std::cell::RefCell::new(None);
 }
 
+#[must_use = "the history lock is released when the guard is dropped"]
 struct HistoryLock {
     _guard: lock::FileLockGuard,
 }
