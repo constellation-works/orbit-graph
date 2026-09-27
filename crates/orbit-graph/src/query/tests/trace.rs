@@ -160,6 +160,31 @@ def leaf():
 }
 
 #[test]
+fn synced_command_trace_follows_the_hinted_same_named_helper() {
+    let worktree = TestWorktree::new("trace-synced-helper-identity");
+    worktree.write(
+        "src/a.py",
+        "def helper():\n    wrong()\n\ndef wrong():\n    pass\n",
+    );
+    worktree.write(
+        "src/b.py",
+        "import click\n\n@click.command()\ndef ship():\n    helper()\n\ndef helper():\n    right()\n\ndef right():\n    pass\n",
+    );
+    let graph = open_graph(&worktree, SyncPolicy::Manual);
+    graph.sync(SyncMode::Full).expect("sync duplicate helpers");
+
+    let result = graph
+        .trace("ship", 2, RefConfidence::SameModule)
+        .expect("trace ship command");
+
+    assert_eq!(result.visited_nodes, 3, "{result:?}");
+    let root = result.root.expect("command handler");
+    assert_eq!(child_names(&root), vec!["helper"]);
+    assert_eq!(child_names(child(&root, "helper")), vec!["right"]);
+    assert!(!result.truncated);
+}
+
+#[test]
 fn trace_resolves_rust_clap_command_from_synced_fixture() {
     let worktree = TestWorktree::new("trace-rust-clap-command");
     worktree.write(

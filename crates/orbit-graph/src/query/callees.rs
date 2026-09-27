@@ -90,7 +90,7 @@ pub(crate) fn edges_for_symbol(
 ) -> Result<Vec<StoredCalleeEdge>, GraphError> {
     let mut stmt = conn
         .prepare_cached(
-            "SELECT target_name, target_qualified, confidence, from_span_start
+            "SELECT target_name, target_qualified, target_symbol_hint, confidence, from_span_start
              FROM refs
              WHERE from_file = ?1
                AND from_span_start >= ?2
@@ -106,8 +106,9 @@ pub(crate) fn edges_for_symbol(
             Ok(StoredCalleeEdge {
                 target_name: row.get(0)?,
                 target_qualified: row.get(1)?,
-                confidence: row.get(2)?,
-                from_span: row.get(3)?,
+                target_symbol_hint: row.get(2)?,
+                confidence: row.get(3)?,
+                from_span: row.get(4)?,
             })
         },
     )
@@ -120,6 +121,7 @@ pub(crate) fn edges_for_symbol(
 pub(crate) struct StoredCalleeEdge {
     pub(crate) target_name: String,
     pub(crate) target_qualified: Option<String>,
+    pub(crate) target_symbol_hint: Option<i64>,
     pub(crate) confidence: String,
     pub(crate) from_span: i64,
 }

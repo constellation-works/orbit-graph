@@ -10,7 +10,7 @@ use crate::query::tests::support::{
 use crate::sync::sync_leader_count;
 use crate::{
     IMPACT_NODE_CAP, ImpactDirection, ImpactEntry, ImpactOrigin, ImpactResult, RefConfidence,
-    RefKind, Selector, SyncPolicy,
+    RefKind, Selector, SyncMode, SyncPolicy,
 };
 
 #[test]
@@ -422,6 +422,83 @@ fn touched_entries_carry_a_selector_file_and_line_to_open_them() {
     assert_eq!(external.selector, None, "no indexed definition to point at");
     assert_eq!(external.file, None);
     assert_eq!(external.line, None);
+}
+
+#[test]
+fn synced_same_named_helpers_follow_the_hinted_definition_outbound() {
+    let worktree = TestWorktree::new("impact-synced-helper-identity");
+    worktree.write(
+        "src/a.py",
+        "def helper():\n    wrong()\n\ndef wrong():\n    pass\n",
+    );
+    worktree.write(
+        "src/b.py",
+        "def entry():\n    helper()\n\ndef helper():\n    right()\n\ndef right():\n    pass\n",
+    );
+    let graph = open_graph(&worktree, SyncPolicy::Manual);
+    graph.sync(SyncMode::Full).expect("sync duplicate helpers");
+
+    let result = graph
+        .impact_with_direction(
+            &symbol_selector("src/b.py", "entry"),
+            2,
+            RefConfidence::SameModule,
+            ImpactDirection::Outbound,
+        )
+        .expect("outbound impact from entry");
+
+    assert_eq!(result.visited_nodes, 2, "{result:?}");
+    assert_eq!(result.touched[0].qualified_name, "helper");
+    assert_eq!(result.touched[0].file.as_deref(), Some("src/b.py"));
+    assert_eq!(result.touched[0].distance, 1);
+    assert_eq!(result.touched[1].qualified_name, "right");
+    assert_eq!(result.touched[1].file.as_deref(), Some("src/b.py"));
+    assert_eq!(result.touched[1].distance, 2);
+    assert!(!result.truncated);
+}
+
+#[test]
+fn synced_same_named_callers_both_expand_inbound_through_their_own_files() {
+    let worktree = TestWorktree::new("impact-synced-caller-identity");
+    worktree.write("src/shared.py", "def target():\n    pass\n");
+    worktree.write(
+        "src/a.py",
+        "from shared import target\n\ndef caller():\n    target()\n\ndef parent_a():\n    caller()\n",
+    );
+    worktree.write(
+        "src/b.py",
+        "from shared import target\n\ndef caller():\n    target()\n\ndef parent_b():\n    caller()\n",
+    );
+    let graph = open_graph(&worktree, SyncPolicy::Manual);
+    graph.sync(SyncMode::Full).expect("sync duplicate callers");
+
+    let result = graph
+        .impact_with_direction(
+            &symbol_selector("src/shared.py", "target"),
+            2,
+            RefConfidence::SameModule,
+            ImpactDirection::Inbound,
+        )
+        .expect("inbound impact from target");
+
+    let by_file_and_name: BTreeMap<_, _> = result
+        .touched
+        .iter()
+        .map(|entry| {
+            (
+                (entry.file.as_deref(), entry.qualified_name.as_str()),
+                entry.distance,
+            )
+        })
+        .collect();
+    assert_eq!(result.visited_nodes, 6, "{result:?}");
+    assert_eq!(by_file_and_name[&(Some("src/a.py"), "src/a.py")], 1);
+    assert_eq!(by_file_and_name[&(Some("src/b.py"), "src/b.py")], 1);
+    assert_eq!(by_file_and_name[&(Some("src/a.py"), "caller")], 1);
+    assert_eq!(by_file_and_name[&(Some("src/b.py"), "caller")], 1);
+    assert_eq!(by_file_and_name[&(Some("src/a.py"), "parent_a")], 2);
+    assert_eq!(by_file_and_name[&(Some("src/b.py"), "parent_b")], 2);
+    assert!(!result.truncated);
 }
 
 #[test]

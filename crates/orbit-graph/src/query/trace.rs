@@ -47,7 +47,7 @@ pub(crate) fn run(
                 }
 
                 let child_symbol = match edge.target_qualified.as_deref() {
-                    Some(qualified) => resolve_symbol_by_qualified(conn, qualified)?,
+                    Some(qualified) => resolve_symbol(conn, qualified, edge.target_symbol_hint)?,
                     None => None,
                 };
                 let child = TraceNodeBuilder::callee(
@@ -108,10 +108,25 @@ fn resolve_command_handler(
     .map_err(|source| GraphError::sqlite("resolve trace command handler", source))
 }
 
-fn resolve_symbol_by_qualified(
+fn resolve_symbol(
     conn: &Connection,
     qualified: &str,
+    hint: Option<i64>,
 ) -> Result<Option<TraceSymbol>, GraphError> {
+    if let Some(hint) = hint {
+        let hinted = conn
+            .query_row(
+                "SELECT file_path, name, qualified, span_start, span_end
+                 FROM symbols WHERE id = ?1 AND qualified = ?2",
+                params![hint, qualified],
+                trace_symbol_from_row,
+            )
+            .optional()
+            .map_err(|source| GraphError::sqlite("resolve hinted trace callee", source))?;
+        if hinted.is_some() {
+            return Ok(hinted);
+        }
+    }
     conn.query_row(
         "SELECT file_path, name, qualified, span_start, span_end
          FROM symbols
