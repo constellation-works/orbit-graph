@@ -327,4 +327,4 @@ failure.
 
 
 The bundled agent guidance is in
-[`skills/recommendations/SKILL.md`](../skills/recommendations/SKILL.md).
+[`skills/orbit-graph/SKILL.md`](../skills/orbit-graph/SKILL.md).

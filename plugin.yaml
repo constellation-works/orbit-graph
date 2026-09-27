@@ -123,7 +123,7 @@ spec:
     activities: [definitions/activities/*.yaml]
     jobs: [definitions/jobs/*.yaml]
     routines: [definitions/routines/*.yaml]
-  skills: [skills/recommendations]
+  skills: [skills/orbit-graph]
   config:
     schema: schemas/config.json
     defaults:
