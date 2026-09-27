@@ -192,7 +192,9 @@ pub use state_dir::{
 /// Version 22 redacts credential-shaped values in symbol signatures before
 /// graph rows are stored. A signature is free text and can carry a default
 /// argument; symbol names and qualified names stay unchanged.
-pub const EXTRACTOR_VERSION: u32 = 22;
+///
+/// Version 23 rebuilds config keys with their actual source lines.
+pub const EXTRACTOR_VERSION: u32 = 23;
 
 /// SQLite schema version used by the graph store.
 ///
