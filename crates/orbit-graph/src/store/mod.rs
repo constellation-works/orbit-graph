@@ -11,7 +11,7 @@ use std::os::unix::fs::OpenOptionsExt;
 use std::path::{Path, PathBuf};
 
 use git2::Repository;
-use rusqlite::{Connection, OpenFlags};
+use rusqlite::{Connection, OpenFlags, OptionalExtension};
 
 use crate::state_dir::{SCRATCH_DIR_NAME, StateAccess, open_state_file};
 use crate::sync::scanner::DbLockGuard;
@@ -26,7 +26,8 @@ pub(crate) struct OpenedGraph {
 
 pub(crate) fn open(worktree_root: &Path) -> Result<OpenedGraph, GraphError> {
     let git = GitContext::for_worktree(worktree_root)?;
-    let db_path = git.db_path(worktree_root);
+    let db_path =
+        existing_legacy_db_path(worktree_root, &git)?.unwrap_or_else(|| git.db_path(worktree_root));
     open_at_path(
         worktree_root,
         db_path,
@@ -35,10 +36,54 @@ pub(crate) fn open(worktree_root: &Path) -> Result<OpenedGraph, GraphError> {
     )
 }
 
-/// The database path the worktree's current branch or detached commit selects,
-/// resolved without touching the filesystem beyond reading Git's `HEAD`.
+/// The database path the worktree's current branch or detached commit selects.
+/// A compatible legacy index is selected after a read-only identity check.
 pub(crate) fn resolve_worktree_db_path(worktree_root: &Path) -> Result<GraphDbPath, GraphError> {
-    Ok(GitContext::for_worktree(worktree_root)?.db_path(worktree_root))
+    let git = GitContext::for_worktree(worktree_root)?;
+    Ok(existing_legacy_db_path(worktree_root, &git)?.unwrap_or_else(|| git.db_path(worktree_root)))
+}
+
+/// Reuse a pre-hash database only when its stored branch is exactly the
+/// requested branch. A collision belongs to another branch and is ignored;
+/// a writer can then create the new, unambiguous database.
+pub(crate) fn existing_legacy_db_path_for_branch(
+    worktree_root: &Path,
+    branch: &str,
+) -> Result<Option<GraphDbPath>, GraphError> {
+    if branch == "HEAD" {
+        return Ok(None);
+    }
+    let path = crate::db_path::legacy_db_path(worktree_root, branch, EXTRACTOR_VERSION);
+    // The old unbounded sanitizer could exceed a filesystem component limit.
+    // Such a legacy file could never have been created on a normal filesystem.
+    if path
+        .file_name()
+        .is_some_and(|name| name.to_string_lossy().len() > 255)
+    {
+        return Ok(None);
+    }
+    let Some(physical) = existing_physical_db(worktree_root, &path)? else {
+        return Ok(None);
+    };
+    let conn = open_observational(&physical, "inspect legacy graph branch")?;
+    let stored: Option<String> = conn
+        .query_row("SELECT value FROM meta WHERE key = 'branch'", [], |row| {
+            row.get(0)
+        })
+        .optional()
+        .map_err(|source| GraphError::sqlite("read legacy graph branch", source))?;
+    Ok((stored.as_deref() == Some(branch))
+        .then(|| GraphDbPath::new(path, branch.to_string(), EXTRACTOR_VERSION)))
+}
+
+fn existing_legacy_db_path(
+    worktree_root: &Path,
+    git: &GitContext,
+) -> Result<Option<GraphDbPath>, GraphError> {
+    if existing_physical_db(worktree_root, git.db_path(worktree_root).path())?.is_some() {
+        return Ok(None);
+    }
+    existing_legacy_db_path_for_branch(worktree_root, &git.branch)
 }
 
 /// The [`GraphError::IndexMissing`] a read reports when `db_path` has not
@@ -152,6 +197,8 @@ fn open_at_path(
     git: &GitContext,
     owner: IndexDirOwner<'_>,
 ) -> Result<OpenedGraph, GraphError> {
+    let expected_branch =
+        matches!(owner, IndexDirOwner::Scratch { .. }).then_some(git.branch.as_str());
     let (Some(parent), Some(file_name)) = (db_path.path().parent(), db_path.path().file_name())
     else {
         return Err(GraphError::invalid_data(
@@ -167,22 +214,17 @@ fn open_at_path(
     let existing = existing_physical_db(worktree_root, db_path.path())?;
     let mut setup_lock = None;
     let needs_initialization = if let Some(path) = existing.as_deref() {
-        let initialized = match validate_nonempty_identity(path, db_path.path()) {
+        let initialized = match validate_nonempty_identity(path, db_path.path(), expected_branch) {
             Ok(initialized) => initialized,
             // A first writer can briefly leave WAL frames without a wal-index
-            // while closing. Its setup lock already exists; wait for it and
-            // inspect again before touching the database or its directory.
-            Err(error)
-                if matches!(
-                    error,
-                    GraphError::InvalidData {
-                        operation: "open index read-only",
-                        ..
-                    }
-                ) && setup_lock_exists(path)? =>
-            {
+            // while closing. Wait on the setup lock and inspect again before
+            // touching the database or its directory.
+            Err(GraphError::InvalidData {
+                operation: "open index read-only",
+                ..
+            }) => {
                 setup_lock = Some(DbLockGuard::acquire(path)?);
-                validate_nonempty_identity(path, db_path.path())?
+                validate_after_transient_wal(path, db_path.path(), expected_branch)?
             }
             Err(error) => return Err(error),
         };
@@ -209,7 +251,7 @@ fn open_at_path(
     // Another first opener may have initialized the database while we waited
     // for the setup lock. Recheck its identity before any writable open.
     if setup_lock.is_some() {
-        validate_nonempty_identity(physical_db.as_path(), db_path.path())?;
+        validate_after_transient_wal(physical_db.as_path(), db_path.path(), expected_branch)?;
     }
     // SQLite's default creation mode can expose indexed source text. Create
     // the database with private permissions before SQLite opens it, repair an
@@ -233,7 +275,7 @@ fn open_at_path(
     }
     // A database whose stored schema identity differs is never written
     // (STD-03 §R10).
-    schema::validate_identity(&conn, db_path.path())?;
+    schema::validate_identity(&conn, db_path.path(), expected_branch)?;
     drop(setup_lock);
 
     Ok(OpenedGraph {
@@ -242,15 +284,13 @@ fn open_at_path(
     })
 }
 
-fn setup_lock_exists(path: &Path) -> Result<bool, GraphError> {
-    let mut name = path.as_os_str().to_os_string();
-    name.push(".lock");
-    crate::state_dir::check_state_file(Path::new(&name))
-}
-
 /// Return whether an existing database has a complete, compatible schema.
 /// An empty SQLite database is left for initialization under the setup lock.
-fn validate_nonempty_identity(path: &Path, db_path: &Path) -> Result<bool, GraphError> {
+fn validate_nonempty_identity(
+    path: &Path,
+    db_path: &Path,
+    expected_branch: Option<&str>,
+) -> Result<bool, GraphError> {
     let Some(file) = open_state_file(path, StateAccess::Read)? else {
         return Ok(false);
     };
@@ -266,8 +306,28 @@ fn validate_nonempty_identity(path: &Path, db_path: &Path) -> Result<bool, Graph
     if schema::database_is_empty(&conn)? {
         return Ok(false);
     }
-    schema::validate_identity(&conn, db_path)?;
+    schema::validate_identity(&conn, db_path, expected_branch)?;
     Ok(true)
+}
+
+/// Another WAL writer can close between the header and sidecar observations.
+/// The setup lock serializes first opens, while an established WAL connection
+/// does not hold it. Retry that one transient state for at most one second.
+fn validate_after_transient_wal(
+    path: &Path,
+    db_path: &Path,
+    expected_branch: Option<&str>,
+) -> Result<bool, GraphError> {
+    for attempt in 0..=20 {
+        match validate_nonempty_identity(path, db_path, expected_branch) {
+            Err(GraphError::InvalidData {
+                operation: "open index read-only",
+                ..
+            }) if attempt < 20 => std::thread::sleep(std::time::Duration::from_millis(50)),
+            result => return result,
+        }
+    }
+    unreachable!("the final attempt always returns")
 }
 
 /// Open the physical database `path` read-write with `SQLITE_OPEN_NOFOLLOW`,

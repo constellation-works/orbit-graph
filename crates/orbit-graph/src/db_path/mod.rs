@@ -42,6 +42,7 @@ impl GraphDbPath {
 
 /// Resolve the graph database path the worktree's current branch or detached
 /// commit selects, as [`crate::Graph::open`] would, without creating anything.
+/// A compatible legacy index may be selected after reading its stored branch.
 ///
 /// Only an unborn branch, or a directory outside any Git repository, selects
 /// the `HEAD` family; any other failure to read `HEAD` is an error.
@@ -64,9 +65,8 @@ pub fn resolve_worktree_db_path(worktree_root: &Path) -> Result<GraphDbPath, Gra
 
 /// Resolve the canonical graph database path for a worktree and branch.
 ///
-/// The filename sanitizes the branch with a conservative filesystem-safe
-/// allowlist, while the returned [`GraphDbPath`] keeps the raw branch name for
-/// future `meta.branch` storage.
+/// Named branches use a bounded, hashed filename in a separate namespace from
+/// detached commits. The raw branch name is retained for `meta.branch`.
 pub fn resolve_db_path(worktree_root: &Path, branch: &str, extractor_version: u32) -> GraphDbPath {
     resolve_db_path_for_commit(worktree_root, branch, "", extractor_version)
 }
@@ -97,8 +97,28 @@ fn graph_db_filename_stem(branch: &str, commit_sha: &str) -> String {
             .map(|prefix| format!("detached-{prefix}"))
             .unwrap_or_else(|| sanitize_branch_for_filename(branch))
     } else {
-        sanitize_branch_for_filename(branch)
+        let safe = sanitize_branch_for_filename(branch);
+        let prefix: String = safe.chars().take(48).collect();
+        // `~` cannot occur in a Git branch or its old sanitized filename.
+        format!(
+            "branch~{prefix}-{}",
+            blake3::hash(branch.as_bytes()).to_hex()
+        )
     }
+}
+
+/// The filename written before branch names gained a collision-resistant
+/// identity. Callers may reuse it only after checking its stored branch.
+pub(crate) fn legacy_db_path(
+    worktree_root: &Path,
+    branch: &str,
+    extractor_version: u32,
+) -> PathBuf {
+    worktree_root.join(".orbit-graph").join(format!(
+        "{}.{}.db",
+        sanitize_branch_for_filename(branch),
+        extractor_version
+    ))
 }
 
 pub(crate) fn detached_commit_prefix(commit_sha: &str) -> Option<&str> {
