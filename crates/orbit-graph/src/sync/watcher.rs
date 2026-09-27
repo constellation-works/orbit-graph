@@ -190,7 +190,15 @@ fn watcher_thread(
             return;
         }
     };
-    if let Err(error) = watcher.watch(worktree_root.as_path(), RecursiveMode::Recursive) {
+    // Watch and filter on the resolved root: FSEvents reports resolved paths
+    // (`/private/var/...` for a root under `/var/...`), and an event path the
+    // root does not prefix would escape the ignored-directory filter, so the
+    // watcher's own index writes would schedule syncs. The sync itself keeps
+    // the caller's root.
+    let watch_root = worktree_root
+        .canonicalize()
+        .unwrap_or_else(|_| worktree_root.clone());
+    if let Err(error) = watcher.watch(watch_root.as_path(), RecursiveMode::Recursive) {
         notify_start(ready.as_ref(), Err(error.to_string()));
         return;
     }
@@ -199,7 +207,7 @@ fn watcher_thread(
         &event_rx,
         &dropped,
         &stop,
-        worktree_root.as_path(),
+        watch_root.as_path(),
         debounce,
         &mut || run_background_sync(db_path.as_path(), worktree_root.as_path()),
     );
@@ -386,11 +394,16 @@ pub(crate) mod probe {
     /// Waits until the watcher of `worktree_root` has classified an event on
     /// `sentinel` and then passed through its loop with no sync due. Returns
     /// whether that happened within `timeout`.
+    ///
+    /// Both paths are resolved first, as the watcher resolves its root.
     pub(crate) fn wait_for_settled(
         worktree_root: &Path,
         sentinel: &Path,
         timeout: Duration,
     ) -> bool {
+        let resolve = |path: &Path| path.canonicalize().unwrap_or_else(|_| path.to_path_buf());
+        let (worktree_root, sentinel) = (resolve(worktree_root), resolve(sentinel));
+        let (worktree_root, sentinel) = (worktree_root.as_path(), sentinel.as_path());
         let (states, changed) = probes();
         let states = states
             .lock()
