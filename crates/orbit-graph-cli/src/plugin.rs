@@ -14,6 +14,7 @@ use orbit_graph::{
 };
 
 mod adapter;
+mod changes;
 mod code_index;
 mod error;
 mod query;
@@ -44,7 +45,9 @@ pub fn recognizes_tool(name: &str) -> bool {
     QueryTool::from_tool_name(name).is_some()
         || matches!(
             name,
-            RECOMMEND_TOOL_NAME
+            changes::TOOL_NAME
+                | changes::V2_TOOL_NAME
+                | RECOMMEND_TOOL_NAME
                 | STATUS_TOOL_NAME
                 | MAINTAIN_TOOL_NAME
                 | VERSION_TOOL_NAME
@@ -69,6 +72,7 @@ pub fn execute_external_tool(name: &str, input: &[u8]) -> Result<Value, ToolErro
         return query::execute(tool, name, input);
     }
     match name {
+        changes::TOOL_NAME | changes::V2_TOOL_NAME => changes::execute(input),
         RECOMMEND_TOOL_NAME | V2_RECOMMEND_TOOL_NAME => recommend(name, decode_input(input)?),
         STATUS_TOOL_NAME | V2_STATUS_TOOL_NAME => status(name, decode_input(input)?),
         MAINTAIN_TOOL_NAME | V2_MAINTAIN_TOOL_NAME => maintain(decode_input(input)?),

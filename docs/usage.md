@@ -255,6 +255,7 @@ their stored envelopes and retained unless `--discard-verified` is explicit.
 | `overview [<file-or-dir-selector>] [--detail summary\|full]` | Summarize indexed files and symbols. The former `--format summary\|full` spelling still works but warns on stderr; `--format` otherwise selects the output mode. |
 | `implementors <trait-selector>` | Find concrete implementations of a trait-like symbol. |
 | `deps <file-or-dir-selector>` | List source-level module/import edges. |
+| `changes [<base>..<head>\|<base>] [--symbol <selector>] [--max-*]` | Analyse a change: changed symbols, affected callers and entry points, and labelled candidate tests. See [Change analysis](#change-analysis). |
 | `db-path` | Show the current database path, extractor version, and whether it exists. |
 | `clean [--confirm]` | Report obsolete graph databases; delete them only with `--confirm`. |
 | `version` | Show crate, extractor, and store schema versions. |
@@ -306,6 +307,54 @@ symbol:<path>#<name>:<kind>
 module:<qualified-name>
 command:<name>
 ```
+
+## Change analysis
+
+`orbit-graph changes` answers "what else could this change break?" and "which
+tests should I run?" in one call, through the `orbit-graph-changes` library.
+It needs no `sync`: it indexes both sides of the comparison itself.
+
+```sh
+orbit-graph changes --json                 # working tree vs. the default base
+orbit-graph changes main..HEAD --json      # two revisions
+orbit-graph changes origin/main --json     # working tree vs. a revision
+```
+
+`<base>..<head>` compares two revisions. `<base>` alone compares the working
+tree (staged, unstaged and untracked files; not ignored ones) against it.
+Without a range the working tree is compared against the merge base of `HEAD`
+with its upstream, else `origin/HEAD`, else `main`, else `master`; the chosen
+ref is reported in `default_base`, and nothing is fetched. A range that is not
+one of these forms, or a bound outside its range, is a usage error (exit 2);
+a revision that does not resolve fails with `revision_not_found` and
+no default base with `no_default_base`, both before anything is indexed.
+
+The JSON document (`schema_version` 1, the same `result` the
+[plugin tool](plugin.md#change-analysis) returns) lists each analysed changed
+symbol with its `status` and `pairing`, then its `callers`, `entry_points`
+and `candidate_tests`. Each item is labelled with its `source` (`call_path`,
+`import_relationship`, `reference_path`, `changed_symbol` at distance 0,
+`naming_heuristic`, `runtime_invocation`) and its `confidence`, and carries the
+evidence path with a `file:line@sha` per hop where there is one. `tests` lists
+the distinct candidate tests with the changed symbols each covers.
+
+Every bound is a flag, and every cut is listed in `truncation` and summarised
+on stderr: `--max-symbols` (default 50; the rest go to `not_analysed`),
+`--max-callers` (10), `--max-entry-points` (5) and `--max-tests` (10) per
+symbol, `--depth` (3), `--node-cap` (200) and `--query-budget-ms` (5000) per
+traversal, and `--budget-ms` for the whole run (none by default), after which
+the result is returned with `complete: false`. `--confidence` sets the floor
+(default `same_module`); a call whose receiver type is unknown can still
+appear at `fuzzy_name`, labelled as such. `--symbol`, `--scope` and
+`--language` narrow the analysis.
+
+Committed snapshots are cached in `.orbit-graph/explorer/snapshots`, graph
+scratch state like the index, so a second run over the same commits skips
+indexing; `--cache-dir` moves the cache and `--no-cache` writes nothing. The
+working tree is never cached, and neither it nor the index is modified.
+`--format table` prints a symbols table and a tests table; `--format ndjson`
+prints a `changes_context` record, then one `changed_symbol` and one
+`candidate_test` record per line.
 
 ## Chronological evaluation
 

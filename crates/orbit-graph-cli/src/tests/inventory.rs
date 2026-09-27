@@ -32,6 +32,7 @@ fn registered_command_inventory_matches_the_compatibility_matrix() {
         "history rebuild",
         "recommend",
         "evaluate",
+        "changes",
         "search",
         "show",
         "refs",

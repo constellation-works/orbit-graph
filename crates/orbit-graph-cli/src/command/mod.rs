@@ -17,6 +17,7 @@ use thiserror::Error;
 use crate::output::{CommandOutput, LegacyDetail};
 
 mod callees;
+mod changes;
 mod clean;
 mod db_path;
 mod deps;
@@ -53,6 +54,9 @@ Follow relationships:
   trace         Trace outbound calls from a discovered CLI command handler
   impact        Traverse the bounded graph around a selector
 
+Review changes:
+  changes  Changed symbols, their callers and entry points, and candidate tests
+
 Recommendations and history:
   recommend  Recommend current change destinations from historical evidence
   history    Inspect and maintain historical delivery evidence
@@ -82,6 +86,7 @@ Examples:
   orbit-graph overview
   orbit-graph search parser --kind symbol
   orbit-graph refs symbol:src/lib.rs#entry:function
+  orbit-graph changes main..HEAD --json
 ";
 
 #[derive(Debug, Parser)]
@@ -129,6 +134,7 @@ impl Command {
             Self::Deps(_) => deps::output(document),
             Self::Trace(_) => trace::output(document),
             Self::Impact(_) => impact::output(document),
+            Self::Changes(_) => changes::output(document),
             Self::Recommend(_) => recommend::output(document),
             Self::History(command) => command.output(document),
             Self::Evaluate(_) => evaluate::output(document),
@@ -150,6 +156,7 @@ impl Command {
             Command::Refs(command) => command.run(context),
             Command::Callees(command) => command.run(context),
             Command::Impact(command) => command.run(context),
+            Command::Changes(command) => command.run(context),
             Command::Recommend(command) => command.run(context),
             Command::History(command) => command.run(context),
             Command::Trace(command) => command.run(context),
@@ -178,6 +185,9 @@ pub enum Command {
     Callees(callees::CalleesCommand),
     /// Traverse the bounded graph around a selector.
     Impact(impact::ImpactCommand),
+    /// Changed symbols between two revisions, or in the working tree, with
+    /// their callers, entry points and labelled candidate tests.
+    Changes(changes::ChangesCommand),
     /// Recommend current change destinations from historical evidence.
     Recommend(recommend::RecommendCommand),
     /// Inspect and maintain historical delivery evidence.
@@ -292,6 +302,9 @@ pub enum CliError {
     /// An Orbit plugin tool request failed.
     #[error(transparent)]
     Tool(crate::plugin::ToolError),
+    /// Change analysis failed.
+    #[error(transparent)]
+    Changes(#[from] orbit_graph_changes::analysis::AnalysisError),
     /// A graph selector argument did not parse.
     #[error(transparent)]
     Selector(#[from] SelectorParseError),
@@ -320,6 +333,7 @@ impl CliError {
             Self::Graph(GraphError::UnsafeStatePath { .. }) => "unsafe_state_path",
             Self::Graph(_) => "graph_error",
             Self::Tool(error) => error.code().as_str(),
+            Self::Changes(error) => changes::error_code(error),
             Self::Selector(_) => "selector_parse_error",
             Self::Json(_) => "json_error",
             Self::Stdout(_) => "stdout_error",
@@ -333,6 +347,7 @@ impl CliError {
         match self {
             Self::Clap(error) => error.exit_code(),
             Self::Usage(_) => 2,
+            Self::Changes(error) if changes::is_usage_error(error) => 2,
             _ => 1,
         }
     }

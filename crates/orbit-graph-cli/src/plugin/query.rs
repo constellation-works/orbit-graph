@@ -403,7 +403,7 @@ fn depth(value: Option<u8>, default: u8) -> Result<u8, ToolError> {
 
 #[derive(Debug, Clone, Copy, Deserialize)]
 #[serde(rename_all = "snake_case")]
-enum ConfidenceInput {
+pub(super) enum ConfidenceInput {
     Exact,
     ImportResolved,
     SameModule,
@@ -421,7 +421,7 @@ impl ConfidenceInput {
     }
 }
 
-fn confidence(value: Option<ConfidenceInput>) -> RefConfidence {
+pub(super) fn confidence(value: Option<ConfidenceInput>) -> RefConfidence {
     value.map_or(RefConfidence::SameModule, ConfidenceInput::into_graph)
 }
 

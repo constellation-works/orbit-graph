@@ -15,7 +15,8 @@ cargo install --path crates/orbit-graph-cli --locked
 
 As an Orbit plugin, the same queries (search, show, refs, callees, impact,
 trace, deps, overview) are read-only `orbit.graph.*` tools that answer from an
-index the plugin's `graph_sync` maintenance builds; see
+index the plugin's `graph_sync` maintenance builds, and `orbit.graph.changes`
+analyses a change for affected callers and tests to run; see
 [docs/plugin.md](docs/plugin.md).
 
 ## Quick start
@@ -26,6 +27,7 @@ orbit-graph sync
 orbit-graph search helper --kind symbol
 orbit-graph refs 'symbol:src/lib.rs#helper:function'
 orbit-graph callees 'symbol:src/lib.rs#entry:function'
+orbit-graph changes main..HEAD --json   # affected callers and tests to run
 ```
 
 Pass `--format json` for machine-readable output. `orbit-graph --help` lists
@@ -46,7 +48,8 @@ them).
 - [Change analysis library](crates/orbit-graph-changes/README.md) — snapshots, changed symbols, evidence and JSON reports
 - Design: [terminal interface](docs/design/terminal-interface.md),
   [change recommendations](docs/design/change-recommendations.md),
-  [change explorer](docs/design/change-explorer.md)
+  [change explorer](docs/design/change-explorer.md),
+  [changes command](docs/design/changes-command/4_decisions.md)
 - [Evaluation](docs/evaluation/README.md) ·
   [Contributing](CONTRIBUTING.md) · [Provenance](PROVENANCE.md)
 

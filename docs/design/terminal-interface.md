@@ -309,6 +309,7 @@ on a terminal, and the default `warn` log filter.
 | `history rebuild` | Atomic rebuild summary in human, JSON, and NDJSON output. |
 | `recommend` | File and symbol results, invalid inputs, empty state, table, JSON, and record-stream output. |
 | `evaluate` | Chronological corpus evaluation and live Git commit-text evaluation: human summary, JSON, and metric/case NDJSON. |
+| `changes` | Revision-range and working-tree comparisons with labelled callers, entry points, and candidate tests; `--json` identity with `--format json`, help text on every flag, usage and `revision_not_found` failures before indexing, cap and budget signalling in table, JSON, and NDJSON output (`crates/orbit-graph-cli/tests/changes_command.rs`). |
 | `search` | Match, empty state, plain, table, JSON, and per-match NDJSON output. |
 | `show` | Resolved source/detail output, malformed-selector and `not_found` failures, JSON, and one detail record. |
 | `refs` | Filtered references, missing-argument failure, table, JSON, and context/reference NDJSON output; `from_selector` (including a top-level `null`), `snippet`, and `fallback_used` on precise and fallback results. |

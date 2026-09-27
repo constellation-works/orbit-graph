@@ -11,13 +11,13 @@ script fails when the crate table below and its policy disagree.
 |------|------|------|---------------|
 | 1. Extraction | `orbit-graph-extract` (library) | Extraction contracts (`ExtractedFile`, the raw rows, `Selector`), the `Extractor` trait and every tree-sitter language extractor (`languages`), and the Git-tree change extraction behind the history index (`history`). A leaf: it knows nothing of the store, sync or queries, and prints nothing. | nothing internal |
 | 2. Domain | `orbit-graph` (library) | The SQLite store and its schema (`store`), sync and the file watcher (`sync`), queries (`query`), recommendations (`recommend`), and evaluation (`evaluation`), built on tier 1; it re-exports the extraction types its public API names. Embeddable; it prints nothing (`#![deny(clippy::print_stdout, clippy::print_stderr)]`), reads no Orbit plugin environment and starts no Orbit processes. | tier 1 |
-| 3. Change analysis | `orbit-graph-changes` (library) | Immutable base/head snapshots, snapshot caching, changed-symbol pairing, evidence paths, filters and JSON reports, through the public `orbit-graph` API only (D1). No HTTP service or terminal output. | tier 2 |
-| 4. Surfaces | `orbit-graph-cli` (binary `orbit-graph`) | Argument parsing, one library call per command, rendering and process exit code; also the Orbit plugin tool protocol. The CLI's `src/output/` is its output layer, with temporary exceptions listed by `scripts/check-terminal-guard.sh`. | tier 2 |
+| 3. Change analysis | `orbit-graph-changes` (library) | Immutable base/head snapshots (a head may be the working tree), snapshot caching, changed-symbol pairing, evidence paths, filters, JSON reports and the bounded agent-facing analysis (`analysis`), through the public `orbit-graph` API only (D1). No HTTP service or terminal output. | tier 2 |
+| 4. Surfaces | `orbit-graph-cli` (binary `orbit-graph`) | Argument parsing, one library call per command, rendering and process exit code; also the Orbit plugin tool protocol. The CLI's `src/output/` is its output layer, with temporary exceptions listed by `scripts/check-terminal-guard.sh`. | tiers 2 and 3 |
 
-The change-analysis library and CLI are siblings: neither depends on the
-other or on `orbit-graph-extract` directly. The library reaches extraction
-types through `orbit-graph`'s re-exports. The follow-up task will expose
-change analysis through the CLI and plugin surfaces.
+The CLI depends on the change-analysis library for one command,
+`orbit-graph changes`, and its plugin tool `orbit.graph.changes`; the library
+never depends on the CLI. Neither depends on `orbit-graph-extract` directly:
+the library reaches extraction types through `orbit-graph`'s re-exports.
 `orbit-graph-extract` is its own crate for compile-graph isolation and an
 enforceable edge (STD-02 §R7): it owns every tree-sitter grammar, so store,
 sync or query changes do not recompile extraction.
@@ -28,7 +28,7 @@ sync or query changes do not recompile extraction.
 |-------|------|-----------------------|--------|
 | `orbit-graph-extract` | library | — | `clap`, `tracing-subscriber`, `tiny_http`, `unicode-width` |
 | `orbit-graph` | library | `orbit-graph-extract` | `clap`, `tracing-subscriber`, `tiny_http`, `unicode-width` |
-| `orbit-graph-cli` | binary `orbit-graph` | `orbit-graph` | — |
+| `orbit-graph-cli` | binary `orbit-graph` | `orbit-graph`, `orbit-graph-changes` | — |
 | `orbit-graph-changes` | library | `orbit-graph` | `clap`, `tracing-subscriber`, `tiny_http`, `unicode-width` |
 
 "Banned" lists external crates the libraries must not depend on: argument

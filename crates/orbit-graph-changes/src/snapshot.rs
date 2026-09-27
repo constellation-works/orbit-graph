@@ -31,10 +31,15 @@
 //!   skipped and reported in [`MaterializationReport::excluded`] rather than
 //!   silently dropped.
 //!
-//! Uncommitted work is excluded from snapshots by construction: a snapshot
-//! contains exactly the committed tree. The working tree is inspected
+//! A revision snapshot contains exactly the committed tree, so uncommitted work
+//! is excluded from it by construction; the working tree is inspected
 //! separately, and a dirty state is reported through
-//! [`Comparison::working_tree`] so the caller can disclose it.
+//! [`Comparison::working_tree`] so the caller can disclose it. The one
+//! exception is asked for explicitly: [`Comparison::open_working_tree`] makes
+//! the head side a snapshot of the working tree itself (tracked files as they
+//! are on disk, staged changes, and untracked files Git does not ignore),
+//! copied into a task-owned temporary tree and never cached, because it is not
+//! an immutable revision.
 
 use std::collections::BTreeSet;
 use std::fmt::{Display, Formatter};
@@ -57,6 +62,10 @@ use crate::cache::{
     StoredExclusion, default_cache_dir,
 };
 
+mod worktree;
+
+pub use worktree::{DefaultBase, WORKING_TREE_ID, default_base};
+
 /// Largest blob materialized into a snapshot tree.
 ///
 /// Blobs above this size are excluded with [`ExclusionReason::OversizeBlob`].
@@ -77,6 +86,10 @@ pub enum ComparisonMode {
     /// The base ref is used exactly as supplied: a direct `base -> head`
     /// comparison with no merge-base computation.
     DirectBaseHead,
+    /// The base ref is used exactly as supplied, and the head is the working
+    /// tree: committed files as they are on disk, staged changes, and
+    /// untracked files Git does not ignore.
+    WorkingTree,
 }
 
 impl ComparisonMode {
@@ -84,6 +97,7 @@ impl ComparisonMode {
     pub fn label(self) -> &'static str {
         match self {
             Self::DirectBaseHead => "direct_base_head",
+            Self::WorkingTree => "working_tree",
         }
     }
 }
@@ -421,6 +435,20 @@ pub struct WorkingTreeState {
 }
 
 impl WorkingTreeState {
+    /// Human-readable notice for a comparison whose head indexes the working
+    /// tree ([`ComparisonMode::WorkingTree`]), or `None` when it is clean.
+    pub fn included_notice(&self) -> Option<String> {
+        if !self.dirty {
+            return None;
+        }
+        let more = if self.truncated { "+" } else { "" };
+        Some(format!(
+            "The head snapshot is the working tree: its {}{more} uncommitted change(s) are \
+             included in the evidence. Ignored files are not.",
+            self.entries.len()
+        ))
+    }
+
     /// Human-readable notice to show alongside snapshot evidence, or `None`
     /// when the working tree is clean.
     pub fn notice(&self) -> Option<String> {
@@ -486,6 +514,16 @@ pub enum SnapshotError {
         /// Underlying cache error.
         #[source]
         source: CacheError,
+    },
+    /// No default base could be chosen for a working-tree comparison.
+    #[error(
+        "no default base: the current branch has no upstream, and none of {} resolves to a \
+         commit; pass a base ref explicitly",
+        tried.join(", ")
+    )]
+    NoDefaultBase {
+        /// Candidates that were tried, in order.
+        tried: Vec<String>,
     },
     /// A graph operation failed for one snapshot.
     #[error("{operation} for the {side} snapshot at {commit_sha}: {source}")]
@@ -656,6 +694,7 @@ impl Snapshot {
         side: SnapshotSide,
         requested_ref: &str,
         cache: Option<&SnapshotCache>,
+        scratch: Option<&Path>,
         progress: &dyn ComparisonProgress,
     ) -> Result<Option<Self>, SnapshotError> {
         let started = Instant::now();
@@ -663,8 +702,8 @@ impl Snapshot {
         let commit_sha = commit.to_string();
 
         let prepared = match cache {
-            Some(cache) => Self::prepare_cached(repo, side, commit, cache, progress)?,
-            None => Self::prepare_temporary(repo, side, commit, progress)?,
+            Some(cache) => Self::prepare_cached(repo, side, commit, cache, scratch, progress)?,
+            None => Self::prepare_temporary(repo, side, commit, scratch, progress)?,
         };
         let Some(prepared) = prepared else {
             return Ok(None);
@@ -693,6 +732,7 @@ impl Snapshot {
         side: SnapshotSide,
         commit: Oid,
         cache: &SnapshotCache,
+        scratch: Option<&Path>,
         progress: &dyn ComparisonProgress,
     ) -> Result<Option<PreparedSnapshot>, SnapshotError> {
         let commit_sha = commit.to_string();
@@ -707,12 +747,14 @@ impl Snapshot {
                     "{error}; this side was indexed into a task-owned temporary tree and \
                      reused nothing."
                 );
-                return Ok(Self::prepare_temporary(repo, side, commit, progress)?.map(
-                    |prepared| PreparedSnapshot {
-                        cache_note: Some(note),
-                        ..prepared
-                    },
-                ));
+                return Ok(
+                    Self::prepare_temporary(repo, side, commit, scratch, progress)?.map(
+                        |prepared| PreparedSnapshot {
+                            cache_note: Some(note),
+                            ..prepared
+                        },
+                    ),
+                );
             }
             Err(error) => return Err(cache_error(error)),
         };
@@ -831,6 +873,25 @@ impl Snapshot {
         repo: &Repository,
         side: SnapshotSide,
         commit: Oid,
+        scratch: Option<&Path>,
+        progress: &dyn ComparisonProgress,
+    ) -> Result<Option<PreparedSnapshot>, SnapshotError> {
+        Self::prepare_temporary_from(
+            side,
+            commit.to_string().as_str(),
+            scratch,
+            &|dest| materialize_commit(repo, commit, dest),
+            progress,
+        )
+    }
+
+    /// Materialize with `materialize` and index into a task-owned temporary
+    /// tree. `snapshot_id` names the snapshot in errors and status.
+    fn prepare_temporary_from(
+        side: SnapshotSide,
+        snapshot_id: &str,
+        scratch: Option<&Path>,
+        materialize: &dyn Fn(&Path) -> Result<MaterializationReport, SnapshotError>,
         progress: &dyn ComparisonProgress,
     ) -> Result<Option<PreparedSnapshot>, SnapshotError> {
         if progress.is_cancelled() {
@@ -845,15 +906,21 @@ impl Snapshot {
             },
         );
 
-        let commit_sha = commit.to_string();
-        let tree = TempDir::with_prefix(format!("orbit-graph-changes-{}-", side.label())).map_err(
-            |source| SnapshotError::Io {
-                operation: "create snapshot tree",
-                path: std::env::temp_dir(),
-                reason: source.to_string(),
-            },
-        )?;
-        let materialization = materialize_commit(repo, commit, tree.path())?;
+        let commit_sha = snapshot_id.to_string();
+        let prefix = format!("orbit-graph-changes-{}-", side.label());
+        let parent = scratch.map_or_else(std::env::temp_dir, Path::to_path_buf);
+        let tree = match scratch {
+            Some(dir) => {
+                fs::create_dir_all(dir).and_then(|()| TempDir::with_prefix_in(prefix.as_str(), dir))
+            }
+            None => TempDir::with_prefix(prefix.as_str()),
+        }
+        .map_err(|source| SnapshotError::Io {
+            operation: "create snapshot tree",
+            path: parent,
+            reason: source.to_string(),
+        })?;
+        let materialization = materialize(tree.path())?;
         anchor_git_discovery(tree.path())?;
 
         if progress.is_cancelled() {
@@ -1155,6 +1222,10 @@ pub struct ComparisonOptions {
     pub cache_dir: Option<PathBuf>,
     /// Skip the cache entirely and use task-owned temporary trees.
     pub no_cache: bool,
+    /// Parent directory for task-owned temporary trees (the working-tree
+    /// head, and any side built without a usable cache). `None` selects the
+    /// system temporary directory. Created when missing.
+    pub scratch_dir: Option<PathBuf>,
 }
 
 /// A resolved base/head comparison with both snapshots indexed.
@@ -1226,8 +1297,53 @@ impl Comparison {
         options: &ComparisonOptions,
         progress: &dyn ComparisonProgress,
     ) -> Result<ComparisonOutcome, SnapshotError> {
+        Self::open_inner(
+            repository,
+            base_ref,
+            HeadSpec::Revision(head_ref),
+            options,
+            progress,
+        )
+    }
+
+    /// Open a comparison whose head is the working tree rather than a
+    /// revision ([`ComparisonMode::WorkingTree`]), reporting progress and
+    /// honouring cancellation like [`Comparison::open_with_progress`].
+    ///
+    /// Only the base side uses the cache. The working tree is copied into a
+    /// task-owned temporary tree and indexed on every launch; it is read, never
+    /// written, and neither is the Git index.
+    pub fn open_working_tree(
+        repository: &Path,
+        base_ref: &str,
+        options: &ComparisonOptions,
+        progress: &dyn ComparisonProgress,
+    ) -> Result<ComparisonOutcome, SnapshotError> {
+        Self::open_inner(
+            repository,
+            base_ref,
+            HeadSpec::WorkingTree,
+            options,
+            progress,
+        )
+    }
+
+    fn open_inner(
+        repository: &Path,
+        base_ref: &str,
+        head_spec: HeadSpec<'_>,
+        options: &ComparisonOptions,
+        progress: &dyn ComparisonProgress,
+    ) -> Result<ComparisonOutcome, SnapshotError> {
         let started = Instant::now();
         let repo = open_working_tree(repository)?;
+        // Both refs are resolved before anything is materialized or indexed,
+        // so a typo in either fails at once rather than after the other side
+        // has been built (STD-02 §R34).
+        resolve_commit(&repo, base_ref)?;
+        if let HeadSpec::Revision(head_ref) = head_spec {
+            resolve_commit(&repo, head_ref)?;
+        }
         let workdir = repo
             .workdir()
             .map(|path| fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf()))
@@ -1273,17 +1389,23 @@ impl Comparison {
                     SnapshotSide::Base,
                     base_ref,
                     cache.as_ref(),
+                    options.scratch_dir.as_deref(),
                     progress,
                 )
             });
-            let head_worker = scope.spawn(|| {
-                build_snapshot_side(
+            let head_worker = scope.spawn(|| match head_spec {
+                HeadSpec::Revision(head_ref) => build_snapshot_side(
                     repository,
                     SnapshotSide::Head,
                     head_ref,
                     cache.as_ref(),
+                    options.scratch_dir.as_deref(),
                     progress,
-                )
+                ),
+                HeadSpec::WorkingTree => {
+                    let repo = open_working_tree(repository)?;
+                    Snapshot::build_working_tree(&repo, options.scratch_dir.as_deref(), progress)
+                }
             });
 
             let base = base_worker.join().map_err(|_| SnapshotError::Worker {
@@ -1297,10 +1419,14 @@ impl Comparison {
         let (Some(base), Some(head)) = (base, head) else {
             return Ok(ComparisonOutcome::Cancelled);
         };
+        let mode = match head_spec {
+            HeadSpec::Revision(_) => ComparisonMode::DirectBaseHead,
+            HeadSpec::WorkingTree => ComparisonMode::WorkingTree,
+        };
 
         Ok(ComparisonOutcome::Ready(Box::new(Self {
             repository: workdir,
-            mode: ComparisonMode::DirectBaseHead,
+            mode,
             base,
             head,
             working_tree,
@@ -1360,18 +1486,27 @@ impl Comparison {
     }
 }
 
+/// What a comparison's head side indexes.
+#[derive(Clone, Copy)]
+enum HeadSpec<'a> {
+    /// A revision, resolved to an immutable commit.
+    Revision(&'a str),
+    /// The working tree as it is on disk.
+    WorkingTree,
+}
+
 /// Build one comparison side on its own worker thread.
 fn build_snapshot_side(
     repository: &Path,
     side: SnapshotSide,
     requested_ref: &str,
     cache: Option<&SnapshotCache>,
+    scratch: Option<&Path>,
     progress: &dyn ComparisonProgress,
 ) -> Result<Option<Snapshot>, SnapshotError> {
     let repo = open_working_tree(repository)?;
-    Snapshot::build(&repo, side, requested_ref, cache, progress)
+    Snapshot::build(&repo, side, requested_ref, cache, scratch, progress)
 }
-
 /// Open `path` as a Git repository with a working tree.
 fn open_working_tree(path: &Path) -> Result<Repository, SnapshotError> {
     let repo = Repository::discover(path).map_err(|source| SnapshotError::Repository {

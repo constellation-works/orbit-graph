@@ -349,13 +349,34 @@ impl CachedEntry {
 /// Holds the staging directory's `building.lock` exclusively, so `clean` keeps
 /// it, and its `in_use.lock` shared, so the lock carries over into the
 /// published entry without a gap.
+///
+/// A staged build that is dropped without being published removes its own
+/// staging directory, locks still held, so a build that fails, is cancelled or
+/// unwinds from a panic leaves nothing behind in the cache (STD-03 §R4).
 #[derive(Debug)]
-#[must_use = "dropping a staged build releases its locks without publishing it"]
+#[must_use = "dropping a staged build removes it without publishing it"]
 pub struct StagedEntry {
     root: PathBuf,
+    cache_dir: PathBuf,
     commit_sha: String,
-    _building: fs::File,
-    in_use: fs::File,
+    // Declared after the paths so both locks are still held while `Drop`
+    // removes the directory, and released only afterwards.
+    _building: Option<fs::File>,
+    in_use: Option<fs::File>,
+    /// Set once the directory has been renamed into place or removed.
+    settled: bool,
+}
+
+impl Drop for StagedEntry {
+    fn drop(&mut self) {
+        if self.settled {
+            return;
+        }
+        // Best effort, and not silent: a directory this cannot remove holds a
+        // free builder lock once this drop returns, which `clean` reports as
+        // an abandoned staging directory and removes.
+        let _ = remove_dir_all_within(self.cache_dir.as_path(), self.root.as_path());
+    }
 }
 
 impl StagedEntry {
@@ -567,28 +588,41 @@ impl SnapshotCache {
         create_private_dir(root.as_path()).map_err(|source| {
             CacheError::io("create staged snapshot entry", root.as_path(), &source)
         })?;
+        // From here on the guard owns the directory: any failure below drops
+        // it, which removes what was created so far.
+        let mut staged = StagedEntry {
+            root,
+            cache_dir: self.dir.clone(),
+            commit_sha: commit_sha.to_string(),
+            _building: None,
+            in_use: None,
+            settled: false,
+        };
         // Lock before writing anything else, so `clean` sees a held builder
         // lock for as long as there is anything to build.
-        let building = create_locked(
-            lock_path(root.as_path(), BUILDING_LOCK_FILE),
+        staged._building = Some(create_locked(
+            lock_path(staged.root.as_path(), BUILDING_LOCK_FILE),
             LockKind::Exclusive,
-        )?;
-        let in_use = create_locked(
-            lock_path(root.as_path(), IN_USE_LOCK_FILE),
+        )?);
+        staged.in_use = Some(create_locked(
+            lock_path(staged.root.as_path(), IN_USE_LOCK_FILE),
             LockKind::Shared,
-        )?;
-        create_private_dir_all(root.join("tree").as_path()).map_err(|source| {
-            CacheError::io("create staged snapshot tree", root.as_path(), &source)
+        )?);
+        create_private_dir_all(staged.root.join("tree").as_path()).map_err(|source| {
+            CacheError::io(
+                "create staged snapshot tree",
+                staged.root.as_path(),
+                &source,
+            )
         })?;
-        create_private_dir_all(root.join("index").as_path()).map_err(|source| {
-            CacheError::io("create staged snapshot index", root.as_path(), &source)
+        create_private_dir_all(staged.root.join("index").as_path()).map_err(|source| {
+            CacheError::io(
+                "create staged snapshot index",
+                staged.root.as_path(),
+                &source,
+            )
         })?;
-        Ok(StagedEntry {
-            root,
-            commit_sha: commit_sha.to_string(),
-            _building: building,
-            in_use,
-        })
+        Ok(staged)
     }
 
     /// Publish a staged build, or adopt an equivalent entry another process
@@ -598,7 +632,7 @@ impl SnapshotCache {
     /// is ever visible under a commit SHA.
     pub fn publish(
         &self,
-        staged: StagedEntry,
+        mut staged: StagedEntry,
         build: StoredBuild,
     ) -> Result<CachedEntry, CacheError> {
         let metadata = EntryMetadata {
@@ -618,11 +652,19 @@ impl SnapshotCache {
         match fs::rename(staged.root.as_path(), destination.as_path()) {
             // The shared in-use lock moved with the directory; the builder
             // lock is released as `staged` drops.
-            Ok(()) => Ok(CachedEntry {
-                root: destination,
-                metadata,
-                _in_use: Arc::new(staged.in_use),
-            }),
+            Ok(()) => {
+                staged.settled = true;
+                let in_use = staged.in_use.take().ok_or_else(|| CacheError::Io {
+                    operation: "publish snapshot cache entry",
+                    path: destination.clone(),
+                    reason: "the staged build no longer holds its in-use lock".to_string(),
+                })?;
+                Ok(CachedEntry {
+                    root: destination,
+                    metadata,
+                    _in_use: Arc::new(in_use),
+                })
+            }
             // The existence check above and the rename are not atomic: a
             // concurrent worker for the same commit (a comparison whose base
             // and head coincide builds both sides at once) can publish in
@@ -660,9 +702,11 @@ impl SnapshotCache {
     }
 
     /// Discard a staged build without publishing it.
-    pub fn discard(&self, staged: StagedEntry) -> Result<(), CacheError> {
+    pub fn discard(&self, mut staged: StagedEntry) -> Result<(), CacheError> {
         // The builder's own locks are held while its directory is removed.
-        remove_dir_all_within(self.dir.as_path(), staged.root.as_path())
+        let removed = remove_dir_all_within(self.dir.as_path(), staged.root.as_path());
+        staged.settled = removed.is_ok();
+        removed
     }
 
     /// Decide which entries `options` removes, and remove them when

@@ -22,6 +22,7 @@ fs2 = "0.4"
 git2 = { version = "0.21", default-features = false }
 libc = "0.2"
 orbit-graph = { path = "crates/orbit-graph", version = "0.10.0" }
+orbit-graph-changes = { path = "crates/orbit-graph-changes", version = "0.10.0" }
 orbit-graph-extract = { path = "crates/orbit-graph-extract", version = "0.10.0" }
 rusqlite = { version = "0.40", features = ["bundled"] }
 serde = { version = "1", features = ["derive"] }

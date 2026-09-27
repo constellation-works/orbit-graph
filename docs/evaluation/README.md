@@ -1,6 +1,6 @@
 # Evaluation
 
-This directory holds two unrelated evaluations.
+This directory holds these unrelated evaluations.
 
 * **Recommendation evaluation** — below: `orbit-graph evaluate`'s chronological,
   fail-closed backtest of change-destination recommendations.
@@ -10,6 +10,9 @@ This directory holds two unrelated evaluations.
 * **[Change explorer](change-explorer/README.md)** — the Milestone 5 evidence for
   `orbit-graph-explorer`: five real change studies across Rust and Python, a
   measured performance envelope, and the limitations that follow from them.
+* **[Changes command](changes-command/README.md)** — studies 2 and 3 of the
+  change-explorer evaluation re-run through `orbit-graph changes` and the
+  `orbit.graph.changes` plugin tool, with cold and warm latency for both.
 
 ## Recommendation evaluation
 
