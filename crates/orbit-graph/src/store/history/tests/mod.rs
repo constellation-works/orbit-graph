@@ -382,7 +382,7 @@ fn opening_the_current_schema_copies_a_compatible_previous_index_once() {
     {
         let conn = Connection::open(&previous).expect("open previous");
         conn.execute_batch(&format!(
-            "DROP TABLE history_path_lineage; DELETE FROM history_meta WHERE key='{LEGACY_COPY_META_KEY}'; UPDATE history_meta SET value='{PREVIOUS_HISTORY_INDEX_SCHEMA_VERSION}' WHERE key='schema_version';"
+            "DROP TABLE history_supplied_task_snapshots; DELETE FROM history_meta WHERE key='{LEGACY_COPY_META_KEY}'; UPDATE history_meta SET value='{PREVIOUS_HISTORY_INDEX_SCHEMA_VERSION}' WHERE key='schema_version';"
         ))
         .expect("downgrade copy");
     }
@@ -456,7 +456,7 @@ fn concurrent_opens_copy_a_previous_index_exactly_once() {
     {
         let conn = Connection::open(&previous).expect("open previous");
         conn.execute_batch(&format!(
-            "DROP TABLE history_path_lineage; DELETE FROM history_meta WHERE key='{LEGACY_COPY_META_KEY}'; UPDATE history_meta SET value='{PREVIOUS_HISTORY_INDEX_SCHEMA_VERSION}' WHERE key='schema_version';"
+            "DROP TABLE history_supplied_task_snapshots; DELETE FROM history_meta WHERE key='{LEGACY_COPY_META_KEY}'; UPDATE history_meta SET value='{PREVIOUS_HISTORY_INDEX_SCHEMA_VERSION}' WHERE key='schema_version';"
         ))
         .expect("downgrade copy");
     }

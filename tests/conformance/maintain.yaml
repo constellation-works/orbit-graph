@@ -106,3 +106,16 @@ tests:
     expect:
       error:
         code: invalid_request
+  # The Git-backed binary test checks separate caller_supplied rows and the
+  # caller_attested import response; this non-Git golden checks decoding.
+  - name: maintain_orbit_sync_requires_a_complete_supplied_snapshot
+    tool: maintain
+    input:
+      schema_version: 1
+      operation: orbit_sync
+      repository: "{{workspace}}"
+      workspace: ws_graph
+      task_snapshots: [{task_id: TASK-1}]
+    expect:
+      error:
+        code: invalid_request

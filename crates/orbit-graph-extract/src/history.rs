@@ -194,6 +194,8 @@ pub struct DeliveryImport {
 pub enum DeliveryEvidence {
     /// A delivery system supplied and verified the immutable landing boundary.
     VerifiedDelivery,
+    /// A plugin caller claimed a delivery; Git boundaries were checked, but Orbit did not attest it.
+    CallerAttested,
     /// Association was inferred only from Git commit metadata or trailers.
     GitOnly,
 }
@@ -203,6 +205,7 @@ impl DeliveryEvidence {
     pub fn as_str(self) -> &'static str {
         match self {
             Self::VerifiedDelivery => "verified_delivery",
+            Self::CallerAttested => "caller_attested",
             Self::GitOnly => "git_only",
         }
     }
@@ -468,6 +471,9 @@ pub struct DeliveredChange {
     pub delivery: DeliveryImport,
     /// Actual Git tree differences; planned context is never consulted.
     pub files: Vec<FileChange>,
+    /// Caller-supplied task snapshots kept separate from run-observed task text.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub supplied_snapshots: Vec<TaskAssociation>,
 }
 
 /// Outcome of conservatively resolving a historical symbol in the current landing tree.
@@ -692,7 +698,11 @@ pub fn extract_delivery(
         .map_err(git_error("load before tree"))?;
     let after_tree = after_commit.tree().map_err(git_error("load after tree"))?;
     let files = extract_tree_diff(repo, &before_tree, &after_tree, before, after)?;
-    Ok(DeliveredChange { delivery, files })
+    Ok(DeliveredChange {
+        delivery,
+        files,
+        supplied_snapshots: Vec::new(),
+    })
 }
 
 fn extract_tree_diff(

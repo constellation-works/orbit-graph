@@ -158,7 +158,7 @@ impl<'a> OrbitAdapter<'a> {
         branch: &str,
         supplied_snapshots: &BTreeMap<String, TaskAssociation>,
         repository_identity: &str,
-    ) -> Result<DeliveryImport, GraphError> {
+    ) -> Result<(DeliveryImport, Option<TaskAssociation>), GraphError> {
         let route = self.require_authority()?;
         let run = self.tool_run("orbit.workflow.run.show", json!({"id": run_id}))?;
         let state = run
@@ -200,44 +200,38 @@ impl<'a> OrbitAdapter<'a> {
                 "selected workspace returned a different task ID",
             ));
         }
-        let task = if let Some(snapshot) = supplied_snapshots.get(task_id) {
-            if snapshot.task_id != task_id {
-                return Err(GraphError::invalid_data(
-                    "verify supplied task snapshot",
-                    "snapshot task_id does not match the verified run task",
-                ));
-            }
-            snapshot.clone()
-        } else {
-            task_snapshot_from_value(&current_task, route.workspace_id.as_str())?
-        };
+        let task = task_snapshot_from_value(&current_task, route.workspace_id.as_str())?;
+        let supplied_snapshot = supplied_snapshots.get(task_id).cloned();
         let finished_at = run
             .pointer("/run/finished_at")
             .and_then(Value::as_str)
             .map(str::to_string);
-        Ok(DeliveryImport {
-            schema_version: orbit_graph::DELIVERY_IMPORT_SCHEMA_VERSION,
-            repository: repository_identity.to_string(),
-            landing_branch: branch.to_string(),
-            before_revision: before.to_string(),
-            after_revision: after.to_string(),
-            delivery_id: format!("orbit-run:{run_id}:{task_id}"),
-            evidence: DeliveryEvidence::VerifiedDelivery,
-            source: Provenance {
-                system: "orbit.workflow.run.show+git".to_string(),
-                record_id: Some(run_id.to_string()),
-            },
-            delivered_at: TemporalFact {
-                status: TemporalStatus::Uncertain,
-                timestamp: finished_at,
+        Ok((
+            DeliveryImport {
+                schema_version: orbit_graph::DELIVERY_IMPORT_SCHEMA_VERSION,
+                repository: repository_identity.to_string(),
+                landing_branch: branch.to_string(),
+                before_revision: before.to_string(),
+                after_revision: after.to_string(),
+                delivery_id: format!("orbit-run:{run_id}:{task_id}"),
+                evidence: DeliveryEvidence::VerifiedDelivery,
                 source: Provenance {
-                    system: "orbit.workflow.run.show.run.finished_at".to_string(),
+                    system: "orbit.workflow.run.show+git".to_string(),
                     record_id: Some(run_id.to_string()),
                 },
+                delivered_at: TemporalFact {
+                    status: TemporalStatus::Uncertain,
+                    timestamp: finished_at,
+                    source: Provenance {
+                        system: "orbit.workflow.run.show.run.finished_at".to_string(),
+                        record_id: Some(run_id.to_string()),
+                    },
+                },
+                captured_at: current_observation_cutoff()?,
+                tasks: vec![task],
             },
-            captured_at: current_observation_cutoff()?,
-            tasks: vec![task],
-        })
+            supplied_snapshot,
+        ))
     }
 
     fn tool_run(&self, name: &str, input: Value) -> Result<Value, GraphError> {

@@ -886,6 +886,7 @@ fn eligible_deliveries(
 fn evidence_rank(evidence: DeliveryEvidence) -> u8 {
     match evidence {
         DeliveryEvidence::VerifiedDelivery => 1,
+        DeliveryEvidence::CallerAttested => 0,
         DeliveryEvidence::GitOnly => 0,
     }
 }
