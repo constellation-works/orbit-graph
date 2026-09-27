@@ -92,7 +92,15 @@ fn write(
         report.duration = started.elapsed();
         return Ok(SyncOutcome::Completed(report));
     }
-    let before = if recovering || mode == SyncMode::Full {
+    // A manifest name changes the scope of refs in unchanged Rust files,
+    // which the symbol-definition dependency check cannot detect.
+    let manifest_changed = diff
+        .modified
+        .iter()
+        .chain(&diff.new)
+        .chain(&diff.deleted)
+        .any(|path| path.file_name().is_some_and(|name| name == "Cargo.toml"));
+    let before = if recovering || mode == SyncMode::Full || manifest_changed {
         None
     } else {
         Some(definitions_before_pass1(db_path, &diff)?)
@@ -119,12 +127,15 @@ fn write(
     };
     pass2::run(
         db_path,
+        worktree_root,
         mode,
         pass1.refs,
         reresolve,
         observer,
-        pass1.total_files,
-        pass1.last_touched_path,
+        pass2::Progress {
+            files_seen: pass1.total_files,
+            current_path: pass1.last_touched_path,
+        },
     )?;
     report.duration = started.elapsed();
     Ok(SyncOutcome::Completed(report))

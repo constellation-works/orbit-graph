@@ -27,7 +27,7 @@
         "commit_sha": "25b1bf2e5d5f3b6eb6dbeb9bf2cabc4b223dadac",
         "files_indexed": 2,
         "files_written": 2,
-        "extractor_version": 18,
+        "extractor_version": 19,
         "excluded": []
       },
       {
@@ -36,18 +36,18 @@
         "commit_sha": "5bd5eb00bfad27d47c4484cef12a2906b95eabc0",
         "files_indexed": 2,
         "files_written": 2,
-        "extractor_version": 18,
+        "extractor_version": 19,
         "excluded": []
       }
     ]
   },
   "index_identity": {
-    "extractor_version": 18,
+    "extractor_version": 19,
     "store_schema_version": 1,
     "orbit_graph_version": "0.10.0",
     "explorer_version": "0.10.0",
-    "base_index_identity": "blake3:9b7429f9102a95bd1ce8a6972752419d88d4865df7407e93920a37a5acb6f5dc",
-    "head_index_identity": "blake3:eb4171edad187e1534897dfc0df1c8a21517f687e62db5bb9b9465286f847734"
+    "base_index_identity": "blake3:54e40cec0f0f3d3d9f20eaaee2d104782bf80b1cae54957fa716e530d7d5082e",
+    "head_index_identity": "blake3:a5bbabe321f66dd7239e40a3caafc8e2d602aa652ba76cfa4a767c86ac4d2f69"
   },
   "query_options": {
     "depth": 3,

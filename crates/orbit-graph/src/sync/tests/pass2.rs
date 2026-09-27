@@ -328,6 +328,7 @@ fn duplicate_import_targets_remain_fuzzy_and_unhinted() {
 
     super::run(
         graph_db_path(worktree.path()).as_path(),
+        worktree.path(),
         SyncMode::Full,
         vec![ExtractedFileRefs {
             file_path: "src/caller.rs".to_string(),
@@ -337,8 +338,10 @@ fn duplicate_import_targets_remain_fuzzy_and_unhinted() {
         }],
         super::Reresolve::All,
         None,
-        0,
-        None,
+        super::Progress {
+            files_seen: 0,
+            current_path: None,
+        },
     )
     .expect("run pass2");
 
@@ -371,6 +374,7 @@ fn qualified_and_import_rungs_reject_symbols_from_another_language() {
     qualified.target_qualified = Some("shared::floor".to_string());
     super::run(
         graph_db_path(worktree.path()).as_path(),
+        worktree.path(),
         SyncMode::Full,
         vec![
             ExtractedFileRefs {
@@ -388,8 +392,10 @@ fn qualified_and_import_rungs_reject_symbols_from_another_language() {
         ],
         super::Reresolve::All,
         None,
-        0,
-        None,
+        super::Progress {
+            files_seen: 0,
+            current_path: None,
+        },
     )
     .expect("run pass2");
 
@@ -462,6 +468,7 @@ fn pass2_failure_rolls_back_ref_rewrites_and_meta_update() {
 
     let result = super::run(
         graph_db_path(worktree.path()).as_path(),
+        worktree.path(),
         SyncMode::Full,
         vec![
             ExtractedFileRefs {
@@ -479,8 +486,10 @@ fn pass2_failure_rolls_back_ref_rewrites_and_meta_update() {
         ],
         super::Reresolve::All,
         None,
-        0,
-        None,
+        super::Progress {
+            files_seen: 0,
+            current_path: None,
+        },
     );
 
     assert!(result.is_err());
@@ -605,6 +614,7 @@ fn runtime_invocation_and_call_sharing_every_other_key_field_resolve_independent
     let call = raw_ref(files[0], "git");
     super::run(
         graph_db_path(worktree.path()).as_path(),
+        worktree.path(),
         SyncMode::Full,
         vec![
             ExtractedFileRefs {
@@ -631,8 +641,10 @@ fn runtime_invocation_and_call_sharing_every_other_key_field_resolve_independent
         ],
         super::Reresolve::All,
         None,
-        0,
-        None,
+        super::Progress {
+            files_seen: 0,
+            current_path: None,
+        },
     )
     .expect("run pass2");
 
@@ -1384,6 +1396,142 @@ fn run(runtime: &OrbitRuntime) {
     // `Unknown::load()` can only name `Unknown`'s member, which is not
     // indexed: it must not fall back to the same-file `load` function.
     assert_ref(&loads[1], None, super::CONFIDENCE_FUZZY_NAME);
+}
+
+#[test]
+fn package_and_library_names_scope_type_members_to_the_library() {
+    let worktree = TestWorktree::new("package-member-paths");
+    worktree.write(
+        "Cargo.toml",
+        "[package]\nname = \"my-crate\"\nversion = \"0.1.0\"\n[lib]\nname = \"custom_lib\"\n",
+    );
+    worktree.write(
+        "src/lib.rs",
+        "pub struct Foo;\nimpl Foo { pub fn new() -> Self { Foo } }\npub mod config;\n",
+    );
+    worktree.write(
+        "src/config.rs",
+        "pub struct Cfg;\nimpl Cfg { pub fn load() -> Self { Cfg } }\n",
+    );
+    worktree.write(
+        "tests/it.rs",
+        "use my_crate::config::Cfg;\nfn run() { let _ = my_crate::Foo::new(); let _ = custom_lib::Foo::new(); let _ = Cfg::load(); }\n",
+    );
+    worktree.write(
+        "examples/demo.rs",
+        "fn run() { let _ = my_crate::Foo::new(); }\n",
+    );
+    worktree.write(
+        "tests/other.rs",
+        "struct Foo;\nimpl Foo { fn new() -> Self { Foo } }\n",
+    );
+    let graph = Graph::open(worktree.path(), SyncPolicy::Manual).expect("open graph");
+    graph.sync(SyncMode::Full).expect("sync graph");
+
+    let conn = open_test_connection(worktree.path());
+    let calls = calls_named(&conn, "tests/it.rs", "new");
+    assert_eq!(calls.len(), 2);
+    for row in calls {
+        assert_resolves_to(
+            &row,
+            &conn,
+            "src/lib.rs",
+            "<Foo>::new",
+            super::CONFIDENCE_IMPORT_RESOLVED,
+        );
+    }
+    assert_resolves_to(
+        &call_ref(&conn, "tests/it.rs", "load"),
+        &conn,
+        "src/config.rs",
+        "<Cfg>::load",
+        super::CONFIDENCE_EXACT,
+    );
+    assert_resolves_to(
+        &call_ref(&conn, "examples/demo.rs", "new"),
+        &conn,
+        "src/lib.rs",
+        "<Foo>::new",
+        super::CONFIDENCE_IMPORT_RESOLVED,
+    );
+}
+
+#[test]
+fn package_member_paths_do_not_escape_to_another_workspace_package() {
+    let worktree = TestWorktree::new("workspace-package-member-paths");
+    worktree.write("Cargo.toml", "[workspace]\nmembers = [\"crates/*\"]\n");
+    worktree.write(
+        "crates/one/Cargo.toml",
+        "[package]\nname = \"one\"\nversion = \"0.1.0\"\n",
+    );
+    worktree.write(
+        "crates/two/Cargo.toml",
+        "[package]\nname = \"two\"\nversion = \"0.1.0\"\n",
+    );
+    worktree.write(
+        "crates/one/src/lib.rs",
+        "pub struct Foo;\nimpl Foo { pub fn new() -> Self { Foo } }\n",
+    );
+    worktree.write(
+        "crates/two/src/lib.rs",
+        "pub struct Foo;\nimpl Foo { pub fn new() -> Self { Foo } }\n",
+    );
+    worktree.write(
+        "crates/one/tests/it.rs",
+        "fn run() { let _ = one::Foo::new(); }\n",
+    );
+    let graph = Graph::open(worktree.path(), SyncPolicy::Manual).expect("open graph");
+    graph.sync(SyncMode::Full).expect("sync graph");
+
+    let conn = open_test_connection(worktree.path());
+    assert_resolves_to(
+        &call_ref(&conn, "crates/one/tests/it.rs", "new"),
+        &conn,
+        "crates/one/src/lib.rs",
+        "<Foo>::new",
+        super::CONFIDENCE_IMPORT_RESOLVED,
+    );
+}
+
+#[test]
+fn manifest_name_change_reresolves_unchanged_package_member_calls() {
+    let worktree = TestWorktree::new("manifest-name-reresolve");
+    let manifest = |name: &str| format!("[package]\nname = \"{name}\"\nversion = \"0.1.0\"\n");
+    worktree.write("Cargo.toml", &manifest("first"));
+    worktree.write(
+        "src/lib.rs",
+        "pub struct Foo;\nimpl Foo { pub fn new() -> Self { Foo } }\n",
+    );
+    worktree.write("tests/it.rs", "fn run() { let _ = first::Foo::new(); }\n");
+    let graph = Graph::open(worktree.path(), SyncPolicy::Manual).expect("open graph");
+    graph.sync(SyncMode::Full).expect("full sync");
+
+    let conn = open_test_connection(worktree.path());
+    assert_resolves_to(
+        &call_ref(&conn, "tests/it.rs", "new"),
+        &conn,
+        "src/lib.rs",
+        "<Foo>::new",
+        super::CONFIDENCE_EXACT,
+    );
+
+    worktree.write("Cargo.toml", &manifest("second"));
+    graph.sync(SyncMode::Auto).expect("rename package");
+    assert_ref(
+        &call_ref(&conn, "tests/it.rs", "new"),
+        None,
+        super::CONFIDENCE_FUZZY_NAME,
+    );
+
+    worktree.write("Cargo.toml", &manifest("first"));
+    graph.sync(SyncMode::Auto).expect("restore package");
+    assert_resolves_to(
+        &call_ref(&conn, "tests/it.rs", "new"),
+        &conn,
+        "src/lib.rs",
+        "<Foo>::new",
+        super::CONFIDENCE_EXACT,
+    );
 }
 
 #[test]

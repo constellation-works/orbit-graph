@@ -28,6 +28,8 @@
 //! name-only match.
 
 use std::collections::{BTreeSet, HashMap};
+use std::fs;
+use std::path::{Path, PathBuf};
 use std::rc::Rc;
 
 use orbit_graph_extract::RawRef;
@@ -58,6 +60,98 @@ pub(super) struct MemberTarget {
     /// the trait's, never a same-named struct's inherent method.
     trait_object: bool,
     member: String,
+}
+
+/// The manifest owning a Rust file and the source tree of its library target.
+/// An integration test's `my_crate::` path can only name this library, not a
+/// same-named type declared by a test, example, or binary target.
+pub(super) struct PackageIdentity {
+    source_path: PathBuf,
+    manifest_dir: PathBuf,
+    library_root: PathBuf,
+    aliases: BTreeSet<String>,
+}
+
+impl PackageIdentity {
+    fn read(worktree_root: &Path, file: &str) -> Option<Self> {
+        let root = worktree_root.canonicalize().ok()?;
+        let path = root.join(file).canonicalize().ok()?;
+        if !path.starts_with(&root) || !path.is_file() {
+            return None;
+        }
+        let mut directory = path.parent()?;
+        loop {
+            if !directory.starts_with(&root) {
+                return None;
+            }
+            let manifest = directory.join("Cargo.toml");
+            if manifest
+                .canonicalize()
+                .is_ok_and(|path| path.starts_with(&root))
+                && let Ok(contents) = fs::read_to_string(&manifest)
+                && let Ok(table) = contents.parse::<toml::Table>()
+                && let Some(package) = table.get("package").and_then(toml::Value::as_table)
+                && let Some(name) = package.get("name").and_then(toml::Value::as_str)
+            {
+                let mut aliases = BTreeSet::from([name.replace('-', "_")]);
+                if let Some(lib_name) = table
+                    .get("lib")
+                    .and_then(toml::Value::as_table)
+                    .and_then(|lib| lib.get("name"))
+                    .and_then(toml::Value::as_str)
+                {
+                    aliases.insert(lib_name.replace('-', "_"));
+                }
+                let lib_path = table
+                    .get("lib")
+                    .and_then(toml::Value::as_table)
+                    .and_then(|lib| lib.get("path"))
+                    .and_then(toml::Value::as_str)
+                    .unwrap_or("src/lib.rs");
+                let library_root = directory.join(lib_path).canonicalize().ok()?;
+                if !library_root.starts_with(directory) || !library_root.is_file() {
+                    return None;
+                }
+                return Some(Self {
+                    source_path: path.clone(),
+                    manifest_dir: directory.to_path_buf(),
+                    library_root,
+                    aliases,
+                });
+            }
+            if directory == root {
+                return None;
+            }
+            directory = directory.parent()?;
+        }
+    }
+
+    fn contains_library_file(&self, file: &Path) -> bool {
+        if !file.starts_with(&self.manifest_dir) {
+            return false;
+        }
+        let Ok(relative) = file.strip_prefix(&self.manifest_dir) else {
+            return false;
+        };
+        if ["tests", "examples", "benches", "src/bin"]
+            .iter()
+            .any(|target| relative.starts_with(target))
+            || relative == Path::new("src/main.rs")
+        {
+            return false;
+        }
+        file == self.library_root
+            || self
+                .library_root
+                .parent()
+                .is_some_and(|parent| file.starts_with(parent))
+    }
+}
+
+#[derive(Clone, PartialEq, Eq, PartialOrd, Ord)]
+struct ScopedModule {
+    module: String,
+    package_dir: Option<PathBuf>,
 }
 
 impl MemberTarget {
@@ -176,7 +270,7 @@ impl Resolver<'_, '_> {
                     .map(|tier| (tier, candidate))
             })
             .collect::<Vec<_>>();
-        let scope = type_scope(from_file, imports, target);
+        let scope = self.type_scope(from_file, imports, target);
 
         let resolved = if scope.is_empty() {
             self.pick_unscoped(from_file, &members)?
@@ -317,16 +411,29 @@ impl Resolver<'_, '_> {
     fn member_within_scope(
         &mut self,
         candidate: &NamedCandidate,
-        scope: &BTreeSet<String>,
+        scope: &[ScopedModule],
     ) -> Result<bool, GraphError> {
         let own_path = MemberTarget::parse(&candidate.symbol.qualified)
             .map(|parsed| normalize_module_path(&parsed.type_path))
             .unwrap_or_default();
-        for module in scope {
-            if !own_path.is_empty() && prefix_within_module(&own_path, module) {
+        for item in scope {
+            if let Some(package_dir) = &item.package_dir {
+                let Some(package) = self.package_for_file(&candidate.symbol.file_path) else {
+                    continue;
+                };
+                if package.manifest_dir != *package_dir
+                    || !package.contains_library_file(&package.source_path)
+                {
+                    continue;
+                }
+                if item.module.is_empty() {
+                    return Ok(true);
+                }
+            }
+            if !own_path.is_empty() && prefix_within_module(&own_path, &item.module) {
                 return Ok(true);
             }
-            if self.candidate_within_module(candidate, module)? {
+            if self.candidate_within_module(candidate, &item.module)? {
                 return Ok(true);
             }
         }
@@ -341,7 +448,7 @@ impl Resolver<'_, '_> {
     fn resolve_trait_default(
         &mut self,
         target: &MemberTarget,
-        scope: &BTreeSet<String>,
+        scope: &[ScopedModule],
     ) -> Result<Option<ResolvedRef>, GraphError> {
         if target.trait_object {
             return Ok(None);
@@ -482,30 +589,63 @@ fn trait_impl_symbols(tx: &Transaction<'_>) -> Result<Vec<SymbolCandidate>, Grap
         .map_err(|source| GraphError::sqlite("collect trait impls for ref resolution", source))
 }
 
-/// Modules that can hold the type a member target names: the module path
-/// written before it (`crate::b` in `crate::b::Foo::m`), else the modules of
-/// the imports that bring the type's name into the file. Empty when the file
-/// names the type neither way. Normalized, with `-` read as `_`.
-fn type_scope(
-    from_file: &str,
-    imports: &[ImportCandidate],
-    target: &MemberTarget,
-) -> BTreeSet<String> {
-    let mut modules = BTreeSet::new();
-    if target.type_path.is_empty() {
-        for import in imports {
-            if import.target_symbol.as_deref() == Some(target.type_name.as_str()) {
-                modules.insert(resolve_import_path(from_file, &import.target_path));
-            }
+impl Resolver<'_, '_> {
+    /// The nearest package manifest owns a source file. A virtual workspace
+    /// manifest has no package and lets the search continue to the root.
+    fn package_for_file(&mut self, file: &str) -> Option<Rc<PackageIdentity>> {
+        if let Some(known) = self.packages_by_file.get(file) {
+            return known.clone();
         }
-    } else {
-        modules.insert(resolve_import_path(from_file, &target.type_path));
+        let package = PackageIdentity::read(self.worktree_root, file).map(Rc::new);
+        self.packages_by_file
+            .insert(file.to_string(), package.clone());
+        package
     }
-    modules
-        .into_iter()
-        .map(|module| normalize_module_path(&module).replace('-', "_"))
-        .filter(|module| !module.is_empty())
-        .collect()
+
+    /// Modules that can hold the type named by a written path or an import.
+    /// A package or library-name root is equivalent to `crate`, but only for
+    /// symbols in the library target owned by the same package manifest.
+    fn type_scope(
+        &mut self,
+        from_file: &str,
+        imports: &[ImportCandidate],
+        target: &MemberTarget,
+    ) -> Vec<ScopedModule> {
+        let paths = if target.type_path.is_empty() {
+            imports
+                .iter()
+                .filter(|import| import.target_symbol.as_deref() == Some(target.type_name.as_str()))
+                .map(|import| import.target_path.as_str())
+                .collect::<Vec<_>>()
+        } else {
+            vec![target.type_path.as_str()]
+        };
+        let package = self.package_for_file(from_file);
+        paths
+            .into_iter()
+            .filter_map(|path| {
+                let normalized = normalize_module_path(path).replace('-', "_");
+                let (root, rest) = normalized
+                    .split_once("::")
+                    .map_or((normalized.as_str(), ""), |(root, rest)| (root, rest));
+                if let Some(package) = &package
+                    && package.aliases.contains(root)
+                {
+                    return Some(ScopedModule {
+                        module: rest.to_string(),
+                        package_dir: Some(package.manifest_dir.clone()),
+                    });
+                }
+                let module = resolve_import_path(from_file, path).replace('-', "_");
+                (!module.is_empty()).then_some(ScopedModule {
+                    module,
+                    package_dir: None,
+                })
+            })
+            .collect::<BTreeSet<_>>()
+            .into_iter()
+            .collect()
+    }
 }
 
 /// The candidates of the best (lowest) tier present.
