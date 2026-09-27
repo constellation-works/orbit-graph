@@ -48,6 +48,11 @@ pub struct Fixture {
 }
 
 impl Fixture {
+    /// Wrap a repository a test built itself.
+    pub fn from_parts(dir: TempDir, base: String, head: String) -> Self {
+        Self { dir, base, head }
+    }
+
     pub fn path(&self) -> &Path {
         self.dir.path()
     }

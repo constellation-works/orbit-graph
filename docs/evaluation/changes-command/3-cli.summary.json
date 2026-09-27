@@ -1,0 +1,2545 @@
+{
+  "comparison": {
+    "base": "ab6135e11aeba511c7dbb2c20e766c78d166c208",
+    "head": "156dc93d940ee60c4b1c7cd84db620e128977ff2"
+  },
+  "summary": {
+    "analysed_symbols": 26,
+    "callers": 130,
+    "candidate_tests": 96,
+    "changed_symbols": 26,
+    "entry_points": 70,
+    "not_analysed_symbols": 0,
+    "not_selected_symbols": 0,
+    "out_of_scope_paths": 0
+  },
+  "truncated": true,
+  "truncation_bounds": {
+    "depth": 20,
+    "impact_node_cap": 38,
+    "max_callers": 13,
+    "max_entry_points": 13,
+    "max_tests": 16,
+    "traversal": 1
+  },
+  "symbols": [
+    {
+      "selector": "symbol:crates/orbit-cli/src/command/task/tests/update.rs#task_update_rejects_unassessed_complexity:test",
+      "status": "added",
+      "pairing": "same_selector",
+      "callers_found": 0,
+      "entry_points_found": 1,
+      "candidate_tests_found": 16,
+      "callers": [],
+      "entry_points": [
+        {
+          "selector": "symbol:crates/orbit-cli/src/command/task/tests/update.rs#task_update_rejects_unassessed_complexity:test",
+          "source": "changed_symbol",
+          "confidence": "exact",
+          "distance": 0
+        }
+      ],
+      "candidate_tests": [
+        {
+          "test": "file:crates/orbit-cmd/src/update/tests/fixture.rs",
+          "source": "import_relationship",
+          "confidence": "file_import"
+        },
+        {
+          "test": "file:crates/orbit-cmd/src/update/tests/flow.rs",
+          "source": "import_relationship",
+          "confidence": "file_import"
+        },
+        {
+          "test": "file:crates/orbit-engine/src/executor/automation/vcs/pr/tests/review_gate.rs",
+          "source": "import_relationship",
+          "confidence": "file_import"
+        },
+        {
+          "test": "file:crates/orbit-engine/src/executor/automation/vcs/worktree/tests/setup.rs",
+          "source": "import_relationship",
+          "confidence": "file_import"
+        },
+        {
+          "test": "file:crates/orbit-tools/src/builtin/orbit/task/tests/update.rs",
+          "source": "import_relationship",
+          "confidence": "file_import"
+        },
+        {
+          "test": "file:crates/orbit-cli/tests/update.rs",
+          "source": "naming_heuristic",
+          "confidence": "name_only"
+        },
+        {
+          "test": "file:crates/orbit-core/src/application/task/tests/update.rs",
+          "source": "naming_heuristic",
+          "confidence": "name_only"
+        },
+        {
+          "test": "file:crates/orbit-store/src/repository/task/v2/tests/update.rs",
+          "source": "naming_heuristic",
+          "confidence": "name_only"
+        },
+        {
+          "test": "symbol:crates/orbit-cli/tests/supervised_parent_signal.rs#cli_ctrl_c_during_proc_spawn_reports_interrupt:test",
+          "source": "runtime_invocation",
+          "confidence": "name_only"
+        },
+        {
+          "test": "symbol:crates/orbit-cli/tests/supervised_parent_signal.rs#mcp_listen_exits_on_sigterm_while_proc_spawn_runs:test",
+          "source": "runtime_invocation",
+          "confidence": "name_only"
+        }
+      ]
+    },
+    {
+      "selector": "symbol:crates/orbit-core/assets/skills/orbit/references/task-authoring.md#Authoring a task:heading",
+      "status": "modified",
+      "pairing": "same_selector",
+      "callers_found": 0,
+      "entry_points_found": 0,
+      "candidate_tests_found": 0,
+      "callers": [],
+      "entry_points": [],
+      "candidate_tests": []
+    },
+    {
+      "selector": "symbol:crates/orbit-core/assets/skills/orbit/references/task-authoring.md#Operating rules:heading",
+      "status": "modified",
+      "pairing": "same_selector",
+      "callers_found": 0,
+      "entry_points_found": 0,
+      "candidate_tests_found": 0,
+      "callers": [],
+      "entry_points": [],
+      "candidate_tests": []
+    },
+    {
+      "selector": "symbol:crates/orbit-core/assets/skills/orbit/references/task-authoring.md#Workflow:heading",
+      "status": "modified",
+      "pairing": "same_selector",
+      "callers_found": 0,
+      "entry_points_found": 0,
+      "candidate_tests_found": 0,
+      "callers": [],
+      "entry_points": [],
+      "candidate_tests": []
+    },
+    {
+      "selector": "symbol:crates/orbit-core/src/adapter/tool_host/input.rs#parse_task_complexity:function",
+      "status": "signature_changed",
+      "pairing": "signature_changed",
+      "callers_found": 137,
+      "entry_points_found": 43,
+      "candidate_tests_found": 45,
+      "callers": [
+        {
+          "selector": "symbol:crates/orbit-core/src/adapter/tool_host/input.rs#parse_assessed_task_complexity:function",
+          "source": "call_path",
+          "confidence": "exact",
+          "distance": 1,
+          "reference": "crates/orbit-core/src/adapter/tool_host/input.rs:319@156dc93d940ee60c4b1c7cd84db620e128977ff2"
+        },
+        {
+          "selector": "symbol:crates/orbit-core/src/adapter/tool_host/task_tools.rs#update:function",
+          "source": "call_path",
+          "confidence": "import_resolved",
+          "distance": 1,
+          "reference": "crates/orbit-core/src/adapter/tool_host/task_tools.rs:336@ab6135e11aeba511c7dbb2c20e766c78d166c208"
+        },
+        {
+          "selector": "symbol:crates/orbit-core/src/adapter/tool_host/task_tools.rs#add:function",
+          "source": "call_path",
+          "confidence": "import_resolved",
+          "distance": 2,
+          "reference": "crates/orbit-core/src/adapter/tool_host/task_tools.rs:62@156dc93d940ee60c4b1c7cd84db620e128977ff2"
+        },
+        {
+          "selector": "file:crates/orbit-core/src/adapter/tool_host/task_tools.rs",
+          "source": "import_relationship",
+          "confidence": "import_resolved",
+          "distance": 1,
+          "reference": "crates/orbit-core/src/adapter/tool_host/task_tools.rs:14@ab6135e11aeba511c7dbb2c20e766c78d166c208"
+        },
+        {
+          "selector": "file:crates/orbit-core/src/adapter/engine_host/v2_host/ci_failure_tasks.rs",
+          "source": "call_path",
+          "confidence": "fuzzy_name",
+          "distance": 2,
+          "reference": "crates/orbit-core/src/adapter/engine_host/v2_host/ci_failure_tasks.rs:2485@ab6135e11aeba511c7dbb2c20e766c78d166c208"
+        },
+        {
+          "selector": "symbol:crates/orbit-common/src/storage/blob_store.rs#sha256_hex:function",
+          "source": "call_path",
+          "confidence": "fuzzy_name",
+          "distance": 2,
+          "reference": "crates/orbit-common/src/storage/blob_store.rs:92@ab6135e11aeba511c7dbb2c20e766c78d166c208"
+        },
+        {
+          "selector": "symbol:crates/orbit-common/src/storage/tests/blob_store.rs#sha256_hex:function",
+          "source": "call_path",
+          "confidence": "fuzzy_name",
+          "distance": 2,
+          "reference": "crates/orbit-common/src/storage/tests/blob_store.rs:200@ab6135e11aeba511c7dbb2c20e766c78d166c208"
+        },
+        {
+          "selector": "symbol:crates/orbit-core/src/adapter/engine_host/runtime_host.rs#apply_task_automation_update_under_lock:function",
+          "source": "call_path",
+          "confidence": "fuzzy_name",
+          "distance": 2,
+          "reference": "crates/orbit-core/src/adapter/engine_host/runtime_host.rs:927@ab6135e11aeba511c7dbb2c20e766c78d166c208"
+        },
+        {
+          "selector": "symbol:crates/orbit-core/src/adapter/engine_host/tests/runtime_host.rs#apply_task_automation_update_keeps_external_refs_written_after_locked_read:test",
+          "source": "call_path",
+          "confidence": "fuzzy_name",
+          "distance": 2,
+          "reference": "crates/orbit-core/src/adapter/engine_host/tests/runtime_host.rs:992@ab6135e11aeba511c7dbb2c20e766c78d166c208"
+        },
+        {
+          "selector": "symbol:crates/orbit-core/src/adapter/engine_host/v2_host/dependabot_alert_tasks.rs#digest:function",
+          "source": "call_path",
+          "confidence": "fuzzy_name",
+          "distance": 2,
+          "reference": "crates/orbit-core/src/adapter/engine_host/v2_host/dependabot_alert_tasks.rs:746@ab6135e11aeba511c7dbb2c20e766c78d166c208"
+        }
+      ],
+      "entry_points": [
+        {
+          "selector": "symbol:crates/orbit-common/src/storage/tests/blob_store.rs#sha256_hex:function",
+          "source": "call_path",
+          "confidence": "fuzzy_name",
+          "distance": 2
+        },
+        {
+          "selector": "symbol:crates/orbit-core/src/adapter/engine_host/tests/runtime_host.rs#apply_task_automation_update_keeps_external_refs_written_after_locked_read:test",
+          "source": "call_path",
+          "confidence": "fuzzy_name",
+          "distance": 2
+        },
+        {
+          "selector": "symbol:crates/orbit-core/src/application/task/tests/records.rs#task_records_round_trip_document_history_and_artifact_updates:test",
+          "source": "call_path",
+          "confidence": "fuzzy_name",
+          "distance": 2
+        },
+        {
+          "selector": "symbol:crates/orbit-engine/src/activity_job/tests/workspace.rs#domain_sha256:function",
+          "source": "call_path",
+          "confidence": "fuzzy_name",
+          "distance": 2
+        },
+        {
+          "selector": "symbol:crates/orbit-exec/tests/live_read_fixture.py#run:function",
+          "source": "call_path",
+          "confidence": "fuzzy_name",
+          "distance": 2
+        }
+      ],
+      "candidate_tests": [
+        {
+          "test": "symbol:crates/orbit-cmd/src/tests/doctor.rs#stale_shipped_activity_default_names_the_refresh_remediation:test",
+          "source": "call_path",
+          "confidence": "fuzzy_name"
+        },
+        {
+          "test": "symbol:crates/orbit-common/src/storage/tests/blob_store.rs#caller_redaction_can_add_stronger_patterns:test",
+          "source": "call_path",
+          "confidence": "fuzzy_name"
+        },
+        {
+          "test": "symbol:crates/orbit-common/src/storage/tests/blob_store.rs#caller_redaction_cannot_weaken_default_redaction:test",
+          "source": "call_path",
+          "confidence": "fuzzy_name"
+        },
+        {
+          "test": "symbol:crates/orbit-common/src/storage/tests/blob_store.rs#concurrent_writes_never_publish_partial_blob_content:test",
+          "source": "call_path",
+          "confidence": "fuzzy_name"
+        },
+        {
+          "test": "symbol:crates/orbit-common/src/storage/tests/blob_store.rs#sha256_hex:function",
+          "source": "call_path",
+          "confidence": "fuzzy_name"
+        },
+        {
+          "test": "symbol:crates/orbit-common/src/storage/tests/blob_store.rs#write_hashes_and_stores_env_redacted_bytes:test",
+          "source": "call_path",
+          "confidence": "fuzzy_name"
+        },
+        {
+          "test": "symbol:crates/orbit-common/src/storage/tests/blob_store.rs#write_redacts_secret_patterns_in_non_utf8_blob:test",
+          "source": "call_path",
+          "confidence": "fuzzy_name"
+        },
+        {
+          "test": "symbol:crates/orbit-common/src/storage/tests/blob_store.rs#write_repairs_a_corrupt_existing_blob:test",
+          "source": "call_path",
+          "confidence": "fuzzy_name"
+        },
+        {
+          "test": "symbol:crates/orbit-core/src/adapter/engine_host/tests/runtime_host.rs#apply_task_automation_update_keeps_external_refs_written_after_locked_read:test",
+          "source": "call_path",
+          "confidence": "fuzzy_name"
+        },
+        {
+          "test": "symbol:crates/orbit-core/src/application/task/tests/records.rs#task_records_round_trip_document_history_and_artifact_updates:test",
+          "source": "call_path",
+          "confidence": "fuzzy_name"
+        }
+      ]
+    },
+    {
+      "selector": "symbol:crates/orbit-core/src/adapter/tool_host/task_tools.rs#update:function",
+      "status": "modified",
+      "pairing": "same_selector",
+      "callers_found": 134,
+      "entry_points_found": 55,
+      "candidate_tests_found": 97,
+      "callers": [
+        {
+          "selector": "file:crates/orbit-core/src/adapter/engine_host/v2_host/ci_failure_tasks.rs",
+          "source": "call_path",
+          "confidence": "fuzzy_name",
+          "distance": 1,
+          "reference": "crates/orbit-core/src/adapter/engine_host/v2_host/ci_failure_tasks.rs:2485@156dc93d940ee60c4b1c7cd84db620e128977ff2"
+        },
+        {
+          "selector": "symbol:crates/orbit-common/src/storage/blob_store.rs#sha256_hex:function",
+          "source": "call_path",
+          "confidence": "fuzzy_name",
+          "distance": 1,
+          "reference": "crates/orbit-common/src/storage/blob_store.rs:92@156dc93d940ee60c4b1c7cd84db620e128977ff2"
+        },
+        {
+          "selector": "symbol:crates/orbit-common/src/storage/tests/blob_store.rs#sha256_hex:function",
+          "source": "call_path",
+          "confidence": "fuzzy_name",
+          "distance": 1,
+          "reference": "crates/orbit-common/src/storage/tests/blob_store.rs:200@156dc93d940ee60c4b1c7cd84db620e128977ff2"
+        },
+        {
+          "selector": "symbol:crates/orbit-core/src/adapter/engine_host/runtime_host.rs#apply_task_automation_update_under_lock:function",
+          "source": "call_path",
+          "confidence": "fuzzy_name",
+          "distance": 1,
+          "reference": "crates/orbit-core/src/adapter/engine_host/runtime_host.rs:927@156dc93d940ee60c4b1c7cd84db620e128977ff2"
+        },
+        {
+          "selector": "symbol:crates/orbit-core/src/adapter/engine_host/tests/runtime_host.rs#apply_task_automation_update_keeps_external_refs_written_after_locked_read:test",
+          "source": "call_path",
+          "confidence": "fuzzy_name",
+          "distance": 1,
+          "reference": "crates/orbit-core/src/adapter/engine_host/tests/runtime_host.rs:992@156dc93d940ee60c4b1c7cd84db620e128977ff2"
+        },
+        {
+          "selector": "symbol:crates/orbit-core/src/adapter/engine_host/v2_host/dependabot_alert_tasks.rs#digest:function",
+          "source": "call_path",
+          "confidence": "fuzzy_name",
+          "distance": 1,
+          "reference": "crates/orbit-core/src/adapter/engine_host/v2_host/dependabot_alert_tasks.rs:746@156dc93d940ee60c4b1c7cd84db620e128977ff2"
+        },
+        {
+          "selector": "symbol:crates/orbit-core/src/adapter/tool_host/dispatch.rs#execute:function",
+          "source": "call_path",
+          "confidence": "fuzzy_name",
+          "distance": 1,
+          "reference": "crates/orbit-core/src/adapter/tool_host/dispatch.rs:53@156dc93d940ee60c4b1c7cd84db620e128977ff2"
+        },
+        {
+          "selector": "symbol:crates/orbit-core/src/adapter/tool_host/friction_tools.rs#update:function",
+          "source": "call_path",
+          "confidence": "fuzzy_name",
+          "distance": 1,
+          "reference": "crates/orbit-core/src/adapter/tool_host/friction_tools.rs:177@156dc93d940ee60c4b1c7cd84db620e128977ff2"
+        },
+        {
+          "selector": "symbol:crates/orbit-core/src/application/task/add.rs#add_task_admitted:method",
+          "source": "call_path",
+          "confidence": "fuzzy_name",
+          "distance": 1,
+          "reference": "crates/orbit-core/src/application/task/add.rs:152@156dc93d940ee60c4b1c7cd84db620e128977ff2"
+        },
+        {
+          "selector": "symbol:crates/orbit-core/src/application/task/tests/records.rs#task_records_round_trip_document_history_and_artifact_updates:test",
+          "source": "call_path",
+          "confidence": "fuzzy_name",
+          "distance": 1,
+          "reference": "crates/orbit-core/src/application/task/tests/records.rs:50@156dc93d940ee60c4b1c7cd84db620e128977ff2"
+        }
+      ],
+      "entry_points": [
+        {
+          "selector": "symbol:crates/orbit-common/src/storage/tests/blob_store.rs#sha256_hex:function",
+          "source": "call_path",
+          "confidence": "fuzzy_name",
+          "distance": 1
+        },
+        {
+          "selector": "symbol:crates/orbit-core/src/adapter/engine_host/tests/runtime_host.rs#apply_task_automation_update_keeps_external_refs_written_after_locked_read:test",
+          "source": "call_path",
+          "confidence": "fuzzy_name",
+          "distance": 1
+        },
+        {
+          "selector": "symbol:crates/orbit-core/src/application/task/tests/records.rs#task_records_round_trip_document_history_and_artifact_updates:test",
+          "source": "call_path",
+          "confidence": "fuzzy_name",
+          "distance": 1
+        },
+        {
+          "selector": "symbol:crates/orbit-engine/src/activity_job/tests/workspace.rs#domain_sha256:function",
+          "source": "call_path",
+          "confidence": "fuzzy_name",
+          "distance": 1
+        },
+        {
+          "selector": "symbol:crates/orbit-exec/tests/live_read_fixture.py#run:function",
+          "source": "call_path",
+          "confidence": "fuzzy_name",
+          "distance": 1
+        }
+      ],
+      "candidate_tests": [
+        {
+          "test": "symbol:crates/orbit-cli/src/command/config/tests/get.rs#complexity_pools_set_get_show_agree_and_invalid_edits_do_not_write:test",
+          "source": "call_path",
+          "confidence": "fuzzy_name"
+        },
+        {
+          "test": "symbol:crates/orbit-cli/src/command/config/tests/get.rs#get_agrees_with_set_for_sol_crew_effort:test",
+          "source": "call_path",
+          "confidence": "fuzzy_name"
+        },
+        {
+          "test": "symbol:crates/orbit-cli/src/command/config/tests/get.rs#get_omitted_crew_effort_is_null_not_a_fabricated_default:test",
+          "source": "call_path",
+          "confidence": "fuzzy_name"
+        },
+        {
+          "test": "symbol:crates/orbit-cli/src/command/config/tests/get.rs#get_reads_hand_authored_crew_effort:test",
+          "source": "call_path",
+          "confidence": "fuzzy_name"
+        },
+        {
+          "test": "symbol:crates/orbit-cli/src/command/config/tests/get.rs#get_rejects_misspelled_crew_field:test",
+          "source": "call_path",
+          "confidence": "fuzzy_name"
+        },
+        {
+          "test": "symbol:crates/orbit-cli/src/command/config/tests/get.rs#get_without_json_flag_still_returns_a_payload:test",
+          "source": "call_path",
+          "confidence": "fuzzy_name"
+        },
+        {
+          "test": "symbol:crates/orbit-cli/src/command/config/tests/set.rs#set_claude_crew_effort_accepts_supported_value:test",
+          "source": "call_path",
+          "confidence": "fuzzy_name"
+        },
+        {
+          "test": "symbol:crates/orbit-cli/src/command/config/tests/set.rs#set_crew_effort_on_existing_sol_crew_round_trips:test",
+          "source": "call_path",
+          "confidence": "fuzzy_name"
+        },
+        {
+          "test": "symbol:crates/orbit-cli/src/command/config/tests/set.rs#set_crew_effort_rejects_invalid_value_without_writing:test",
+          "source": "call_path",
+          "confidence": "fuzzy_name"
+        },
+        {
+          "test": "symbol:crates/orbit-cli/src/command/config/tests/set.rs#set_crew_effort_rejects_unsupported_provider_without_writing:test",
+          "source": "call_path",
+          "confidence": "fuzzy_name"
+        }
+      ]
+    },
+    {
+      "selector": "symbol:crates/orbit-core/src/adapter/tool_host/tests/task_tools.rs#CurrentDirGuard:impl",
+      "status": "uncertain",
+      "pairing": "uncertain",
+      "callers_found": 0,
+      "entry_points_found": 1,
+      "candidate_tests_found": 2,
+      "callers": [],
+      "entry_points": [
+        {
+          "selector": "symbol:crates/orbit-core/src/adapter/tool_host/tests/task_tools.rs#CurrentDirGuard:impl",
+          "source": "changed_symbol",
+          "confidence": "exact",
+          "distance": 0
+        }
+      ],
+      "candidate_tests": [
+        {
+          "test": "file:crates/orbit-engine/src/executor/automation/vcs/pr/tests/review_gate.rs",
+          "source": "import_relationship",
+          "confidence": "file_import"
+        },
+        {
+          "test": "file:crates/orbit-engine/src/executor/automation/vcs/worktree/tests/setup.rs",
+          "source": "import_relationship",
+          "confidence": "file_import"
+        }
+      ]
+    },
+    {
+      "selector": "symbol:crates/orbit-core/src/adapter/tool_host/tests/task_tools.rs#automated_update_paths_may_still_store_unassessed_complexity:test",
+      "status": "added",
+      "pairing": "same_selector",
+      "callers_found": 0,
+      "entry_points_found": 1,
+      "candidate_tests_found": 2,
+      "callers": [],
+      "entry_points": [
+        {
+          "selector": "symbol:crates/orbit-core/src/adapter/tool_host/tests/task_tools.rs#automated_update_paths_may_still_store_unassessed_complexity:test",
+          "source": "changed_symbol",
+          "confidence": "exact",
+          "distance": 0
+        }
+      ],
+      "candidate_tests": [
+        {
+          "test": "file:crates/orbit-engine/src/executor/automation/vcs/pr/tests/review_gate.rs",
+          "source": "import_relationship",
+          "confidence": "file_import"
+        },
+        {
+          "test": "file:crates/orbit-engine/src/executor/automation/vcs/worktree/tests/setup.rs",
+          "source": "import_relationship",
+          "confidence": "file_import"
+        }
+      ]
+    },
+    {
+      "selector": "symbol:crates/orbit-core/src/adapter/tool_host/tests/task_tools.rs#task_update_tool_rejects_unassessed_complexity_and_keeps_the_stored_value:test",
+      "status": "added",
+      "pairing": "same_selector",
+      "callers_found": 0,
+      "entry_points_found": 1,
+      "candidate_tests_found": 2,
+      "callers": [],
+      "entry_points": [
+        {
+          "selector": "symbol:crates/orbit-core/src/adapter/tool_host/tests/task_tools.rs#task_update_tool_rejects_unassessed_complexity_and_keeps_the_stored_value:test",
+          "source": "changed_symbol",
+          "confidence": "exact",
+          "distance": 0
+        }
+      ],
+      "candidate_tests": [
+        {
+          "test": "file:crates/orbit-engine/src/executor/automation/vcs/pr/tests/review_gate.rs",
+          "source": "import_relationship",
+          "confidence": "file_import"
+        },
+        {
+          "test": "file:crates/orbit-engine/src/executor/automation/vcs/worktree/tests/setup.rs",
+          "source": "import_relationship",
+          "confidence": "file_import"
+        }
+      ]
+    },
+    {
+      "selector": "symbol:crates/orbit-types/src/task/model.rs#Err:type_alias",
+      "status": "uncertain",
+      "pairing": "uncertain",
+      "callers_found": 110,
+      "entry_points_found": 18,
+      "candidate_tests_found": 158,
+      "callers": [
+        {
+          "selector": "file:crates/orbit-cli/src/command/mcp/callers.rs",
+          "source": "call_path",
+          "confidence": "fuzzy_name",
+          "distance": 1,
+          "reference": "crates/orbit-cli/src/command/mcp/callers.rs:547@156dc93d940ee60c4b1c7cd84db620e128977ff2"
+        },
+        {
+          "selector": "symbol:crates/orbit-agent/src/loop_engine/agent_loop.rs#check_deadline:function",
+          "source": "call_path",
+          "confidence": "fuzzy_name",
+          "distance": 1,
+          "reference": "crates/orbit-agent/src/loop_engine/agent_loop.rs:454@156dc93d940ee60c4b1c7cd84db620e128977ff2"
+        },
+        {
+          "selector": "symbol:crates/orbit-agent/src/loop_engine/agent_loop.rs#run:method",
+          "source": "call_path",
+          "confidence": "fuzzy_name",
+          "distance": 1,
+          "reference": "crates/orbit-agent/src/loop_engine/agent_loop.rs:211@156dc93d940ee60c4b1c7cd84db620e128977ff2"
+        },
+        {
+          "selector": "symbol:crates/orbit-agent/src/loop_engine/replay_transport.rs#send_turn:method",
+          "source": "call_path",
+          "confidence": "fuzzy_name",
+          "distance": 1,
+          "reference": "crates/orbit-agent/src/loop_engine/replay_transport.rs:86@156dc93d940ee60c4b1c7cd84db620e128977ff2"
+        },
+        {
+          "selector": "symbol:crates/orbit-agent/src/providers/anthropic/messages_transport.rs#send_turn:method",
+          "source": "call_path",
+          "confidence": "fuzzy_name",
+          "distance": 1,
+          "reference": "crates/orbit-agent/src/providers/anthropic/messages_transport.rs:82@156dc93d940ee60c4b1c7cd84db620e128977ff2"
+        },
+        {
+          "selector": "symbol:crates/orbit-agent/src/providers/antigravity/antigravity_runtime.rs#build:method",
+          "source": "call_path",
+          "confidence": "fuzzy_name",
+          "distance": 1,
+          "reference": "crates/orbit-agent/src/providers/antigravity/antigravity_runtime.rs:75@156dc93d940ee60c4b1c7cd84db620e128977ff2"
+        },
+        {
+          "selector": "symbol:crates/orbit-agent/src/providers/claude/claude_runtime.rs#build:method",
+          "source": "call_path",
+          "confidence": "fuzzy_name",
+          "distance": 1,
+          "reference": "crates/orbit-agent/src/providers/claude/claude_runtime.rs:65@156dc93d940ee60c4b1c7cd84db620e128977ff2"
+        },
+        {
+          "selector": "symbol:crates/orbit-agent/src/providers/codex/codex_runtime.rs#build:method",
+          "source": "call_path",
+          "confidence": "fuzzy_name",
+          "distance": 1,
+          "reference": "crates/orbit-agent/src/providers/codex/codex_runtime.rs:92@156dc93d940ee60c4b1c7cd84db620e128977ff2"
+        },
+        {
+          "selector": "symbol:crates/orbit-agent/src/providers/copilot/copilot_runtime.rs#build:method",
+          "source": "call_path",
+          "confidence": "fuzzy_name",
+          "distance": 1,
+          "reference": "crates/orbit-agent/src/providers/copilot/copilot_runtime.rs:80@156dc93d940ee60c4b1c7cd84db620e128977ff2"
+        },
+        {
+          "selector": "symbol:crates/orbit-agent/src/providers/cursor/cursor_runtime.rs#build:method",
+          "source": "call_path",
+          "confidence": "fuzzy_name",
+          "distance": 1,
+          "reference": "crates/orbit-agent/src/providers/cursor/cursor_runtime.rs:70@156dc93d940ee60c4b1c7cd84db620e128977ff2"
+        }
+      ],
+      "entry_points": [
+        {
+          "selector": "symbol:crates/orbit-automation/src/auto_tasks/tests/scheduler.rs#mint_task:method",
+          "source": "call_path",
+          "confidence": "fuzzy_name",
+          "distance": 1
+        },
+        {
+          "selector": "symbol:crates/orbit-automation/src/delivery/tests/evidence.rs#admit:method",
+          "source": "call_path",
+          "confidence": "fuzzy_name",
+          "distance": 1
+        },
+        {
+          "selector": "symbol:crates/orbit-automation/src/delivery/tests/evidence.rs#automation_commit:method",
+          "source": "call_path",
+          "confidence": "fuzzy_name",
+          "distance": 1
+        },
+        {
+          "selector": "symbol:crates/orbit-automation/src/members/tests/mod.rs#admit:method",
+          "source": "call_path",
+          "confidence": "fuzzy_name",
+          "distance": 1
+        },
+        {
+          "selector": "symbol:crates/orbit-automation/src/review/tests/mod.rs#coverage_reads_the_same_validation_contract_the_gate_settled_under:test",
+          "source": "call_path",
+          "confidence": "fuzzy_name",
+          "distance": 1
+        }
+      ],
+      "candidate_tests": [
+        {
+          "test": "symbol:crates/orbit-automation/src/auto_tasks/tests/scheduler.rs#mint_task:method",
+          "source": "call_path",
+          "confidence": "fuzzy_name"
+        },
+        {
+          "test": "symbol:crates/orbit-automation/src/delivery/tests/evidence.rs#admit:method",
+          "source": "call_path",
+          "confidence": "fuzzy_name"
+        },
+        {
+          "test": "symbol:crates/orbit-automation/src/delivery/tests/evidence.rs#automation_commit:method",
+          "source": "call_path",
+          "confidence": "fuzzy_name"
+        },
+        {
+          "test": "symbol:crates/orbit-automation/src/members/tests/mod.rs#admit:method",
+          "source": "call_path",
+          "confidence": "fuzzy_name"
+        },
+        {
+          "test": "symbol:crates/orbit-automation/src/review/tests/mod.rs#coverage_reads_the_same_validation_contract_the_gate_settled_under:test",
+          "source": "call_path",
+          "confidence": "fuzzy_name"
+        },
+        {
+          "test": "symbol:crates/orbit-automation/src/review/tests/mod.rs#coverage_refuses_a_superseded_test_replaced_only_by_an_unrelated_formatter:test",
+          "source": "call_path",
+          "confidence": "fuzzy_name"
+        },
+        {
+          "test": "symbol:crates/orbit-automation/src/review/tests/mod.rs#exact_tree_landings_are_excluded_and_everything_else_stays_uncovered:test",
+          "source": "call_path",
+          "confidence": "fuzzy_name"
+        },
+        {
+          "test": "symbol:crates/orbit-automation/src/review/tests/mod.rs#only_passed_and_fully_validated_certificates_are_acceptable:test",
+          "source": "call_path",
+          "confidence": "fuzzy_name"
+        },
+        {
+          "test": "symbol:crates/orbit-automation/src/review/tests/validation.rs#a_set_without_a_passing_required_check_establishes_nothing:test",
+          "source": "call_path",
+          "confidence": "fuzzy_name"
+        },
+        {
+          "test": "symbol:crates/orbit-automation/src/review/tests/validation.rs#a_superseded_attempt_needs_the_later_check_that_replaced_it:test",
+          "source": "call_path",
+          "confidence": "fuzzy_name"
+        }
+      ]
+    },
+    {
+      "selector": "symbol:crates/orbit-types/src/task/model.rs#ExternalRef:impl",
+      "status": "uncertain",
+      "pairing": "uncertain",
+      "callers_found": 36,
+      "entry_points_found": 17,
+      "candidate_tests_found": 140,
+      "callers": [
+        {
+          "selector": "file:crates/orbit-core/src/application/task/query.rs",
+          "source": "import_relationship",
+          "confidence": "fuzzy_name",
+          "distance": 1,
+          "reference": "crates/orbit-core/src/application/task/query.rs:6@156dc93d940ee60c4b1c7cd84db620e128977ff2"
+        },
+        {
+          "selector": "symbol:crates/orbit-core/src/application/task/query.rs#list_tasks_filtered:method",
+          "source": "reference_path",
+          "confidence": "fuzzy_name",
+          "distance": 1,
+          "reference": "crates/orbit-core/src/application/task/query.rs:140@156dc93d940ee60c4b1c7cd84db620e128977ff2"
+        },
+        {
+          "selector": "symbol:crates/orbit-store/src/repository/task/v2/crud.rs#list_tasks_filtered:method",
+          "source": "reference_path",
+          "confidence": "fuzzy_name",
+          "distance": 1,
+          "reference": "crates/orbit-store/src/repository/task/v2/crud.rs:131@156dc93d940ee60c4b1c7cd84db620e128977ff2"
+        },
+        {
+          "selector": "symbol:crates/orbit-core/src/adapter/engine_host/v2_host/tests/dispatch.rs#list_tasks_filtered:method",
+          "source": "reference_path",
+          "confidence": "fuzzy_name",
+          "distance": 2,
+          "reference": "crates/orbit-core/src/adapter/engine_host/v2_host/tests/dispatch.rs:91@156dc93d940ee60c4b1c7cd84db620e128977ff2"
+        },
+        {
+          "selector": "symbol:crates/orbit-core/src/application/job/resume.rs#reconcile_resume_task_ownership:method",
+          "source": "reference_path",
+          "confidence": "fuzzy_name",
+          "distance": 2,
+          "reference": "crates/orbit-core/src/application/job/resume.rs:256@156dc93d940ee60c4b1c7cd84db620e128977ff2"
+        },
+        {
+          "selector": "symbol:crates/orbit-core/src/runtime/task/block_on_run_failure.rs#block_tasks_for_failed_run:method",
+          "source": "reference_path",
+          "confidence": "fuzzy_name",
+          "distance": 2,
+          "reference": "crates/orbit-core/src/runtime/task/block_on_run_failure.rs:94@156dc93d940ee60c4b1c7cd84db620e128977ff2"
+        },
+        {
+          "selector": "symbol:crates/orbit-core/src/runtime/task/tests/block_on_run_failure.rs#blocked_task_is_rejected_by_workflow_admission:test",
+          "source": "reference_path",
+          "confidence": "fuzzy_name",
+          "distance": 2,
+          "reference": "crates/orbit-core/src/runtime/task/tests/block_on_run_failure.rs:414@156dc93d940ee60c4b1c7cd84db620e128977ff2"
+        },
+        {
+          "selector": "symbol:crates/orbit-engine/src/executor/automation/vcs/commit/mod.rs#commit_batch_changes:function",
+          "source": "reference_path",
+          "confidence": "fuzzy_name",
+          "distance": 2,
+          "reference": "crates/orbit-engine/src/executor/automation/vcs/commit/mod.rs:183@156dc93d940ee60c4b1c7cd84db620e128977ff2"
+        },
+        {
+          "selector": "symbol:crates/orbit-engine/src/executor/automation/vcs/commit/mod.rs#commit_finalize_artifact_changes:function",
+          "source": "reference_path",
+          "confidence": "fuzzy_name",
+          "distance": 2,
+          "reference": "crates/orbit-engine/src/executor/automation/vcs/commit/mod.rs:128@156dc93d940ee60c4b1c7cd84db620e128977ff2"
+        },
+        {
+          "selector": "symbol:crates/orbit-engine/src/executor/automation/vcs/commit/mod.rs#commit_task_artifact_changes:function",
+          "source": "reference_path",
+          "confidence": "fuzzy_name",
+          "distance": 2,
+          "reference": "crates/orbit-engine/src/executor/automation/vcs/commit/mod.rs:62@156dc93d940ee60c4b1c7cd84db620e128977ff2"
+        }
+      ],
+      "entry_points": [
+        {
+          "selector": "symbol:crates/orbit-core/src/adapter/engine_host/v2_host/tests/dispatch.rs#list_tasks_filtered:method",
+          "source": "reference_path",
+          "confidence": "fuzzy_name",
+          "distance": 2
+        },
+        {
+          "selector": "symbol:crates/orbit-core/src/runtime/task/tests/block_on_run_failure.rs#blocked_task_is_rejected_by_workflow_admission:test",
+          "source": "reference_path",
+          "confidence": "fuzzy_name",
+          "distance": 2
+        },
+        {
+          "selector": "symbol:crates/orbit-engine/src/executor/automation/vcs/pr/tests/resume_failure.rs#list_tasks_filtered:method",
+          "source": "reference_path",
+          "confidence": "fuzzy_name",
+          "distance": 2
+        },
+        {
+          "selector": "symbol:crates/orbit-store/src/repository/task/v2/tests/crud.rs#filters_and_searches_v2_tasks:test",
+          "source": "reference_path",
+          "confidence": "fuzzy_name",
+          "distance": 2
+        },
+        {
+          "selector": "symbol:crates/orbit-store/src/repository/task/v2/tests/crud.rs#list_tasks_filtered_supports_lineage_and_job_run_filters:test",
+          "source": "reference_path",
+          "confidence": "fuzzy_name",
+          "distance": 2
+        }
+      ],
+      "candidate_tests": [
+        {
+          "test": "file:crates/orbit-automation/src/members/tests/mod.rs",
+          "source": "import_relationship",
+          "confidence": "file_import"
+        },
+        {
+          "test": "file:crates/orbit-automation/src/review/tests/mod.rs",
+          "source": "import_relationship",
+          "confidence": "file_import"
+        },
+        {
+          "test": "file:crates/orbit-cli/src/command/run/tests/ship.rs",
+          "source": "import_relationship",
+          "confidence": "file_import"
+        },
+        {
+          "test": "file:crates/orbit-cli/src/command/task/tests/add.rs",
+          "source": "import_relationship",
+          "confidence": "file_import"
+        },
+        {
+          "test": "file:crates/orbit-cli/src/command/task/tests/artifact.rs",
+          "source": "import_relationship",
+          "confidence": "file_import"
+        },
+        {
+          "test": "file:crates/orbit-cli/src/command/task/tests/output.rs",
+          "source": "import_relationship",
+          "confidence": "file_import"
+        },
+        {
+          "test": "file:crates/orbit-cli/src/command/task/tests/publication.rs",
+          "source": "import_relationship",
+          "confidence": "file_import"
+        },
+        {
+          "test": "file:crates/orbit-cli/src/command/task/tests/show.rs",
+          "source": "import_relationship",
+          "confidence": "file_import"
+        },
+        {
+          "test": "file:crates/orbit-cli/src/command/tests/auto_task.rs",
+          "source": "import_relationship",
+          "confidence": "file_import"
+        },
+        {
+          "test": "file:crates/orbit-cli/src/command/tests/locks.rs",
+          "source": "import_relationship",
+          "confidence": "file_import"
+        }
+      ]
+    },
+    {
+      "selector": "symbol:crates/orbit-types/src/task/model.rs#Task:impl",
+      "status": "uncertain",
+      "pairing": "uncertain",
+      "callers_found": 117,
+      "entry_points_found": 51,
+      "candidate_tests_found": 153,
+      "callers": [
+        {
+          "selector": "file:crates/orbit-core/src/application/task/query.rs",
+          "source": "import_relationship",
+          "confidence": "fuzzy_name",
+          "distance": 1,
+          "reference": "crates/orbit-core/src/application/task/query.rs:6@156dc93d940ee60c4b1c7cd84db620e128977ff2"
+        },
+        {
+          "selector": "symbol:crates/orbit-cli/src/command/task/output.rs#dependency_labels:function",
+          "source": "reference_path",
+          "confidence": "fuzzy_name",
+          "distance": 1,
+          "reference": "crates/orbit-cli/src/command/task/output.rs:560@156dc93d940ee60c4b1c7cd84db620e128977ff2"
+        },
+        {
+          "selector": "symbol:crates/orbit-cli/src/command/task/output.rs#format_task_fields:function",
+          "source": "reference_path",
+          "confidence": "fuzzy_name",
+          "distance": 1,
+          "reference": "crates/orbit-cli/src/command/task/output.rs:359@156dc93d940ee60c4b1c7cd84db620e128977ff2"
+        },
+        {
+          "selector": "symbol:crates/orbit-cli/src/command/task/output.rs#task_field_to_json:function",
+          "source": "reference_path",
+          "confidence": "fuzzy_name",
+          "distance": 1,
+          "reference": "crates/orbit-cli/src/command/task/output.rs:285@156dc93d940ee60c4b1c7cd84db620e128977ff2"
+        },
+        {
+          "selector": "symbol:crates/orbit-cli/src/command/task/output.rs#task_fields_to_json:function",
+          "source": "reference_path",
+          "confidence": "fuzzy_name",
+          "distance": 1,
+          "reference": "crates/orbit-cli/src/command/task/output.rs:339@156dc93d940ee60c4b1c7cd84db620e128977ff2"
+        },
+        {
+          "selector": "symbol:crates/orbit-cli/src/command/task/output.rs#task_table:function",
+          "source": "reference_path",
+          "confidence": "fuzzy_name",
+          "distance": 1,
+          "reference": "crates/orbit-cli/src/command/task/output.rs:161@156dc93d940ee60c4b1c7cd84db620e128977ff2"
+        },
+        {
+          "selector": "symbol:crates/orbit-cli/src/command/task/output.rs#task_to_json:function",
+          "source": "reference_path",
+          "confidence": "fuzzy_name",
+          "distance": 1,
+          "reference": "crates/orbit-cli/src/command/task/output.rs:37@156dc93d940ee60c4b1c7cd84db620e128977ff2"
+        },
+        {
+          "selector": "symbol:crates/orbit-cli/src/command/task/output.rs#task_to_json_for_runtime:function",
+          "source": "reference_path",
+          "confidence": "fuzzy_name",
+          "distance": 1,
+          "reference": "crates/orbit-cli/src/command/task/output.rs:74@156dc93d940ee60c4b1c7cd84db620e128977ff2"
+        },
+        {
+          "selector": "symbol:crates/orbit-cli/src/command/task/output.rs#task_to_json_with_sidecars:function",
+          "source": "reference_path",
+          "confidence": "fuzzy_name",
+          "distance": 1,
+          "reference": "crates/orbit-cli/src/command/task/output.rs:88@156dc93d940ee60c4b1c7cd84db620e128977ff2"
+        },
+        {
+          "selector": "symbol:crates/orbit-cli/src/command/task/output.rs#task_to_signal_json:function",
+          "source": "reference_path",
+          "confidence": "fuzzy_name",
+          "distance": 1,
+          "reference": "crates/orbit-cli/src/command/task/output.rs:24@156dc93d940ee60c4b1c7cd84db620e128977ff2"
+        }
+      ],
+      "entry_points": [
+        {
+          "selector": "symbol:crates/orbit-core/src/application/docs/tests/artifact_ref.rs#task_related_artifacts_accept_legacy_and_partitioned_ids:test",
+          "source": "call_path",
+          "confidence": "fuzzy_name",
+          "distance": 1
+        },
+        {
+          "selector": "symbol:crates/orbit-web/src/api/tests/diagnostics.rs#seed_task:function",
+          "source": "reference_path",
+          "confidence": "fuzzy_name",
+          "distance": 1
+        },
+        {
+          "selector": "symbol:crates/orbit-web/src/api/tests/handlers.rs#seed_task:function",
+          "source": "reference_path",
+          "confidence": "fuzzy_name",
+          "distance": 1
+        },
+        {
+          "selector": "symbol:crates/orbit-web/src/api/tests/tasks.rs#seed_backlog_task:function",
+          "source": "reference_path",
+          "confidence": "fuzzy_name",
+          "distance": 1
+        },
+        {
+          "selector": "symbol:crates/orbit-web/src/api/tests/tasks.rs#seed_filterable_task:function",
+          "source": "reference_path",
+          "confidence": "fuzzy_name",
+          "distance": 1
+        }
+      ],
+      "candidate_tests": [
+        {
+          "test": "symbol:crates/orbit-core/src/application/automation/tests/consumer.rs#a_disabled_definition_reads_as_disabled_whoever_owns_it:test",
+          "source": "call_path",
+          "confidence": "fuzzy_name"
+        },
+        {
+          "test": "symbol:crates/orbit-core/src/application/automation/tests/consumer.rs#a_replica_cannot_claim_ownership_by_omitting_it:test",
+          "source": "call_path",
+          "confidence": "fuzzy_name"
+        },
+        {
+          "test": "symbol:crates/orbit-core/src/application/automation/tests/consumer.rs#adopting_the_workspace_default_keeps_an_explicitly_owned_consumer:test",
+          "source": "call_path",
+          "confidence": "fuzzy_name"
+        },
+        {
+          "test": "symbol:crates/orbit-core/src/application/automation/tests/consumer.rs#an_explicit_owner_overrides_the_registered_workspace_owner:test",
+          "source": "call_path",
+          "confidence": "fuzzy_name"
+        },
+        {
+          "test": "symbol:crates/orbit-core/src/application/automation/tests/consumer.rs#an_omitted_owner_resolves_to_the_registered_workspace_owner:test",
+          "source": "call_path",
+          "confidence": "fuzzy_name"
+        },
+        {
+          "test": "symbol:crates/orbit-core/src/application/automation/tests/consumer.rs#direct_intent_does_not_count_before_actual_landing:test",
+          "source": "call_path",
+          "confidence": "fuzzy_name"
+        },
+        {
+          "test": "symbol:crates/orbit-core/src/application/automation/tests/consumer.rs#inspection_reports_delivery_admission_deferrals_without_mutating_state:test",
+          "source": "call_path",
+          "confidence": "fuzzy_name"
+        },
+        {
+          "test": "symbol:crates/orbit-core/src/application/automation/tests/consumer.rs#job_only_evidence_comes_from_persisted_step_and_matches_frozen_input:test",
+          "source": "call_path",
+          "confidence": "fuzzy_name"
+        },
+        {
+          "test": "symbol:crates/orbit-core/src/application/automation/tests/consumer.rs#no_diff_pr_is_zero_but_distinct_revert_pr_is_new_delivery:test",
+          "source": "call_path",
+          "confidence": "fuzzy_name"
+        },
+        {
+          "test": "symbol:crates/orbit-core/src/application/automation/tests/consumer.rs#provider_rebase_membership_counts_once_and_unavailable_evidence_stays_pending:test",
+          "source": "call_path",
+          "confidence": "fuzzy_name"
+        }
+      ]
+    },
+    {
+      "selector": "symbol:crates/orbit-types/src/task/model.rs#TaskComplexity:enum",
+      "status": "modified",
+      "pairing": "same_selector",
+      "callers_found": 160,
+      "entry_points_found": 70,
+      "candidate_tests_found": 140,
+      "callers": [
+        {
+          "selector": "file:crates/orbit-types/src/task/model.rs",
+          "source": "reference_path",
+          "confidence": "exact",
+          "distance": 1,
+          "reference": "crates/orbit-types/src/task/model.rs:303@156dc93d940ee60c4b1c7cd84db620e128977ff2"
+        },
+        {
+          "selector": "symbol:crates/orbit-types/src/task/model.rs#Task:struct",
+          "source": "reference_path",
+          "confidence": "exact",
+          "distance": 1,
+          "reference": "crates/orbit-types/src/task/model.rs:842@156dc93d940ee60c4b1c7cd84db620e128977ff2"
+        },
+        {
+          "selector": "symbol:crates/orbit-types/src/task/model.rs#TaskComplexity:impl",
+          "source": "reference_path",
+          "confidence": "exact",
+          "distance": 1,
+          "reference": "crates/orbit-types/src/task/model.rs:297@156dc93d940ee60c4b1c7cd84db620e128977ff2"
+        },
+        {
+          "selector": "symbol:crates/orbit-cli/src/command/task/add.rs#TaskAddArgs:struct",
+          "source": "reference_path",
+          "confidence": "same_module",
+          "distance": 1,
+          "reference": "crates/orbit-cli/src/command/task/add.rs:57@156dc93d940ee60c4b1c7cd84db620e128977ff2"
+        },
+        {
+          "selector": "symbol:crates/orbit-cli/src/command/task/update.rs#TaskUpdateArgs:struct",
+          "source": "reference_path",
+          "confidence": "same_module",
+          "distance": 1,
+          "reference": "crates/orbit-cli/src/command/task/update.rs:49@156dc93d940ee60c4b1c7cd84db620e128977ff2"
+        },
+        {
+          "selector": "symbol:crates/orbit-config/src/crew_pools.rs#ComplexityCrewPools:impl",
+          "source": "reference_path",
+          "confidence": "same_module",
+          "distance": 1,
+          "reference": "crates/orbit-config/src/crew_pools.rs:25@156dc93d940ee60c4b1c7cd84db620e128977ff2"
+        },
+        {
+          "selector": "symbol:crates/orbit-core/src/adapter/engine_host/v2_host/task_pilot.rs#automatic_exclusion_reason:function",
+          "source": "reference_path",
+          "confidence": "same_module",
+          "distance": 1,
+          "reference": "crates/orbit-core/src/adapter/engine_host/v2_host/task_pilot.rs:400@156dc93d940ee60c4b1c7cd84db620e128977ff2"
+        },
+        {
+          "selector": "symbol:crates/orbit-core/src/adapter/engine_host/v2_host/task_pilot.rs#task_snapshot:function",
+          "source": "reference_path",
+          "confidence": "same_module",
+          "distance": 1,
+          "reference": "crates/orbit-core/src/adapter/engine_host/v2_host/task_pilot.rs:429@156dc93d940ee60c4b1c7cd84db620e128977ff2"
+        },
+        {
+          "selector": "symbol:crates/orbit-core/src/adapter/engine_host/v2_host/task_pilot.rs#validate_recommendations:function",
+          "source": "reference_path",
+          "confidence": "same_module",
+          "distance": 1,
+          "reference": "crates/orbit-core/src/adapter/engine_host/v2_host/task_pilot.rs:648@156dc93d940ee60c4b1c7cd84db620e128977ff2"
+        },
+        {
+          "selector": "symbol:crates/orbit-core/src/adapter/engine_host/v2_host/task_pilot/apply.rs#PreparedTaskSnapshot:struct",
+          "source": "reference_path",
+          "confidence": "same_module",
+          "distance": 1,
+          "reference": "crates/orbit-core/src/adapter/engine_host/v2_host/task_pilot/apply.rs:30@156dc93d940ee60c4b1c7cd84db620e128977ff2"
+        }
+      ],
+      "entry_points": [
+        {
+          "selector": "symbol:crates/orbit-core/src/application/job/tests/crew_pools.rs#task:function",
+          "source": "reference_path",
+          "confidence": "same_module",
+          "distance": 1
+        },
+        {
+          "selector": "symbol:crates/orbit-web/src/api/tests/diagnostics.rs#seed_task:function",
+          "source": "reference_path",
+          "confidence": "same_module",
+          "distance": 1
+        },
+        {
+          "selector": "symbol:crates/orbit-core/src/application/tests/job_submission.rs#auto_complexity_pool_is_captured_at_submission_and_retained_by_real_resume:test",
+          "source": "import_relationship",
+          "confidence": "same_module",
+          "distance": 1
+        },
+        {
+          "selector": "symbol:crates/orbit-types/src/task/tests/task.rs#task_complexity_unassessed_round_trips_and_is_not_assessed:test",
+          "source": "import_relationship",
+          "confidence": "same_module",
+          "distance": 1
+        },
+        {
+          "selector": "symbol:crates/orbit-cli/src/command/run/tests/ship.rs#interactive_ship_inherits_the_shared_in_flight_guard:test",
+          "source": "reference_path",
+          "confidence": "same_module",
+          "distance": 2
+        }
+      ],
+      "candidate_tests": [
+        {
+          "test": "file:crates/orbit-automation/src/members/tests/mod.rs",
+          "source": "import_relationship",
+          "confidence": "file_import"
+        },
+        {
+          "test": "file:crates/orbit-automation/src/review/tests/mod.rs",
+          "source": "import_relationship",
+          "confidence": "file_import"
+        },
+        {
+          "test": "file:crates/orbit-cli/src/command/run/tests/ship.rs",
+          "source": "import_relationship",
+          "confidence": "file_import"
+        },
+        {
+          "test": "file:crates/orbit-cli/src/command/task/tests/add.rs",
+          "source": "import_relationship",
+          "confidence": "file_import"
+        },
+        {
+          "test": "file:crates/orbit-cli/src/command/task/tests/artifact.rs",
+          "source": "import_relationship",
+          "confidence": "file_import"
+        },
+        {
+          "test": "file:crates/orbit-cli/src/command/task/tests/output.rs",
+          "source": "import_relationship",
+          "confidence": "file_import"
+        },
+        {
+          "test": "file:crates/orbit-cli/src/command/task/tests/publication.rs",
+          "source": "import_relationship",
+          "confidence": "file_import"
+        },
+        {
+          "test": "file:crates/orbit-cli/src/command/task/tests/show.rs",
+          "source": "import_relationship",
+          "confidence": "file_import"
+        },
+        {
+          "test": "file:crates/orbit-cli/src/command/tests/auto_task.rs",
+          "source": "import_relationship",
+          "confidence": "file_import"
+        },
+        {
+          "test": "file:crates/orbit-cli/src/command/tests/locks.rs",
+          "source": "import_relationship",
+          "confidence": "file_import"
+        }
+      ]
+    },
+    {
+      "selector": "symbol:crates/orbit-types/src/task/model.rs#TaskComplexity:impl",
+      "status": "uncertain",
+      "pairing": "uncertain",
+      "callers_found": 0,
+      "entry_points_found": 0,
+      "candidate_tests_found": 140,
+      "callers": [],
+      "entry_points": [],
+      "candidate_tests": [
+        {
+          "test": "file:crates/orbit-automation/src/members/tests/mod.rs",
+          "source": "import_relationship",
+          "confidence": "file_import"
+        },
+        {
+          "test": "file:crates/orbit-automation/src/review/tests/mod.rs",
+          "source": "import_relationship",
+          "confidence": "file_import"
+        },
+        {
+          "test": "file:crates/orbit-cli/src/command/run/tests/ship.rs",
+          "source": "import_relationship",
+          "confidence": "file_import"
+        },
+        {
+          "test": "file:crates/orbit-cli/src/command/task/tests/add.rs",
+          "source": "import_relationship",
+          "confidence": "file_import"
+        },
+        {
+          "test": "file:crates/orbit-cli/src/command/task/tests/artifact.rs",
+          "source": "import_relationship",
+          "confidence": "file_import"
+        },
+        {
+          "test": "file:crates/orbit-cli/src/command/task/tests/output.rs",
+          "source": "import_relationship",
+          "confidence": "file_import"
+        },
+        {
+          "test": "file:crates/orbit-cli/src/command/task/tests/publication.rs",
+          "source": "import_relationship",
+          "confidence": "file_import"
+        },
+        {
+          "test": "file:crates/orbit-cli/src/command/task/tests/show.rs",
+          "source": "import_relationship",
+          "confidence": "file_import"
+        },
+        {
+          "test": "file:crates/orbit-cli/src/command/tests/auto_task.rs",
+          "source": "import_relationship",
+          "confidence": "file_import"
+        },
+        {
+          "test": "file:crates/orbit-cli/src/command/tests/locks.rs",
+          "source": "import_relationship",
+          "confidence": "file_import"
+        }
+      ]
+    },
+    {
+      "selector": "symbol:crates/orbit-types/src/task/model.rs#TaskPriority:impl",
+      "status": "uncertain",
+      "pairing": "uncertain",
+      "callers_found": 35,
+      "entry_points_found": 17,
+      "candidate_tests_found": 140,
+      "callers": [
+        {
+          "selector": "symbol:crates/orbit-core/src/application/task/query.rs#list_tasks_filtered:method",
+          "source": "reference_path",
+          "confidence": "fuzzy_name",
+          "distance": 1,
+          "reference": "crates/orbit-core/src/application/task/query.rs:137@156dc93d940ee60c4b1c7cd84db620e128977ff2"
+        },
+        {
+          "selector": "symbol:crates/orbit-store/src/repository/task/v2/crud.rs#list_tasks_filtered:method",
+          "source": "reference_path",
+          "confidence": "fuzzy_name",
+          "distance": 1,
+          "reference": "crates/orbit-store/src/repository/task/v2/crud.rs:128@156dc93d940ee60c4b1c7cd84db620e128977ff2"
+        },
+        {
+          "selector": "symbol:crates/orbit-core/src/adapter/engine_host/v2_host/tests/dispatch.rs#list_tasks_filtered:method",
+          "source": "reference_path",
+          "confidence": "fuzzy_name",
+          "distance": 2,
+          "reference": "crates/orbit-core/src/adapter/engine_host/v2_host/tests/dispatch.rs:91@156dc93d940ee60c4b1c7cd84db620e128977ff2"
+        },
+        {
+          "selector": "symbol:crates/orbit-core/src/application/job/resume.rs#reconcile_resume_task_ownership:method",
+          "source": "reference_path",
+          "confidence": "fuzzy_name",
+          "distance": 2,
+          "reference": "crates/orbit-core/src/application/job/resume.rs:256@156dc93d940ee60c4b1c7cd84db620e128977ff2"
+        },
+        {
+          "selector": "symbol:crates/orbit-core/src/runtime/task/block_on_run_failure.rs#block_tasks_for_failed_run:method",
+          "source": "reference_path",
+          "confidence": "fuzzy_name",
+          "distance": 2,
+          "reference": "crates/orbit-core/src/runtime/task/block_on_run_failure.rs:94@156dc93d940ee60c4b1c7cd84db620e128977ff2"
+        },
+        {
+          "selector": "symbol:crates/orbit-core/src/runtime/task/tests/block_on_run_failure.rs#blocked_task_is_rejected_by_workflow_admission:test",
+          "source": "reference_path",
+          "confidence": "fuzzy_name",
+          "distance": 2,
+          "reference": "crates/orbit-core/src/runtime/task/tests/block_on_run_failure.rs:414@156dc93d940ee60c4b1c7cd84db620e128977ff2"
+        },
+        {
+          "selector": "symbol:crates/orbit-engine/src/executor/automation/vcs/commit/mod.rs#commit_batch_changes:function",
+          "source": "reference_path",
+          "confidence": "fuzzy_name",
+          "distance": 2,
+          "reference": "crates/orbit-engine/src/executor/automation/vcs/commit/mod.rs:183@156dc93d940ee60c4b1c7cd84db620e128977ff2"
+        },
+        {
+          "selector": "symbol:crates/orbit-engine/src/executor/automation/vcs/commit/mod.rs#commit_finalize_artifact_changes:function",
+          "source": "reference_path",
+          "confidence": "fuzzy_name",
+          "distance": 2,
+          "reference": "crates/orbit-engine/src/executor/automation/vcs/commit/mod.rs:128@156dc93d940ee60c4b1c7cd84db620e128977ff2"
+        },
+        {
+          "selector": "symbol:crates/orbit-engine/src/executor/automation/vcs/commit/mod.rs#commit_task_artifact_changes:function",
+          "source": "reference_path",
+          "confidence": "fuzzy_name",
+          "distance": 2,
+          "reference": "crates/orbit-engine/src/executor/automation/vcs/commit/mod.rs:62@156dc93d940ee60c4b1c7cd84db620e128977ff2"
+        },
+        {
+          "selector": "symbol:crates/orbit-engine/src/executor/automation/vcs/pr/merge.rs#git_merge:function",
+          "source": "reference_path",
+          "confidence": "fuzzy_name",
+          "distance": 2,
+          "reference": "crates/orbit-engine/src/executor/automation/vcs/pr/merge.rs:122@156dc93d940ee60c4b1c7cd84db620e128977ff2"
+        }
+      ],
+      "entry_points": [
+        {
+          "selector": "symbol:crates/orbit-core/src/adapter/engine_host/v2_host/tests/dispatch.rs#list_tasks_filtered:method",
+          "source": "reference_path",
+          "confidence": "fuzzy_name",
+          "distance": 2
+        },
+        {
+          "selector": "symbol:crates/orbit-core/src/runtime/task/tests/block_on_run_failure.rs#blocked_task_is_rejected_by_workflow_admission:test",
+          "source": "reference_path",
+          "confidence": "fuzzy_name",
+          "distance": 2
+        },
+        {
+          "selector": "symbol:crates/orbit-engine/src/executor/automation/vcs/pr/tests/resume_failure.rs#list_tasks_filtered:method",
+          "source": "reference_path",
+          "confidence": "fuzzy_name",
+          "distance": 2
+        },
+        {
+          "selector": "symbol:crates/orbit-store/src/repository/task/v2/tests/crud.rs#filters_and_searches_v2_tasks:test",
+          "source": "reference_path",
+          "confidence": "fuzzy_name",
+          "distance": 2
+        },
+        {
+          "selector": "symbol:crates/orbit-store/src/repository/task/v2/tests/crud.rs#list_tasks_filtered_supports_lineage_and_job_run_filters:test",
+          "source": "reference_path",
+          "confidence": "fuzzy_name",
+          "distance": 2
+        }
+      ],
+      "candidate_tests": [
+        {
+          "test": "file:crates/orbit-automation/src/members/tests/mod.rs",
+          "source": "import_relationship",
+          "confidence": "file_import"
+        },
+        {
+          "test": "file:crates/orbit-automation/src/review/tests/mod.rs",
+          "source": "import_relationship",
+          "confidence": "file_import"
+        },
+        {
+          "test": "file:crates/orbit-cli/src/command/run/tests/ship.rs",
+          "source": "import_relationship",
+          "confidence": "file_import"
+        },
+        {
+          "test": "file:crates/orbit-cli/src/command/task/tests/add.rs",
+          "source": "import_relationship",
+          "confidence": "file_import"
+        },
+        {
+          "test": "file:crates/orbit-cli/src/command/task/tests/artifact.rs",
+          "source": "import_relationship",
+          "confidence": "file_import"
+        },
+        {
+          "test": "file:crates/orbit-cli/src/command/task/tests/output.rs",
+          "source": "import_relationship",
+          "confidence": "file_import"
+        },
+        {
+          "test": "file:crates/orbit-cli/src/command/task/tests/publication.rs",
+          "source": "import_relationship",
+          "confidence": "file_import"
+        },
+        {
+          "test": "file:crates/orbit-cli/src/command/task/tests/show.rs",
+          "source": "import_relationship",
+          "confidence": "file_import"
+        },
+        {
+          "test": "file:crates/orbit-cli/src/command/tests/auto_task.rs",
+          "source": "import_relationship",
+          "confidence": "file_import"
+        },
+        {
+          "test": "file:crates/orbit-cli/src/command/tests/locks.rs",
+          "source": "import_relationship",
+          "confidence": "file_import"
+        }
+      ]
+    },
+    {
+      "selector": "symbol:crates/orbit-types/src/task/model.rs#TaskStatus:impl",
+      "status": "uncertain",
+      "pairing": "uncertain",
+      "callers_found": 111,
+      "entry_points_found": 38,
+      "candidate_tests_found": 141,
+      "callers": [
+        {
+          "selector": "symbol:crates/orbit-core/src/application/task/query.rs#list_tasks_filtered:method",
+          "source": "reference_path",
+          "confidence": "fuzzy_name",
+          "distance": 1,
+          "reference": "crates/orbit-core/src/application/task/query.rs:136@156dc93d940ee60c4b1c7cd84db620e128977ff2"
+        },
+        {
+          "selector": "symbol:crates/orbit-core/src/application/task/query.rs#task_status_index:method",
+          "source": "reference_path",
+          "confidence": "fuzzy_name",
+          "distance": 1,
+          "reference": "crates/orbit-core/src/application/task/query.rs:71@156dc93d940ee60c4b1c7cd84db620e128977ff2"
+        },
+        {
+          "selector": "symbol:crates/orbit-store/src/repository/task/v2/crud.rs#list_tasks_filtered:method",
+          "source": "reference_path",
+          "confidence": "fuzzy_name",
+          "distance": 1,
+          "reference": "crates/orbit-store/src/repository/task/v2/crud.rs:127@156dc93d940ee60c4b1c7cd84db620e128977ff2"
+        },
+        {
+          "selector": "symbol:crates/orbit-store/src/repository/task/v2/index.rs#task_status_index:method",
+          "source": "reference_path",
+          "confidence": "fuzzy_name",
+          "distance": 1,
+          "reference": "crates/orbit-store/src/repository/task/v2/index.rs:9@156dc93d940ee60c4b1c7cd84db620e128977ff2"
+        },
+        {
+          "selector": "file:crates/orbit-core/src/adapter/tool_host/tests/task_tools.rs",
+          "source": "reference_path",
+          "confidence": "fuzzy_name",
+          "distance": 2,
+          "reference": "crates/orbit-core/src/adapter/tool_host/tests/task_tools.rs:2419@156dc93d940ee60c4b1c7cd84db620e128977ff2"
+        },
+        {
+          "selector": "symbol:crates/orbit-cli/src/command/run/sweep.rs#sweep_active_workspace:function",
+          "source": "reference_path",
+          "confidence": "fuzzy_name",
+          "distance": 2,
+          "reference": "crates/orbit-cli/src/command/run/sweep.rs:203@156dc93d940ee60c4b1c7cd84db620e128977ff2"
+        },
+        {
+          "selector": "symbol:crates/orbit-cli/src/command/task/output.rs#task_to_json_for_runtime:function",
+          "source": "reference_path",
+          "confidence": "fuzzy_name",
+          "distance": 2,
+          "reference": "crates/orbit-cli/src/command/task/output.rs:76@156dc93d940ee60c4b1c7cd84db620e128977ff2"
+        },
+        {
+          "selector": "symbol:crates/orbit-cli/src/command/task/show.rs#execute:method",
+          "source": "reference_path",
+          "confidence": "fuzzy_name",
+          "distance": 2,
+          "reference": "crates/orbit-cli/src/command/task/show.rs:45@156dc93d940ee60c4b1c7cd84db620e128977ff2"
+        },
+        {
+          "selector": "symbol:crates/orbit-core/src/adapter/engine_host/v2_host/backlog_exclusion.rs#backlog_snapshot:function",
+          "source": "reference_path",
+          "confidence": "fuzzy_name",
+          "distance": 2,
+          "reference": "crates/orbit-core/src/adapter/engine_host/v2_host/backlog_exclusion.rs:264@156dc93d940ee60c4b1c7cd84db620e128977ff2"
+        },
+        {
+          "selector": "symbol:crates/orbit-core/src/adapter/engine_host/v2_host/dispatch.rs#dependency_admission_for_input:function",
+          "source": "reference_path",
+          "confidence": "fuzzy_name",
+          "distance": 2,
+          "reference": "crates/orbit-core/src/adapter/engine_host/v2_host/dispatch.rs:545@156dc93d940ee60c4b1c7cd84db620e128977ff2"
+        }
+      ],
+      "entry_points": [
+        {
+          "selector": "symbol:crates/orbit-core/src/adapter/engine_host/v2_host/tests/dispatch.rs#list_tasks_filtered:method",
+          "source": "reference_path",
+          "confidence": "fuzzy_name",
+          "distance": 2
+        },
+        {
+          "selector": "symbol:crates/orbit-core/src/adapter/engine_host/v2_host/tests/dispatch.rs#task_status_index:method",
+          "source": "reference_path",
+          "confidence": "fuzzy_name",
+          "distance": 2
+        },
+        {
+          "selector": "symbol:crates/orbit-core/src/runtime/task/tests/block_on_run_failure.rs#blocked_task_is_rejected_by_workflow_admission:test",
+          "source": "reference_path",
+          "confidence": "fuzzy_name",
+          "distance": 2
+        },
+        {
+          "selector": "symbol:crates/orbit-engine/src/executor/automation/vcs/pr/tests/resume_failure.rs#list_tasks_filtered:method",
+          "source": "reference_path",
+          "confidence": "fuzzy_name",
+          "distance": 2
+        },
+        {
+          "selector": "symbol:crates/orbit-store/src/compose/tests/factory.rs#coordination_backends_create_and_schedule_across_checkoutless_workspaces:test",
+          "source": "reference_path",
+          "confidence": "fuzzy_name",
+          "distance": 2
+        }
+      ],
+      "candidate_tests": [
+        {
+          "test": "file:crates/orbit-automation/src/members/tests/mod.rs",
+          "source": "import_relationship",
+          "confidence": "file_import"
+        },
+        {
+          "test": "file:crates/orbit-automation/src/review/tests/mod.rs",
+          "source": "import_relationship",
+          "confidence": "file_import"
+        },
+        {
+          "test": "file:crates/orbit-cli/src/command/run/tests/ship.rs",
+          "source": "import_relationship",
+          "confidence": "file_import"
+        },
+        {
+          "test": "file:crates/orbit-cli/src/command/task/tests/add.rs",
+          "source": "import_relationship",
+          "confidence": "file_import"
+        },
+        {
+          "test": "file:crates/orbit-cli/src/command/task/tests/artifact.rs",
+          "source": "import_relationship",
+          "confidence": "file_import"
+        },
+        {
+          "test": "file:crates/orbit-cli/src/command/task/tests/output.rs",
+          "source": "import_relationship",
+          "confidence": "file_import"
+        },
+        {
+          "test": "file:crates/orbit-cli/src/command/task/tests/publication.rs",
+          "source": "import_relationship",
+          "confidence": "file_import"
+        },
+        {
+          "test": "file:crates/orbit-cli/src/command/task/tests/show.rs",
+          "source": "import_relationship",
+          "confidence": "file_import"
+        },
+        {
+          "test": "file:crates/orbit-cli/src/command/tests/auto_task.rs",
+          "source": "import_relationship",
+          "confidence": "file_import"
+        },
+        {
+          "test": "file:crates/orbit-cli/src/command/tests/locks.rs",
+          "source": "import_relationship",
+          "confidence": "file_import"
+        }
+      ]
+    },
+    {
+      "selector": "symbol:crates/orbit-types/src/task/model.rs#TaskType:impl",
+      "status": "uncertain",
+      "pairing": "uncertain",
+      "callers_found": 0,
+      "entry_points_found": 0,
+      "candidate_tests_found": 140,
+      "callers": [],
+      "entry_points": [],
+      "candidate_tests": [
+        {
+          "test": "file:crates/orbit-automation/src/members/tests/mod.rs",
+          "source": "import_relationship",
+          "confidence": "file_import"
+        },
+        {
+          "test": "file:crates/orbit-automation/src/review/tests/mod.rs",
+          "source": "import_relationship",
+          "confidence": "file_import"
+        },
+        {
+          "test": "file:crates/orbit-cli/src/command/run/tests/ship.rs",
+          "source": "import_relationship",
+          "confidence": "file_import"
+        },
+        {
+          "test": "file:crates/orbit-cli/src/command/task/tests/add.rs",
+          "source": "import_relationship",
+          "confidence": "file_import"
+        },
+        {
+          "test": "file:crates/orbit-cli/src/command/task/tests/artifact.rs",
+          "source": "import_relationship",
+          "confidence": "file_import"
+        },
+        {
+          "test": "file:crates/orbit-cli/src/command/task/tests/output.rs",
+          "source": "import_relationship",
+          "confidence": "file_import"
+        },
+        {
+          "test": "file:crates/orbit-cli/src/command/task/tests/publication.rs",
+          "source": "import_relationship",
+          "confidence": "file_import"
+        },
+        {
+          "test": "file:crates/orbit-cli/src/command/task/tests/show.rs",
+          "source": "import_relationship",
+          "confidence": "file_import"
+        },
+        {
+          "test": "file:crates/orbit-cli/src/command/tests/auto_task.rs",
+          "source": "import_relationship",
+          "confidence": "file_import"
+        },
+        {
+          "test": "file:crates/orbit-cli/src/command/tests/locks.rs",
+          "source": "import_relationship",
+          "confidence": "file_import"
+        }
+      ]
+    },
+    {
+      "selector": "symbol:crates/orbit-types/src/task/model.rs#as_str:method",
+      "status": "uncertain",
+      "pairing": "uncertain",
+      "callers_found": 94,
+      "entry_points_found": 26,
+      "candidate_tests_found": 166,
+      "callers": [
+        {
+          "selector": "symbol:crates/orbit-types/src/task/model.rs#TaskComplexity:impl",
+          "source": "call_path",
+          "confidence": "exact",
+          "distance": 1,
+          "reference": "crates/orbit-types/src/task/model.rs:299@156dc93d940ee60c4b1c7cd84db620e128977ff2"
+        },
+        {
+          "selector": "symbol:crates/orbit-agent/src/loop_engine/agent_loop.rs#invoke_transport:function",
+          "source": "call_path",
+          "confidence": "fuzzy_name",
+          "distance": 1,
+          "reference": "crates/orbit-agent/src/loop_engine/agent_loop.rs:492@156dc93d940ee60c4b1c7cd84db620e128977ff2"
+        },
+        {
+          "selector": "symbol:crates/orbit-agent/src/providers/antigravity/antigravity_output.rs#antigravity_terminal_error:function",
+          "source": "call_path",
+          "confidence": "fuzzy_name",
+          "distance": 1,
+          "reference": "crates/orbit-agent/src/providers/antigravity/antigravity_output.rs:70@156dc93d940ee60c4b1c7cd84db620e128977ff2"
+        },
+        {
+          "selector": "symbol:crates/orbit-agent/src/providers/antigravity/antigravity_output.rs#is_json_envelope:function",
+          "source": "call_path",
+          "confidence": "fuzzy_name",
+          "distance": 1,
+          "reference": "crates/orbit-agent/src/providers/antigravity/antigravity_output.rs:59@156dc93d940ee60c4b1c7cd84db620e128977ff2"
+        },
+        {
+          "selector": "symbol:crates/orbit-agent/src/providers/antigravity/antigravity_output.rs#normalize_antigravity_stdout:function",
+          "source": "call_path",
+          "confidence": "fuzzy_name",
+          "distance": 1,
+          "reference": "crates/orbit-agent/src/providers/antigravity/antigravity_output.rs:26@156dc93d940ee60c4b1c7cd84db620e128977ff2"
+        },
+        {
+          "selector": "symbol:crates/orbit-agent/src/providers/antigravity/antigravity_output.rs#terminal_error_text:function",
+          "source": "call_path",
+          "confidence": "fuzzy_name",
+          "distance": 1,
+          "reference": "crates/orbit-agent/src/providers/antigravity/antigravity_output.rs:97@156dc93d940ee60c4b1c7cd84db620e128977ff2"
+        },
+        {
+          "selector": "symbol:crates/orbit-agent/src/providers/antigravity/antigravity_output.rs#terminal_result:function",
+          "source": "call_path",
+          "confidence": "fuzzy_name",
+          "distance": 1,
+          "reference": "crates/orbit-agent/src/providers/antigravity/antigravity_output.rs:43@156dc93d940ee60c4b1c7cd84db620e128977ff2"
+        },
+        {
+          "selector": "symbol:crates/orbit-agent/src/providers/antigravity/tests/antigravity_cli.rs#prompt_travels_as_a_stream_json_user_event_and_never_through_argv:test",
+          "source": "call_path",
+          "confidence": "fuzzy_name",
+          "distance": 1,
+          "reference": "crates/orbit-agent/src/providers/antigravity/tests/antigravity_cli.rs:59@156dc93d940ee60c4b1c7cd84db620e128977ff2"
+        },
+        {
+          "selector": "symbol:crates/orbit-agent/src/providers/claude/tests/claude_cli.rs#static_args:function",
+          "source": "call_path",
+          "confidence": "fuzzy_name",
+          "distance": 1,
+          "reference": "crates/orbit-agent/src/providers/claude/tests/claude_cli.rs:29@156dc93d940ee60c4b1c7cd84db620e128977ff2"
+        },
+        {
+          "selector": "symbol:crates/orbit-agent/src/providers/codex/codex_output.rs#project_codex_response:function",
+          "source": "call_path",
+          "confidence": "fuzzy_name",
+          "distance": 1,
+          "reference": "crates/orbit-agent/src/providers/codex/codex_output.rs:21@156dc93d940ee60c4b1c7cd84db620e128977ff2"
+        }
+      ],
+      "entry_points": [
+        {
+          "selector": "symbol:crates/orbit-agent/src/providers/antigravity/tests/antigravity_cli.rs#prompt_travels_as_a_stream_json_user_event_and_never_through_argv:test",
+          "source": "call_path",
+          "confidence": "fuzzy_name",
+          "distance": 1
+        },
+        {
+          "selector": "symbol:crates/orbit-agent/src/providers/claude/tests/claude_cli.rs#static_args:function",
+          "source": "call_path",
+          "confidence": "fuzzy_name",
+          "distance": 1
+        },
+        {
+          "selector": "symbol:crates/orbit-agent/src/providers/pi/tests/pi_cli.rs#every_crew_effort_renders_a_thinking_level_pi_documents:test",
+          "source": "call_path",
+          "confidence": "fuzzy_name",
+          "distance": 1
+        },
+        {
+          "selector": "symbol:crates/orbit-automation/src/review/tests/mod.rs#exact_tree_landings_are_excluded_and_everything_else_stays_uncovered:test",
+          "source": "call_path",
+          "confidence": "fuzzy_name",
+          "distance": 1
+        },
+        {
+          "selector": "symbol:crates/orbit-automation/src/review/tests/validation.rs#an_unexplained_reclassification_is_refused_and_legacy_records_stay_required:test",
+          "source": "call_path",
+          "confidence": "fuzzy_name",
+          "distance": 1
+        }
+      ],
+      "candidate_tests": [
+        {
+          "test": "symbol:crates/orbit-agent/src/providers/antigravity/tests/antigravity_cli.rs#prompt_travels_as_a_stream_json_user_event_and_never_through_argv:test",
+          "source": "call_path",
+          "confidence": "fuzzy_name"
+        },
+        {
+          "test": "symbol:crates/orbit-agent/src/providers/claude/tests/claude_cli.rs#static_args:function",
+          "source": "call_path",
+          "confidence": "fuzzy_name"
+        },
+        {
+          "test": "symbol:crates/orbit-agent/src/providers/pi/tests/pi_cli.rs#every_crew_effort_renders_a_thinking_level_pi_documents:test",
+          "source": "call_path",
+          "confidence": "fuzzy_name"
+        },
+        {
+          "test": "symbol:crates/orbit-automation/src/review/tests/mod.rs#exact_tree_landings_are_excluded_and_everything_else_stays_uncovered:test",
+          "source": "call_path",
+          "confidence": "fuzzy_name"
+        },
+        {
+          "test": "symbol:crates/orbit-automation/src/review/tests/validation.rs#an_unexplained_reclassification_is_refused_and_legacy_records_stay_required:test",
+          "source": "call_path",
+          "confidence": "fuzzy_name"
+        },
+        {
+          "test": "symbol:crates/orbit-automation/src/review/tests/validation.rs#required_checks_that_did_not_pass_still_block:test",
+          "source": "call_path",
+          "confidence": "fuzzy_name"
+        },
+        {
+          "test": "symbol:crates/orbit-cli/src/command/mcp/setup/providers/tests/claude.rs#claude_remove_strips_legacy_plugin_prefixed_entries:test",
+          "source": "call_path",
+          "confidence": "fuzzy_name"
+        },
+        {
+          "test": "symbol:crates/orbit-cli/src/command/mcp/setup/providers/tests/claude.rs#claude_workspace_scope_init_and_remove_preserve_unrelated_entries:test",
+          "source": "call_path",
+          "confidence": "fuzzy_name"
+        },
+        {
+          "test": "symbol:crates/orbit-cli/src/command/mcp/setup/providers/tests/codex.rs#codex_operator_init_writes_single_operator_flag_and_refresh_is_idempotent:test",
+          "source": "call_path",
+          "confidence": "fuzzy_name"
+        },
+        {
+          "test": "symbol:crates/orbit-cli/src/command/mcp/setup/providers/tests/codex.rs#codex_workspace_scope_init_and_remove_preserve_unrelated_entries:test",
+          "source": "call_path",
+          "confidence": "fuzzy_name"
+        }
+      ]
+    },
+    {
+      "selector": "symbol:crates/orbit-types/src/task/model.rs#fmt:method",
+      "status": "uncertain",
+      "pairing": "uncertain",
+      "callers_found": 15,
+      "entry_points_found": 9,
+      "candidate_tests_found": 156,
+      "callers": [
+        {
+          "selector": "file:crates/orbit-core/src/runtime/engine/tests/identity.rs",
+          "source": "import_relationship",
+          "confidence": "fuzzy_name",
+          "distance": 1,
+          "reference": "crates/orbit-core/src/runtime/engine/tests/identity.rs:10@156dc93d940ee60c4b1c7cd84db620e128977ff2"
+        },
+        {
+          "selector": "file:crates/orbit-engine/src/activity_job/cli_runner/tests/test_support.rs",
+          "source": "import_relationship",
+          "confidence": "fuzzy_name",
+          "distance": 1,
+          "reference": "crates/orbit-engine/src/activity_job/cli_runner/tests/test_support.rs:4@156dc93d940ee60c4b1c7cd84db620e128977ff2"
+        },
+        {
+          "selector": "file:crates/orbit-engine/src/activity_job/job_executor/tests/mod.rs",
+          "source": "import_relationship",
+          "confidence": "fuzzy_name",
+          "distance": 1,
+          "reference": "crates/orbit-engine/src/activity_job/job_executor/tests/mod.rs:4@156dc93d940ee60c4b1c7cd84db620e128977ff2"
+        },
+        {
+          "selector": "file:crates/orbit-types/src/workflow/activity_job/activity_v2.rs",
+          "source": "import_relationship",
+          "confidence": "fuzzy_name",
+          "distance": 1,
+          "reference": "crates/orbit-types/src/workflow/activity_job/activity_v2.rs:1@156dc93d940ee60c4b1c7cd84db620e128977ff2"
+        },
+        {
+          "selector": "file:crates/orbit-types/src/workflow/executor_def.rs",
+          "source": "import_relationship",
+          "confidence": "fuzzy_name",
+          "distance": 1,
+          "reference": "crates/orbit-types/src/workflow/executor_def.rs:2@156dc93d940ee60c4b1c7cd84db620e128977ff2"
+        },
+        {
+          "selector": "file:crates/orbit-types/src/workspace/registry.rs",
+          "source": "import_relationship",
+          "confidence": "fuzzy_name",
+          "distance": 1,
+          "reference": "crates/orbit-types/src/workspace/registry.rs:2@156dc93d940ee60c4b1c7cd84db620e128977ff2"
+        },
+        {
+          "selector": "symbol:crates/orbit-common/src/observability/tests/logging.rs#redaction:module",
+          "source": "import_relationship",
+          "confidence": "fuzzy_name",
+          "distance": 1,
+          "reference": "crates/orbit-common/src/observability/tests/logging.rs:173@156dc93d940ee60c4b1c7cd84db620e128977ff2"
+        },
+        {
+          "selector": "symbol:crates/orbit-mcp/src/adapter/tests/schema.rs#capture_warnings:function",
+          "source": "call_path",
+          "confidence": "fuzzy_name",
+          "distance": 1,
+          "reference": "crates/orbit-mcp/src/adapter/tests/schema.rs:818@156dc93d940ee60c4b1c7cd84db620e128977ff2"
+        },
+        {
+          "selector": "symbol:crates/orbit-tools/src/builtin/orbit/task/tests/add.rs#capture_info:function",
+          "source": "call_path",
+          "confidence": "fuzzy_name",
+          "distance": 1,
+          "reference": "crates/orbit-tools/src/builtin/orbit/task/tests/add.rs:138@156dc93d940ee60c4b1c7cd84db620e128977ff2"
+        },
+        {
+          "selector": "symbol:crates/orbit-tools/src/builtin/orbit/task/tests/add.rs#capture_warnings:function",
+          "source": "call_path",
+          "confidence": "fuzzy_name",
+          "distance": 1,
+          "reference": "crates/orbit-tools/src/builtin/orbit/task/tests/add.rs:93@156dc93d940ee60c4b1c7cd84db620e128977ff2"
+        }
+      ],
+      "entry_points": [
+        {
+          "selector": "symbol:crates/orbit-common/src/observability/tests/logging.rs#redaction:module",
+          "source": "import_relationship",
+          "confidence": "fuzzy_name",
+          "distance": 1
+        },
+        {
+          "selector": "symbol:crates/orbit-mcp/src/adapter/tests/schema.rs#capture_warnings:function",
+          "source": "call_path",
+          "confidence": "fuzzy_name",
+          "distance": 1
+        },
+        {
+          "selector": "symbol:crates/orbit-tools/src/builtin/orbit/task/tests/add.rs#capture_info:function",
+          "source": "call_path",
+          "confidence": "fuzzy_name",
+          "distance": 1
+        },
+        {
+          "selector": "symbol:crates/orbit-tools/src/builtin/orbit/task/tests/add.rs#capture_warnings:function",
+          "source": "call_path",
+          "confidence": "fuzzy_name",
+          "distance": 1
+        },
+        {
+          "selector": "symbol:crates/orbit-tools/src/builtin/proc/tests/spawn.rs#captured_warnings:function",
+          "source": "call_path",
+          "confidence": "fuzzy_name",
+          "distance": 1
+        }
+      ],
+      "candidate_tests": [
+        {
+          "test": "symbol:crates/orbit-mcp/src/adapter/tests/schema.rs#capture_warnings:function",
+          "source": "call_path",
+          "confidence": "fuzzy_name"
+        },
+        {
+          "test": "symbol:crates/orbit-mcp/src/adapter/tests/schema.rs#property_for_unknown_emits_tracing_warn_at_target:test",
+          "source": "call_path",
+          "confidence": "fuzzy_name"
+        },
+        {
+          "test": "symbol:crates/orbit-tools/src/builtin/orbit/task/tests/add.rs#add_call_with_retired_fields_reports_and_ignores_them:test",
+          "source": "call_path",
+          "confidence": "fuzzy_name"
+        },
+        {
+          "test": "symbol:crates/orbit-tools/src/builtin/orbit/task/tests/add.rs#capture_info:function",
+          "source": "call_path",
+          "confidence": "fuzzy_name"
+        },
+        {
+          "test": "symbol:crates/orbit-tools/src/builtin/orbit/task/tests/add.rs#capture_warnings:function",
+          "source": "call_path",
+          "confidence": "fuzzy_name"
+        },
+        {
+          "test": "symbol:crates/orbit-tools/src/builtin/orbit/task/tests/add.rs#explicit_workspace_overrides_mismatched_session_workspace:test",
+          "source": "call_path",
+          "confidence": "fuzzy_name"
+        },
+        {
+          "test": "symbol:crates/orbit-tools/src/builtin/proc/tests/spawn.rs#captured_warnings:function",
+          "source": "call_path",
+          "confidence": "fuzzy_name"
+        },
+        {
+          "test": "symbol:crates/orbit-tools/src/builtin/proc/tests/spawn.rs#proc_spawn_timeout_above_the_maximum_is_clamped_and_logged:test",
+          "source": "call_path",
+          "confidence": "fuzzy_name"
+        },
+        {
+          "test": "file:crates/orbit-automation/src/members/tests/mod.rs",
+          "source": "import_relationship",
+          "confidence": "file_import"
+        },
+        {
+          "test": "file:crates/orbit-automation/src/review/tests/mod.rs",
+          "source": "import_relationship",
+          "confidence": "file_import"
+        }
+      ]
+    },
+    {
+      "selector": "symbol:crates/orbit-types/src/task/model.rs#from_str:method",
+      "status": "uncertain",
+      "pairing": "uncertain",
+      "callers_found": 149,
+      "entry_points_found": 82,
+      "candidate_tests_found": 223,
+      "callers": [
+        {
+          "selector": "symbol:crates/orbit-core/src/adapter/tool_host/input.rs#parse_task_status:function",
+          "source": "call_path",
+          "confidence": "exact",
+          "distance": 1,
+          "reference": "crates/orbit-core/src/adapter/tool_host/input.rs:297@156dc93d940ee60c4b1c7cd84db620e128977ff2"
+        },
+        {
+          "selector": "symbol:crates/orbit-core/src/application/search/filters.rs#push_task_status:method",
+          "source": "call_path",
+          "confidence": "exact",
+          "distance": 1,
+          "reference": "crates/orbit-core/src/application/search/filters.rs:80@156dc93d940ee60c4b1c7cd84db620e128977ff2"
+        },
+        {
+          "selector": "file:crates/orbit-cli/tests/mcp_roundtrip.rs",
+          "source": "call_path",
+          "confidence": "fuzzy_name",
+          "distance": 1,
+          "reference": "crates/orbit-cli/tests/mcp_roundtrip.rs:2061@156dc93d940ee60c4b1c7cd84db620e128977ff2"
+        },
+        {
+          "selector": "file:crates/orbit-core/src/application/job/tests/exec.rs",
+          "source": "call_path",
+          "confidence": "fuzzy_name",
+          "distance": 1,
+          "reference": "crates/orbit-core/src/application/job/tests/exec.rs:2209@156dc93d940ee60c4b1c7cd84db620e128977ff2"
+        },
+        {
+          "selector": "symbol:crates/orbit-agent/src/loop_engine/tests/agent_loop.rs#run::DenialContinueTransport:impl",
+          "source": "call_path",
+          "confidence": "fuzzy_name",
+          "distance": 1,
+          "reference": "crates/orbit-agent/src/loop_engine/tests/agent_loop.rs:129@156dc93d940ee60c4b1c7cd84db620e128977ff2"
+        },
+        {
+          "selector": "symbol:crates/orbit-agent/src/providers/antigravity/antigravity_output.rs#terminal_result:function",
+          "source": "call_path",
+          "confidence": "fuzzy_name",
+          "distance": 1,
+          "reference": "crates/orbit-agent/src/providers/antigravity/antigravity_output.rs:40@156dc93d940ee60c4b1c7cd84db620e128977ff2"
+        },
+        {
+          "selector": "symbol:crates/orbit-agent/src/providers/antigravity/tests/antigravity_cli.rs#prompt_travels_as_a_stream_json_user_event_and_never_through_argv:test",
+          "source": "call_path",
+          "confidence": "fuzzy_name",
+          "distance": 1,
+          "reference": "crates/orbit-agent/src/providers/antigravity/tests/antigravity_cli.rs:57@156dc93d940ee60c4b1c7cd84db620e128977ff2"
+        },
+        {
+          "selector": "symbol:crates/orbit-agent/src/providers/claude/tests/claude_cli.rs#schema_arg:function",
+          "source": "call_path",
+          "confidence": "fuzzy_name",
+          "distance": 1,
+          "reference": "crates/orbit-agent/src/providers/claude/tests/claude_cli.rs:20@156dc93d940ee60c4b1c7cd84db620e128977ff2"
+        },
+        {
+          "selector": "symbol:crates/orbit-agent/src/providers/claude/tests/claude_cli.rs#static_args:function",
+          "source": "call_path",
+          "confidence": "fuzzy_name",
+          "distance": 1,
+          "reference": "crates/orbit-agent/src/providers/claude/tests/claude_cli.rs:24@156dc93d940ee60c4b1c7cd84db620e128977ff2"
+        },
+        {
+          "selector": "symbol:crates/orbit-agent/src/providers/codex/codex_output.rs#project_codex_response:function",
+          "source": "call_path",
+          "confidence": "fuzzy_name",
+          "distance": 1,
+          "reference": "crates/orbit-agent/src/providers/codex/codex_output.rs:18@156dc93d940ee60c4b1c7cd84db620e128977ff2"
+        }
+      ],
+      "entry_points": [
+        {
+          "selector": "symbol:crates/orbit-agent/src/loop_engine/tests/agent_loop.rs#run::DenialContinueTransport:impl",
+          "source": "call_path",
+          "confidence": "fuzzy_name",
+          "distance": 1
+        },
+        {
+          "selector": "symbol:crates/orbit-agent/src/providers/antigravity/tests/antigravity_cli.rs#prompt_travels_as_a_stream_json_user_event_and_never_through_argv:test",
+          "source": "call_path",
+          "confidence": "fuzzy_name",
+          "distance": 1
+        },
+        {
+          "selector": "symbol:crates/orbit-agent/src/providers/claude/tests/claude_cli.rs#schema_arg:function",
+          "source": "call_path",
+          "confidence": "fuzzy_name",
+          "distance": 1
+        },
+        {
+          "selector": "symbol:crates/orbit-agent/src/providers/claude/tests/claude_cli.rs#static_args:function",
+          "source": "call_path",
+          "confidence": "fuzzy_name",
+          "distance": 1
+        },
+        {
+          "selector": "symbol:crates/orbit-agent/src/providers/codex/tests/codex_cli.rs#representative_prompt:function",
+          "source": "call_path",
+          "confidence": "fuzzy_name",
+          "distance": 1
+        }
+      ],
+      "candidate_tests": [
+        {
+          "test": "file:crates/orbit-cli/tests/mcp_roundtrip.rs",
+          "source": "call_path",
+          "confidence": "fuzzy_name"
+        },
+        {
+          "test": "file:crates/orbit-core/src/application/job/tests/exec.rs",
+          "source": "call_path",
+          "confidence": "fuzzy_name"
+        },
+        {
+          "test": "symbol:crates/orbit-agent/src/loop_engine/tests/agent_loop.rs#run::DenialContinueTransport:impl",
+          "source": "call_path",
+          "confidence": "fuzzy_name"
+        },
+        {
+          "test": "symbol:crates/orbit-agent/src/providers/antigravity/tests/antigravity_cli.rs#prompt_travels_as_a_stream_json_user_event_and_never_through_argv:test",
+          "source": "call_path",
+          "confidence": "fuzzy_name"
+        },
+        {
+          "test": "symbol:crates/orbit-agent/src/providers/claude/tests/claude_cli.rs#schema_arg:function",
+          "source": "call_path",
+          "confidence": "fuzzy_name"
+        },
+        {
+          "test": "symbol:crates/orbit-agent/src/providers/claude/tests/claude_cli.rs#static_args:function",
+          "source": "call_path",
+          "confidence": "fuzzy_name"
+        },
+        {
+          "test": "symbol:crates/orbit-agent/src/providers/codex/tests/codex_cli.rs#representative_prompt:function",
+          "source": "call_path",
+          "confidence": "fuzzy_name"
+        },
+        {
+          "test": "symbol:crates/orbit-automation/src/review/tests/validation.rs#an_unexplained_reclassification_is_refused_and_legacy_records_stay_required:test",
+          "source": "call_path",
+          "confidence": "fuzzy_name"
+        },
+        {
+          "test": "symbol:crates/orbit-cli/src/command/executor/tests/show.rs#executor_show_reports_explicit_off_in_json_and_human_output:test",
+          "source": "call_path",
+          "confidence": "fuzzy_name"
+        },
+        {
+          "test": "symbol:crates/orbit-cli/src/command/log/tests/tail.rs#execute_stream_emits_three_ndjson_records_from_sink_mode:test",
+          "source": "call_path",
+          "confidence": "fuzzy_name"
+        }
+      ]
+    },
+    {
+      "selector": "symbol:crates/orbit-types/src/task/model.rs#label:method",
+      "status": "uncertain",
+      "pairing": "uncertain",
+      "callers_found": 102,
+      "entry_points_found": 38,
+      "candidate_tests_found": 178,
+      "callers": [
+        {
+          "selector": "symbol:crates/orbit-cli/src/command/config/get.rs#execute:method",
+          "source": "call_path",
+          "confidence": "fuzzy_name",
+          "distance": 1,
+          "reference": "crates/orbit-cli/src/command/config/get.rs:46@156dc93d940ee60c4b1c7cd84db620e128977ff2"
+        },
+        {
+          "selector": "symbol:crates/orbit-cli/src/command/config/set.rs#execute:method",
+          "source": "call_path",
+          "confidence": "fuzzy_name",
+          "distance": 1,
+          "reference": "crates/orbit-cli/src/command/config/set.rs:62@156dc93d940ee60c4b1c7cd84db620e128977ff2"
+        },
+        {
+          "selector": "symbol:crates/orbit-cli/src/command/config/show.rs#effective_json:function",
+          "source": "call_path",
+          "confidence": "fuzzy_name",
+          "distance": 1,
+          "reference": "crates/orbit-cli/src/command/config/show.rs:52@156dc93d940ee60c4b1c7cd84db620e128977ff2"
+        },
+        {
+          "selector": "symbol:crates/orbit-cli/src/command/config/show.rs#effective_text:function",
+          "source": "call_path",
+          "confidence": "fuzzy_name",
+          "distance": 1,
+          "reference": "crates/orbit-cli/src/command/config/show.rs:110@156dc93d940ee60c4b1c7cd84db620e128977ff2"
+        },
+        {
+          "selector": "symbol:crates/orbit-cli/src/command/config/show.rs#scoped_json:function",
+          "source": "call_path",
+          "confidence": "fuzzy_name",
+          "distance": 1,
+          "reference": "crates/orbit-cli/src/command/config/show.rs:174@156dc93d940ee60c4b1c7cd84db620e128977ff2"
+        },
+        {
+          "selector": "symbol:crates/orbit-cli/src/command/config/show.rs#scoped_text:function",
+          "source": "call_path",
+          "confidence": "fuzzy_name",
+          "distance": 1,
+          "reference": "crates/orbit-cli/src/command/config/show.rs:199@156dc93d940ee60c4b1c7cd84db620e128977ff2"
+        },
+        {
+          "selector": "symbol:crates/orbit-cli/src/command/mcp/setup/args.rs#init_auto_for_workspace:function",
+          "source": "call_path",
+          "confidence": "fuzzy_name",
+          "distance": 1,
+          "reference": "crates/orbit-cli/src/command/mcp/setup/args.rs:287@156dc93d940ee60c4b1c7cd84db620e128977ff2"
+        },
+        {
+          "selector": "symbol:crates/orbit-cli/src/command/mcp/setup/dispatch.rs#print_action_summary:function",
+          "source": "call_path",
+          "confidence": "fuzzy_name",
+          "distance": 1,
+          "reference": "crates/orbit-cli/src/command/mcp/setup/dispatch.rs:302@156dc93d940ee60c4b1c7cd84db620e128977ff2"
+        },
+        {
+          "selector": "symbol:crates/orbit-cli/src/command/task/output.rs#dependency_labels:function",
+          "source": "call_path",
+          "confidence": "fuzzy_name",
+          "distance": 1,
+          "reference": "crates/orbit-cli/src/command/task/output.rs:565@156dc93d940ee60c4b1c7cd84db620e128977ff2"
+        },
+        {
+          "selector": "symbol:crates/orbit-cli/src/command/task/show.rs#execute:method",
+          "source": "call_path",
+          "confidence": "fuzzy_name",
+          "distance": 1,
+          "reference": "crates/orbit-cli/src/command/task/show.rs:84@156dc93d940ee60c4b1c7cd84db620e128977ff2"
+        }
+      ],
+      "entry_points": [
+        {
+          "selector": "symbol:crates/orbit-cmd/src/tests/task_owner.rs#bound_workspace_identity_reports_the_registry_name_and_logical_id:test",
+          "source": "call_path",
+          "confidence": "fuzzy_name",
+          "distance": 1
+        },
+        {
+          "selector": "symbol:crates/orbit-config/src/tests/operation.rs#built_in_policy_is_supervised_with_no_review_and_review_delivery_cap:test",
+          "source": "call_path",
+          "confidence": "fuzzy_name",
+          "distance": 1
+        },
+        {
+          "selector": "symbol:crates/orbit-config/src/tests/operation.rs#effective_config_provenance_mirrors_the_preset_reset:test",
+          "source": "call_path",
+          "confidence": "fuzzy_name",
+          "distance": 1
+        },
+        {
+          "selector": "symbol:crates/orbit-config/src/tests/operation.rs#global_autonomous_preset_installs_its_defaults_with_preset_provenance:test",
+          "source": "call_path",
+          "confidence": "fuzzy_name",
+          "distance": 1
+        },
+        {
+          "selector": "symbol:crates/orbit-config/src/tests/operation.rs#omitted_workspace_preset_preserves_inherited_fields:test",
+          "source": "call_path",
+          "confidence": "fuzzy_name",
+          "distance": 1
+        }
+      ],
+      "candidate_tests": [
+        {
+          "test": "symbol:crates/orbit-cli/src/command/config/tests/get.rs#complexity_pools_set_get_show_agree_and_invalid_edits_do_not_write:test",
+          "source": "call_path",
+          "confidence": "fuzzy_name"
+        },
+        {
+          "test": "symbol:crates/orbit-cli/src/command/config/tests/get.rs#get_agrees_with_set_for_sol_crew_effort:test",
+          "source": "call_path",
+          "confidence": "fuzzy_name"
+        },
+        {
+          "test": "symbol:crates/orbit-cli/src/command/config/tests/get.rs#get_omitted_crew_effort_is_null_not_a_fabricated_default:test",
+          "source": "call_path",
+          "confidence": "fuzzy_name"
+        },
+        {
+          "test": "symbol:crates/orbit-cli/src/command/config/tests/get.rs#get_reads_hand_authored_crew_effort:test",
+          "source": "call_path",
+          "confidence": "fuzzy_name"
+        },
+        {
+          "test": "symbol:crates/orbit-cli/src/command/config/tests/get.rs#get_rejects_misspelled_crew_field:test",
+          "source": "call_path",
+          "confidence": "fuzzy_name"
+        },
+        {
+          "test": "symbol:crates/orbit-cli/src/command/config/tests/get.rs#get_without_json_flag_still_returns_a_payload:test",
+          "source": "call_path",
+          "confidence": "fuzzy_name"
+        },
+        {
+          "test": "symbol:crates/orbit-cli/src/command/config/tests/set.rs#set_claude_crew_effort_accepts_supported_value:test",
+          "source": "call_path",
+          "confidence": "fuzzy_name"
+        },
+        {
+          "test": "symbol:crates/orbit-cli/src/command/config/tests/set.rs#set_crew_effort_on_existing_sol_crew_round_trips:test",
+          "source": "call_path",
+          "confidence": "fuzzy_name"
+        },
+        {
+          "test": "symbol:crates/orbit-cli/src/command/config/tests/set.rs#set_crew_effort_rejects_invalid_value_without_writing:test",
+          "source": "call_path",
+          "confidence": "fuzzy_name"
+        },
+        {
+          "test": "symbol:crates/orbit-cli/src/command/config/tests/set.rs#set_crew_effort_rejects_unsupported_provider_without_writing:test",
+          "source": "call_path",
+          "confidence": "fuzzy_name"
+        }
+      ]
+    },
+    {
+      "selector": "symbol:crates/orbit-web/src/api/tasks.rs#update_task_action:function",
+      "status": "modified",
+      "pairing": "same_selector",
+      "callers_found": 163,
+      "entry_points_found": 131,
+      "candidate_tests_found": 135,
+      "callers": [
+        {
+          "selector": "symbol:crates/orbit-web/src/api/mod.rs#router:function",
+          "source": "call_path",
+          "confidence": "exact",
+          "distance": 1,
+          "reference": "crates/orbit-web/src/api/mod.rs:506@156dc93d940ee60c4b1c7cd84db620e128977ff2"
+        },
+        {
+          "selector": "symbol:crates/orbit-web/src/lib.rs#run_server:function",
+          "source": "call_path",
+          "confidence": "exact",
+          "distance": 2,
+          "reference": "crates/orbit-web/src/lib.rs:300@156dc93d940ee60c4b1c7cd84db620e128977ff2"
+        },
+        {
+          "selector": "symbol:crates/orbit-web/src/api/tests/audit.rs#request_audit:function",
+          "source": "call_path",
+          "confidence": "import_resolved",
+          "distance": 2,
+          "reference": "crates/orbit-web/src/api/tests/audit.rs:214@156dc93d940ee60c4b1c7cd84db620e128977ff2"
+        },
+        {
+          "selector": "symbol:crates/orbit-web/src/api/tests/auto_tasks.rs#send:function",
+          "source": "call_path",
+          "confidence": "import_resolved",
+          "distance": 2,
+          "reference": "crates/orbit-web/src/api/tests/auto_tasks.rs:91@156dc93d940ee60c4b1c7cd84db620e128977ff2"
+        },
+        {
+          "selector": "symbol:crates/orbit-web/src/api/tests/diagnostics.rs#diagnostics_errors_prefer_the_newest_agent_stderr_rows:test",
+          "source": "call_path",
+          "confidence": "import_resolved",
+          "distance": 2,
+          "reference": "crates/orbit-web/src/api/tests/diagnostics.rs:253@156dc93d940ee60c4b1c7cd84db620e128977ff2"
+        },
+        {
+          "selector": "symbol:crates/orbit-web/src/api/tests/diagnostics.rs#get_json:function",
+          "source": "call_path",
+          "confidence": "import_resolved",
+          "distance": 2,
+          "reference": "crates/orbit-web/src/api/tests/diagnostics.rs:432@156dc93d940ee60c4b1c7cd84db620e128977ff2"
+        },
+        {
+          "selector": "symbol:crates/orbit-web/src/api/tests/diagnostics.rs#request_dashboard_errors:function",
+          "source": "call_path",
+          "confidence": "import_resolved",
+          "distance": 2,
+          "reference": "crates/orbit-web/src/api/tests/diagnostics.rs:32@156dc93d940ee60c4b1c7cd84db620e128977ff2"
+        },
+        {
+          "selector": "symbol:crates/orbit-web/src/api/tests/frictions.rs#request:function",
+          "source": "call_path",
+          "confidence": "import_resolved",
+          "distance": 2,
+          "reference": "crates/orbit-web/src/api/tests/frictions.rs:51@156dc93d940ee60c4b1c7cd84db620e128977ff2"
+        },
+        {
+          "selector": "symbol:crates/orbit-web/src/api/tests/incidents.rs#request:function",
+          "source": "call_path",
+          "confidence": "import_resolved",
+          "distance": 2,
+          "reference": "crates/orbit-web/src/api/tests/incidents.rs:220@156dc93d940ee60c4b1c7cd84db620e128977ff2"
+        },
+        {
+          "selector": "symbol:crates/orbit-web/src/api/tests/metrics.rs#ingest_metrics:function",
+          "source": "call_path",
+          "confidence": "import_resolved",
+          "distance": 2,
+          "reference": "crates/orbit-web/src/api/tests/metrics.rs:47@156dc93d940ee60c4b1c7cd84db620e128977ff2"
+        }
+      ],
+      "entry_points": [
+        {
+          "selector": "symbol:crates/orbit-web/src/api/tests/audit.rs#request_audit:function",
+          "source": "call_path",
+          "confidence": "import_resolved",
+          "distance": 2
+        },
+        {
+          "selector": "symbol:crates/orbit-web/src/api/tests/auto_tasks.rs#send:function",
+          "source": "call_path",
+          "confidence": "import_resolved",
+          "distance": 2
+        },
+        {
+          "selector": "symbol:crates/orbit-web/src/api/tests/diagnostics.rs#diagnostics_errors_prefer_the_newest_agent_stderr_rows:test",
+          "source": "call_path",
+          "confidence": "import_resolved",
+          "distance": 2
+        },
+        {
+          "selector": "symbol:crates/orbit-web/src/api/tests/diagnostics.rs#get_json:function",
+          "source": "call_path",
+          "confidence": "import_resolved",
+          "distance": 2
+        },
+        {
+          "selector": "symbol:crates/orbit-web/src/api/tests/diagnostics.rs#request_dashboard_errors:function",
+          "source": "call_path",
+          "confidence": "import_resolved",
+          "distance": 2
+        }
+      ],
+      "candidate_tests": [
+        {
+          "test": "symbol:crates/orbit-web/src/api/tests/audit.rs#audit_filters_all_trusted_mcp_provenance_fields:test",
+          "source": "call_path",
+          "confidence": "import_resolved"
+        },
+        {
+          "test": "symbol:crates/orbit-web/src/api/tests/audit.rs#audit_filters_by_tool_status_run_id_alias_and_text_query:test",
+          "source": "call_path",
+          "confidence": "import_resolved"
+        },
+        {
+          "test": "symbol:crates/orbit-web/src/api/tests/audit.rs#audit_limit_and_offset_page_through_results_without_overlap:test",
+          "source": "call_path",
+          "confidence": "import_resolved"
+        },
+        {
+          "test": "symbol:crates/orbit-web/src/api/tests/audit.rs#audit_lists_seeded_events_newest_first_with_projected_fields:test",
+          "source": "call_path",
+          "confidence": "import_resolved"
+        },
+        {
+          "test": "symbol:crates/orbit-web/src/api/tests/audit.rs#audit_paging_and_needle_reach_past_the_max_limit_window:test",
+          "source": "call_path",
+          "confidence": "import_resolved"
+        },
+        {
+          "test": "symbol:crates/orbit-web/src/api/tests/audit.rs#audit_rejects_malformed_since_and_status_with_json_400:test",
+          "source": "call_path",
+          "confidence": "import_resolved"
+        },
+        {
+          "test": "symbol:crates/orbit-web/src/api/tests/audit.rs#audit_rejects_non_numeric_limit_without_500:test",
+          "source": "call_path",
+          "confidence": "import_resolved"
+        },
+        {
+          "test": "symbol:crates/orbit-web/src/api/tests/audit.rs#audit_summary_excludes_lifecycle_rows_from_tool_metrics:test",
+          "source": "call_path",
+          "confidence": "import_resolved"
+        },
+        {
+          "test": "symbol:crates/orbit-web/src/api/tests/audit.rs#audit_summary_separates_raw_failed_events_from_grouped_incidents:test",
+          "source": "call_path",
+          "confidence": "import_resolved"
+        },
+        {
+          "test": "symbol:crates/orbit-web/src/api/tests/audit.rs#audit_summary_separates_reliability_from_negative_and_diagnostic_populations:test",
+          "source": "call_path",
+          "confidence": "import_resolved"
+        }
+      ]
+    },
+    {
+      "selector": "symbol:crates/orbit-web/src/api/tests/tasks.rs#update_task_requires_assessed_complexity:test",
+      "status": "added",
+      "pairing": "same_selector",
+      "callers_found": 0,
+      "entry_points_found": 1,
+      "candidate_tests_found": 4,
+      "callers": [],
+      "entry_points": [
+        {
+          "selector": "symbol:crates/orbit-web/src/api/tests/tasks.rs#update_task_requires_assessed_complexity:test",
+          "source": "changed_symbol",
+          "confidence": "exact",
+          "distance": 0
+        }
+      ],
+      "candidate_tests": [
+        {
+          "test": "file:crates/orbit-engine/src/executor/automation/vcs/pr/tests/review_gate.rs",
+          "source": "import_relationship",
+          "confidence": "file_import"
+        },
+        {
+          "test": "file:crates/orbit-engine/src/executor/automation/vcs/worktree/tests/setup.rs",
+          "source": "import_relationship",
+          "confidence": "file_import"
+        },
+        {
+          "test": "file:crates/orbit-web/src/api/tests/task_listing.rs",
+          "source": "import_relationship",
+          "confidence": "file_import"
+        },
+        {
+          "test": "file:crates/orbit-search/src/vector/store/tests/tasks.rs",
+          "source": "naming_heuristic",
+          "confidence": "name_only"
+        }
+      ]
+    },
+    {
+      "selector": "symbol:plugin/skills/orbit/references/task-authoring.md#Authoring a task:heading",
+      "status": "modified",
+      "pairing": "same_selector",
+      "callers_found": 0,
+      "entry_points_found": 0,
+      "candidate_tests_found": 0,
+      "callers": [],
+      "entry_points": [],
+      "candidate_tests": []
+    },
+    {
+      "selector": "symbol:plugin/skills/orbit/references/task-authoring.md#Operating rules:heading",
+      "status": "modified",
+      "pairing": "same_selector",
+      "callers_found": 0,
+      "entry_points_found": 0,
+      "candidate_tests_found": 0,
+      "callers": [],
+      "entry_points": [],
+      "candidate_tests": []
+    },
+    {
+      "selector": "symbol:plugin/skills/orbit/references/task-authoring.md#Workflow:heading",
+      "status": "modified",
+      "pairing": "same_selector",
+      "callers_found": 0,
+      "entry_points_found": 0,
+      "candidate_tests_found": 0,
+      "callers": [],
+      "entry_points": [],
+      "candidate_tests": []
+    }
+  ],
+  "not_analysed": []
+}

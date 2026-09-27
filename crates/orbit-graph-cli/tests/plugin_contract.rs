@@ -144,6 +144,101 @@ fn every_tool_schema_property_is_described() {
     );
 }
 
+/// `changes` is an additive, read-only tool: declared with its schemas, and
+/// every conformance golden for it replays against the executable. The
+/// goldens run in an empty non-Git workspace, as Orbit's conformance runner
+/// does, so they pin validation and routing codes.
+#[test]
+fn changes_tool_is_declared_and_its_conformance_goldens_replay() {
+    let manifest = read_yaml("plugin.yaml");
+    let tool = manifest["spec"]["tools"]
+        .as_array()
+        .expect("tools")
+        .iter()
+        .find(|tool| tool["name"] == "changes")
+        .expect("plugin.yaml declares changes");
+    assert_eq!(tool["execution_kind"], "read_only");
+    assert_eq!(tool["mcp_scope"], "workspace");
+    for (key, path) in [
+        ("input_schema", "schemas/changes.request.json"),
+        ("output_schema", "schemas/changes.response.json"),
+    ] {
+        assert_eq!(tool[key]["$ref"], path);
+        let schema: Value = serde_json::from_str(&read(path)).expect("parse schema");
+        assert_eq!(schema["type"], "object", "{path}");
+        assert_eq!(schema["additionalProperties"], false, "{path}");
+    }
+    let description = tool["description"].as_str().expect("description");
+    for when in ["after implementing", "before review", "pick tests"] {
+        assert!(
+            description.contains(when),
+            "the description says when to call it: {when}"
+        );
+    }
+
+    let goldens = read_yaml("tests/conformance/changes.yaml");
+    let cases = goldens["tests"].as_array().expect("conformance tests");
+    assert!(!cases.is_empty());
+    let workspace = tempfile::TempDir::new().expect("conformance workspace");
+    let workspace_path = workspace.path().to_str().expect("UTF-8 workspace");
+    for case in cases {
+        let name = case["name"].as_str().expect("case name");
+        assert_eq!(case["tool"], "changes", "{name}");
+        let input: Value = serde_json::from_str(
+            &case["input"]
+                .to_string()
+                .replace("{{workspace}}", workspace_path),
+        )
+        .expect("substituted input");
+        let request = json!({
+            "schema_version": 1,
+            "tool": "orbit.graph.changes",
+            "input": input,
+            "context": {"workspace_root": workspace_path, "agent": "contract", "model": "test"}
+        });
+        let output = run_plugin(workspace.path(), "orbit.graph.changes", &request);
+        let response: Value = serde_json::from_slice(&output).expect("plugin response JSON");
+        assert_eq!(response["ok"], false, "{name}: {response}");
+        assert_eq!(
+            response["error"]["code"], case["expect"]["error"]["code"],
+            "{name}: {response}"
+        );
+    }
+    assert_eq!(
+        fs::read_dir(workspace.path())
+            .expect("read workspace")
+            .count(),
+        0,
+        "a rejected call writes nothing into the workspace"
+    );
+}
+
+fn run_plugin(workspace: &Path, tool: &str, request: &Value) -> Vec<u8> {
+    use std::io::Write;
+    let mut child = Command::new(env!("CARGO_BIN_EXE_orbit-graph"))
+        .current_dir(workspace)
+        .env_remove("ORBIT_PLUGIN_STATE")
+        .env("ORBIT_TOOL_NAME", tool)
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .expect("spawn plugin");
+    child
+        .stdin
+        .take()
+        .expect("plugin stdin")
+        .write_all(request.to_string().as_bytes())
+        .expect("write request");
+    let output = child.wait_with_output().expect("run plugin");
+    assert!(
+        output.status.success(),
+        "structured plugin errors exit zero: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    output.stdout
+}
+
 fn collect_undescribed(schema: &Value, location: &str, undescribed: &mut Vec<String>) {
     if let Some(properties) = schema["properties"].as_object() {
         for (name, property) in properties {

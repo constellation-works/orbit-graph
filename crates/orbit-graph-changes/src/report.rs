@@ -34,7 +34,7 @@
 //! two exports of the same inputs byte-identical.
 
 use std::collections::BTreeSet;
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
 use orbit_graph::{
     Confidence, DEFAULT_SHOW_MAX_BYTES, EXTRACTOR_VERSION, STORE_SCHEMA_VERSION, Selector,
@@ -53,7 +53,8 @@ use crate::evidence::{
 };
 use crate::filters::{FilterSet, FilteredOut};
 use crate::snapshot::{
-    Comparison, ExclusionReason, Snapshot, SnapshotSide, WorkingTreeChange, WorkingTreeState,
+    Comparison, ComparisonMode, ExclusionReason, Snapshot, SnapshotSide, WorkingTreeChange,
+    WorkingTreeState,
 };
 
 /// Schema version of the exported report.
@@ -126,6 +127,65 @@ pub struct ReportOptions {
     /// Emit the repository's absolute host path. Off by default: a report is
     /// often shared outside the machine that produced it.
     pub include_absolute_paths: bool,
+}
+
+/// Limits on how much analysis one report build may do, for a caller that
+/// must answer within a wall-clock deadline or a symbol budget.
+///
+/// The default imposes none, which is what [`build_report`] uses. Every limit
+/// that stops analysis is recorded in `scope.truncated` and in
+/// [`BoundedReport::unanalysed`]; none of them narrows a report silently.
+#[derive(Debug, Clone, Default)]
+pub struct ReportLimits {
+    /// Skip outbound (callee) evidence. `outbound_paths` is then empty and
+    /// `query_options` is unchanged; the caller states the omission.
+    pub skip_outbound: bool,
+    /// Analyse at most this many selected changed symbols, in changed-symbol
+    /// order. The rest are listed, not analysed.
+    pub max_symbols: Option<usize>,
+    /// Start no symbol's analysis after this deadline, and cap every
+    /// traversal's own time budget at the time remaining.
+    pub deadline: Option<ReportDeadline>,
+}
+
+/// A wall-clock deadline and the budget it was derived from.
+#[derive(Debug, Clone, Copy)]
+pub struct ReportDeadline {
+    /// When analysis must stop starting new work.
+    pub at: Instant,
+    /// The budget, in milliseconds, reported as the bound's value.
+    pub budget_ms: u64,
+}
+
+/// Why a selected changed symbol was not analysed.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+#[non_exhaustive]
+pub enum UnanalysedReason {
+    /// [`ReportLimits::max_symbols`] was reached first.
+    MaxSymbols,
+    /// [`ReportLimits::deadline`] passed first.
+    TimeBudget,
+}
+
+impl UnanalysedReason {
+    /// Stable bound label, as recorded in `scope.truncated`.
+    pub fn bound(self) -> &'static str {
+        match self {
+            Self::MaxSymbols => "max_symbols",
+            Self::TimeBudget => "time_budget_ms",
+        }
+    }
+}
+
+/// A report built under [`ReportLimits`], with what the limits left out.
+#[derive(Debug, Clone)]
+pub struct BoundedReport {
+    /// The report over every analysed symbol.
+    pub report: ExportedReport,
+    /// Selected changed symbols that were not analysed, by primary selector,
+    /// in changed-symbol order.
+    pub unanalysed: Vec<(String, UnanalysedReason)>,
 }
 
 /// Failure surface of report generation.
@@ -363,10 +423,13 @@ pub struct WorkingTreeView {
     pub entries: Vec<WorkingTreeEntryView>,
 }
 
-fn working_tree_view(state: &WorkingTreeState) -> WorkingTreeView {
+fn working_tree_view(state: &WorkingTreeState, mode: ComparisonMode) -> WorkingTreeView {
     WorkingTreeView {
         dirty: state.dirty,
-        notice: state.notice(),
+        notice: match mode {
+            ComparisonMode::DirectBaseHead => state.notice(),
+            ComparisonMode::WorkingTree => state.included_notice(),
+        },
         truncated: state.truncated,
         entries: state
             .entries
@@ -422,7 +485,8 @@ pub struct ComparisonView {
     pub schema_version: u32,
     /// Absolute repository path, present only when the caller opted in.
     pub repository: Option<String>,
-    /// Comparison mode. Always `direct_base_head` in this milestone.
+    /// Comparison mode: `direct_base_head`, or `working_tree` when the head is
+    /// the uncommitted working tree.
     pub mode: String,
     /// Base revision as requested and as resolved.
     pub base: RevisionRef,
@@ -869,6 +933,19 @@ pub fn build_report(
     comparison: &Comparison,
     options: &ReportOptions,
 ) -> Result<ExportedReport, ReportError> {
+    build_report_bounded(comparison, options, &ReportLimits::default()).map(|built| built.report)
+}
+
+/// Build the exported report for `comparison` under `options`, analysing no
+/// more than `limits` allow.
+///
+/// Every changed symbol is still listed in `changed_symbols`; only evidence,
+/// entry points, and candidate tests stop at a limit.
+pub fn build_report_bounded(
+    comparison: &Comparison,
+    options: &ReportOptions,
+    limits: &ReportLimits,
+) -> Result<BoundedReport, ReportError> {
     let mode = options.excerpts;
     let generated_at = options.generated_at.clone().unwrap_or_else(now_rfc3339);
 
@@ -915,8 +992,31 @@ pub fn build_report(
     let mut unresolved = Vec::new();
     let mut candidate_tests_truncated = false;
     let mut unsupported_scope = changed.out_of_scope.clone();
+    let mut unanalysed = Vec::new();
 
-    for symbol in &selected {
+    for (position, symbol) in selected.iter().enumerate() {
+        let stop = if limits.max_symbols.is_some_and(|max| position >= max) {
+            Some(UnanalysedReason::MaxSymbols)
+        } else if limits
+            .deadline
+            .is_some_and(|deadline| Instant::now() >= deadline.at)
+        {
+            Some(UnanalysedReason::TimeBudget)
+        } else {
+            None
+        };
+        if let Some(reason) = stop {
+            let value = match reason {
+                UnanalysedReason::MaxSymbols => limits.max_symbols.unwrap_or_default() as u64,
+                UnanalysedReason::TimeBudget => limits
+                    .deadline
+                    .map(|deadline| deadline.budget_ms)
+                    .unwrap_or_default(),
+            };
+            state.note_truncation("changed_symbols", reason.bound(), value);
+            unanalysed.push((symbol.primary_selector().to_string(), reason));
+            continue;
+        }
         for side_label in &symbol.supporting_snapshots {
             let Some(side) = side_from_label(side_label.as_str()) else {
                 continue;
@@ -928,9 +1028,16 @@ pub fn build_report(
             let Some(selector) = selector else { continue };
             let selector_text = selector.selector.as_str();
 
+            let mut bounds = options.bounds;
+            if let Some(deadline) = limits.deadline {
+                // No traversal may outlive the caller's deadline.
+                let remaining = deadline.at.saturating_duration_since(Instant::now());
+                let remaining_ms = u64::try_from(remaining.as_millis()).unwrap_or(u64::MAX);
+                bounds.time_budget_ms = bounds.time_budget_ms.min(remaining_ms.max(1));
+            }
             let query = EvidenceQuery {
                 min_confidence: options.min_confidence,
-                bounds: options.bounds,
+                bounds,
                 filters: options.filters.clone(),
                 changes: Some(&changed),
                 direction: EvidenceDirection::Inbound,
@@ -961,24 +1068,26 @@ pub fn build_report(
                 evidence_paths.push(render_path(&mut state, path, mode));
             }
 
-            let outbound_evidence = collector.evidence(selector_text, &outbound_query)?;
-            for hit in &outbound_evidence.bounds_hit {
-                state.note_truncation(
-                    format!("outbound_evidence:{selector_text}@{side_label}"),
-                    hit.bound.clone(),
-                    hit.value,
-                );
-            }
-            if !outbound_evidence.no_path_reasons.is_empty() {
-                unresolved.push(UnresolvedArea {
-                    selector: selector_text.to_string(),
-                    snapshot: side_label.clone(),
-                    kind: "outbound_evidence".to_string(),
-                    reasons: outbound_evidence.no_path_reasons.clone(),
-                });
-            }
-            for path in &outbound_evidence.paths {
-                outbound_paths.push(render_path(&mut state, path, mode));
+            if !limits.skip_outbound {
+                let outbound_evidence = collector.evidence(selector_text, &outbound_query)?;
+                for hit in &outbound_evidence.bounds_hit {
+                    state.note_truncation(
+                        format!("outbound_evidence:{selector_text}@{side_label}"),
+                        hit.bound.clone(),
+                        hit.value,
+                    );
+                }
+                if !outbound_evidence.no_path_reasons.is_empty() {
+                    unresolved.push(UnresolvedArea {
+                        selector: selector_text.to_string(),
+                        snapshot: side_label.clone(),
+                        kind: "outbound_evidence".to_string(),
+                        reasons: outbound_evidence.no_path_reasons.clone(),
+                    });
+                }
+                for path in &outbound_evidence.paths {
+                    outbound_paths.push(render_path(&mut state, path, mode));
+                }
             }
 
             let entry_report = collector.entry_points(selector_text, &query)?;
@@ -1074,7 +1183,7 @@ pub fn build_report(
         selection: options.selection.clone(),
     };
 
-    Ok(ExportedReport {
+    let report = ExportedReport {
         schema_version: REPORT_SCHEMA_VERSION,
         generated_at,
         comparison: comparison_view,
@@ -1110,7 +1219,8 @@ pub fn build_report(
         } else {
             "excerpt".to_string()
         },
-    })
+    };
+    Ok(BoundedReport { report, unanalysed })
 }
 
 fn exclusion_label(reason: ExclusionReason) -> &'static str {
@@ -1257,7 +1367,7 @@ fn comparison_view(comparison: &Comparison, include_absolute_paths: bool) -> Com
             commit_sha: comparison.head().commit_sha().to_string(),
         },
         effective_base_sha: comparison.base().commit_sha().to_string(),
-        working_tree: working_tree_view(comparison.working_tree()),
+        working_tree: working_tree_view(comparison.working_tree(), comparison.mode()),
         snapshots: vec![
             snapshot_view(SnapshotSide::Base),
             snapshot_view(SnapshotSide::Head),
@@ -1267,7 +1377,7 @@ fn comparison_view(comparison: &Comparison, include_absolute_paths: bool) -> Com
 
 /// Current wall-clock time as an RFC 3339 UTC timestamp with second
 /// precision, with no external date/time dependency.
-fn now_rfc3339() -> String {
+pub(crate) fn now_rfc3339() -> String {
     let elapsed = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .unwrap_or_default();

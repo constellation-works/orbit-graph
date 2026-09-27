@@ -1,0 +1,732 @@
+{
+  "type": "object",
+  "required": [
+    "schema_version",
+    "operation",
+    "repository",
+    "complete",
+    "truncated",
+    "result"
+  ],
+  "properties": {
+    "schema_version": {
+      "description": "Response contract version.",
+      "type": "integer",
+      "const": 1
+    },
+    "operation": {
+      "description": "Always \"changes\".",
+      "type": "string",
+      "const": "changes"
+    },
+    "repository": {
+      "description": "Canonical path of the routed repository.",
+      "type": "string"
+    },
+    "complete": {
+      "description": "Mirrors result.complete: false when budget_ms ran out before every selected symbol was analysed.",
+      "type": "boolean"
+    },
+    "truncated": {
+      "description": "Mirrors result.truncated: true when any bound, including the 512 KiB response ceiling, cut the result; result.truncation names each.",
+      "type": "boolean"
+    },
+    "result": {
+      "description": "The orbit-graph-changes ChangesDocument (it may gain fields).",
+      "type": "object",
+      "required": [
+        "schema_version",
+        "generated_at",
+        "complete",
+        "query",
+        "summary",
+        "symbols",
+        "not_analysed",
+        "tests",
+        "truncated",
+        "truncation",
+        "timings",
+        "notices"
+      ],
+      "properties": {
+        "schema_version": {
+          "description": "ChangesDocument version.",
+          "type": "integer",
+          "const": 1
+        },
+        "generated_at": {
+          "description": "When the analysis ran (RFC 3339, UTC).",
+          "type": "string"
+        },
+        "complete": {
+          "description": "False when budget_ms ran out; incomplete says where.",
+          "type": "boolean"
+        },
+        "incomplete": {
+          "description": "Why the call stopped early; null when complete.",
+          "type": [
+            "object",
+            "null"
+          ],
+          "properties": {
+            "phase": {
+              "description": "indexing (no changed symbols computed) or analysis (some symbols in not_analysed).",
+              "type": "string"
+            },
+            "bound": {
+              "description": "Always budget_ms.",
+              "type": "string"
+            },
+            "value": {
+              "description": "The budget in milliseconds.",
+              "type": "integer"
+            },
+            "message": {
+              "description": "What to do next.",
+              "type": "string"
+            }
+          }
+        },
+        "comparison": {
+          "description": "The resolved comparison: mode (direct_base_head or working_tree), base and head refs and SHAs (head is \"worktree\" for the working tree), working-tree state, and per-snapshot file counts and exclusions; null when indexing did not finish.",
+          "type": [
+            "object",
+            "null"
+          ]
+        },
+        "default_base": {
+          "description": "How the base was chosen when base was omitted: reference, source (upstream, origin_head, main, master), and merge_base; null otherwise.",
+          "type": [
+            "object",
+            "null"
+          ]
+        },
+        "query": {
+          "description": "Selection, confidence floor, and every bound in force.",
+          "type": "object"
+        },
+        "summary": {
+          "description": "Counts: changed_symbols, analysed_symbols, not_analysed_symbols, not_selected_symbols, callers, entry_points, candidate_tests, out_of_scope_paths.",
+          "type": "object"
+        },
+        "symbols": {
+          "description": "Analysed changed symbols, in changed-symbol order.",
+          "type": "array",
+          "items": {
+            "description": "One analysed changed symbol.",
+            "type": "object",
+            "required": [
+              "selector",
+              "status",
+              "pairing",
+              "callers",
+              "callers_found",
+              "entry_points",
+              "entry_points_found",
+              "candidate_tests",
+              "candidate_tests_found"
+            ],
+            "properties": {
+              "selector": {
+                "description": "Primary selector: head-side when the symbol exists in head.",
+                "type": "string"
+              },
+              "status": {
+                "description": "How it changed: added, removed, modified, signature_changed, moved, renamed, or uncertain.",
+                "type": "string"
+              },
+              "pairing": {
+                "description": "Which pairing rung matched base and head occurrences.",
+                "type": "string"
+              },
+              "pairing_evidence": {
+                "description": "What evidence supports that rung.",
+                "type": "string"
+              },
+              "base": {
+                "description": "Base-side occurrence: selector, snapshot, commit_sha; null when added.",
+                "type": [
+                  "object",
+                  "null"
+                ]
+              },
+              "head": {
+                "description": "Head-side occurrence; null when removed.",
+                "type": [
+                  "object",
+                  "null"
+                ]
+              },
+              "file_change": {
+                "description": "How Git classified the containing file.",
+                "type": "string"
+              },
+              "uncertain_candidates": {
+                "description": "Every candidate partner of an uncertain pairing.",
+                "type": "array",
+                "items": {
+                  "type": "object"
+                }
+              },
+              "note": {
+                "description": "Qualification of this entry.",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "callers": {
+                "description": "Callers, strongest and nearest first.",
+                "type": "array",
+                "items": {
+                  "description": "One caller.",
+                  "type": "object",
+                  "required": [
+                    "caller",
+                    "snapshots",
+                    "distance",
+                    "source",
+                    "category",
+                    "confidence",
+                    "evidence"
+                  ],
+                  "properties": {
+                    "caller": {
+                      "description": "A symbol or file endpoint.",
+                      "type": "object",
+                      "required": [
+                        "selector",
+                        "snapshot",
+                        "label",
+                        "origin"
+                      ],
+                      "properties": {
+                        "selector": {
+                          "description": "Canonical selector, copyable into other tools.",
+                          "type": "string"
+                        },
+                        "snapshot": {
+                          "description": "Snapshot it resolves in: base or head.",
+                          "type": "string"
+                        },
+                        "label": {
+                          "description": "Display label: <path>#<symbol>, or <path> for a file.",
+                          "type": "string"
+                        },
+                        "origin": {
+                          "description": "symbol or file.",
+                          "type": "string"
+                        }
+                      }
+                    },
+                    "snapshots": {
+                      "description": "Snapshots (base, head) it was found in.",
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "distance": {
+                      "description": "Hops to the changed symbol.",
+                      "type": "integer"
+                    },
+                    "source": {
+                      "description": "How the endpoint reaches the changed symbol: call_path (every hop a call), import_relationship (a hop is an import), reference_path (type or other references), or changed_symbol (distance 0: the changed symbol is itself the endpoint).",
+                      "type": "string",
+                      "enum": [
+                        "call_path",
+                        "import_relationship",
+                        "reference_path",
+                        "changed_symbol"
+                      ]
+                    },
+                    "category": {
+                      "description": "Evidence category: resolved_call, observed_reference, import_relationship, heuristic_match, or runtime_invocation (weakest on the path).",
+                      "type": "string"
+                    },
+                    "confidence": {
+                      "description": "Weakest orbit_graph confidence on the path: exact, import_resolved, same_module, or fuzzy_name; exact at distance 0.",
+                      "type": "string"
+                    },
+                    "evidence": {
+                      "description": "Evidence path from the affected endpoint to the changed symbol: the report's ReportEvidencePath, with every edge's relationship, category, confidence, and file:line@sha reference.",
+                      "type": "object",
+                      "required": [
+                        "path_id",
+                        "from",
+                        "to",
+                        "distance",
+                        "category",
+                        "truncated",
+                        "edges"
+                      ],
+                      "properties": {
+                        "schema_version": {
+                          "description": "Evidence payload version.",
+                          "type": "integer"
+                        },
+                        "path_id": {
+                          "description": "Identifier of the path within its query.",
+                          "type": "string"
+                        },
+                        "from": {
+                          "description": "Affected endpoint.",
+                          "type": "object"
+                        },
+                        "to": {
+                          "description": "Queried changed symbol.",
+                          "type": "object"
+                        },
+                        "distance": {
+                          "description": "Edges on the path.",
+                          "type": "integer"
+                        },
+                        "category": {
+                          "description": "Weakest evidence category on the path.",
+                          "type": "string"
+                        },
+                        "truncated": {
+                          "description": "Whether a bound cut this path.",
+                          "type": "boolean"
+                        },
+                        "truncated_by": {
+                          "description": "Which bound cut it, when truncated.",
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "edges": {
+                          "description": "Edges, outermost hop first.",
+                          "type": "array",
+                          "items": {
+                            "type": "object"
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              },
+              "callers_found": {
+                "description": "Distinct callers found before max_callers applied.",
+                "type": "integer"
+              },
+              "entry_points": {
+                "description": "Entry points (tests, mains, command handlers, public API) that reach the symbol, nearest first.",
+                "type": "array",
+                "items": {
+                  "description": "One entry point.",
+                  "type": "object",
+                  "required": [
+                    "entry_point",
+                    "rule",
+                    "snapshots",
+                    "distance",
+                    "source",
+                    "category",
+                    "confidence",
+                    "evidence"
+                  ],
+                  "properties": {
+                    "entry_point": {
+                      "description": "A symbol or file endpoint.",
+                      "type": "object",
+                      "required": [
+                        "selector",
+                        "snapshot",
+                        "label",
+                        "origin"
+                      ],
+                      "properties": {
+                        "selector": {
+                          "description": "Canonical selector, copyable into other tools.",
+                          "type": "string"
+                        },
+                        "snapshot": {
+                          "description": "Snapshot it resolves in: base or head.",
+                          "type": "string"
+                        },
+                        "label": {
+                          "description": "Display label: <path>#<symbol>, or <path> for a file.",
+                          "type": "string"
+                        },
+                        "origin": {
+                          "description": "symbol or file.",
+                          "type": "string"
+                        }
+                      }
+                    },
+                    "rule": {
+                      "description": "Rule that classified it.",
+                      "type": "string"
+                    },
+                    "rules": {
+                      "description": "Every rule that fired, in priority order.",
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "snapshots": {
+                      "description": "Snapshots (base, head) it was found in.",
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "distance": {
+                      "description": "Hops to the changed symbol.",
+                      "type": "integer"
+                    },
+                    "source": {
+                      "description": "How the endpoint reaches the changed symbol: call_path (every hop a call), import_relationship (a hop is an import), reference_path (type or other references), or changed_symbol (distance 0: the changed symbol is itself the endpoint).",
+                      "type": "string",
+                      "enum": [
+                        "call_path",
+                        "import_relationship",
+                        "reference_path",
+                        "changed_symbol"
+                      ]
+                    },
+                    "category": {
+                      "description": "Evidence category: resolved_call, observed_reference, import_relationship, heuristic_match, or runtime_invocation (weakest on the path).",
+                      "type": "string"
+                    },
+                    "confidence": {
+                      "description": "Weakest orbit_graph confidence on the path: exact, import_resolved, same_module, or fuzzy_name; exact at distance 0.",
+                      "type": "string"
+                    },
+                    "evidence": {
+                      "description": "Evidence path from the affected endpoint to the changed symbol: the report's ReportEvidencePath, with every edge's relationship, category, confidence, and file:line@sha reference.",
+                      "type": "object",
+                      "required": [
+                        "path_id",
+                        "from",
+                        "to",
+                        "distance",
+                        "category",
+                        "truncated",
+                        "edges"
+                      ],
+                      "properties": {
+                        "schema_version": {
+                          "description": "Evidence payload version.",
+                          "type": "integer"
+                        },
+                        "path_id": {
+                          "description": "Identifier of the path within its query.",
+                          "type": "string"
+                        },
+                        "from": {
+                          "description": "Affected endpoint.",
+                          "type": "object"
+                        },
+                        "to": {
+                          "description": "Queried changed symbol.",
+                          "type": "object"
+                        },
+                        "distance": {
+                          "description": "Edges on the path.",
+                          "type": "integer"
+                        },
+                        "category": {
+                          "description": "Weakest evidence category on the path.",
+                          "type": "string"
+                        },
+                        "truncated": {
+                          "description": "Whether a bound cut this path.",
+                          "type": "boolean"
+                        },
+                        "truncated_by": {
+                          "description": "Which bound cut it, when truncated.",
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "edges": {
+                          "description": "Edges, outermost hop first.",
+                          "type": "array",
+                          "items": {
+                            "type": "object"
+                          }
+                        }
+                      }
+                    },
+                    "note": {
+                      "description": "What the rule observed.",
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    }
+                  }
+                }
+              },
+              "entry_points_found": {
+                "description": "Distinct entry points found before max_entry_points applied.",
+                "type": "integer"
+              },
+              "candidate_tests": {
+                "description": "Candidate tests, strongest source first. Candidates, not proof of coverage.",
+                "type": "array",
+                "items": {
+                  "description": "One candidate test.",
+                  "type": "object",
+                  "required": [
+                    "test",
+                    "snapshots",
+                    "source",
+                    "category",
+                    "confidence",
+                    "truncated"
+                  ],
+                  "properties": {
+                    "test": {
+                      "description": "A symbol or file endpoint.",
+                      "type": "object",
+                      "required": [
+                        "selector",
+                        "snapshot",
+                        "label",
+                        "origin"
+                      ],
+                      "properties": {
+                        "selector": {
+                          "description": "Canonical selector, copyable into other tools.",
+                          "type": "string"
+                        },
+                        "snapshot": {
+                          "description": "Snapshot it resolves in: base or head.",
+                          "type": "string"
+                        },
+                        "label": {
+                          "description": "Display label: <path>#<symbol>, or <path> for a file.",
+                          "type": "string"
+                        },
+                        "origin": {
+                          "description": "symbol or file.",
+                          "type": "string"
+                        }
+                      }
+                    },
+                    "snapshots": {
+                      "description": "Snapshots (base, head) it was found in.",
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "source": {
+                      "description": "call_path (a test calls it), import_relationship (a test file imports its module), naming_heuristic (name or location only), or runtime_invocation (a test starts a program its package ships).",
+                      "type": "string",
+                      "enum": [
+                        "call_path",
+                        "import_relationship",
+                        "naming_heuristic",
+                        "runtime_invocation"
+                      ]
+                    },
+                    "category": {
+                      "description": "Evidence category: resolved_call, observed_reference, import_relationship, heuristic_match, or runtime_invocation (weakest on the path).",
+                      "type": "string"
+                    },
+                    "confidence": {
+                      "description": "Weakest orbit_graph confidence on the evidence path; file_import for an import candidate, name_only for a naming or runtime candidate.",
+                      "type": "string"
+                    },
+                    "evidence": {
+                      "description": "Evidence path behind a call_path candidate; null otherwise.",
+                      "type": [
+                        "object",
+                        "null"
+                      ]
+                    },
+                    "truncated": {
+                      "description": "Whether a bound cut the search that produced it.",
+                      "type": "boolean"
+                    },
+                    "note": {
+                      "description": "Why it is plausible.",
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    }
+                  }
+                }
+              },
+              "candidate_tests_found": {
+                "description": "Distinct candidate tests found before max_tests applied.",
+                "type": "integer"
+              }
+            }
+          }
+        },
+        "not_analysed": {
+          "description": "Changed symbols a bound left unanalysed.",
+          "type": "array",
+          "items": {
+            "description": "One unanalysed symbol.",
+            "type": "object",
+            "required": [
+              "selector",
+              "status",
+              "reason"
+            ],
+            "properties": {
+              "selector": {
+                "description": "Primary selector.",
+                "type": "string"
+              },
+              "status": {
+                "description": "How it changed.",
+                "type": "string"
+              },
+              "reason": {
+                "description": "The bound: max_symbols, time_budget_ms, or max_response_bytes.",
+                "type": "string"
+              }
+            }
+          }
+        },
+        "tests": {
+          "description": "Distinct candidate tests across every analysed symbol, strongest source first: the test-selection view.",
+          "type": "array",
+          "items": {
+            "description": "One test to consider running.",
+            "type": "object",
+            "required": [
+              "test",
+              "source",
+              "category",
+              "confidence",
+              "changed_symbols"
+            ],
+            "properties": {
+              "test": {
+                "description": "A symbol or file endpoint.",
+                "type": "object",
+                "required": [
+                  "selector",
+                  "snapshot",
+                  "label",
+                  "origin"
+                ],
+                "properties": {
+                  "selector": {
+                    "description": "Canonical selector, copyable into other tools.",
+                    "type": "string"
+                  },
+                  "snapshot": {
+                    "description": "Snapshot it resolves in: base or head.",
+                    "type": "string"
+                  },
+                  "label": {
+                    "description": "Display label: <path>#<symbol>, or <path> for a file.",
+                    "type": "string"
+                  },
+                  "origin": {
+                    "description": "symbol or file.",
+                    "type": "string"
+                  }
+                }
+              },
+              "source": {
+                "description": "Strongest source across its symbols.",
+                "type": "string"
+              },
+              "category": {
+                "description": "Evidence category: resolved_call, observed_reference, import_relationship, heuristic_match, or runtime_invocation (weakest on the path).",
+                "type": "string"
+              },
+              "confidence": {
+                "description": "Confidence of that strongest candidate.",
+                "type": "string"
+              },
+              "changed_symbols": {
+                "description": "Changed symbols it is a candidate for.",
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "unmatched_selection": {
+          "description": "Selectors in symbols that matched no changed symbol.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "unresolved": {
+          "description": "Queries with no result, and the reasons one could be missing.",
+          "type": "array",
+          "items": {
+            "type": "object"
+          }
+        },
+        "out_of_scope": {
+          "description": "Changed paths the extractor did not index (unsupported language, excluded file).",
+          "type": "array",
+          "items": {
+            "type": "object"
+          }
+        },
+        "filtered_out": {
+          "description": "What the language and scope filters removed.",
+          "type": "array",
+          "items": {
+            "type": "object"
+          }
+        },
+        "truncated": {
+          "description": "Whether any bound cut anything.",
+          "type": "boolean"
+        },
+        "truncation": {
+          "description": "Every bound reached, deduplicated.",
+          "type": "array",
+          "items": {
+            "description": "One bound that was reached.",
+            "type": "object",
+            "required": [
+              "what",
+              "bound",
+              "value"
+            ],
+            "properties": {
+              "what": {
+                "description": "What it cut: a list, a query (evidence:<selector>@<side>), or changed_symbols.",
+                "type": "string"
+              },
+              "bound": {
+                "description": "Bound name, such as max_callers, max_symbols, time_budget_ms, node_cap, depth, or max_response_bytes.",
+                "type": "string"
+              },
+              "value": {
+                "description": "The bound's value in its own unit.",
+                "type": "integer"
+              }
+            }
+          }
+        },
+        "timings": {
+          "description": "prepare_ms (resolve, materialize, index), analysis_ms, total_ms, and base_cache and head_cache (hit, miss, or disabled).",
+          "type": "object"
+        },
+        "notices": {
+          "description": "Human-readable qualifications: working-tree state, cache notes.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  },
+  "additionalProperties": false
+}

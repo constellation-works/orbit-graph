@@ -98,8 +98,8 @@ fresh_copy; add_dep orbit-graph-extract 'clap = "4.5"'
 expect fail $G "clap in the extraction leaf" 'orbit-graph-extract must not depend on clap'
 fresh_copy; add_dep orbit-graph-cli 'orbit-graph-extract = { path = "../orbit-graph-extract" }'
 expect fail $G "a surface depending on the extraction leaf directly" 'orbit-graph-cli must not depend on internal crate orbit-graph-extract'
-fresh_copy; add_dep orbit-graph-cli 'orbit-graph-changes = { path = "../orbit-graph-changes" }'
-expect fail $G "a direct edge from CLI to the change library before its surface is added" 'orbit-graph-cli must not depend on internal crate orbit-graph-changes'
+fresh_copy; add_dep orbit-graph-changes 'orbit-graph-cli = { path = "../orbit-graph-cli" }'
+expect fail $G "the change library depending on the CLI that surfaces it" 'orbit-graph-changes must not depend on internal crate orbit-graph-cli'
 fresh_copy; mkdir -p "$case_dir/crates/orbit-graph-new"
 printf '[package]\nname = "orbit-graph-new"\n\n[dependencies]\n' >"$case_dir/crates/orbit-graph-new/Cargo.toml"
 expect fail $G "a crate with no policy" "crate 'orbit-graph-new' .* has no policy"

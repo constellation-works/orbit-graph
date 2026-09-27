@@ -13,7 +13,8 @@ use orbit_graph::GraphError;
 pub enum ToolErrorCode {
     /// The request was refused before any repository or index was read: an
     /// unknown tool, undecodable input, an unsupported `schema_version`, or a
-    /// field outside its documented bounds.
+    /// field outside its documented bounds. For `changes`, also a revision
+    /// that does not resolve, or no default base, refused before indexing.
     InvalidRequest,
     /// The explicitly routed `repository` does not exist or is not a Git
     /// repository.

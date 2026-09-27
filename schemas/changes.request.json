@@ -1,0 +1,111 @@
+{
+  "type": "object",
+  "properties": {
+    "schema_version": {
+      "description": "Request contract version; must be 1 when present.",
+      "type": "integer",
+      "const": 1
+    },
+    "repository": {
+      "description": "Absolute path of the Git repository to analyse. Defaults to the caller's workspace root; never inferred from the tool cwd.",
+      "type": "string",
+      "minLength": 1
+    },
+    "base": {
+      "description": "Base revision (branch, tag, or commit). Omitted: the merge base of HEAD and the branch the work lands on (its upstream, else origin/HEAD, else main, else master); the choice is reported in result.default_base. Nothing is fetched.",
+      "type": "string",
+      "minLength": 1
+    },
+    "head": {
+      "description": "Head revision. Omitted: the working tree, including staged, unstaged, and untracked (not ignored) files, which is never cached. Requires base.",
+      "type": "string",
+      "minLength": 1
+    },
+    "symbols": {
+      "description": "Changed-symbol selectors (symbol:<path>#<name>:<kind>) to analyse; default every changed symbol up to max_symbols. A selector that matches no changed symbol is listed in result.unmatched_selection.",
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "confidence": {
+      "description": "Minimum resolution confidence of every hop: exact, import_resolved, same_module, or fuzzy_name (name-only matches). Default same_module.",
+      "type": "string",
+      "enum": [
+        "exact",
+        "import_resolved",
+        "same_module",
+        "fuzzy_name"
+      ],
+      "default": "same_module"
+    },
+    "depth": {
+      "description": "Maximum hops from a changed symbol to a caller or entry point; 1-10, default 3.",
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 10,
+      "default": 3
+    },
+    "node_cap": {
+      "description": "Maximum nodes, and paths, one traversal may return; 1-2000, default 200.",
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 2000,
+      "default": 200
+    },
+    "query_budget_ms": {
+      "description": "Wall-clock budget of one traversal in milliseconds; 100-60000, default 5000. Capped at the time left in budget_ms.",
+      "type": "integer",
+      "minimum": 100,
+      "maximum": 60000,
+      "default": 5000
+    },
+    "max_symbols": {
+      "description": "Maximum changed symbols analysed, in changed-symbol order; 1-1000, default 25. The rest are listed in result.not_analysed.",
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 1000,
+      "default": 25
+    },
+    "max_callers": {
+      "description": "Maximum callers kept per changed symbol, strongest evidence first; 1-500, default 5.",
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 500,
+      "default": 5
+    },
+    "max_entry_points": {
+      "description": "Maximum entry points kept per changed symbol, nearest first; 1-100, default 3.",
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 100,
+      "default": 3
+    },
+    "max_tests": {
+      "description": "Maximum candidate tests kept per changed symbol, strongest source first; 1-500, default 5.",
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 500,
+      "default": 5
+    },
+    "budget_ms": {
+      "description": "Wall-clock budget for the whole call, indexing included, in milliseconds; 1000-110000, default 90000, below the 120 s tool timeout. When it runs out the call returns complete: false with the reason instead of hanging.",
+      "type": "integer",
+      "minimum": 1000,
+      "maximum": 110000,
+      "default": 90000
+    },
+    "language": {
+      "description": "Keep only changed symbols whose file is in this language (for example rust).",
+      "type": "string",
+      "minLength": 1
+    },
+    "scope": {
+      "description": "Keep only changed symbols whose path starts with this prefix.",
+      "type": "string",
+      "minLength": 1
+    }
+  },
+  "additionalProperties": false
+}

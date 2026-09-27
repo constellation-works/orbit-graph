@@ -20,13 +20,19 @@
 //!   evidence paths, entry points, and labelled candidate tests.
 //! - [`filters`] applies presentation filters and states, in every filtered
 //!   response, what they removed and why.
+//! - [`report`] exports the whole analysis of one comparison as one payload.
+//! - [`analysis`] regroups that analysis per changed symbol, under explicit
+//!   bounds and an optional wall-clock budget, for agents choosing what to
+//!   review and which tests to run.
 //!
 //! The evidence contract and snapshot semantics are recorded in
-//! `docs/design/change-explorer.md`.
+//! `docs/design/change-explorer.md`; the agent-facing contract in
+//! `docs/design/changes-command/`.
 //!
 //! The crate never reads Orbit control-plane state and never executes content
 //! from the repository under inspection.
 
+pub mod analysis;
 pub mod cache;
 pub mod changes;
 pub mod evidence;

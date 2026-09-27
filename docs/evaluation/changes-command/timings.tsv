@@ -1,0 +1,11 @@
+study	surface	cache	wall_ms	complete	analysed	not_analysed
+2	cli	cold	25298	true	25	0
+2	cli	warm	18721	true	25	0
+2	cli	warm	10688	true	25	0
+2	plugin	cold	25948	true	25	0
+2	plugin	warm	20938	true	25	0
+3	cli	cold	42576	true	26	0
+3	cli	warm	35376	true	26	0
+3	cli	warm	21561	true	26	0
+3	plugin	cold	42359	true	25	1
+3	plugin	warm	39821	true	25	1

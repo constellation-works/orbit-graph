@@ -32,7 +32,7 @@ use serde::Serialize;
 use thiserror::Error;
 
 use crate::filters::{FilterLog, FilterReason, FilterSet, FilteredOut};
-use crate::snapshot::{Comparison, ExclusionReason, Snapshot, SnapshotSide};
+use crate::snapshot::{Comparison, ComparisonMode, ExclusionReason, Snapshot, SnapshotSide};
 
 /// Schema version of the changed-symbol payload.
 ///
@@ -601,16 +601,33 @@ fn changed_files(comparison: &Comparison) -> Result<ChangedFiles, ChangesError> 
             .map_err(|error| ChangesError::git("load comparison commit tree", &error))
     };
     let base_tree = tree_for(comparison.base().commit_sha())?;
-    let head_tree = tree_for(comparison.head().commit_sha())?;
 
     let mut diff_options = DiffOptions::new();
     diff_options
         .include_typechange(true)
         .ignore_submodules(true)
         .skip_binary_check(false);
-    let mut diff = repo
-        .diff_tree_to_tree(Some(&base_tree), Some(&head_tree), Some(&mut diff_options))
-        .map_err(|error| ChangesError::git("diff comparison commit trees", &error))?;
+    let mut diff = match comparison.mode() {
+        ComparisonMode::DirectBaseHead => {
+            let head_tree = tree_for(comparison.head().commit_sha())?;
+            repo.diff_tree_to_tree(Some(&base_tree), Some(&head_tree), Some(&mut diff_options))
+                .map_err(|error| ChangesError::git("diff comparison commit trees", &error))?
+        }
+        // The head snapshot copied the index's paths as they are on disk plus
+        // untracked, non-ignored files; this diff sees the same set. The Git
+        // index is read, never refreshed or written.
+        ComparisonMode::WorkingTree => {
+            diff_options
+                .include_untracked(true)
+                .recurse_untracked_dirs(true)
+                .include_ignored(false)
+                .update_index(false);
+            repo.diff_tree_to_workdir_with_index(Some(&base_tree), Some(&mut diff_options))
+                .map_err(|error| {
+                    ChangesError::git("diff base tree against the working tree", &error)
+                })?
+        }
+    };
 
     // Rename and copy detection with libgit2's default similarity thresholds.
     // Rewrites are deliberately not broken apart: splitting a heavily edited
@@ -624,6 +641,17 @@ fn changed_files(comparison: &Comparison) -> Result<ChangedFiles, ChangesError> 
 
     let mut files = ChangedFiles::default();
     for delta in diff.deltas() {
+        if delta
+            .new_file()
+            .path()
+            .or_else(|| delta.old_file().path())
+            .and_then(|path| path.to_str())
+            .is_some_and(|path| path == ".orbit-graph" || path.starts_with(".orbit-graph/"))
+        {
+            // Graph scratch state, including this crate's own snapshot cache,
+            // is never source.
+            continue;
+        }
         let kind = FileChangeKind::from_delta(delta.status());
         let base_path = match kind {
             FileChangeKind::Added => None,

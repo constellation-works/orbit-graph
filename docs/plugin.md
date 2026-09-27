@@ -284,6 +284,74 @@ query tools use the existing `fs` read grant and request no new permissions.
 The deprecated `plugin/` compatibility tree and its v1 sidecars do not
 advertise them.
 
+## Change analysis
+
+`changes` is a `read_only` tool that answers two questions about a change in
+one call: what else could it break, and which tests should run. It is the
+plugin form of `orbit-graph changes` (see [usage](usage.md#change-analysis)).
+Call it:
+
+- **after implementing**, to see the callers and entry points your edit
+  reaches before you call the work done;
+- **before review**, to hand the reviewer the affected surface with evidence;
+- **to pick tests**, from `result.tests` (each test lists the changed symbols
+  it covers) rather than from file names.
+
+```sh
+orbit tool run orbit.graph.changes --input '{
+  "schema_version":1,
+  "repository":"/work/widgets"
+}' --full
+
+orbit tool run orbit.graph.changes --input '{
+  "schema_version":1,
+  "repository":"/work/widgets",
+  "base":"main",
+  "head":"HEAD",
+  "max_tests":10
+}' --full
+```
+
+Without `base` and `head` the tool compares the working tree (staged,
+unstaged and untracked files) against the merge base of `HEAD` with the
+branch it will land on: its upstream, else `origin/HEAD`, else `main`, else
+`master`. Nothing is fetched. `base` alone compares the working tree against
+that revision; `base` and `head` compare two revisions. `head` without `base`
+is refused.
+
+Unlike the query tools, `changes` does not read the published code-graph
+index: it indexes both sides of the comparison itself. Committed snapshots
+are cached under the plugin state directory (`<state>/<repository
+hash>/changes-snapshots`), never in the repository, so a second call over
+the same commits skips indexing; the working tree is never cached. Without
+`ORBIT_PLUGIN_STATE` nothing is cached and a notice says so. Temporary trees
+are built under `changes-scratch` beside the cache and removed when the call
+ends. On an Orbit clone a cold call took 25–43 s and a warm call 19–40 s:
+analysis, not indexing, dominates
+([evaluation](evaluation/changes-command/README.md#latency)).
+
+`result` is the same document the CLI prints with `--json`
+(`schemas/changes.response.json`, `schema_version` 1):
+
+| Field | Contents |
+|---|---|
+| `symbols[]` | Each analysed changed symbol: `status`, `pairing` and its evidence, then `callers`, `entry_points` and `candidate_tests`, each with a `*_found` count before its cap. |
+| `callers[]`, `entry_points[]` | `source` (`call_path`, `import_relationship`, `reference_path`, or `changed_symbol` at distance 0), the weakest `category` and `confidence` on the path, and the path itself with a `file:line@sha` per hop. |
+| `candidate_tests[]` | `source` (`call_path`, `import_relationship`, `naming_heuristic`, `runtime_invocation`), `confidence` (the path's weakest, or `file_import` / `name_only`), and the evidence path when there is one. A candidate is what the evidence points at, not proof of coverage. |
+| `tests[]` | Distinct candidate tests across all symbols, strongest first, each with the changed symbols it covers. |
+| `not_analysed`, `unmatched_selection`, `unresolved`, `out_of_scope`, `filtered_out` | Everything not answered, and why. |
+| `complete` / `incomplete` | `false` with the `phase` and reason when `budget_ms` ran out. |
+| `truncated` / `truncation` | Every bound that cut the answer, by name: `max_symbols`, `max_callers`, `max_entry_points`, `max_tests`, `depth`, `impact_node_cap`, `time_budget_ms`, `max_response_bytes`. |
+
+The plugin defaults are smaller than the CLI's so a response stays readable:
+25 symbols, 5 callers, 3 entry points and 5 tests per symbol, `same_module`
+confidence floor, depth 3, 200 nodes per traversal. `budget_ms` (1000 to
+110000, default 90000) bounds the whole call, indexing included, below the
+120 s Orbit tool timeout: when it runs out the tool returns what it has with
+`complete: false` rather than being killed. A `result` over 512 KiB is shrunk
+in recorded steps (per-symbol lists, then symbols, then the standing lists),
+each adding a `max_response_bytes` flag.
+
 ## Scheduled history synchronization
 
 The plugin also ships a disabled `history-sync` routine. Enabling the plugin
@@ -321,7 +389,9 @@ DeliveryImport v2 envelope.
 
 Failed calls return a stable `error.code`: `invalid_request` when the request
 is refused before any repository is read (unknown tool or field, unsupported
-`schema_version`, out-of-range bound, missing required field),
+`schema_version`, out-of-range bound, missing required field) or, for
+`changes`, before anything is indexed (a `base` or `head` that does not
+resolve, or no default base to compare the working tree against),
 `repository_unavailable` when the routed `repository` is missing or not a Git
 repository, `index_missing` or `index_incompatible` when a query tool has no
 usable code-graph index, `index_missing` when `status` or `recommend` finds no

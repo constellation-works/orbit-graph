@@ -48,7 +48,7 @@ use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::time::{Duration, Instant};
 
 use orbit_graph::{
-    CalleeOpts, Confidence, DEFAULT_IMPACT_DEPTH, DEFAULT_SHOW_MAX_BYTES, IMPACT_NODE_CAP,
+    CalleeOpts, Confidence, DEFAULT_IMPACT_DEPTH, DEFAULT_SHOW_MAX_BYTES, DepEdge, IMPACT_NODE_CAP,
     ImpactDirection, ImpactOrigin, OverviewFormat, ProgramName, ProgramNameSource, RefConfidence,
     RefEntry, RefKind, RefOpts, RelationEntry, RuntimeInvocation, Selector,
 };
@@ -761,7 +761,11 @@ struct FileIndex {
 /// Collects evidence for one snapshot of a comparison.
 ///
 /// Holds a small per-file cache, so repeated queries against the same snapshot
-/// do not re-read the same source spans.
+/// do not re-read the same source spans, and a per-query evidence cache, so
+/// entry points and candidate tests reuse the traversal the evidence query
+/// already ran instead of repeating it. Test-file imports and runtime
+/// invocations do not depend on the queried symbol, so each is read once per
+/// collector rather than once per changed symbol.
 pub struct EvidenceCollector<'a> {
     comparison: &'a Comparison,
     side: SnapshotSide,
@@ -772,6 +776,34 @@ pub struct EvidenceCollector<'a> {
     /// `target_qualified` can be turned back into a canonical selector.
     qualified_index: BTreeMap<String, SymbolAddress>,
     file_cache: BTreeMap<String, FileIndex>,
+    /// Evidence already computed, by [`evidence_memo_key`].
+    evidence_memo: BTreeMap<String, EvidenceReport>,
+    /// Outbound imports of every indexed test file, in path order, read on
+    /// first use.
+    test_file_imports: Option<Vec<(String, Vec<DepEdge>)>>,
+    /// Runtime invocations recorded in test files, read on first use.
+    test_invocations: Option<Vec<RuntimeInvocation>>,
+}
+
+/// Identity of one evidence query: the selector and every query field that
+/// can change the answer. The changed-symbol slice is identified by address
+/// and size: within one collector it is always derived from the same
+/// immutable comparison.
+fn evidence_memo_key(selector: &str, query: &EvidenceQuery<'_>) -> String {
+    let changes = query.changes.map_or((0, 0, 0), |changes| {
+        (
+            std::ptr::from_ref(changes) as usize,
+            changes.symbols.len(),
+            changes.out_of_scope.len(),
+        )
+    });
+    format!(
+        "{selector}\u{1f}{}\u{1f}{:?}\u{1f}{:?}\u{1f}{:?}\u{1f}{changes:?}",
+        query.direction.label(),
+        query.min_confidence,
+        query.bounds,
+        query.filters,
+    )
 }
 
 /// One indexed symbol, as the snapshot's overview reports it.
@@ -830,6 +862,9 @@ impl<'a> EvidenceCollector<'a> {
             symbols_by_file,
             qualified_index,
             file_cache: BTreeMap::new(),
+            evidence_memo: BTreeMap::new(),
+            test_file_imports: None,
+            test_invocations: None,
         })
     }
 
@@ -867,10 +902,16 @@ impl<'a> EvidenceCollector<'a> {
         selector: &str,
         query: &EvidenceQuery<'_>,
     ) -> Result<EvidenceReport, EvidenceError> {
-        match query.direction {
-            EvidenceDirection::Inbound => self.inbound_evidence(selector, query),
-            EvidenceDirection::Outbound => self.outbound_evidence(selector, query),
+        let key = evidence_memo_key(selector, query);
+        if let Some(report) = self.evidence_memo.get(key.as_str()) {
+            return Ok(report.clone());
         }
+        let report = match query.direction {
+            EvidenceDirection::Inbound => self.inbound_evidence(selector, query)?,
+            EvidenceDirection::Outbound => self.outbound_evidence(selector, query)?,
+        };
+        self.evidence_memo.insert(key, report.clone());
+        Ok(report)
     }
 
     /// Bounded multi-hop inbound evidence for `selector`. See [`Self::evidence`].
@@ -2080,6 +2121,73 @@ impl<'a> EvidenceCollector<'a> {
     /// may be an unrelated symbol that merely shares a name — so it is
     /// reported as a `naming_heuristic` `heuristic_match` instead, never
     /// promoted to `import_relationship`.
+    /// Outbound imports of every indexed test file, read once per collector.
+    ///
+    /// One `deps` query per top-level directory that holds a test file, not
+    /// one per test file: a large corpus has hundreds of test files, and the
+    /// rows outside test files are dropped here.
+    fn test_file_imports(&mut self) -> Result<&[(String, Vec<DepEdge>)], EvidenceError> {
+        if self.test_file_imports.is_none() {
+            let mut by_file: BTreeMap<String, Vec<DepEdge>> = self
+                .indexed_files
+                .iter()
+                .filter(|path| is_test_path(path.as_str()))
+                .map(|path| (path.clone(), Vec::new()))
+                .collect();
+            // (is a directory, path): a test file at the root is its own scope.
+            let scopes: BTreeSet<(bool, String)> = by_file
+                .keys()
+                .map(|path| match path.split_once('/') {
+                    Some((top, _)) => (true, top.to_string()),
+                    None => (false, path.clone()),
+                })
+                .collect();
+            for (is_dir, path) in scopes {
+                let scope = if is_dir {
+                    Selector::Dir { path }
+                } else {
+                    Selector::File { path }
+                };
+                let deps =
+                    self.snapshot()
+                        .graph()
+                        .deps(&scope)
+                        .map_err(|error| EvidenceError::Query {
+                            operation: "query test-file imports",
+                            side: self.side,
+                            reason: error.to_string(),
+                        })?;
+                for edge in deps.imports {
+                    if let Some(imports) = by_file.get_mut(edge.from_file.as_str()) {
+                        imports.push(edge);
+                    }
+                }
+            }
+            self.test_file_imports = Some(by_file.into_iter().collect());
+        }
+        Ok(self.test_file_imports.as_deref().unwrap_or_default())
+    }
+
+    /// Runtime invocations recorded in test files, read once per collector.
+    fn test_invocations(&mut self) -> Result<Vec<RuntimeInvocation>, EvidenceError> {
+        if self.test_invocations.is_none() {
+            let invocations = self
+                .snapshot()
+                .graph()
+                .runtime_invocations()
+                .map_err(|error| EvidenceError::Query {
+                    operation: "list runtime invocations",
+                    side: self.side,
+                    reason: error.to_string(),
+                })?
+                .into_iter()
+                .filter(|invocation| is_test_path(invocation.file.as_str()))
+                .collect();
+            self.test_invocations = Some(invocations);
+        }
+        Ok(self.test_invocations.clone().unwrap_or_default())
+    }
+
     fn import_candidates(
         &mut self,
         selector: &str,
@@ -2088,33 +2196,20 @@ impl<'a> EvidenceCollector<'a> {
     ) -> Result<Vec<CandidateTest>, EvidenceError> {
         let module_keys = module_keys(symbol_path);
         let side_label = self.side_label();
-        let test_files: Vec<String> = self
-            .indexed_files
-            .iter()
-            .filter(|path| is_test_path(path.as_str()) && path.as_str() != symbol_path)
-            .cloned()
-            .collect();
+        let test_file_imports = self.test_file_imports()?;
 
         let mut candidates = Vec::new();
-        for file in test_files {
-            let file_selector = Selector::File { path: file.clone() };
-            let deps = self
-                .snapshot()
-                .graph()
-                .deps(&file_selector)
-                .map_err(|error| EvidenceError::Query {
-                    operation: "query test-file imports",
-                    side: self.side,
-                    reason: error.to_string(),
-                })?;
+        for (file, imports) in test_file_imports {
+            if file.as_str() == symbol_path {
+                continue;
+            }
             let test = EndpointRef {
                 selector: format!("file:{file}"),
                 snapshot: side_label.clone(),
                 label: file.clone(),
                 origin: origin_label(ImpactOrigin::File).to_string(),
             };
-            if let Some(matched) = deps
-                .imports
+            if let Some(matched) = imports
                 .iter()
                 .find(|edge| module_keys.contains(&import_key(edge.target_path.as_str())))
             {
@@ -2135,8 +2230,7 @@ impl<'a> EvidenceCollector<'a> {
                 });
                 continue;
             }
-            let Some(name_only) = deps
-                .imports
+            let Some(name_only) = imports
                 .iter()
                 .find(|edge| edge.target_symbol.as_deref() == Some(symbol_name))
             else {
@@ -2258,18 +2352,7 @@ impl<'a> EvidenceCollector<'a> {
         if symbol_path.is_empty() {
             return Ok((Vec::new(), false));
         }
-        let invocations: Vec<RuntimeInvocation> = self
-            .snapshot()
-            .graph()
-            .runtime_invocations()
-            .map_err(|error| EvidenceError::Query {
-                operation: "list runtime invocations",
-                side: self.side,
-                reason: error.to_string(),
-            })?
-            .into_iter()
-            .filter(|invocation| is_test_path(invocation.file.as_str()))
-            .collect();
+        let invocations = self.test_invocations()?;
         if invocations.is_empty() {
             return Ok((Vec::new(), false));
         }

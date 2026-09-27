@@ -1,0 +1,2744 @@
+{
+  "comparison": {
+    "base": "1ca6416e0ba2c6a713e42561b7b35a72b045aa25",
+    "head": "5a5b45fec9a83b765b485043398d3abadaa468de"
+  },
+  "summary": {
+    "analysed_symbols": 25,
+    "callers": 121,
+    "candidate_tests": 50,
+    "changed_symbols": 25,
+    "entry_points": 73,
+    "not_analysed_symbols": 0,
+    "not_selected_symbols": 0,
+    "out_of_scope_paths": 0
+  },
+  "truncated": true,
+  "truncation_bounds": {
+    "depth": 14,
+    "impact_node_cap": 20,
+    "max_callers": 11,
+    "max_entry_points": 13,
+    "max_tests": 14,
+    "traversal": 1
+  },
+  "symbols": [
+    {
+      "selector": "symbol:crates/orbit-cli/src/command/workspace/command.rs#WorkspaceSubcommand:enum",
+      "status": "modified",
+      "pairing": "same_selector",
+      "callers_found": 47,
+      "entry_points_found": 7,
+      "candidate_tests_found": 75,
+      "callers": [
+        {
+          "selector": "symbol:crates/orbit-cli/src/command/workspace/command.rs#WorkspaceCommand:struct",
+          "source": "reference_path",
+          "confidence": "exact",
+          "distance": 1,
+          "reference": "crates/orbit-cli/src/command/workspace/command.rs:20@5a5b45fec9a83b765b485043398d3abadaa468de"
+        },
+        {
+          "selector": "symbol:crates/orbit-cli/src/command/workspace/command.rs#WorkspaceCommand:impl",
+          "source": "reference_path",
+          "confidence": "exact",
+          "distance": 2,
+          "reference": "crates/orbit-cli/src/command/workspace/command.rs:45@5a5b45fec9a83b765b485043398d3abadaa468de"
+        },
+        {
+          "selector": "symbol:crates/orbit-cli/src/command/mod.rs#Commands:enum",
+          "source": "reference_path",
+          "confidence": "same_module",
+          "distance": 2,
+          "reference": "crates/orbit-cli/src/command/mod.rs:147@5a5b45fec9a83b765b485043398d3abadaa468de"
+        },
+        {
+          "selector": "symbol:crates/orbit-cli/src/command/operation.rs#dispatch_workspace:function",
+          "source": "reference_path",
+          "confidence": "same_module",
+          "distance": 2,
+          "reference": "crates/orbit-cli/src/command/operation.rs:1042@5a5b45fec9a83b765b485043398d3abadaa468de"
+        },
+        {
+          "selector": "symbol:crates/orbit-cli/src/audit_middleware.rs#extract_command_meta:test",
+          "source": "reference_path",
+          "confidence": "same_module",
+          "distance": 3,
+          "reference": "crates/orbit-cli/src/audit_middleware.rs:174@5a5b45fec9a83b765b485043398d3abadaa468de"
+        },
+        {
+          "selector": "symbol:crates/orbit-cli/src/command/mod.rs#Cli:struct",
+          "source": "reference_path",
+          "confidence": "same_module",
+          "distance": 3,
+          "reference": "crates/orbit-cli/src/command/mod.rs:140@5a5b45fec9a83b765b485043398d3abadaa468de"
+        },
+        {
+          "selector": "symbol:crates/orbit-cli/src/command/operation.rs#CommandDispatch:type_alias",
+          "source": "reference_path",
+          "confidence": "same_module",
+          "distance": 3,
+          "reference": "crates/orbit-cli/src/command/operation.rs:93@5a5b45fec9a83b765b485043398d3abadaa468de"
+        },
+        {
+          "selector": "symbol:crates/orbit-cli/src/command/operation.rs#Commands:impl",
+          "source": "reference_path",
+          "confidence": "same_module",
+          "distance": 3,
+          "reference": "crates/orbit-cli/src/command/operation.rs:212@5a5b45fec9a83b765b485043398d3abadaa468de"
+        },
+        {
+          "selector": "symbol:crates/orbit-cli/src/command/operation.rs#dispatch_clock:function",
+          "source": "reference_path",
+          "confidence": "same_module",
+          "distance": 3,
+          "reference": "crates/orbit-cli/src/command/operation.rs:1112@5a5b45fec9a83b765b485043398d3abadaa468de"
+        },
+        {
+          "selector": "symbol:crates/orbit-cli/src/command/operation.rs#dispatch_host:function",
+          "source": "reference_path",
+          "confidence": "same_module",
+          "distance": 3,
+          "reference": "crates/orbit-cli/src/command/operation.rs:1028@5a5b45fec9a83b765b485043398d3abadaa468de"
+        }
+      ],
+      "entry_points": [
+        {
+          "selector": "symbol:crates/orbit-cli/src/command/tests/friction.rs#audit_metadata_is_derived_from_the_registry:test",
+          "source": "import_relationship",
+          "confidence": "fuzzy_name",
+          "distance": 3
+        },
+        {
+          "selector": "symbol:crates/orbit-cli/src/command/tests/operation.rs#operation_for:function",
+          "source": "import_relationship",
+          "confidence": "fuzzy_name",
+          "distance": 3
+        },
+        {
+          "selector": "symbol:crates/orbit-cli/src/command/tests/operation_mode.rs#hidden_pipeline_worker_uses_bounded_bootstrap_recovery:test",
+          "source": "import_relationship",
+          "confidence": "fuzzy_name",
+          "distance": 3
+        },
+        {
+          "selector": "symbol:crates/orbit-cli/src/command/tests/operation_mode.rs#operation_commands_need_a_runtime_and_carry_admin_audit_metadata:test",
+          "source": "import_relationship",
+          "confidence": "fuzzy_name",
+          "distance": 3
+        },
+        {
+          "selector": "symbol:crates/orbit-cli/src/main.rs#main:function",
+          "source": "import_relationship",
+          "confidence": "fuzzy_name",
+          "distance": 3
+        }
+      ],
+      "candidate_tests": [
+        {
+          "test": "file:crates/orbit-cli/src/command/config/tests/get.rs",
+          "source": "import_relationship",
+          "confidence": "file_import"
+        },
+        {
+          "test": "file:crates/orbit-cli/src/command/config/tests/set.rs",
+          "source": "import_relationship",
+          "confidence": "file_import"
+        },
+        {
+          "test": "file:crates/orbit-cli/src/command/executor/tests/show.rs",
+          "source": "import_relationship",
+          "confidence": "file_import"
+        },
+        {
+          "test": "file:crates/orbit-cli/src/command/init/tests/command.rs",
+          "source": "import_relationship",
+          "confidence": "file_import"
+        },
+        {
+          "test": "file:crates/orbit-cli/src/command/job/tests/command.rs",
+          "source": "import_relationship",
+          "confidence": "file_import"
+        },
+        {
+          "test": "file:crates/orbit-cli/src/command/log/tests/tail.rs",
+          "source": "import_relationship",
+          "confidence": "file_import"
+        },
+        {
+          "test": "file:crates/orbit-cli/src/command/mcp/setup/tests/args.rs",
+          "source": "import_relationship",
+          "confidence": "file_import"
+        },
+        {
+          "test": "file:crates/orbit-cli/src/command/mcp/setup/tests/workspace.rs",
+          "source": "import_relationship",
+          "confidence": "file_import"
+        },
+        {
+          "test": "file:crates/orbit-cli/src/command/run/tests/job.rs",
+          "source": "import_relationship",
+          "confidence": "file_import"
+        },
+        {
+          "test": "file:crates/orbit-cli/src/command/run/tests/mod.rs",
+          "source": "import_relationship",
+          "confidence": "file_import"
+        }
+      ]
+    },
+    {
+      "selector": "symbol:crates/orbit-cli/src/command/workspace/teardown.rs#WorkspaceTeardownArgs:impl",
+      "status": "modified",
+      "pairing": "same_selector",
+      "callers_found": 0,
+      "entry_points_found": 0,
+      "candidate_tests_found": 44,
+      "callers": [],
+      "entry_points": [],
+      "candidate_tests": [
+        {
+          "test": "file:crates/orbit-cli/src/command/mcp/setup/tests/workspace.rs",
+          "source": "import_relationship",
+          "confidence": "file_import"
+        },
+        {
+          "test": "file:crates/orbit-cli/src/command/run/tests/ship.rs",
+          "source": "import_relationship",
+          "confidence": "file_import"
+        },
+        {
+          "test": "file:crates/orbit-cli/src/command/run/tests/sweep.rs",
+          "source": "import_relationship",
+          "confidence": "file_import"
+        },
+        {
+          "test": "file:crates/orbit-cli/src/command/workspace/tests/init.rs",
+          "source": "import_relationship",
+          "confidence": "file_import"
+        },
+        {
+          "test": "file:crates/orbit-cli/src/command/workspace/tests/publication.rs",
+          "source": "import_relationship",
+          "confidence": "file_import"
+        },
+        {
+          "test": "file:crates/orbit-cli/src/command/workspace/tests/remove.rs",
+          "source": "import_relationship",
+          "confidence": "file_import"
+        },
+        {
+          "test": "file:crates/orbit-cli/src/command/workspace/tests/show.rs",
+          "source": "import_relationship",
+          "confidence": "file_import"
+        },
+        {
+          "test": "file:crates/orbit-cli/src/command/workspace/tests/source_remote.rs",
+          "source": "import_relationship",
+          "confidence": "file_import"
+        },
+        {
+          "test": "file:crates/orbit-cli/src/command/workspace/tests/teardown.rs",
+          "source": "import_relationship",
+          "confidence": "file_import"
+        },
+        {
+          "test": "file:crates/orbit-cmd/src/tests/doctor.rs",
+          "source": "import_relationship",
+          "confidence": "file_import"
+        }
+      ]
+    },
+    {
+      "selector": "symbol:crates/orbit-cli/src/command/workspace/teardown.rs#WorkspaceTeardownArgs:struct",
+      "status": "modified",
+      "pairing": "same_selector",
+      "callers_found": 17,
+      "entry_points_found": 6,
+      "candidate_tests_found": 44,
+      "callers": [
+        {
+          "selector": "symbol:crates/orbit-cli/src/command/workspace/teardown.rs#WorkspaceTeardownArgs:impl",
+          "source": "reference_path",
+          "confidence": "exact",
+          "distance": 1,
+          "reference": "crates/orbit-cli/src/command/workspace/teardown.rs:24@5a5b45fec9a83b765b485043398d3abadaa468de"
+        },
+        {
+          "selector": "symbol:crates/orbit-cli/src/command/workspace/command.rs#WorkspaceSubcommand:enum",
+          "source": "reference_path",
+          "confidence": "import_resolved",
+          "distance": 1,
+          "reference": "crates/orbit-cli/src/command/workspace/command.rs:42@5a5b45fec9a83b765b485043398d3abadaa468de"
+        },
+        {
+          "selector": "symbol:crates/orbit-cli/src/command/workspace/tests/teardown.rs#teardown:function",
+          "source": "reference_path",
+          "confidence": "import_resolved",
+          "distance": 1,
+          "reference": "crates/orbit-cli/src/command/workspace/tests/teardown.rs:74@5a5b45fec9a83b765b485043398d3abadaa468de"
+        },
+        {
+          "selector": "symbol:crates/orbit-cli/src/command/workspace/tests/teardown.rs#teardown_deletes_the_bound_task_store_partition_and_retires_its_bindings:test",
+          "source": "reference_path",
+          "confidence": "import_resolved",
+          "distance": 1,
+          "reference": "crates/orbit-cli/src/command/workspace/tests/teardown.rs:109@1ca6416e0ba2c6a713e42561b7b35a72b045aa25"
+        },
+        {
+          "selector": "symbol:crates/orbit-cli/src/command/workspace/tests/teardown.rs#teardown_without_confirm_leaves_the_task_store_and_registration_untouched:test",
+          "source": "reference_path",
+          "confidence": "import_resolved",
+          "distance": 1,
+          "reference": "crates/orbit-cli/src/command/workspace/tests/teardown.rs:174@1ca6416e0ba2c6a713e42561b7b35a72b045aa25"
+        },
+        {
+          "selector": "symbol:crates/orbit-cli/src/command/workspace/command.rs#WorkspaceCommand:struct",
+          "source": "reference_path",
+          "confidence": "import_resolved",
+          "distance": 2,
+          "reference": "crates/orbit-cli/src/command/workspace/command.rs:20@5a5b45fec9a83b765b485043398d3abadaa468de"
+        },
+        {
+          "selector": "symbol:crates/orbit-cli/src/command/workspace/tests/teardown.rs#teardown_rejects_a_selector_that_does_not_match_the_cwd_checkout:test",
+          "source": "reference_path",
+          "confidence": "import_resolved",
+          "distance": 2,
+          "reference": "crates/orbit-cli/src/command/workspace/tests/teardown.rs:158@5a5b45fec9a83b765b485043398d3abadaa468de"
+        },
+        {
+          "selector": "symbol:crates/orbit-cli/src/command/workspace/tests/teardown.rs#teardown_rejects_a_selector_that_is_not_registered:test",
+          "source": "reference_path",
+          "confidence": "import_resolved",
+          "distance": 2,
+          "reference": "crates/orbit-cli/src/command/workspace/tests/teardown.rs:115@5a5b45fec9a83b765b485043398d3abadaa468de"
+        },
+        {
+          "selector": "symbol:crates/orbit-cli/src/command/workspace/tests/teardown.rs#teardown_without_confirm_prints_the_resolved_plan_and_does_not_delete:test",
+          "source": "reference_path",
+          "confidence": "import_resolved",
+          "distance": 2,
+          "reference": "crates/orbit-cli/src/command/workspace/tests/teardown.rs:205@5a5b45fec9a83b765b485043398d3abadaa468de"
+        },
+        {
+          "selector": "symbol:crates/orbit-cli/src/command/workspace/command.rs#WorkspaceCommand:impl",
+          "source": "reference_path",
+          "confidence": "import_resolved",
+          "distance": 3,
+          "reference": "crates/orbit-cli/src/command/workspace/command.rs:45@5a5b45fec9a83b765b485043398d3abadaa468de"
+        }
+      ],
+      "entry_points": [
+        {
+          "selector": "symbol:crates/orbit-cli/src/command/workspace/tests/teardown.rs#teardown:function",
+          "source": "reference_path",
+          "confidence": "import_resolved",
+          "distance": 1
+        },
+        {
+          "selector": "symbol:crates/orbit-cli/src/command/workspace/tests/teardown.rs#teardown_deletes_the_bound_task_store_partition_and_retires_its_bindings:test",
+          "source": "reference_path",
+          "confidence": "import_resolved",
+          "distance": 1
+        },
+        {
+          "selector": "symbol:crates/orbit-cli/src/command/workspace/tests/teardown.rs#teardown_without_confirm_leaves_the_task_store_and_registration_untouched:test",
+          "source": "reference_path",
+          "confidence": "import_resolved",
+          "distance": 1
+        },
+        {
+          "selector": "symbol:crates/orbit-cli/src/command/workspace/tests/teardown.rs#teardown_rejects_a_selector_that_does_not_match_the_cwd_checkout:test",
+          "source": "reference_path",
+          "confidence": "import_resolved",
+          "distance": 2
+        },
+        {
+          "selector": "symbol:crates/orbit-cli/src/command/workspace/tests/teardown.rs#teardown_rejects_a_selector_that_is_not_registered:test",
+          "source": "reference_path",
+          "confidence": "import_resolved",
+          "distance": 2
+        }
+      ],
+      "candidate_tests": [
+        {
+          "test": "file:crates/orbit-cli/src/command/mcp/setup/tests/workspace.rs",
+          "source": "import_relationship",
+          "confidence": "file_import"
+        },
+        {
+          "test": "file:crates/orbit-cli/src/command/run/tests/ship.rs",
+          "source": "import_relationship",
+          "confidence": "file_import"
+        },
+        {
+          "test": "file:crates/orbit-cli/src/command/run/tests/sweep.rs",
+          "source": "import_relationship",
+          "confidence": "file_import"
+        },
+        {
+          "test": "file:crates/orbit-cli/src/command/workspace/tests/init.rs",
+          "source": "import_relationship",
+          "confidence": "file_import"
+        },
+        {
+          "test": "file:crates/orbit-cli/src/command/workspace/tests/publication.rs",
+          "source": "import_relationship",
+          "confidence": "file_import"
+        },
+        {
+          "test": "file:crates/orbit-cli/src/command/workspace/tests/remove.rs",
+          "source": "import_relationship",
+          "confidence": "file_import"
+        },
+        {
+          "test": "file:crates/orbit-cli/src/command/workspace/tests/show.rs",
+          "source": "import_relationship",
+          "confidence": "file_import"
+        },
+        {
+          "test": "file:crates/orbit-cli/src/command/workspace/tests/source_remote.rs",
+          "source": "import_relationship",
+          "confidence": "file_import"
+        },
+        {
+          "test": "file:crates/orbit-cli/src/command/workspace/tests/teardown.rs",
+          "source": "import_relationship",
+          "confidence": "file_import"
+        },
+        {
+          "test": "file:crates/orbit-cmd/src/tests/doctor.rs",
+          "source": "import_relationship",
+          "confidence": "file_import"
+        }
+      ]
+    },
+    {
+      "selector": "symbol:crates/orbit-cli/src/command/workspace/teardown.rs#execute:method",
+      "status": "modified",
+      "pairing": "same_selector",
+      "callers_found": 94,
+      "entry_points_found": 49,
+      "candidate_tests_found": 115,
+      "callers": [
+        {
+          "selector": "symbol:crates/orbit-cli/src/command/activity/command.rs#ActivitySubcommand:impl",
+          "source": "call_path",
+          "confidence": "fuzzy_name",
+          "distance": 1,
+          "reference": "crates/orbit-cli/src/command/activity/command.rs:30@5a5b45fec9a83b765b485043398d3abadaa468de"
+        },
+        {
+          "selector": "symbol:crates/orbit-cli/src/command/activity/command.rs#execute:method",
+          "source": "call_path",
+          "confidence": "fuzzy_name",
+          "distance": 1,
+          "reference": "crates/orbit-cli/src/command/activity/command.rs:17@5a5b45fec9a83b765b485043398d3abadaa468de"
+        },
+        {
+          "selector": "symbol:crates/orbit-cli/src/command/audit/command.rs#AuditSubcommand:impl",
+          "source": "call_path",
+          "confidence": "fuzzy_name",
+          "distance": 1,
+          "reference": "crates/orbit-cli/src/command/audit/command.rs:42@5a5b45fec9a83b765b485043398d3abadaa468de"
+        },
+        {
+          "selector": "symbol:crates/orbit-cli/src/command/audit/command.rs#execute:method",
+          "source": "call_path",
+          "confidence": "fuzzy_name",
+          "distance": 1,
+          "reference": "crates/orbit-cli/src/command/audit/command.rs:21@5a5b45fec9a83b765b485043398d3abadaa468de"
+        },
+        {
+          "selector": "symbol:crates/orbit-cli/src/command/auto_task/command.rs#AutoTaskSubcommand:impl",
+          "source": "call_path",
+          "confidence": "fuzzy_name",
+          "distance": 1,
+          "reference": "crates/orbit-cli/src/command/auto_task/command.rs:50@5a5b45fec9a83b765b485043398d3abadaa468de"
+        },
+        {
+          "selector": "symbol:crates/orbit-cli/src/command/auto_task/command.rs#execute:method",
+          "source": "call_path",
+          "confidence": "fuzzy_name",
+          "distance": 1,
+          "reference": "crates/orbit-cli/src/command/auto_task/command.rs:23@5a5b45fec9a83b765b485043398d3abadaa468de"
+        },
+        {
+          "selector": "symbol:crates/orbit-cli/src/command/config/command.rs#ConfigSubcommand:impl",
+          "source": "call_path",
+          "confidence": "fuzzy_name",
+          "distance": 1,
+          "reference": "crates/orbit-cli/src/command/config/command.rs:42@5a5b45fec9a83b765b485043398d3abadaa468de"
+        },
+        {
+          "selector": "symbol:crates/orbit-cli/src/command/config/command.rs#execute:method",
+          "source": "call_path",
+          "confidence": "fuzzy_name",
+          "distance": 1,
+          "reference": "crates/orbit-cli/src/command/config/command.rs:21@5a5b45fec9a83b765b485043398d3abadaa468de"
+        },
+        {
+          "selector": "symbol:crates/orbit-cli/src/command/config/tests/get.rs#complexity_pools_set_get_show_agree_and_invalid_edits_do_not_write:test",
+          "source": "call_path",
+          "confidence": "fuzzy_name",
+          "distance": 1,
+          "reference": "crates/orbit-cli/src/command/config/tests/get.rs:122@5a5b45fec9a83b765b485043398d3abadaa468de"
+        },
+        {
+          "selector": "symbol:crates/orbit-cli/src/command/config/tests/get.rs#get_agrees_with_set_for_sol_crew_effort:test",
+          "source": "call_path",
+          "confidence": "fuzzy_name",
+          "distance": 1,
+          "reference": "crates/orbit-cli/src/command/config/tests/get.rs:86@5a5b45fec9a83b765b485043398d3abadaa468de"
+        }
+      ],
+      "entry_points": [
+        {
+          "selector": "symbol:crates/orbit-cli/src/command/config/tests/get.rs#complexity_pools_set_get_show_agree_and_invalid_edits_do_not_write:test",
+          "source": "call_path",
+          "confidence": "fuzzy_name",
+          "distance": 1
+        },
+        {
+          "selector": "symbol:crates/orbit-cli/src/command/config/tests/get.rs#get_agrees_with_set_for_sol_crew_effort:test",
+          "source": "call_path",
+          "confidence": "fuzzy_name",
+          "distance": 1
+        },
+        {
+          "selector": "symbol:crates/orbit-cli/src/command/config/tests/get.rs#get_omitted_crew_effort_is_null_not_a_fabricated_default:test",
+          "source": "call_path",
+          "confidence": "fuzzy_name",
+          "distance": 1
+        },
+        {
+          "selector": "symbol:crates/orbit-cli/src/command/config/tests/get.rs#get_reads_hand_authored_crew_effort:test",
+          "source": "call_path",
+          "confidence": "fuzzy_name",
+          "distance": 1
+        },
+        {
+          "selector": "symbol:crates/orbit-cli/src/command/config/tests/get.rs#get_rejects_misspelled_crew_field:test",
+          "source": "call_path",
+          "confidence": "fuzzy_name",
+          "distance": 1
+        }
+      ],
+      "candidate_tests": [
+        {
+          "test": "symbol:crates/orbit-cli/src/command/config/tests/get.rs#complexity_pools_set_get_show_agree_and_invalid_edits_do_not_write:test",
+          "source": "call_path",
+          "confidence": "fuzzy_name"
+        },
+        {
+          "test": "symbol:crates/orbit-cli/src/command/config/tests/get.rs#get_agrees_with_set_for_sol_crew_effort:test",
+          "source": "call_path",
+          "confidence": "fuzzy_name"
+        },
+        {
+          "test": "symbol:crates/orbit-cli/src/command/config/tests/get.rs#get_omitted_crew_effort_is_null_not_a_fabricated_default:test",
+          "source": "call_path",
+          "confidence": "fuzzy_name"
+        },
+        {
+          "test": "symbol:crates/orbit-cli/src/command/config/tests/get.rs#get_reads_hand_authored_crew_effort:test",
+          "source": "call_path",
+          "confidence": "fuzzy_name"
+        },
+        {
+          "test": "symbol:crates/orbit-cli/src/command/config/tests/get.rs#get_rejects_misspelled_crew_field:test",
+          "source": "call_path",
+          "confidence": "fuzzy_name"
+        },
+        {
+          "test": "symbol:crates/orbit-cli/src/command/config/tests/get.rs#get_scoped_workspace_with_file_distinguishes_set_and_unset_keys:test",
+          "source": "call_path",
+          "confidence": "fuzzy_name"
+        },
+        {
+          "test": "symbol:crates/orbit-cli/src/command/config/tests/get.rs#get_scoped_workspace_without_config_file_returns_default_and_explicit_absent:test",
+          "source": "call_path",
+          "confidence": "fuzzy_name"
+        },
+        {
+          "test": "symbol:crates/orbit-cli/src/command/config/tests/get.rs#get_without_json_flag_still_returns_a_payload:test",
+          "source": "call_path",
+          "confidence": "fuzzy_name"
+        },
+        {
+          "test": "symbol:crates/orbit-cli/src/command/config/tests/set.rs#set_claude_crew_effort_accepts_supported_value:test",
+          "source": "call_path",
+          "confidence": "fuzzy_name"
+        },
+        {
+          "test": "symbol:crates/orbit-cli/src/command/config/tests/set.rs#set_crew_effort_on_existing_sol_crew_round_trips:test",
+          "source": "call_path",
+          "confidence": "fuzzy_name"
+        }
+      ]
+    },
+    {
+      "selector": "symbol:crates/orbit-cli/src/command/workspace/teardown.rs#format_deleted_partition:function",
+      "status": "added",
+      "pairing": "same_selector",
+      "callers_found": 94,
+      "entry_points_found": 47,
+      "candidate_tests_found": 91,
+      "callers": [
+        {
+          "selector": "symbol:crates/orbit-cli/src/command/workspace/teardown.rs#execute:method",
+          "source": "call_path",
+          "confidence": "exact",
+          "distance": 1,
+          "reference": "crates/orbit-cli/src/command/workspace/teardown.rs:88@5a5b45fec9a83b765b485043398d3abadaa468de"
+        },
+        {
+          "selector": "symbol:crates/orbit-cli/src/command/workspace/tests/teardown.rs#partition_summary_names_the_workspace_it_belonged_to:test",
+          "source": "call_path",
+          "confidence": "import_resolved",
+          "distance": 1,
+          "reference": "crates/orbit-cli/src/command/workspace/tests/teardown.rs:231@5a5b45fec9a83b765b485043398d3abadaa468de"
+        },
+        {
+          "selector": "file:crates/orbit-cli/src/command/workspace/tests/teardown.rs",
+          "source": "import_relationship",
+          "confidence": "import_resolved",
+          "distance": 1,
+          "reference": "crates/orbit-cli/src/command/workspace/tests/teardown.rs:25@5a5b45fec9a83b765b485043398d3abadaa468de"
+        },
+        {
+          "selector": "symbol:crates/orbit-cli/src/command/activity/command.rs#ActivitySubcommand:impl",
+          "source": "call_path",
+          "confidence": "fuzzy_name",
+          "distance": 2,
+          "reference": "crates/orbit-cli/src/command/activity/command.rs:30@5a5b45fec9a83b765b485043398d3abadaa468de"
+        },
+        {
+          "selector": "symbol:crates/orbit-cli/src/command/activity/command.rs#execute:method",
+          "source": "call_path",
+          "confidence": "fuzzy_name",
+          "distance": 2,
+          "reference": "crates/orbit-cli/src/command/activity/command.rs:17@5a5b45fec9a83b765b485043398d3abadaa468de"
+        },
+        {
+          "selector": "symbol:crates/orbit-cli/src/command/audit/command.rs#AuditSubcommand:impl",
+          "source": "call_path",
+          "confidence": "fuzzy_name",
+          "distance": 2,
+          "reference": "crates/orbit-cli/src/command/audit/command.rs:42@5a5b45fec9a83b765b485043398d3abadaa468de"
+        },
+        {
+          "selector": "symbol:crates/orbit-cli/src/command/audit/command.rs#execute:method",
+          "source": "call_path",
+          "confidence": "fuzzy_name",
+          "distance": 2,
+          "reference": "crates/orbit-cli/src/command/audit/command.rs:21@5a5b45fec9a83b765b485043398d3abadaa468de"
+        },
+        {
+          "selector": "symbol:crates/orbit-cli/src/command/auto_task/command.rs#AutoTaskSubcommand:impl",
+          "source": "call_path",
+          "confidence": "fuzzy_name",
+          "distance": 2,
+          "reference": "crates/orbit-cli/src/command/auto_task/command.rs:50@5a5b45fec9a83b765b485043398d3abadaa468de"
+        },
+        {
+          "selector": "symbol:crates/orbit-cli/src/command/auto_task/command.rs#execute:method",
+          "source": "call_path",
+          "confidence": "fuzzy_name",
+          "distance": 2,
+          "reference": "crates/orbit-cli/src/command/auto_task/command.rs:23@5a5b45fec9a83b765b485043398d3abadaa468de"
+        },
+        {
+          "selector": "symbol:crates/orbit-cli/src/command/config/command.rs#ConfigSubcommand:impl",
+          "source": "call_path",
+          "confidence": "fuzzy_name",
+          "distance": 2,
+          "reference": "crates/orbit-cli/src/command/config/command.rs:42@5a5b45fec9a83b765b485043398d3abadaa468de"
+        }
+      ],
+      "entry_points": [
+        {
+          "selector": "symbol:crates/orbit-cli/src/command/workspace/tests/teardown.rs#partition_summary_names_the_workspace_it_belonged_to:test",
+          "source": "call_path",
+          "confidence": "import_resolved",
+          "distance": 1
+        },
+        {
+          "selector": "symbol:crates/orbit-cli/src/command/config/tests/get.rs#complexity_pools_set_get_show_agree_and_invalid_edits_do_not_write:test",
+          "source": "call_path",
+          "confidence": "fuzzy_name",
+          "distance": 2
+        },
+        {
+          "selector": "symbol:crates/orbit-cli/src/command/config/tests/get.rs#get_agrees_with_set_for_sol_crew_effort:test",
+          "source": "call_path",
+          "confidence": "fuzzy_name",
+          "distance": 2
+        },
+        {
+          "selector": "symbol:crates/orbit-cli/src/command/config/tests/get.rs#get_omitted_crew_effort_is_null_not_a_fabricated_default:test",
+          "source": "call_path",
+          "confidence": "fuzzy_name",
+          "distance": 2
+        },
+        {
+          "selector": "symbol:crates/orbit-cli/src/command/config/tests/get.rs#get_reads_hand_authored_crew_effort:test",
+          "source": "call_path",
+          "confidence": "fuzzy_name",
+          "distance": 2
+        }
+      ],
+      "candidate_tests": [
+        {
+          "test": "symbol:crates/orbit-cli/src/command/workspace/tests/teardown.rs#partition_summary_names_the_workspace_it_belonged_to:test",
+          "source": "call_path",
+          "confidence": "import_resolved"
+        },
+        {
+          "test": "symbol:crates/orbit-cli/src/command/config/tests/get.rs#complexity_pools_set_get_show_agree_and_invalid_edits_do_not_write:test",
+          "source": "call_path",
+          "confidence": "fuzzy_name"
+        },
+        {
+          "test": "symbol:crates/orbit-cli/src/command/config/tests/get.rs#get_agrees_with_set_for_sol_crew_effort:test",
+          "source": "call_path",
+          "confidence": "fuzzy_name"
+        },
+        {
+          "test": "symbol:crates/orbit-cli/src/command/config/tests/get.rs#get_omitted_crew_effort_is_null_not_a_fabricated_default:test",
+          "source": "call_path",
+          "confidence": "fuzzy_name"
+        },
+        {
+          "test": "symbol:crates/orbit-cli/src/command/config/tests/get.rs#get_reads_hand_authored_crew_effort:test",
+          "source": "call_path",
+          "confidence": "fuzzy_name"
+        },
+        {
+          "test": "symbol:crates/orbit-cli/src/command/config/tests/get.rs#get_rejects_misspelled_crew_field:test",
+          "source": "call_path",
+          "confidence": "fuzzy_name"
+        },
+        {
+          "test": "symbol:crates/orbit-cli/src/command/config/tests/get.rs#get_scoped_workspace_with_file_distinguishes_set_and_unset_keys:test",
+          "source": "call_path",
+          "confidence": "fuzzy_name"
+        },
+        {
+          "test": "symbol:crates/orbit-cli/src/command/config/tests/get.rs#get_scoped_workspace_without_config_file_returns_default_and_explicit_absent:test",
+          "source": "call_path",
+          "confidence": "fuzzy_name"
+        },
+        {
+          "test": "symbol:crates/orbit-cli/src/command/config/tests/get.rs#get_without_json_flag_still_returns_a_payload:test",
+          "source": "call_path",
+          "confidence": "fuzzy_name"
+        },
+        {
+          "test": "symbol:crates/orbit-cli/src/command/config/tests/set.rs#set_claude_crew_effort_accepts_supported_value:test",
+          "source": "call_path",
+          "confidence": "fuzzy_name"
+        }
+      ]
+    },
+    {
+      "selector": "symbol:crates/orbit-cli/src/command/workspace/teardown.rs#format_teardown_plan:function",
+      "status": "added",
+      "pairing": "same_selector",
+      "callers_found": 94,
+      "entry_points_found": 47,
+      "candidate_tests_found": 91,
+      "callers": [
+        {
+          "selector": "symbol:crates/orbit-cli/src/command/workspace/teardown.rs#execute:method",
+          "source": "call_path",
+          "confidence": "exact",
+          "distance": 1,
+          "reference": "crates/orbit-cli/src/command/workspace/teardown.rs:55@5a5b45fec9a83b765b485043398d3abadaa468de"
+        },
+        {
+          "selector": "symbol:crates/orbit-cli/src/command/workspace/tests/teardown.rs#teardown_plan_names_workspace_checkout_and_partition:test",
+          "source": "call_path",
+          "confidence": "import_resolved",
+          "distance": 1,
+          "reference": "crates/orbit-cli/src/command/workspace/tests/teardown.rs:255@5a5b45fec9a83b765b485043398d3abadaa468de"
+        },
+        {
+          "selector": "file:crates/orbit-cli/src/command/workspace/tests/teardown.rs",
+          "source": "import_relationship",
+          "confidence": "import_resolved",
+          "distance": 1,
+          "reference": "crates/orbit-cli/src/command/workspace/tests/teardown.rs:25@5a5b45fec9a83b765b485043398d3abadaa468de"
+        },
+        {
+          "selector": "symbol:crates/orbit-cli/src/command/activity/command.rs#ActivitySubcommand:impl",
+          "source": "call_path",
+          "confidence": "fuzzy_name",
+          "distance": 2,
+          "reference": "crates/orbit-cli/src/command/activity/command.rs:30@5a5b45fec9a83b765b485043398d3abadaa468de"
+        },
+        {
+          "selector": "symbol:crates/orbit-cli/src/command/activity/command.rs#execute:method",
+          "source": "call_path",
+          "confidence": "fuzzy_name",
+          "distance": 2,
+          "reference": "crates/orbit-cli/src/command/activity/command.rs:17@5a5b45fec9a83b765b485043398d3abadaa468de"
+        },
+        {
+          "selector": "symbol:crates/orbit-cli/src/command/audit/command.rs#AuditSubcommand:impl",
+          "source": "call_path",
+          "confidence": "fuzzy_name",
+          "distance": 2,
+          "reference": "crates/orbit-cli/src/command/audit/command.rs:42@5a5b45fec9a83b765b485043398d3abadaa468de"
+        },
+        {
+          "selector": "symbol:crates/orbit-cli/src/command/audit/command.rs#execute:method",
+          "source": "call_path",
+          "confidence": "fuzzy_name",
+          "distance": 2,
+          "reference": "crates/orbit-cli/src/command/audit/command.rs:21@5a5b45fec9a83b765b485043398d3abadaa468de"
+        },
+        {
+          "selector": "symbol:crates/orbit-cli/src/command/auto_task/command.rs#AutoTaskSubcommand:impl",
+          "source": "call_path",
+          "confidence": "fuzzy_name",
+          "distance": 2,
+          "reference": "crates/orbit-cli/src/command/auto_task/command.rs:50@5a5b45fec9a83b765b485043398d3abadaa468de"
+        },
+        {
+          "selector": "symbol:crates/orbit-cli/src/command/auto_task/command.rs#execute:method",
+          "source": "call_path",
+          "confidence": "fuzzy_name",
+          "distance": 2,
+          "reference": "crates/orbit-cli/src/command/auto_task/command.rs:23@5a5b45fec9a83b765b485043398d3abadaa468de"
+        },
+        {
+          "selector": "symbol:crates/orbit-cli/src/command/config/command.rs#ConfigSubcommand:impl",
+          "source": "call_path",
+          "confidence": "fuzzy_name",
+          "distance": 2,
+          "reference": "crates/orbit-cli/src/command/config/command.rs:42@5a5b45fec9a83b765b485043398d3abadaa468de"
+        }
+      ],
+      "entry_points": [
+        {
+          "selector": "symbol:crates/orbit-cli/src/command/workspace/tests/teardown.rs#teardown_plan_names_workspace_checkout_and_partition:test",
+          "source": "call_path",
+          "confidence": "import_resolved",
+          "distance": 1
+        },
+        {
+          "selector": "symbol:crates/orbit-cli/src/command/config/tests/get.rs#complexity_pools_set_get_show_agree_and_invalid_edits_do_not_write:test",
+          "source": "call_path",
+          "confidence": "fuzzy_name",
+          "distance": 2
+        },
+        {
+          "selector": "symbol:crates/orbit-cli/src/command/config/tests/get.rs#get_agrees_with_set_for_sol_crew_effort:test",
+          "source": "call_path",
+          "confidence": "fuzzy_name",
+          "distance": 2
+        },
+        {
+          "selector": "symbol:crates/orbit-cli/src/command/config/tests/get.rs#get_omitted_crew_effort_is_null_not_a_fabricated_default:test",
+          "source": "call_path",
+          "confidence": "fuzzy_name",
+          "distance": 2
+        },
+        {
+          "selector": "symbol:crates/orbit-cli/src/command/config/tests/get.rs#get_reads_hand_authored_crew_effort:test",
+          "source": "call_path",
+          "confidence": "fuzzy_name",
+          "distance": 2
+        }
+      ],
+      "candidate_tests": [
+        {
+          "test": "symbol:crates/orbit-cli/src/command/workspace/tests/teardown.rs#teardown_plan_names_workspace_checkout_and_partition:test",
+          "source": "call_path",
+          "confidence": "import_resolved"
+        },
+        {
+          "test": "symbol:crates/orbit-cli/src/command/config/tests/get.rs#complexity_pools_set_get_show_agree_and_invalid_edits_do_not_write:test",
+          "source": "call_path",
+          "confidence": "fuzzy_name"
+        },
+        {
+          "test": "symbol:crates/orbit-cli/src/command/config/tests/get.rs#get_agrees_with_set_for_sol_crew_effort:test",
+          "source": "call_path",
+          "confidence": "fuzzy_name"
+        },
+        {
+          "test": "symbol:crates/orbit-cli/src/command/config/tests/get.rs#get_omitted_crew_effort_is_null_not_a_fabricated_default:test",
+          "source": "call_path",
+          "confidence": "fuzzy_name"
+        },
+        {
+          "test": "symbol:crates/orbit-cli/src/command/config/tests/get.rs#get_reads_hand_authored_crew_effort:test",
+          "source": "call_path",
+          "confidence": "fuzzy_name"
+        },
+        {
+          "test": "symbol:crates/orbit-cli/src/command/config/tests/get.rs#get_rejects_misspelled_crew_field:test",
+          "source": "call_path",
+          "confidence": "fuzzy_name"
+        },
+        {
+          "test": "symbol:crates/orbit-cli/src/command/config/tests/get.rs#get_scoped_workspace_with_file_distinguishes_set_and_unset_keys:test",
+          "source": "call_path",
+          "confidence": "fuzzy_name"
+        },
+        {
+          "test": "symbol:crates/orbit-cli/src/command/config/tests/get.rs#get_scoped_workspace_without_config_file_returns_default_and_explicit_absent:test",
+          "source": "call_path",
+          "confidence": "fuzzy_name"
+        },
+        {
+          "test": "symbol:crates/orbit-cli/src/command/config/tests/get.rs#get_without_json_flag_still_returns_a_payload:test",
+          "source": "call_path",
+          "confidence": "fuzzy_name"
+        },
+        {
+          "test": "symbol:crates/orbit-cli/src/command/config/tests/set.rs#set_claude_crew_effort_accepts_supported_value:test",
+          "source": "call_path",
+          "confidence": "fuzzy_name"
+        }
+      ]
+    },
+    {
+      "selector": "symbol:crates/orbit-cli/src/command/workspace/teardown.rs#partition_bundle_count:function",
+      "status": "added",
+      "pairing": "same_selector",
+      "callers_found": 94,
+      "entry_points_found": 46,
+      "candidate_tests_found": 90,
+      "callers": [
+        {
+          "selector": "symbol:crates/orbit-cli/src/command/workspace/teardown.rs#format_teardown_plan:function",
+          "source": "call_path",
+          "confidence": "exact",
+          "distance": 1,
+          "reference": "crates/orbit-cli/src/command/workspace/teardown.rs:225@5a5b45fec9a83b765b485043398d3abadaa468de"
+        },
+        {
+          "selector": "symbol:crates/orbit-cli/src/command/workspace/teardown.rs#execute:method",
+          "source": "call_path",
+          "confidence": "exact",
+          "distance": 2,
+          "reference": "crates/orbit-cli/src/command/workspace/teardown.rs:55@5a5b45fec9a83b765b485043398d3abadaa468de"
+        },
+        {
+          "selector": "symbol:crates/orbit-cli/src/command/workspace/tests/teardown.rs#teardown_plan_names_workspace_checkout_and_partition:test",
+          "source": "call_path",
+          "confidence": "import_resolved",
+          "distance": 2,
+          "reference": "crates/orbit-cli/src/command/workspace/tests/teardown.rs:255@5a5b45fec9a83b765b485043398d3abadaa468de"
+        },
+        {
+          "selector": "file:crates/orbit-cli/src/command/workspace/tests/teardown.rs",
+          "source": "import_relationship",
+          "confidence": "import_resolved",
+          "distance": 2,
+          "reference": "crates/orbit-cli/src/command/workspace/tests/teardown.rs:25@5a5b45fec9a83b765b485043398d3abadaa468de"
+        },
+        {
+          "selector": "symbol:crates/orbit-cli/src/command/activity/command.rs#ActivitySubcommand:impl",
+          "source": "call_path",
+          "confidence": "fuzzy_name",
+          "distance": 3,
+          "reference": "crates/orbit-cli/src/command/activity/command.rs:30@5a5b45fec9a83b765b485043398d3abadaa468de"
+        },
+        {
+          "selector": "symbol:crates/orbit-cli/src/command/activity/command.rs#execute:method",
+          "source": "call_path",
+          "confidence": "fuzzy_name",
+          "distance": 3,
+          "reference": "crates/orbit-cli/src/command/activity/command.rs:17@5a5b45fec9a83b765b485043398d3abadaa468de"
+        },
+        {
+          "selector": "symbol:crates/orbit-cli/src/command/audit/command.rs#AuditSubcommand:impl",
+          "source": "call_path",
+          "confidence": "fuzzy_name",
+          "distance": 3,
+          "reference": "crates/orbit-cli/src/command/audit/command.rs:42@5a5b45fec9a83b765b485043398d3abadaa468de"
+        },
+        {
+          "selector": "symbol:crates/orbit-cli/src/command/audit/command.rs#execute:method",
+          "source": "call_path",
+          "confidence": "fuzzy_name",
+          "distance": 3,
+          "reference": "crates/orbit-cli/src/command/audit/command.rs:21@5a5b45fec9a83b765b485043398d3abadaa468de"
+        },
+        {
+          "selector": "symbol:crates/orbit-cli/src/command/auto_task/command.rs#AutoTaskSubcommand:impl",
+          "source": "call_path",
+          "confidence": "fuzzy_name",
+          "distance": 3,
+          "reference": "crates/orbit-cli/src/command/auto_task/command.rs:50@5a5b45fec9a83b765b485043398d3abadaa468de"
+        },
+        {
+          "selector": "symbol:crates/orbit-cli/src/command/auto_task/command.rs#execute:method",
+          "source": "call_path",
+          "confidence": "fuzzy_name",
+          "distance": 3,
+          "reference": "crates/orbit-cli/src/command/auto_task/command.rs:23@5a5b45fec9a83b765b485043398d3abadaa468de"
+        }
+      ],
+      "entry_points": [
+        {
+          "selector": "symbol:crates/orbit-cli/src/command/workspace/tests/teardown.rs#teardown_plan_names_workspace_checkout_and_partition:test",
+          "source": "call_path",
+          "confidence": "import_resolved",
+          "distance": 2
+        },
+        {
+          "selector": "symbol:crates/orbit-cli/src/command/config/tests/get.rs#complexity_pools_set_get_show_agree_and_invalid_edits_do_not_write:test",
+          "source": "call_path",
+          "confidence": "fuzzy_name",
+          "distance": 3
+        },
+        {
+          "selector": "symbol:crates/orbit-cli/src/command/config/tests/get.rs#get_agrees_with_set_for_sol_crew_effort:test",
+          "source": "call_path",
+          "confidence": "fuzzy_name",
+          "distance": 3
+        },
+        {
+          "selector": "symbol:crates/orbit-cli/src/command/config/tests/get.rs#get_omitted_crew_effort_is_null_not_a_fabricated_default:test",
+          "source": "call_path",
+          "confidence": "fuzzy_name",
+          "distance": 3
+        },
+        {
+          "selector": "symbol:crates/orbit-cli/src/command/config/tests/get.rs#get_reads_hand_authored_crew_effort:test",
+          "source": "call_path",
+          "confidence": "fuzzy_name",
+          "distance": 3
+        }
+      ],
+      "candidate_tests": [
+        {
+          "test": "symbol:crates/orbit-cli/src/command/workspace/tests/teardown.rs#teardown_plan_names_workspace_checkout_and_partition:test",
+          "source": "call_path",
+          "confidence": "import_resolved"
+        },
+        {
+          "test": "symbol:crates/orbit-cli/src/command/config/tests/get.rs#complexity_pools_set_get_show_agree_and_invalid_edits_do_not_write:test",
+          "source": "call_path",
+          "confidence": "fuzzy_name"
+        },
+        {
+          "test": "symbol:crates/orbit-cli/src/command/config/tests/get.rs#get_agrees_with_set_for_sol_crew_effort:test",
+          "source": "call_path",
+          "confidence": "fuzzy_name"
+        },
+        {
+          "test": "symbol:crates/orbit-cli/src/command/config/tests/get.rs#get_omitted_crew_effort_is_null_not_a_fabricated_default:test",
+          "source": "call_path",
+          "confidence": "fuzzy_name"
+        },
+        {
+          "test": "symbol:crates/orbit-cli/src/command/config/tests/get.rs#get_reads_hand_authored_crew_effort:test",
+          "source": "call_path",
+          "confidence": "fuzzy_name"
+        },
+        {
+          "test": "symbol:crates/orbit-cli/src/command/config/tests/get.rs#get_rejects_misspelled_crew_field:test",
+          "source": "call_path",
+          "confidence": "fuzzy_name"
+        },
+        {
+          "test": "symbol:crates/orbit-cli/src/command/config/tests/get.rs#get_scoped_workspace_with_file_distinguishes_set_and_unset_keys:test",
+          "source": "call_path",
+          "confidence": "fuzzy_name"
+        },
+        {
+          "test": "symbol:crates/orbit-cli/src/command/config/tests/get.rs#get_scoped_workspace_without_config_file_returns_default_and_explicit_absent:test",
+          "source": "call_path",
+          "confidence": "fuzzy_name"
+        },
+        {
+          "test": "symbol:crates/orbit-cli/src/command/config/tests/get.rs#get_without_json_flag_still_returns_a_payload:test",
+          "source": "call_path",
+          "confidence": "fuzzy_name"
+        },
+        {
+          "test": "symbol:crates/orbit-cli/src/command/config/tests/set.rs#set_claude_crew_effort_accepts_supported_value:test",
+          "source": "call_path",
+          "confidence": "fuzzy_name"
+        }
+      ]
+    },
+    {
+      "selector": "symbol:crates/orbit-cli/src/command/workspace/teardown.rs#planned_task_store_partitions:function",
+      "status": "added",
+      "pairing": "same_selector",
+      "callers_found": 94,
+      "entry_points_found": 48,
+      "candidate_tests_found": 92,
+      "callers": [
+        {
+          "selector": "symbol:crates/orbit-cli/src/command/workspace/teardown.rs#execute:method",
+          "source": "call_path",
+          "confidence": "exact",
+          "distance": 1,
+          "reference": "crates/orbit-cli/src/command/workspace/teardown.rs:54@5a5b45fec9a83b765b485043398d3abadaa468de"
+        },
+        {
+          "selector": "symbol:crates/orbit-cli/src/command/activity/command.rs#ActivitySubcommand:impl",
+          "source": "call_path",
+          "confidence": "fuzzy_name",
+          "distance": 2,
+          "reference": "crates/orbit-cli/src/command/activity/command.rs:30@5a5b45fec9a83b765b485043398d3abadaa468de"
+        },
+        {
+          "selector": "symbol:crates/orbit-cli/src/command/activity/command.rs#execute:method",
+          "source": "call_path",
+          "confidence": "fuzzy_name",
+          "distance": 2,
+          "reference": "crates/orbit-cli/src/command/activity/command.rs:17@5a5b45fec9a83b765b485043398d3abadaa468de"
+        },
+        {
+          "selector": "symbol:crates/orbit-cli/src/command/audit/command.rs#AuditSubcommand:impl",
+          "source": "call_path",
+          "confidence": "fuzzy_name",
+          "distance": 2,
+          "reference": "crates/orbit-cli/src/command/audit/command.rs:42@5a5b45fec9a83b765b485043398d3abadaa468de"
+        },
+        {
+          "selector": "symbol:crates/orbit-cli/src/command/audit/command.rs#execute:method",
+          "source": "call_path",
+          "confidence": "fuzzy_name",
+          "distance": 2,
+          "reference": "crates/orbit-cli/src/command/audit/command.rs:21@5a5b45fec9a83b765b485043398d3abadaa468de"
+        },
+        {
+          "selector": "symbol:crates/orbit-cli/src/command/auto_task/command.rs#AutoTaskSubcommand:impl",
+          "source": "call_path",
+          "confidence": "fuzzy_name",
+          "distance": 2,
+          "reference": "crates/orbit-cli/src/command/auto_task/command.rs:50@5a5b45fec9a83b765b485043398d3abadaa468de"
+        },
+        {
+          "selector": "symbol:crates/orbit-cli/src/command/auto_task/command.rs#execute:method",
+          "source": "call_path",
+          "confidence": "fuzzy_name",
+          "distance": 2,
+          "reference": "crates/orbit-cli/src/command/auto_task/command.rs:23@5a5b45fec9a83b765b485043398d3abadaa468de"
+        },
+        {
+          "selector": "symbol:crates/orbit-cli/src/command/config/command.rs#ConfigSubcommand:impl",
+          "source": "call_path",
+          "confidence": "fuzzy_name",
+          "distance": 2,
+          "reference": "crates/orbit-cli/src/command/config/command.rs:42@5a5b45fec9a83b765b485043398d3abadaa468de"
+        },
+        {
+          "selector": "symbol:crates/orbit-cli/src/command/config/command.rs#execute:method",
+          "source": "call_path",
+          "confidence": "fuzzy_name",
+          "distance": 2,
+          "reference": "crates/orbit-cli/src/command/config/command.rs:21@5a5b45fec9a83b765b485043398d3abadaa468de"
+        },
+        {
+          "selector": "symbol:crates/orbit-cli/src/command/config/tests/get.rs#complexity_pools_set_get_show_agree_and_invalid_edits_do_not_write:test",
+          "source": "call_path",
+          "confidence": "fuzzy_name",
+          "distance": 2,
+          "reference": "crates/orbit-cli/src/command/config/tests/get.rs:122@5a5b45fec9a83b765b485043398d3abadaa468de"
+        }
+      ],
+      "entry_points": [
+        {
+          "selector": "symbol:crates/orbit-cli/src/command/config/tests/get.rs#complexity_pools_set_get_show_agree_and_invalid_edits_do_not_write:test",
+          "source": "call_path",
+          "confidence": "fuzzy_name",
+          "distance": 2
+        },
+        {
+          "selector": "symbol:crates/orbit-cli/src/command/config/tests/get.rs#get_agrees_with_set_for_sol_crew_effort:test",
+          "source": "call_path",
+          "confidence": "fuzzy_name",
+          "distance": 2
+        },
+        {
+          "selector": "symbol:crates/orbit-cli/src/command/config/tests/get.rs#get_omitted_crew_effort_is_null_not_a_fabricated_default:test",
+          "source": "call_path",
+          "confidence": "fuzzy_name",
+          "distance": 2
+        },
+        {
+          "selector": "symbol:crates/orbit-cli/src/command/config/tests/get.rs#get_reads_hand_authored_crew_effort:test",
+          "source": "call_path",
+          "confidence": "fuzzy_name",
+          "distance": 2
+        },
+        {
+          "selector": "symbol:crates/orbit-cli/src/command/config/tests/get.rs#get_rejects_misspelled_crew_field:test",
+          "source": "call_path",
+          "confidence": "fuzzy_name",
+          "distance": 2
+        }
+      ],
+      "candidate_tests": [
+        {
+          "test": "symbol:crates/orbit-cli/src/command/config/tests/get.rs#complexity_pools_set_get_show_agree_and_invalid_edits_do_not_write:test",
+          "source": "call_path",
+          "confidence": "fuzzy_name"
+        },
+        {
+          "test": "symbol:crates/orbit-cli/src/command/config/tests/get.rs#get_agrees_with_set_for_sol_crew_effort:test",
+          "source": "call_path",
+          "confidence": "fuzzy_name"
+        },
+        {
+          "test": "symbol:crates/orbit-cli/src/command/config/tests/get.rs#get_omitted_crew_effort_is_null_not_a_fabricated_default:test",
+          "source": "call_path",
+          "confidence": "fuzzy_name"
+        },
+        {
+          "test": "symbol:crates/orbit-cli/src/command/config/tests/get.rs#get_reads_hand_authored_crew_effort:test",
+          "source": "call_path",
+          "confidence": "fuzzy_name"
+        },
+        {
+          "test": "symbol:crates/orbit-cli/src/command/config/tests/get.rs#get_rejects_misspelled_crew_field:test",
+          "source": "call_path",
+          "confidence": "fuzzy_name"
+        },
+        {
+          "test": "symbol:crates/orbit-cli/src/command/config/tests/get.rs#get_scoped_workspace_with_file_distinguishes_set_and_unset_keys:test",
+          "source": "call_path",
+          "confidence": "fuzzy_name"
+        },
+        {
+          "test": "symbol:crates/orbit-cli/src/command/config/tests/get.rs#get_scoped_workspace_without_config_file_returns_default_and_explicit_absent:test",
+          "source": "call_path",
+          "confidence": "fuzzy_name"
+        },
+        {
+          "test": "symbol:crates/orbit-cli/src/command/config/tests/get.rs#get_without_json_flag_still_returns_a_payload:test",
+          "source": "call_path",
+          "confidence": "fuzzy_name"
+        },
+        {
+          "test": "symbol:crates/orbit-cli/src/command/config/tests/set.rs#set_claude_crew_effort_accepts_supported_value:test",
+          "source": "call_path",
+          "confidence": "fuzzy_name"
+        },
+        {
+          "test": "symbol:crates/orbit-cli/src/command/config/tests/set.rs#set_crew_effort_on_existing_sol_crew_round_trips:test",
+          "source": "call_path",
+          "confidence": "fuzzy_name"
+        }
+      ]
+    },
+    {
+      "selector": "symbol:crates/orbit-cli/src/command/workspace/teardown.rs#refuse_if_cwd_belongs_to_another_checkout:function",
+      "status": "added",
+      "pairing": "same_selector",
+      "callers_found": 94,
+      "entry_points_found": 48,
+      "candidate_tests_found": 92,
+      "callers": [
+        {
+          "selector": "symbol:crates/orbit-cli/src/command/workspace/teardown.rs#execute:method",
+          "source": "call_path",
+          "confidence": "exact",
+          "distance": 1,
+          "reference": "crates/orbit-cli/src/command/workspace/teardown.rs:30@5a5b45fec9a83b765b485043398d3abadaa468de"
+        },
+        {
+          "selector": "symbol:crates/orbit-cli/src/command/activity/command.rs#ActivitySubcommand:impl",
+          "source": "call_path",
+          "confidence": "fuzzy_name",
+          "distance": 2,
+          "reference": "crates/orbit-cli/src/command/activity/command.rs:30@5a5b45fec9a83b765b485043398d3abadaa468de"
+        },
+        {
+          "selector": "symbol:crates/orbit-cli/src/command/activity/command.rs#execute:method",
+          "source": "call_path",
+          "confidence": "fuzzy_name",
+          "distance": 2,
+          "reference": "crates/orbit-cli/src/command/activity/command.rs:17@5a5b45fec9a83b765b485043398d3abadaa468de"
+        },
+        {
+          "selector": "symbol:crates/orbit-cli/src/command/audit/command.rs#AuditSubcommand:impl",
+          "source": "call_path",
+          "confidence": "fuzzy_name",
+          "distance": 2,
+          "reference": "crates/orbit-cli/src/command/audit/command.rs:42@5a5b45fec9a83b765b485043398d3abadaa468de"
+        },
+        {
+          "selector": "symbol:crates/orbit-cli/src/command/audit/command.rs#execute:method",
+          "source": "call_path",
+          "confidence": "fuzzy_name",
+          "distance": 2,
+          "reference": "crates/orbit-cli/src/command/audit/command.rs:21@5a5b45fec9a83b765b485043398d3abadaa468de"
+        },
+        {
+          "selector": "symbol:crates/orbit-cli/src/command/auto_task/command.rs#AutoTaskSubcommand:impl",
+          "source": "call_path",
+          "confidence": "fuzzy_name",
+          "distance": 2,
+          "reference": "crates/orbit-cli/src/command/auto_task/command.rs:50@5a5b45fec9a83b765b485043398d3abadaa468de"
+        },
+        {
+          "selector": "symbol:crates/orbit-cli/src/command/auto_task/command.rs#execute:method",
+          "source": "call_path",
+          "confidence": "fuzzy_name",
+          "distance": 2,
+          "reference": "crates/orbit-cli/src/command/auto_task/command.rs:23@5a5b45fec9a83b765b485043398d3abadaa468de"
+        },
+        {
+          "selector": "symbol:crates/orbit-cli/src/command/config/command.rs#ConfigSubcommand:impl",
+          "source": "call_path",
+          "confidence": "fuzzy_name",
+          "distance": 2,
+          "reference": "crates/orbit-cli/src/command/config/command.rs:42@5a5b45fec9a83b765b485043398d3abadaa468de"
+        },
+        {
+          "selector": "symbol:crates/orbit-cli/src/command/config/command.rs#execute:method",
+          "source": "call_path",
+          "confidence": "fuzzy_name",
+          "distance": 2,
+          "reference": "crates/orbit-cli/src/command/config/command.rs:21@5a5b45fec9a83b765b485043398d3abadaa468de"
+        },
+        {
+          "selector": "symbol:crates/orbit-cli/src/command/config/tests/get.rs#complexity_pools_set_get_show_agree_and_invalid_edits_do_not_write:test",
+          "source": "call_path",
+          "confidence": "fuzzy_name",
+          "distance": 2,
+          "reference": "crates/orbit-cli/src/command/config/tests/get.rs:122@5a5b45fec9a83b765b485043398d3abadaa468de"
+        }
+      ],
+      "entry_points": [
+        {
+          "selector": "symbol:crates/orbit-cli/src/command/config/tests/get.rs#complexity_pools_set_get_show_agree_and_invalid_edits_do_not_write:test",
+          "source": "call_path",
+          "confidence": "fuzzy_name",
+          "distance": 2
+        },
+        {
+          "selector": "symbol:crates/orbit-cli/src/command/config/tests/get.rs#get_agrees_with_set_for_sol_crew_effort:test",
+          "source": "call_path",
+          "confidence": "fuzzy_name",
+          "distance": 2
+        },
+        {
+          "selector": "symbol:crates/orbit-cli/src/command/config/tests/get.rs#get_omitted_crew_effort_is_null_not_a_fabricated_default:test",
+          "source": "call_path",
+          "confidence": "fuzzy_name",
+          "distance": 2
+        },
+        {
+          "selector": "symbol:crates/orbit-cli/src/command/config/tests/get.rs#get_reads_hand_authored_crew_effort:test",
+          "source": "call_path",
+          "confidence": "fuzzy_name",
+          "distance": 2
+        },
+        {
+          "selector": "symbol:crates/orbit-cli/src/command/config/tests/get.rs#get_rejects_misspelled_crew_field:test",
+          "source": "call_path",
+          "confidence": "fuzzy_name",
+          "distance": 2
+        }
+      ],
+      "candidate_tests": [
+        {
+          "test": "symbol:crates/orbit-cli/src/command/config/tests/get.rs#complexity_pools_set_get_show_agree_and_invalid_edits_do_not_write:test",
+          "source": "call_path",
+          "confidence": "fuzzy_name"
+        },
+        {
+          "test": "symbol:crates/orbit-cli/src/command/config/tests/get.rs#get_agrees_with_set_for_sol_crew_effort:test",
+          "source": "call_path",
+          "confidence": "fuzzy_name"
+        },
+        {
+          "test": "symbol:crates/orbit-cli/src/command/config/tests/get.rs#get_omitted_crew_effort_is_null_not_a_fabricated_default:test",
+          "source": "call_path",
+          "confidence": "fuzzy_name"
+        },
+        {
+          "test": "symbol:crates/orbit-cli/src/command/config/tests/get.rs#get_reads_hand_authored_crew_effort:test",
+          "source": "call_path",
+          "confidence": "fuzzy_name"
+        },
+        {
+          "test": "symbol:crates/orbit-cli/src/command/config/tests/get.rs#get_rejects_misspelled_crew_field:test",
+          "source": "call_path",
+          "confidence": "fuzzy_name"
+        },
+        {
+          "test": "symbol:crates/orbit-cli/src/command/config/tests/get.rs#get_scoped_workspace_with_file_distinguishes_set_and_unset_keys:test",
+          "source": "call_path",
+          "confidence": "fuzzy_name"
+        },
+        {
+          "test": "symbol:crates/orbit-cli/src/command/config/tests/get.rs#get_scoped_workspace_without_config_file_returns_default_and_explicit_absent:test",
+          "source": "call_path",
+          "confidence": "fuzzy_name"
+        },
+        {
+          "test": "symbol:crates/orbit-cli/src/command/config/tests/get.rs#get_without_json_flag_still_returns_a_payload:test",
+          "source": "call_path",
+          "confidence": "fuzzy_name"
+        },
+        {
+          "test": "symbol:crates/orbit-cli/src/command/config/tests/set.rs#set_claude_crew_effort_accepts_supported_value:test",
+          "source": "call_path",
+          "confidence": "fuzzy_name"
+        },
+        {
+          "test": "symbol:crates/orbit-cli/src/command/config/tests/set.rs#set_crew_effort_on_existing_sol_crew_round_trips:test",
+          "source": "call_path",
+          "confidence": "fuzzy_name"
+        }
+      ]
+    },
+    {
+      "selector": "symbol:crates/orbit-cli/src/command/workspace/teardown.rs#resolve_teardown_target:function",
+      "status": "added",
+      "pairing": "same_selector",
+      "callers_found": 94,
+      "entry_points_found": 48,
+      "candidate_tests_found": 92,
+      "callers": [
+        {
+          "selector": "symbol:crates/orbit-cli/src/command/workspace/teardown.rs#execute:method",
+          "source": "call_path",
+          "confidence": "exact",
+          "distance": 1,
+          "reference": "crates/orbit-cli/src/command/workspace/teardown.rs:29@5a5b45fec9a83b765b485043398d3abadaa468de"
+        },
+        {
+          "selector": "symbol:crates/orbit-cli/src/command/activity/command.rs#ActivitySubcommand:impl",
+          "source": "call_path",
+          "confidence": "fuzzy_name",
+          "distance": 2,
+          "reference": "crates/orbit-cli/src/command/activity/command.rs:30@5a5b45fec9a83b765b485043398d3abadaa468de"
+        },
+        {
+          "selector": "symbol:crates/orbit-cli/src/command/activity/command.rs#execute:method",
+          "source": "call_path",
+          "confidence": "fuzzy_name",
+          "distance": 2,
+          "reference": "crates/orbit-cli/src/command/activity/command.rs:17@5a5b45fec9a83b765b485043398d3abadaa468de"
+        },
+        {
+          "selector": "symbol:crates/orbit-cli/src/command/audit/command.rs#AuditSubcommand:impl",
+          "source": "call_path",
+          "confidence": "fuzzy_name",
+          "distance": 2,
+          "reference": "crates/orbit-cli/src/command/audit/command.rs:42@5a5b45fec9a83b765b485043398d3abadaa468de"
+        },
+        {
+          "selector": "symbol:crates/orbit-cli/src/command/audit/command.rs#execute:method",
+          "source": "call_path",
+          "confidence": "fuzzy_name",
+          "distance": 2,
+          "reference": "crates/orbit-cli/src/command/audit/command.rs:21@5a5b45fec9a83b765b485043398d3abadaa468de"
+        },
+        {
+          "selector": "symbol:crates/orbit-cli/src/command/auto_task/command.rs#AutoTaskSubcommand:impl",
+          "source": "call_path",
+          "confidence": "fuzzy_name",
+          "distance": 2,
+          "reference": "crates/orbit-cli/src/command/auto_task/command.rs:50@5a5b45fec9a83b765b485043398d3abadaa468de"
+        },
+        {
+          "selector": "symbol:crates/orbit-cli/src/command/auto_task/command.rs#execute:method",
+          "source": "call_path",
+          "confidence": "fuzzy_name",
+          "distance": 2,
+          "reference": "crates/orbit-cli/src/command/auto_task/command.rs:23@5a5b45fec9a83b765b485043398d3abadaa468de"
+        },
+        {
+          "selector": "symbol:crates/orbit-cli/src/command/config/command.rs#ConfigSubcommand:impl",
+          "source": "call_path",
+          "confidence": "fuzzy_name",
+          "distance": 2,
+          "reference": "crates/orbit-cli/src/command/config/command.rs:42@5a5b45fec9a83b765b485043398d3abadaa468de"
+        },
+        {
+          "selector": "symbol:crates/orbit-cli/src/command/config/command.rs#execute:method",
+          "source": "call_path",
+          "confidence": "fuzzy_name",
+          "distance": 2,
+          "reference": "crates/orbit-cli/src/command/config/command.rs:21@5a5b45fec9a83b765b485043398d3abadaa468de"
+        },
+        {
+          "selector": "symbol:crates/orbit-cli/src/command/config/tests/get.rs#complexity_pools_set_get_show_agree_and_invalid_edits_do_not_write:test",
+          "source": "call_path",
+          "confidence": "fuzzy_name",
+          "distance": 2,
+          "reference": "crates/orbit-cli/src/command/config/tests/get.rs:122@5a5b45fec9a83b765b485043398d3abadaa468de"
+        }
+      ],
+      "entry_points": [
+        {
+          "selector": "symbol:crates/orbit-cli/src/command/config/tests/get.rs#complexity_pools_set_get_show_agree_and_invalid_edits_do_not_write:test",
+          "source": "call_path",
+          "confidence": "fuzzy_name",
+          "distance": 2
+        },
+        {
+          "selector": "symbol:crates/orbit-cli/src/command/config/tests/get.rs#get_agrees_with_set_for_sol_crew_effort:test",
+          "source": "call_path",
+          "confidence": "fuzzy_name",
+          "distance": 2
+        },
+        {
+          "selector": "symbol:crates/orbit-cli/src/command/config/tests/get.rs#get_omitted_crew_effort_is_null_not_a_fabricated_default:test",
+          "source": "call_path",
+          "confidence": "fuzzy_name",
+          "distance": 2
+        },
+        {
+          "selector": "symbol:crates/orbit-cli/src/command/config/tests/get.rs#get_reads_hand_authored_crew_effort:test",
+          "source": "call_path",
+          "confidence": "fuzzy_name",
+          "distance": 2
+        },
+        {
+          "selector": "symbol:crates/orbit-cli/src/command/config/tests/get.rs#get_rejects_misspelled_crew_field:test",
+          "source": "call_path",
+          "confidence": "fuzzy_name",
+          "distance": 2
+        }
+      ],
+      "candidate_tests": [
+        {
+          "test": "symbol:crates/orbit-cli/src/command/config/tests/get.rs#complexity_pools_set_get_show_agree_and_invalid_edits_do_not_write:test",
+          "source": "call_path",
+          "confidence": "fuzzy_name"
+        },
+        {
+          "test": "symbol:crates/orbit-cli/src/command/config/tests/get.rs#get_agrees_with_set_for_sol_crew_effort:test",
+          "source": "call_path",
+          "confidence": "fuzzy_name"
+        },
+        {
+          "test": "symbol:crates/orbit-cli/src/command/config/tests/get.rs#get_omitted_crew_effort_is_null_not_a_fabricated_default:test",
+          "source": "call_path",
+          "confidence": "fuzzy_name"
+        },
+        {
+          "test": "symbol:crates/orbit-cli/src/command/config/tests/get.rs#get_reads_hand_authored_crew_effort:test",
+          "source": "call_path",
+          "confidence": "fuzzy_name"
+        },
+        {
+          "test": "symbol:crates/orbit-cli/src/command/config/tests/get.rs#get_rejects_misspelled_crew_field:test",
+          "source": "call_path",
+          "confidence": "fuzzy_name"
+        },
+        {
+          "test": "symbol:crates/orbit-cli/src/command/config/tests/get.rs#get_scoped_workspace_with_file_distinguishes_set_and_unset_keys:test",
+          "source": "call_path",
+          "confidence": "fuzzy_name"
+        },
+        {
+          "test": "symbol:crates/orbit-cli/src/command/config/tests/get.rs#get_scoped_workspace_without_config_file_returns_default_and_explicit_absent:test",
+          "source": "call_path",
+          "confidence": "fuzzy_name"
+        },
+        {
+          "test": "symbol:crates/orbit-cli/src/command/config/tests/get.rs#get_without_json_flag_still_returns_a_payload:test",
+          "source": "call_path",
+          "confidence": "fuzzy_name"
+        },
+        {
+          "test": "symbol:crates/orbit-cli/src/command/config/tests/set.rs#set_claude_crew_effort_accepts_supported_value:test",
+          "source": "call_path",
+          "confidence": "fuzzy_name"
+        },
+        {
+          "test": "symbol:crates/orbit-cli/src/command/config/tests/set.rs#set_crew_effort_on_existing_sol_crew_round_trips:test",
+          "source": "call_path",
+          "confidence": "fuzzy_name"
+        }
+      ]
+    },
+    {
+      "selector": "symbol:crates/orbit-cli/src/command/workspace/teardown.rs#unknown_teardown_selector:function",
+      "status": "added",
+      "pairing": "same_selector",
+      "callers_found": 93,
+      "entry_points_found": 46,
+      "candidate_tests_found": 90,
+      "callers": [
+        {
+          "selector": "symbol:crates/orbit-cli/src/command/workspace/teardown.rs#resolve_teardown_target:function",
+          "source": "call_path",
+          "confidence": "exact",
+          "distance": 1,
+          "reference": "crates/orbit-cli/src/command/workspace/teardown.rs:132@5a5b45fec9a83b765b485043398d3abadaa468de"
+        },
+        {
+          "selector": "symbol:crates/orbit-cli/src/command/workspace/teardown.rs#execute:method",
+          "source": "call_path",
+          "confidence": "exact",
+          "distance": 2,
+          "reference": "crates/orbit-cli/src/command/workspace/teardown.rs:29@5a5b45fec9a83b765b485043398d3abadaa468de"
+        },
+        {
+          "selector": "symbol:crates/orbit-cli/src/command/activity/command.rs#ActivitySubcommand:impl",
+          "source": "call_path",
+          "confidence": "fuzzy_name",
+          "distance": 3,
+          "reference": "crates/orbit-cli/src/command/activity/command.rs:30@5a5b45fec9a83b765b485043398d3abadaa468de"
+        },
+        {
+          "selector": "symbol:crates/orbit-cli/src/command/activity/command.rs#execute:method",
+          "source": "call_path",
+          "confidence": "fuzzy_name",
+          "distance": 3,
+          "reference": "crates/orbit-cli/src/command/activity/command.rs:17@5a5b45fec9a83b765b485043398d3abadaa468de"
+        },
+        {
+          "selector": "symbol:crates/orbit-cli/src/command/audit/command.rs#AuditSubcommand:impl",
+          "source": "call_path",
+          "confidence": "fuzzy_name",
+          "distance": 3,
+          "reference": "crates/orbit-cli/src/command/audit/command.rs:42@5a5b45fec9a83b765b485043398d3abadaa468de"
+        },
+        {
+          "selector": "symbol:crates/orbit-cli/src/command/audit/command.rs#execute:method",
+          "source": "call_path",
+          "confidence": "fuzzy_name",
+          "distance": 3,
+          "reference": "crates/orbit-cli/src/command/audit/command.rs:21@5a5b45fec9a83b765b485043398d3abadaa468de"
+        },
+        {
+          "selector": "symbol:crates/orbit-cli/src/command/auto_task/command.rs#AutoTaskSubcommand:impl",
+          "source": "call_path",
+          "confidence": "fuzzy_name",
+          "distance": 3,
+          "reference": "crates/orbit-cli/src/command/auto_task/command.rs:50@5a5b45fec9a83b765b485043398d3abadaa468de"
+        },
+        {
+          "selector": "symbol:crates/orbit-cli/src/command/auto_task/command.rs#execute:method",
+          "source": "call_path",
+          "confidence": "fuzzy_name",
+          "distance": 3,
+          "reference": "crates/orbit-cli/src/command/auto_task/command.rs:23@5a5b45fec9a83b765b485043398d3abadaa468de"
+        },
+        {
+          "selector": "symbol:crates/orbit-cli/src/command/config/command.rs#ConfigSubcommand:impl",
+          "source": "call_path",
+          "confidence": "fuzzy_name",
+          "distance": 3,
+          "reference": "crates/orbit-cli/src/command/config/command.rs:42@5a5b45fec9a83b765b485043398d3abadaa468de"
+        },
+        {
+          "selector": "symbol:crates/orbit-cli/src/command/config/command.rs#execute:method",
+          "source": "call_path",
+          "confidence": "fuzzy_name",
+          "distance": 3,
+          "reference": "crates/orbit-cli/src/command/config/command.rs:21@5a5b45fec9a83b765b485043398d3abadaa468de"
+        }
+      ],
+      "entry_points": [
+        {
+          "selector": "symbol:crates/orbit-cli/src/command/config/tests/get.rs#complexity_pools_set_get_show_agree_and_invalid_edits_do_not_write:test",
+          "source": "call_path",
+          "confidence": "fuzzy_name",
+          "distance": 3
+        },
+        {
+          "selector": "symbol:crates/orbit-cli/src/command/config/tests/get.rs#get_agrees_with_set_for_sol_crew_effort:test",
+          "source": "call_path",
+          "confidence": "fuzzy_name",
+          "distance": 3
+        },
+        {
+          "selector": "symbol:crates/orbit-cli/src/command/config/tests/get.rs#get_omitted_crew_effort_is_null_not_a_fabricated_default:test",
+          "source": "call_path",
+          "confidence": "fuzzy_name",
+          "distance": 3
+        },
+        {
+          "selector": "symbol:crates/orbit-cli/src/command/config/tests/get.rs#get_reads_hand_authored_crew_effort:test",
+          "source": "call_path",
+          "confidence": "fuzzy_name",
+          "distance": 3
+        },
+        {
+          "selector": "symbol:crates/orbit-cli/src/command/config/tests/get.rs#get_rejects_misspelled_crew_field:test",
+          "source": "call_path",
+          "confidence": "fuzzy_name",
+          "distance": 3
+        }
+      ],
+      "candidate_tests": [
+        {
+          "test": "symbol:crates/orbit-cli/src/command/config/tests/get.rs#complexity_pools_set_get_show_agree_and_invalid_edits_do_not_write:test",
+          "source": "call_path",
+          "confidence": "fuzzy_name"
+        },
+        {
+          "test": "symbol:crates/orbit-cli/src/command/config/tests/get.rs#get_agrees_with_set_for_sol_crew_effort:test",
+          "source": "call_path",
+          "confidence": "fuzzy_name"
+        },
+        {
+          "test": "symbol:crates/orbit-cli/src/command/config/tests/get.rs#get_omitted_crew_effort_is_null_not_a_fabricated_default:test",
+          "source": "call_path",
+          "confidence": "fuzzy_name"
+        },
+        {
+          "test": "symbol:crates/orbit-cli/src/command/config/tests/get.rs#get_reads_hand_authored_crew_effort:test",
+          "source": "call_path",
+          "confidence": "fuzzy_name"
+        },
+        {
+          "test": "symbol:crates/orbit-cli/src/command/config/tests/get.rs#get_rejects_misspelled_crew_field:test",
+          "source": "call_path",
+          "confidence": "fuzzy_name"
+        },
+        {
+          "test": "symbol:crates/orbit-cli/src/command/config/tests/get.rs#get_scoped_workspace_with_file_distinguishes_set_and_unset_keys:test",
+          "source": "call_path",
+          "confidence": "fuzzy_name"
+        },
+        {
+          "test": "symbol:crates/orbit-cli/src/command/config/tests/get.rs#get_scoped_workspace_without_config_file_returns_default_and_explicit_absent:test",
+          "source": "call_path",
+          "confidence": "fuzzy_name"
+        },
+        {
+          "test": "symbol:crates/orbit-cli/src/command/config/tests/get.rs#get_without_json_flag_still_returns_a_payload:test",
+          "source": "call_path",
+          "confidence": "fuzzy_name"
+        },
+        {
+          "test": "symbol:crates/orbit-cli/src/command/config/tests/set.rs#set_claude_crew_effort_accepts_supported_value:test",
+          "source": "call_path",
+          "confidence": "fuzzy_name"
+        },
+        {
+          "test": "symbol:crates/orbit-cli/src/command/config/tests/set.rs#set_crew_effort_on_existing_sol_crew_round_trips:test",
+          "source": "call_path",
+          "confidence": "fuzzy_name"
+        }
+      ]
+    },
+    {
+      "selector": "symbol:crates/orbit-cli/src/command/workspace/teardown.rs#workspace_id_for_selector:function",
+      "status": "added",
+      "pairing": "same_selector",
+      "callers_found": 94,
+      "entry_points_found": 47,
+      "candidate_tests_found": 91,
+      "callers": [
+        {
+          "selector": "symbol:crates/orbit-cli/src/command/workspace/teardown.rs#resolve_teardown_target:function",
+          "source": "call_path",
+          "confidence": "exact",
+          "distance": 1,
+          "reference": "crates/orbit-cli/src/command/workspace/teardown.rs:131@5a5b45fec9a83b765b485043398d3abadaa468de"
+        },
+        {
+          "selector": "symbol:crates/orbit-cli/src/command/workspace/teardown.rs#execute:method",
+          "source": "call_path",
+          "confidence": "exact",
+          "distance": 2,
+          "reference": "crates/orbit-cli/src/command/workspace/teardown.rs:29@5a5b45fec9a83b765b485043398d3abadaa468de"
+        },
+        {
+          "selector": "symbol:crates/orbit-cli/src/command/activity/command.rs#ActivitySubcommand:impl",
+          "source": "call_path",
+          "confidence": "fuzzy_name",
+          "distance": 3,
+          "reference": "crates/orbit-cli/src/command/activity/command.rs:30@5a5b45fec9a83b765b485043398d3abadaa468de"
+        },
+        {
+          "selector": "symbol:crates/orbit-cli/src/command/activity/command.rs#execute:method",
+          "source": "call_path",
+          "confidence": "fuzzy_name",
+          "distance": 3,
+          "reference": "crates/orbit-cli/src/command/activity/command.rs:17@5a5b45fec9a83b765b485043398d3abadaa468de"
+        },
+        {
+          "selector": "symbol:crates/orbit-cli/src/command/audit/command.rs#AuditSubcommand:impl",
+          "source": "call_path",
+          "confidence": "fuzzy_name",
+          "distance": 3,
+          "reference": "crates/orbit-cli/src/command/audit/command.rs:42@5a5b45fec9a83b765b485043398d3abadaa468de"
+        },
+        {
+          "selector": "symbol:crates/orbit-cli/src/command/audit/command.rs#execute:method",
+          "source": "call_path",
+          "confidence": "fuzzy_name",
+          "distance": 3,
+          "reference": "crates/orbit-cli/src/command/audit/command.rs:21@5a5b45fec9a83b765b485043398d3abadaa468de"
+        },
+        {
+          "selector": "symbol:crates/orbit-cli/src/command/auto_task/command.rs#AutoTaskSubcommand:impl",
+          "source": "call_path",
+          "confidence": "fuzzy_name",
+          "distance": 3,
+          "reference": "crates/orbit-cli/src/command/auto_task/command.rs:50@5a5b45fec9a83b765b485043398d3abadaa468de"
+        },
+        {
+          "selector": "symbol:crates/orbit-cli/src/command/auto_task/command.rs#execute:method",
+          "source": "call_path",
+          "confidence": "fuzzy_name",
+          "distance": 3,
+          "reference": "crates/orbit-cli/src/command/auto_task/command.rs:23@5a5b45fec9a83b765b485043398d3abadaa468de"
+        },
+        {
+          "selector": "symbol:crates/orbit-cli/src/command/config/command.rs#ConfigSubcommand:impl",
+          "source": "call_path",
+          "confidence": "fuzzy_name",
+          "distance": 3,
+          "reference": "crates/orbit-cli/src/command/config/command.rs:42@5a5b45fec9a83b765b485043398d3abadaa468de"
+        },
+        {
+          "selector": "symbol:crates/orbit-cli/src/command/config/command.rs#execute:method",
+          "source": "call_path",
+          "confidence": "fuzzy_name",
+          "distance": 3,
+          "reference": "crates/orbit-cli/src/command/config/command.rs:21@5a5b45fec9a83b765b485043398d3abadaa468de"
+        }
+      ],
+      "entry_points": [
+        {
+          "selector": "symbol:crates/orbit-cli/src/command/config/tests/get.rs#complexity_pools_set_get_show_agree_and_invalid_edits_do_not_write:test",
+          "source": "call_path",
+          "confidence": "fuzzy_name",
+          "distance": 3
+        },
+        {
+          "selector": "symbol:crates/orbit-cli/src/command/config/tests/get.rs#get_agrees_with_set_for_sol_crew_effort:test",
+          "source": "call_path",
+          "confidence": "fuzzy_name",
+          "distance": 3
+        },
+        {
+          "selector": "symbol:crates/orbit-cli/src/command/config/tests/get.rs#get_omitted_crew_effort_is_null_not_a_fabricated_default:test",
+          "source": "call_path",
+          "confidence": "fuzzy_name",
+          "distance": 3
+        },
+        {
+          "selector": "symbol:crates/orbit-cli/src/command/config/tests/get.rs#get_reads_hand_authored_crew_effort:test",
+          "source": "call_path",
+          "confidence": "fuzzy_name",
+          "distance": 3
+        },
+        {
+          "selector": "symbol:crates/orbit-cli/src/command/config/tests/get.rs#get_rejects_misspelled_crew_field:test",
+          "source": "call_path",
+          "confidence": "fuzzy_name",
+          "distance": 3
+        }
+      ],
+      "candidate_tests": [
+        {
+          "test": "symbol:crates/orbit-cli/src/command/config/tests/get.rs#complexity_pools_set_get_show_agree_and_invalid_edits_do_not_write:test",
+          "source": "call_path",
+          "confidence": "fuzzy_name"
+        },
+        {
+          "test": "symbol:crates/orbit-cli/src/command/config/tests/get.rs#get_agrees_with_set_for_sol_crew_effort:test",
+          "source": "call_path",
+          "confidence": "fuzzy_name"
+        },
+        {
+          "test": "symbol:crates/orbit-cli/src/command/config/tests/get.rs#get_omitted_crew_effort_is_null_not_a_fabricated_default:test",
+          "source": "call_path",
+          "confidence": "fuzzy_name"
+        },
+        {
+          "test": "symbol:crates/orbit-cli/src/command/config/tests/get.rs#get_reads_hand_authored_crew_effort:test",
+          "source": "call_path",
+          "confidence": "fuzzy_name"
+        },
+        {
+          "test": "symbol:crates/orbit-cli/src/command/config/tests/get.rs#get_rejects_misspelled_crew_field:test",
+          "source": "call_path",
+          "confidence": "fuzzy_name"
+        },
+        {
+          "test": "symbol:crates/orbit-cli/src/command/config/tests/get.rs#get_scoped_workspace_with_file_distinguishes_set_and_unset_keys:test",
+          "source": "call_path",
+          "confidence": "fuzzy_name"
+        },
+        {
+          "test": "symbol:crates/orbit-cli/src/command/config/tests/get.rs#get_scoped_workspace_without_config_file_returns_default_and_explicit_absent:test",
+          "source": "call_path",
+          "confidence": "fuzzy_name"
+        },
+        {
+          "test": "symbol:crates/orbit-cli/src/command/config/tests/get.rs#get_without_json_flag_still_returns_a_payload:test",
+          "source": "call_path",
+          "confidence": "fuzzy_name"
+        },
+        {
+          "test": "symbol:crates/orbit-cli/src/command/config/tests/set.rs#set_claude_crew_effort_accepts_supported_value:test",
+          "source": "call_path",
+          "confidence": "fuzzy_name"
+        },
+        {
+          "test": "symbol:crates/orbit-cli/src/command/config/tests/set.rs#set_crew_effort_on_existing_sol_crew_round_trips:test",
+          "source": "call_path",
+          "confidence": "fuzzy_name"
+        }
+      ]
+    },
+    {
+      "selector": "symbol:crates/orbit-cli/src/command/workspace/tests/teardown.rs#partition_summary_names_the_workspace_it_belonged_to:test",
+      "status": "added",
+      "pairing": "same_selector",
+      "callers_found": 0,
+      "entry_points_found": 1,
+      "candidate_tests_found": 10,
+      "callers": [],
+      "entry_points": [
+        {
+          "selector": "symbol:crates/orbit-cli/src/command/workspace/tests/teardown.rs#partition_summary_names_the_workspace_it_belonged_to:test",
+          "source": "changed_symbol",
+          "confidence": "exact",
+          "distance": 0
+        }
+      ],
+      "candidate_tests": [
+        {
+          "test": "file:crates/orbit-engine/src/executor/automation/vcs/pr/tests/review_gate.rs",
+          "source": "import_relationship",
+          "confidence": "file_import"
+        },
+        {
+          "test": "file:crates/orbit-engine/src/executor/automation/vcs/worktree/tests/setup.rs",
+          "source": "import_relationship",
+          "confidence": "file_import"
+        },
+        {
+          "test": "symbol:crates/orbit-cli/tests/supervised_parent_signal.rs#cli_ctrl_c_during_proc_spawn_reports_interrupt:test",
+          "source": "runtime_invocation",
+          "confidence": "name_only"
+        },
+        {
+          "test": "symbol:crates/orbit-cli/tests/supervised_parent_signal.rs#mcp_listen_exits_on_sigterm_while_proc_spawn_runs:test",
+          "source": "runtime_invocation",
+          "confidence": "name_only"
+        },
+        {
+          "test": "symbol:crates/orbit-cli/tests/web_serve_root.rs#web_serve_honors_an_explicit_root_over_the_global_registry:test",
+          "source": "runtime_invocation",
+          "confidence": "name_only"
+        },
+        {
+          "test": "symbol:crates/orbit-cli/tests/web_serve_root.rs#web_serve_without_an_explicit_root_still_serves_the_global_registry:test",
+          "source": "runtime_invocation",
+          "confidence": "name_only"
+        },
+        {
+          "test": "symbol:crates/orbit-cli/tests/web_serve_shutdown.rs#dashboard_exits_promptly_on_sigterm_with_open_connections:test",
+          "source": "runtime_invocation",
+          "confidence": "name_only"
+        },
+        {
+          "test": "symbol:crates/orbit-cli/tests/web_serve_shutdown.rs#dashboard_outlives_shutdown_grace_period_when_no_signal_is_sent:test",
+          "source": "runtime_invocation",
+          "confidence": "name_only"
+        },
+        {
+          "test": "symbol:crates/orbit-core/src/application/tests/job_pipeline.rs#pipeline_worker_command_discovers_registered_workspace_from_cwd:test",
+          "source": "runtime_invocation",
+          "confidence": "name_only"
+        },
+        {
+          "test": "symbol:crates/orbit-core/src/application/tests/job_pipeline.rs#pipeline_worker_command_forwards_explicit_root_to_the_detached_worker:test",
+          "source": "runtime_invocation",
+          "confidence": "name_only"
+        }
+      ]
+    },
+    {
+      "selector": "symbol:crates/orbit-cli/src/command/workspace/tests/teardown.rs#register:function",
+      "status": "signature_changed",
+      "pairing": "signature_changed",
+      "callers_found": 6,
+      "entry_points_found": 7,
+      "candidate_tests_found": 21,
+      "callers": [
+        {
+          "selector": "symbol:crates/orbit-cli/src/command/workspace/tests/teardown.rs#teardown_deletes_the_bound_task_store_partition_and_retires_its_bindings:test",
+          "source": "call_path",
+          "confidence": "exact",
+          "distance": 1,
+          "reference": "crates/orbit-cli/src/command/workspace/tests/teardown.rs:286@5a5b45fec9a83b765b485043398d3abadaa468de"
+        },
+        {
+          "selector": "symbol:crates/orbit-cli/src/command/workspace/tests/teardown.rs#teardown_rejects_a_selector_that_does_not_match_the_cwd_checkout:test",
+          "source": "call_path",
+          "confidence": "exact",
+          "distance": 1,
+          "reference": "crates/orbit-cli/src/command/workspace/tests/teardown.rs:151@5a5b45fec9a83b765b485043398d3abadaa468de"
+        },
+        {
+          "selector": "symbol:crates/orbit-cli/src/command/workspace/tests/teardown.rs#teardown_rejects_a_selector_that_is_not_registered:test",
+          "source": "call_path",
+          "confidence": "exact",
+          "distance": 1,
+          "reference": "crates/orbit-cli/src/command/workspace/tests/teardown.rs:112@5a5b45fec9a83b765b485043398d3abadaa468de"
+        },
+        {
+          "selector": "symbol:crates/orbit-cli/src/command/workspace/tests/teardown.rs#teardown_without_confirm_leaves_the_task_store_and_registration_untouched:test",
+          "source": "call_path",
+          "confidence": "exact",
+          "distance": 1,
+          "reference": "crates/orbit-cli/src/command/workspace/tests/teardown.rs:386@5a5b45fec9a83b765b485043398d3abadaa468de"
+        },
+        {
+          "selector": "symbol:crates/orbit-cli/src/command/workspace/tests/teardown.rs#teardown_without_confirm_prints_the_resolved_plan_and_does_not_delete:test",
+          "source": "call_path",
+          "confidence": "exact",
+          "distance": 1,
+          "reference": "crates/orbit-cli/src/command/workspace/tests/teardown.rs:189@5a5b45fec9a83b765b485043398d3abadaa468de"
+        },
+        {
+          "selector": "symbol:crates/orbit-tools/src/builtin/orbit/friction/tests/derived_schema.rs#registration_reproduces_the_shipped_mcp_surface:test",
+          "source": "call_path",
+          "confidence": "fuzzy_name",
+          "distance": 1,
+          "reference": "crates/orbit-tools/src/builtin/orbit/friction/tests/derived_schema.rs:183@5a5b45fec9a83b765b485043398d3abadaa468de"
+        }
+      ],
+      "entry_points": [
+        {
+          "selector": "symbol:crates/orbit-cli/src/command/workspace/tests/teardown.rs#register:function",
+          "source": "changed_symbol",
+          "confidence": "exact",
+          "distance": 0
+        },
+        {
+          "selector": "symbol:crates/orbit-cli/src/command/workspace/tests/teardown.rs#teardown_deletes_the_bound_task_store_partition_and_retires_its_bindings:test",
+          "source": "call_path",
+          "confidence": "exact",
+          "distance": 1
+        },
+        {
+          "selector": "symbol:crates/orbit-cli/src/command/workspace/tests/teardown.rs#teardown_rejects_a_selector_that_does_not_match_the_cwd_checkout:test",
+          "source": "call_path",
+          "confidence": "exact",
+          "distance": 1
+        },
+        {
+          "selector": "symbol:crates/orbit-cli/src/command/workspace/tests/teardown.rs#teardown_rejects_a_selector_that_is_not_registered:test",
+          "source": "call_path",
+          "confidence": "exact",
+          "distance": 1
+        },
+        {
+          "selector": "symbol:crates/orbit-cli/src/command/workspace/tests/teardown.rs#teardown_without_confirm_leaves_the_task_store_and_registration_untouched:test",
+          "source": "call_path",
+          "confidence": "exact",
+          "distance": 1
+        }
+      ],
+      "candidate_tests": [
+        {
+          "test": "symbol:crates/orbit-cli/src/command/workspace/tests/teardown.rs#teardown_deletes_the_bound_task_store_partition_and_retires_its_bindings:test",
+          "source": "call_path",
+          "confidence": "exact"
+        },
+        {
+          "test": "symbol:crates/orbit-cli/src/command/workspace/tests/teardown.rs#teardown_rejects_a_selector_that_does_not_match_the_cwd_checkout:test",
+          "source": "call_path",
+          "confidence": "exact"
+        },
+        {
+          "test": "symbol:crates/orbit-cli/src/command/workspace/tests/teardown.rs#teardown_rejects_a_selector_that_is_not_registered:test",
+          "source": "call_path",
+          "confidence": "exact"
+        },
+        {
+          "test": "symbol:crates/orbit-cli/src/command/workspace/tests/teardown.rs#teardown_without_confirm_leaves_the_task_store_and_registration_untouched:test",
+          "source": "call_path",
+          "confidence": "exact"
+        },
+        {
+          "test": "symbol:crates/orbit-cli/src/command/workspace/tests/teardown.rs#teardown_without_confirm_prints_the_resolved_plan_and_does_not_delete:test",
+          "source": "call_path",
+          "confidence": "exact"
+        },
+        {
+          "test": "symbol:crates/orbit-tools/src/builtin/orbit/friction/tests/derived_schema.rs#registration_reproduces_the_shipped_mcp_surface:test",
+          "source": "call_path",
+          "confidence": "fuzzy_name"
+        },
+        {
+          "test": "file:crates/orbit-engine/src/executor/automation/vcs/pr/tests/review_gate.rs",
+          "source": "import_relationship",
+          "confidence": "file_import"
+        },
+        {
+          "test": "file:crates/orbit-engine/src/executor/automation/vcs/worktree/tests/setup.rs",
+          "source": "import_relationship",
+          "confidence": "file_import"
+        },
+        {
+          "test": "symbol:crates/orbit-cli/src/command/workspace/tests/remove.rs#register_workspace:function",
+          "source": "naming_heuristic",
+          "confidence": "name_only"
+        },
+        {
+          "test": "symbol:crates/orbit-cli/tests/worktree_gc_routing.rs#register_workspace:function",
+          "source": "naming_heuristic",
+          "confidence": "name_only"
+        }
+      ]
+    },
+    {
+      "selector": "symbol:crates/orbit-cli/src/command/workspace/tests/teardown.rs#teardown:function",
+      "status": "added",
+      "pairing": "same_selector",
+      "callers_found": 5,
+      "entry_points_found": 6,
+      "candidate_tests_found": 16,
+      "callers": [
+        {
+          "selector": "symbol:crates/orbit-cli/src/command/workspace/tests/teardown.rs#teardown_deletes_the_bound_task_store_partition_and_retires_its_bindings:test",
+          "source": "call_path",
+          "confidence": "exact",
+          "distance": 1,
+          "reference": "crates/orbit-cli/src/command/workspace/tests/teardown.rs:325@5a5b45fec9a83b765b485043398d3abadaa468de"
+        },
+        {
+          "selector": "symbol:crates/orbit-cli/src/command/workspace/tests/teardown.rs#teardown_rejects_a_selector_that_does_not_match_the_cwd_checkout:test",
+          "source": "call_path",
+          "confidence": "exact",
+          "distance": 1,
+          "reference": "crates/orbit-cli/src/command/workspace/tests/teardown.rs:158@5a5b45fec9a83b765b485043398d3abadaa468de"
+        },
+        {
+          "selector": "symbol:crates/orbit-cli/src/command/workspace/tests/teardown.rs#teardown_rejects_a_selector_that_is_not_registered:test",
+          "source": "call_path",
+          "confidence": "exact",
+          "distance": 1,
+          "reference": "crates/orbit-cli/src/command/workspace/tests/teardown.rs:115@5a5b45fec9a83b765b485043398d3abadaa468de"
+        },
+        {
+          "selector": "symbol:crates/orbit-cli/src/command/workspace/tests/teardown.rs#teardown_without_confirm_leaves_the_task_store_and_registration_untouched:test",
+          "source": "call_path",
+          "confidence": "exact",
+          "distance": 1,
+          "reference": "crates/orbit-cli/src/command/workspace/tests/teardown.rs:396@5a5b45fec9a83b765b485043398d3abadaa468de"
+        },
+        {
+          "selector": "symbol:crates/orbit-cli/src/command/workspace/tests/teardown.rs#teardown_without_confirm_prints_the_resolved_plan_and_does_not_delete:test",
+          "source": "call_path",
+          "confidence": "exact",
+          "distance": 1,
+          "reference": "crates/orbit-cli/src/command/workspace/tests/teardown.rs:205@5a5b45fec9a83b765b485043398d3abadaa468de"
+        }
+      ],
+      "entry_points": [
+        {
+          "selector": "symbol:crates/orbit-cli/src/command/workspace/tests/teardown.rs#teardown:function",
+          "source": "changed_symbol",
+          "confidence": "exact",
+          "distance": 0
+        },
+        {
+          "selector": "symbol:crates/orbit-cli/src/command/workspace/tests/teardown.rs#teardown_deletes_the_bound_task_store_partition_and_retires_its_bindings:test",
+          "source": "call_path",
+          "confidence": "exact",
+          "distance": 1
+        },
+        {
+          "selector": "symbol:crates/orbit-cli/src/command/workspace/tests/teardown.rs#teardown_rejects_a_selector_that_does_not_match_the_cwd_checkout:test",
+          "source": "call_path",
+          "confidence": "exact",
+          "distance": 1
+        },
+        {
+          "selector": "symbol:crates/orbit-cli/src/command/workspace/tests/teardown.rs#teardown_rejects_a_selector_that_is_not_registered:test",
+          "source": "call_path",
+          "confidence": "exact",
+          "distance": 1
+        },
+        {
+          "selector": "symbol:crates/orbit-cli/src/command/workspace/tests/teardown.rs#teardown_without_confirm_leaves_the_task_store_and_registration_untouched:test",
+          "source": "call_path",
+          "confidence": "exact",
+          "distance": 1
+        }
+      ],
+      "candidate_tests": [
+        {
+          "test": "symbol:crates/orbit-cli/src/command/workspace/tests/teardown.rs#teardown_deletes_the_bound_task_store_partition_and_retires_its_bindings:test",
+          "source": "call_path",
+          "confidence": "exact"
+        },
+        {
+          "test": "symbol:crates/orbit-cli/src/command/workspace/tests/teardown.rs#teardown_rejects_a_selector_that_does_not_match_the_cwd_checkout:test",
+          "source": "call_path",
+          "confidence": "exact"
+        },
+        {
+          "test": "symbol:crates/orbit-cli/src/command/workspace/tests/teardown.rs#teardown_rejects_a_selector_that_is_not_registered:test",
+          "source": "call_path",
+          "confidence": "exact"
+        },
+        {
+          "test": "symbol:crates/orbit-cli/src/command/workspace/tests/teardown.rs#teardown_without_confirm_leaves_the_task_store_and_registration_untouched:test",
+          "source": "call_path",
+          "confidence": "exact"
+        },
+        {
+          "test": "symbol:crates/orbit-cli/src/command/workspace/tests/teardown.rs#teardown_without_confirm_prints_the_resolved_plan_and_does_not_delete:test",
+          "source": "call_path",
+          "confidence": "exact"
+        },
+        {
+          "test": "file:crates/orbit-engine/src/executor/automation/vcs/pr/tests/review_gate.rs",
+          "source": "import_relationship",
+          "confidence": "file_import"
+        },
+        {
+          "test": "file:crates/orbit-engine/src/executor/automation/vcs/worktree/tests/setup.rs",
+          "source": "import_relationship",
+          "confidence": "file_import"
+        },
+        {
+          "test": "symbol:crates/orbit-cli/src/command/workspace/tests/mod.rs#teardown:module",
+          "source": "naming_heuristic",
+          "confidence": "name_only"
+        },
+        {
+          "test": "symbol:crates/orbit-cli/tests/supervised_parent_signal.rs#cli_ctrl_c_during_proc_spawn_reports_interrupt:test",
+          "source": "runtime_invocation",
+          "confidence": "name_only"
+        },
+        {
+          "test": "symbol:crates/orbit-cli/tests/supervised_parent_signal.rs#mcp_listen_exits_on_sigterm_while_proc_spawn_runs:test",
+          "source": "runtime_invocation",
+          "confidence": "name_only"
+        }
+      ]
+    },
+    {
+      "selector": "symbol:crates/orbit-cli/src/command/workspace/tests/teardown.rs#teardown_deletes_the_bound_task_store_partition_and_retires_its_bindings:test",
+      "status": "modified",
+      "pairing": "same_selector",
+      "callers_found": 0,
+      "entry_points_found": 1,
+      "candidate_tests_found": 10,
+      "callers": [],
+      "entry_points": [
+        {
+          "selector": "symbol:crates/orbit-cli/src/command/workspace/tests/teardown.rs#teardown_deletes_the_bound_task_store_partition_and_retires_its_bindings:test",
+          "source": "changed_symbol",
+          "confidence": "exact",
+          "distance": 0
+        }
+      ],
+      "candidate_tests": [
+        {
+          "test": "file:crates/orbit-engine/src/executor/automation/vcs/pr/tests/review_gate.rs",
+          "source": "import_relationship",
+          "confidence": "file_import"
+        },
+        {
+          "test": "file:crates/orbit-engine/src/executor/automation/vcs/worktree/tests/setup.rs",
+          "source": "import_relationship",
+          "confidence": "file_import"
+        },
+        {
+          "test": "symbol:crates/orbit-cli/tests/supervised_parent_signal.rs#cli_ctrl_c_during_proc_spawn_reports_interrupt:test",
+          "source": "runtime_invocation",
+          "confidence": "name_only"
+        },
+        {
+          "test": "symbol:crates/orbit-cli/tests/supervised_parent_signal.rs#mcp_listen_exits_on_sigterm_while_proc_spawn_runs:test",
+          "source": "runtime_invocation",
+          "confidence": "name_only"
+        },
+        {
+          "test": "symbol:crates/orbit-cli/tests/web_serve_root.rs#web_serve_honors_an_explicit_root_over_the_global_registry:test",
+          "source": "runtime_invocation",
+          "confidence": "name_only"
+        },
+        {
+          "test": "symbol:crates/orbit-cli/tests/web_serve_root.rs#web_serve_without_an_explicit_root_still_serves_the_global_registry:test",
+          "source": "runtime_invocation",
+          "confidence": "name_only"
+        },
+        {
+          "test": "symbol:crates/orbit-cli/tests/web_serve_shutdown.rs#dashboard_exits_promptly_on_sigterm_with_open_connections:test",
+          "source": "runtime_invocation",
+          "confidence": "name_only"
+        },
+        {
+          "test": "symbol:crates/orbit-cli/tests/web_serve_shutdown.rs#dashboard_outlives_shutdown_grace_period_when_no_signal_is_sent:test",
+          "source": "runtime_invocation",
+          "confidence": "name_only"
+        },
+        {
+          "test": "symbol:crates/orbit-core/src/application/tests/job_pipeline.rs#pipeline_worker_command_discovers_registered_workspace_from_cwd:test",
+          "source": "runtime_invocation",
+          "confidence": "name_only"
+        },
+        {
+          "test": "symbol:crates/orbit-core/src/application/tests/job_pipeline.rs#pipeline_worker_command_forwards_explicit_root_to_the_detached_worker:test",
+          "source": "runtime_invocation",
+          "confidence": "name_only"
+        }
+      ]
+    },
+    {
+      "selector": "symbol:crates/orbit-cli/src/command/workspace/tests/teardown.rs#teardown_plan_names_workspace_checkout_and_partition:test",
+      "status": "added",
+      "pairing": "same_selector",
+      "callers_found": 0,
+      "entry_points_found": 1,
+      "candidate_tests_found": 10,
+      "callers": [],
+      "entry_points": [
+        {
+          "selector": "symbol:crates/orbit-cli/src/command/workspace/tests/teardown.rs#teardown_plan_names_workspace_checkout_and_partition:test",
+          "source": "changed_symbol",
+          "confidence": "exact",
+          "distance": 0
+        }
+      ],
+      "candidate_tests": [
+        {
+          "test": "file:crates/orbit-engine/src/executor/automation/vcs/pr/tests/review_gate.rs",
+          "source": "import_relationship",
+          "confidence": "file_import"
+        },
+        {
+          "test": "file:crates/orbit-engine/src/executor/automation/vcs/worktree/tests/setup.rs",
+          "source": "import_relationship",
+          "confidence": "file_import"
+        },
+        {
+          "test": "symbol:crates/orbit-cli/tests/supervised_parent_signal.rs#cli_ctrl_c_during_proc_spawn_reports_interrupt:test",
+          "source": "runtime_invocation",
+          "confidence": "name_only"
+        },
+        {
+          "test": "symbol:crates/orbit-cli/tests/supervised_parent_signal.rs#mcp_listen_exits_on_sigterm_while_proc_spawn_runs:test",
+          "source": "runtime_invocation",
+          "confidence": "name_only"
+        },
+        {
+          "test": "symbol:crates/orbit-cli/tests/web_serve_root.rs#web_serve_honors_an_explicit_root_over_the_global_registry:test",
+          "source": "runtime_invocation",
+          "confidence": "name_only"
+        },
+        {
+          "test": "symbol:crates/orbit-cli/tests/web_serve_root.rs#web_serve_without_an_explicit_root_still_serves_the_global_registry:test",
+          "source": "runtime_invocation",
+          "confidence": "name_only"
+        },
+        {
+          "test": "symbol:crates/orbit-cli/tests/web_serve_shutdown.rs#dashboard_exits_promptly_on_sigterm_with_open_connections:test",
+          "source": "runtime_invocation",
+          "confidence": "name_only"
+        },
+        {
+          "test": "symbol:crates/orbit-cli/tests/web_serve_shutdown.rs#dashboard_outlives_shutdown_grace_period_when_no_signal_is_sent:test",
+          "source": "runtime_invocation",
+          "confidence": "name_only"
+        },
+        {
+          "test": "symbol:crates/orbit-core/src/application/tests/job_pipeline.rs#pipeline_worker_command_discovers_registered_workspace_from_cwd:test",
+          "source": "runtime_invocation",
+          "confidence": "name_only"
+        },
+        {
+          "test": "symbol:crates/orbit-core/src/application/tests/job_pipeline.rs#pipeline_worker_command_forwards_explicit_root_to_the_detached_worker:test",
+          "source": "runtime_invocation",
+          "confidence": "name_only"
+        }
+      ]
+    },
+    {
+      "selector": "symbol:crates/orbit-cli/src/command/workspace/tests/teardown.rs#teardown_rejects_a_selector_that_does_not_match_the_cwd_checkout:test",
+      "status": "added",
+      "pairing": "same_selector",
+      "callers_found": 0,
+      "entry_points_found": 1,
+      "candidate_tests_found": 10,
+      "callers": [],
+      "entry_points": [
+        {
+          "selector": "symbol:crates/orbit-cli/src/command/workspace/tests/teardown.rs#teardown_rejects_a_selector_that_does_not_match_the_cwd_checkout:test",
+          "source": "changed_symbol",
+          "confidence": "exact",
+          "distance": 0
+        }
+      ],
+      "candidate_tests": [
+        {
+          "test": "file:crates/orbit-engine/src/executor/automation/vcs/pr/tests/review_gate.rs",
+          "source": "import_relationship",
+          "confidence": "file_import"
+        },
+        {
+          "test": "file:crates/orbit-engine/src/executor/automation/vcs/worktree/tests/setup.rs",
+          "source": "import_relationship",
+          "confidence": "file_import"
+        },
+        {
+          "test": "symbol:crates/orbit-cli/tests/supervised_parent_signal.rs#cli_ctrl_c_during_proc_spawn_reports_interrupt:test",
+          "source": "runtime_invocation",
+          "confidence": "name_only"
+        },
+        {
+          "test": "symbol:crates/orbit-cli/tests/supervised_parent_signal.rs#mcp_listen_exits_on_sigterm_while_proc_spawn_runs:test",
+          "source": "runtime_invocation",
+          "confidence": "name_only"
+        },
+        {
+          "test": "symbol:crates/orbit-cli/tests/web_serve_root.rs#web_serve_honors_an_explicit_root_over_the_global_registry:test",
+          "source": "runtime_invocation",
+          "confidence": "name_only"
+        },
+        {
+          "test": "symbol:crates/orbit-cli/tests/web_serve_root.rs#web_serve_without_an_explicit_root_still_serves_the_global_registry:test",
+          "source": "runtime_invocation",
+          "confidence": "name_only"
+        },
+        {
+          "test": "symbol:crates/orbit-cli/tests/web_serve_shutdown.rs#dashboard_exits_promptly_on_sigterm_with_open_connections:test",
+          "source": "runtime_invocation",
+          "confidence": "name_only"
+        },
+        {
+          "test": "symbol:crates/orbit-cli/tests/web_serve_shutdown.rs#dashboard_outlives_shutdown_grace_period_when_no_signal_is_sent:test",
+          "source": "runtime_invocation",
+          "confidence": "name_only"
+        },
+        {
+          "test": "symbol:crates/orbit-core/src/application/tests/job_pipeline.rs#pipeline_worker_command_discovers_registered_workspace_from_cwd:test",
+          "source": "runtime_invocation",
+          "confidence": "name_only"
+        },
+        {
+          "test": "symbol:crates/orbit-core/src/application/tests/job_pipeline.rs#pipeline_worker_command_forwards_explicit_root_to_the_detached_worker:test",
+          "source": "runtime_invocation",
+          "confidence": "name_only"
+        }
+      ]
+    },
+    {
+      "selector": "symbol:crates/orbit-cli/src/command/workspace/tests/teardown.rs#teardown_rejects_a_selector_that_is_not_registered:test",
+      "status": "added",
+      "pairing": "same_selector",
+      "callers_found": 0,
+      "entry_points_found": 1,
+      "candidate_tests_found": 10,
+      "callers": [],
+      "entry_points": [
+        {
+          "selector": "symbol:crates/orbit-cli/src/command/workspace/tests/teardown.rs#teardown_rejects_a_selector_that_is_not_registered:test",
+          "source": "changed_symbol",
+          "confidence": "exact",
+          "distance": 0
+        }
+      ],
+      "candidate_tests": [
+        {
+          "test": "file:crates/orbit-engine/src/executor/automation/vcs/pr/tests/review_gate.rs",
+          "source": "import_relationship",
+          "confidence": "file_import"
+        },
+        {
+          "test": "file:crates/orbit-engine/src/executor/automation/vcs/worktree/tests/setup.rs",
+          "source": "import_relationship",
+          "confidence": "file_import"
+        },
+        {
+          "test": "symbol:crates/orbit-cli/tests/supervised_parent_signal.rs#cli_ctrl_c_during_proc_spawn_reports_interrupt:test",
+          "source": "runtime_invocation",
+          "confidence": "name_only"
+        },
+        {
+          "test": "symbol:crates/orbit-cli/tests/supervised_parent_signal.rs#mcp_listen_exits_on_sigterm_while_proc_spawn_runs:test",
+          "source": "runtime_invocation",
+          "confidence": "name_only"
+        },
+        {
+          "test": "symbol:crates/orbit-cli/tests/web_serve_root.rs#web_serve_honors_an_explicit_root_over_the_global_registry:test",
+          "source": "runtime_invocation",
+          "confidence": "name_only"
+        },
+        {
+          "test": "symbol:crates/orbit-cli/tests/web_serve_root.rs#web_serve_without_an_explicit_root_still_serves_the_global_registry:test",
+          "source": "runtime_invocation",
+          "confidence": "name_only"
+        },
+        {
+          "test": "symbol:crates/orbit-cli/tests/web_serve_shutdown.rs#dashboard_exits_promptly_on_sigterm_with_open_connections:test",
+          "source": "runtime_invocation",
+          "confidence": "name_only"
+        },
+        {
+          "test": "symbol:crates/orbit-cli/tests/web_serve_shutdown.rs#dashboard_outlives_shutdown_grace_period_when_no_signal_is_sent:test",
+          "source": "runtime_invocation",
+          "confidence": "name_only"
+        },
+        {
+          "test": "symbol:crates/orbit-core/src/application/tests/job_pipeline.rs#pipeline_worker_command_discovers_registered_workspace_from_cwd:test",
+          "source": "runtime_invocation",
+          "confidence": "name_only"
+        },
+        {
+          "test": "symbol:crates/orbit-core/src/application/tests/job_pipeline.rs#pipeline_worker_command_forwards_explicit_root_to_the_detached_worker:test",
+          "source": "runtime_invocation",
+          "confidence": "name_only"
+        }
+      ]
+    },
+    {
+      "selector": "symbol:crates/orbit-cli/src/command/workspace/tests/teardown.rs#teardown_without_a_workspace_selector_is_usage_not_cwd_inference:test",
+      "status": "added",
+      "pairing": "same_selector",
+      "callers_found": 0,
+      "entry_points_found": 1,
+      "candidate_tests_found": 10,
+      "callers": [],
+      "entry_points": [
+        {
+          "selector": "symbol:crates/orbit-cli/src/command/workspace/tests/teardown.rs#teardown_without_a_workspace_selector_is_usage_not_cwd_inference:test",
+          "source": "changed_symbol",
+          "confidence": "exact",
+          "distance": 0
+        }
+      ],
+      "candidate_tests": [
+        {
+          "test": "file:crates/orbit-engine/src/executor/automation/vcs/pr/tests/review_gate.rs",
+          "source": "import_relationship",
+          "confidence": "file_import"
+        },
+        {
+          "test": "file:crates/orbit-engine/src/executor/automation/vcs/worktree/tests/setup.rs",
+          "source": "import_relationship",
+          "confidence": "file_import"
+        },
+        {
+          "test": "symbol:crates/orbit-cli/tests/supervised_parent_signal.rs#cli_ctrl_c_during_proc_spawn_reports_interrupt:test",
+          "source": "runtime_invocation",
+          "confidence": "name_only"
+        },
+        {
+          "test": "symbol:crates/orbit-cli/tests/supervised_parent_signal.rs#mcp_listen_exits_on_sigterm_while_proc_spawn_runs:test",
+          "source": "runtime_invocation",
+          "confidence": "name_only"
+        },
+        {
+          "test": "symbol:crates/orbit-cli/tests/web_serve_root.rs#web_serve_honors_an_explicit_root_over_the_global_registry:test",
+          "source": "runtime_invocation",
+          "confidence": "name_only"
+        },
+        {
+          "test": "symbol:crates/orbit-cli/tests/web_serve_root.rs#web_serve_without_an_explicit_root_still_serves_the_global_registry:test",
+          "source": "runtime_invocation",
+          "confidence": "name_only"
+        },
+        {
+          "test": "symbol:crates/orbit-cli/tests/web_serve_shutdown.rs#dashboard_exits_promptly_on_sigterm_with_open_connections:test",
+          "source": "runtime_invocation",
+          "confidence": "name_only"
+        },
+        {
+          "test": "symbol:crates/orbit-cli/tests/web_serve_shutdown.rs#dashboard_outlives_shutdown_grace_period_when_no_signal_is_sent:test",
+          "source": "runtime_invocation",
+          "confidence": "name_only"
+        },
+        {
+          "test": "symbol:crates/orbit-core/src/application/tests/job_pipeline.rs#pipeline_worker_command_discovers_registered_workspace_from_cwd:test",
+          "source": "runtime_invocation",
+          "confidence": "name_only"
+        },
+        {
+          "test": "symbol:crates/orbit-core/src/application/tests/job_pipeline.rs#pipeline_worker_command_forwards_explicit_root_to_the_detached_worker:test",
+          "source": "runtime_invocation",
+          "confidence": "name_only"
+        }
+      ]
+    },
+    {
+      "selector": "symbol:crates/orbit-cli/src/command/workspace/tests/teardown.rs#teardown_without_confirm_leaves_the_task_store_and_registration_untouched:test",
+      "status": "modified",
+      "pairing": "same_selector",
+      "callers_found": 0,
+      "entry_points_found": 1,
+      "candidate_tests_found": 10,
+      "callers": [],
+      "entry_points": [
+        {
+          "selector": "symbol:crates/orbit-cli/src/command/workspace/tests/teardown.rs#teardown_without_confirm_leaves_the_task_store_and_registration_untouched:test",
+          "source": "changed_symbol",
+          "confidence": "exact",
+          "distance": 0
+        }
+      ],
+      "candidate_tests": [
+        {
+          "test": "file:crates/orbit-engine/src/executor/automation/vcs/pr/tests/review_gate.rs",
+          "source": "import_relationship",
+          "confidence": "file_import"
+        },
+        {
+          "test": "file:crates/orbit-engine/src/executor/automation/vcs/worktree/tests/setup.rs",
+          "source": "import_relationship",
+          "confidence": "file_import"
+        },
+        {
+          "test": "symbol:crates/orbit-cli/tests/supervised_parent_signal.rs#cli_ctrl_c_during_proc_spawn_reports_interrupt:test",
+          "source": "runtime_invocation",
+          "confidence": "name_only"
+        },
+        {
+          "test": "symbol:crates/orbit-cli/tests/supervised_parent_signal.rs#mcp_listen_exits_on_sigterm_while_proc_spawn_runs:test",
+          "source": "runtime_invocation",
+          "confidence": "name_only"
+        },
+        {
+          "test": "symbol:crates/orbit-cli/tests/web_serve_root.rs#web_serve_honors_an_explicit_root_over_the_global_registry:test",
+          "source": "runtime_invocation",
+          "confidence": "name_only"
+        },
+        {
+          "test": "symbol:crates/orbit-cli/tests/web_serve_root.rs#web_serve_without_an_explicit_root_still_serves_the_global_registry:test",
+          "source": "runtime_invocation",
+          "confidence": "name_only"
+        },
+        {
+          "test": "symbol:crates/orbit-cli/tests/web_serve_shutdown.rs#dashboard_exits_promptly_on_sigterm_with_open_connections:test",
+          "source": "runtime_invocation",
+          "confidence": "name_only"
+        },
+        {
+          "test": "symbol:crates/orbit-cli/tests/web_serve_shutdown.rs#dashboard_outlives_shutdown_grace_period_when_no_signal_is_sent:test",
+          "source": "runtime_invocation",
+          "confidence": "name_only"
+        },
+        {
+          "test": "symbol:crates/orbit-core/src/application/tests/job_pipeline.rs#pipeline_worker_command_discovers_registered_workspace_from_cwd:test",
+          "source": "runtime_invocation",
+          "confidence": "name_only"
+        },
+        {
+          "test": "symbol:crates/orbit-core/src/application/tests/job_pipeline.rs#pipeline_worker_command_forwards_explicit_root_to_the_detached_worker:test",
+          "source": "runtime_invocation",
+          "confidence": "name_only"
+        }
+      ]
+    },
+    {
+      "selector": "symbol:crates/orbit-cli/src/command/workspace/tests/teardown.rs#teardown_without_confirm_prints_the_resolved_plan_and_does_not_delete:test",
+      "status": "added",
+      "pairing": "same_selector",
+      "callers_found": 0,
+      "entry_points_found": 1,
+      "candidate_tests_found": 10,
+      "callers": [],
+      "entry_points": [
+        {
+          "selector": "symbol:crates/orbit-cli/src/command/workspace/tests/teardown.rs#teardown_without_confirm_prints_the_resolved_plan_and_does_not_delete:test",
+          "source": "changed_symbol",
+          "confidence": "exact",
+          "distance": 0
+        }
+      ],
+      "candidate_tests": [
+        {
+          "test": "file:crates/orbit-engine/src/executor/automation/vcs/pr/tests/review_gate.rs",
+          "source": "import_relationship",
+          "confidence": "file_import"
+        },
+        {
+          "test": "file:crates/orbit-engine/src/executor/automation/vcs/worktree/tests/setup.rs",
+          "source": "import_relationship",
+          "confidence": "file_import"
+        },
+        {
+          "test": "symbol:crates/orbit-cli/tests/supervised_parent_signal.rs#cli_ctrl_c_during_proc_spawn_reports_interrupt:test",
+          "source": "runtime_invocation",
+          "confidence": "name_only"
+        },
+        {
+          "test": "symbol:crates/orbit-cli/tests/supervised_parent_signal.rs#mcp_listen_exits_on_sigterm_while_proc_spawn_runs:test",
+          "source": "runtime_invocation",
+          "confidence": "name_only"
+        },
+        {
+          "test": "symbol:crates/orbit-cli/tests/web_serve_root.rs#web_serve_honors_an_explicit_root_over_the_global_registry:test",
+          "source": "runtime_invocation",
+          "confidence": "name_only"
+        },
+        {
+          "test": "symbol:crates/orbit-cli/tests/web_serve_root.rs#web_serve_without_an_explicit_root_still_serves_the_global_registry:test",
+          "source": "runtime_invocation",
+          "confidence": "name_only"
+        },
+        {
+          "test": "symbol:crates/orbit-cli/tests/web_serve_shutdown.rs#dashboard_exits_promptly_on_sigterm_with_open_connections:test",
+          "source": "runtime_invocation",
+          "confidence": "name_only"
+        },
+        {
+          "test": "symbol:crates/orbit-cli/tests/web_serve_shutdown.rs#dashboard_outlives_shutdown_grace_period_when_no_signal_is_sent:test",
+          "source": "runtime_invocation",
+          "confidence": "name_only"
+        },
+        {
+          "test": "symbol:crates/orbit-core/src/application/tests/job_pipeline.rs#pipeline_worker_command_discovers_registered_workspace_from_cwd:test",
+          "source": "runtime_invocation",
+          "confidence": "name_only"
+        },
+        {
+          "test": "symbol:crates/orbit-core/src/application/tests/job_pipeline.rs#pipeline_worker_command_forwards_explicit_root_to_the_detached_worker:test",
+          "source": "runtime_invocation",
+          "confidence": "name_only"
+        }
+      ]
+    },
+    {
+      "selector": "symbol:docs/runbooks/health-checks.md#Check Orbit Health:heading",
+      "status": "modified",
+      "pairing": "same_selector",
+      "callers_found": 0,
+      "entry_points_found": 0,
+      "candidate_tests_found": 0,
+      "callers": [],
+      "entry_points": [],
+      "candidate_tests": []
+    },
+    {
+      "selector": "symbol:docs/runbooks/health-checks.md#Reclaim orphaned task stores:heading",
+      "status": "modified",
+      "pairing": "same_selector",
+      "callers_found": 0,
+      "entry_points_found": 0,
+      "candidate_tests_found": 0,
+      "callers": [],
+      "entry_points": [],
+      "candidate_tests": []
+    },
+    {
+      "selector": "symbol:docs/runbooks/health-checks.md#Run `orbit doctor`:heading",
+      "status": "modified",
+      "pairing": "same_selector",
+      "callers_found": 0,
+      "entry_points_found": 0,
+      "candidate_tests_found": 0,
+      "callers": [],
+      "entry_points": [],
+      "candidate_tests": []
+    }
+  ],
+  "not_analysed": []
+}

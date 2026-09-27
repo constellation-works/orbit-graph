@@ -1,0 +1,54 @@
+# Change analysis. See query.yaml: the conformance workspace is an empty
+# non-Git directory, so no comparison can be opened there. These goldens pin
+# request validation (before routing) and repository routing; answered,
+# working-tree, budget, and cache paths are covered by the real-binary tests
+# in crates/orbit-graph-cli/tests/plugin_integration.rs.
+schemaVersion: 1
+kind: PluginTest
+tests:
+  - name: changes_requires_a_git_repository
+    tool: changes
+    input:
+      schema_version: 1
+      repository: "{{workspace}}"
+      base: "main"
+      head: "HEAD"
+    expect:
+      error:
+        code: repository_unavailable
+  - name: changes_keeps_its_budget_below_the_tool_timeout
+    tool: changes
+    input:
+      schema_version: 1
+      repository: "{{workspace}}"
+      budget_ms: 110001
+    expect:
+      error:
+        code: invalid_request
+  - name: changes_rejects_a_head_without_a_base
+    tool: changes
+    input:
+      schema_version: 1
+      repository: "{{workspace}}"
+      head: "HEAD"
+    expect:
+      error:
+        code: invalid_request
+  - name: changes_bounds_its_depth
+    tool: changes
+    input:
+      schema_version: 1
+      repository: "{{workspace}}"
+      depth: 11
+    expect:
+      error:
+        code: invalid_request
+  - name: changes_requires_symbol_selectors
+    tool: changes
+    input:
+      schema_version: 1
+      repository: "{{workspace}}"
+      symbols: ["file:src/lib.rs"]
+    expect:
+      error:
+        code: invalid_request

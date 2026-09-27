@@ -45,7 +45,7 @@ policy() {
       ;;
     orbit-graph-cli)
       KIND="binary \`orbit-graph\`"
-      ALLOWED="orbit-graph"
+      ALLOWED="orbit-graph orbit-graph-changes"
       BANNED=""
       ;;
     orbit-graph-changes)

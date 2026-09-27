@@ -23,6 +23,8 @@ use tempfile::TempDir;
 
 use orbit_graph::EXTRACTOR_VERSION;
 
+mod common;
+
 // The plugin contract's tool names and envelope version. The protocol lives in
 // the `orbit-graph` binary, which has no library target to import them from;
 // `plugin_contract` ties the envelope version to the executable's report.
@@ -30,9 +32,10 @@ const RECOMMEND_TOOL_NAME: &str = "orbit.graph.recommend";
 const STATUS_TOOL_NAME: &str = "orbit.graph.status";
 const MAINTAIN_TOOL_NAME: &str = "orbit.graph.maintain";
 const VERSION_TOOL_NAME: &str = "orbit.graph.version";
+const CHANGES_TOOL_NAME: &str = "orbit.graph.changes";
 const PLUGIN_SCHEMA_VERSION: u32 = 1;
 /// Tools of the root manifest that are not read-only code-graph queries.
-const NON_QUERY_TOOLS: [&str; 4] = ["version", "status", "recommend", "maintain"];
+const NON_QUERY_TOOLS: [&str; 5] = ["version", "status", "recommend", "maintain", "changes"];
 
 #[test]
 fn no_argv_plugin_supports_status_and_query_and_task_id_both_levels() {
@@ -3100,4 +3103,323 @@ fn skip_as_root(test: &str) -> bool {
         "skipping {test}: chmod 000 does not restrict root"
     );
     true
+}
+
+/// A repository whose second commit changes `helper`, which `entry` calls and
+/// `tests/helper.rs` tests. Returns the fixture and its two commit ids.
+fn changes_fixture() -> (TempDir, String, String) {
+    let fixture = TempDir::new().expect("create changes fixture");
+    let git = |args: &[&str]| {
+        let output = common::git_command(fixture.path())
+            .args(args)
+            .output()
+            .expect("run git");
+        assert!(
+            output.status.success(),
+            "git {args:?} failed: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        String::from_utf8(output.stdout)
+            .expect("git UTF-8")
+            .trim()
+            .to_string()
+    };
+    git(&["init", "-b", "main"]);
+    fs::create_dir_all(fixture.path().join("src")).expect("create src");
+    fs::create_dir_all(fixture.path().join("tests")).expect("create tests");
+    fs::write(
+        fixture.path().join("Cargo.toml"),
+        "[package]\nname = \"tool\"\nversion = \"0.1.0\"\n",
+    )
+    .expect("write manifest");
+    fs::write(
+        fixture.path().join("src/lib.rs"),
+        "pub fn helper() -> i32 {\n    1\n}\n\npub fn entry() -> i32 {\n    helper()\n}\n",
+    )
+    .expect("write lib");
+    fs::write(
+        fixture.path().join("tests/helper.rs"),
+        "use tool::helper;\n\n#[test]\nfn helper_is_positive() {\n    assert!(helper() > 0);\n}\n",
+    )
+    .expect("write test");
+    git(&["add", "."]);
+    git(&["commit", "-m", "base"]);
+    let base = git(&["rev-parse", "HEAD"]);
+    fs::write(
+        fixture.path().join("src/lib.rs"),
+        "pub fn helper() -> i32 {\n    2\n}\n\npub fn entry() -> i32 {\n    helper() + 1\n}\n",
+    )
+    .expect("change lib");
+    git(&["commit", "-am", "head"]);
+    let head = git(&["rev-parse", "HEAD"]);
+    (fixture, base, head)
+}
+
+/// `orbit.graph.changes` answers a revision range with labelled callers and
+/// tests, caches snapshots under plugin state only, and a warm call reuses
+/// them (STD-01 §R31: nothing is written to the repository).
+#[test]
+fn changes_tool_labels_callers_and_tests_and_caches_under_plugin_state() {
+    let (fixture, base, head) = changes_fixture();
+    let repository = fixture.path().canonicalize().expect("canonical fixture");
+    let state = TempDir::new().expect("plugin state");
+    let environment = [("ORBIT_PLUGIN_STATE", state.path().as_os_str())];
+    let input = json!({
+        "repository": repository,
+        "base": base,
+        "head": head,
+        "confidence": "fuzzy_name"
+    });
+
+    let output = plugin_output_with_env(
+        fixture.path(),
+        CHANGES_TOOL_NAME,
+        input.clone(),
+        &environment,
+    );
+    let value = plugin_success(&output);
+    assert_matches_schema(&value, "schemas/changes.response.json");
+    assert_eq!(value["operation"], "changes");
+    assert_eq!(value["complete"], true);
+    let result = &value["result"];
+    assert_eq!(result["schema_version"], 1);
+    assert_eq!(result["comparison"]["base"]["commit_sha"], base.as_str());
+    assert_eq!(result["timings"]["base_cache"], "miss");
+    let helper = result["symbols"]
+        .as_array()
+        .expect("symbols")
+        .iter()
+        .find(|symbol| {
+            symbol["selector"]
+                .as_str()
+                .is_some_and(|s| s.contains("#helper:"))
+        })
+        .expect("helper is a changed symbol");
+    assert_eq!(helper["status"], "modified");
+    let callers = helper["callers"].as_array().expect("callers");
+    assert!(
+        callers.iter().any(|caller| caller["caller"]["selector"]
+            .as_str()
+            .is_some_and(|s| s.contains("#entry:"))),
+        "entry calls helper: {helper}"
+    );
+    for labelled in callers
+        .iter()
+        .chain(helper["candidate_tests"].as_array().expect("tests"))
+    {
+        assert!(labelled["source"].is_string(), "{labelled}");
+        assert!(labelled["confidence"].is_string(), "{labelled}");
+    }
+    assert!(
+        helper["candidate_tests"]
+            .as_array()
+            .expect("tests")
+            .iter()
+            .any(|test| test["test"]["label"]
+                .as_str()
+                .is_some_and(|l| l.starts_with("tests/helper.rs"))),
+        "the test that calls helper is a candidate: {helper}"
+    );
+
+    // Snapshots live under the repository's plugin state directory; the
+    // repository gains no graph scratch state and no temporary tree is left.
+    let state_dirs: Vec<PathBuf> = fs::read_dir(state.path())
+        .expect("read plugin state")
+        .map(|entry| entry.expect("state entry").path())
+        .collect();
+    assert_eq!(
+        state_dirs.len(),
+        1,
+        "one repository state dir: {state_dirs:?}"
+    );
+    assert!(state_dirs[0].join("changes-snapshots").is_dir());
+    assert!(!repository.join(".orbit-graph").exists());
+
+    let warm = plugin_success(&plugin_output_with_env(
+        fixture.path(),
+        "graph.changes",
+        input,
+        &environment,
+    ));
+    assert_matches_schema(&warm, "schemas/changes.response.json");
+    assert_eq!(warm["result"]["timings"]["base_cache"], "hit");
+    assert_eq!(warm["result"]["timings"]["head_cache"], "hit");
+    assert_eq!(warm["result"]["symbols"], result["symbols"]);
+}
+
+/// Without `head` the working tree, untracked files included, is compared;
+/// its temporary tree is built under plugin state and removed afterwards.
+#[test]
+fn changes_tool_compares_the_working_tree_without_writing_to_the_repository() {
+    let (fixture, _base, head) = changes_fixture();
+    let repository = fixture.path().canonicalize().expect("canonical fixture");
+    fs::write(
+        repository.join("src/extra.rs"),
+        "pub fn extra() -> i32 {\n    3\n}\n",
+    )
+    .expect("write untracked file");
+    let status_before = common::git_command(&repository)
+        .args(["status", "--porcelain"])
+        .output()
+        .expect("git status")
+        .stdout;
+    let state = TempDir::new().expect("plugin state");
+
+    let value = plugin_success(&plugin_output_with_env(
+        fixture.path(),
+        CHANGES_TOOL_NAME,
+        json!({"repository": repository, "base": head}),
+        &[("ORBIT_PLUGIN_STATE", state.path().as_os_str())],
+    ));
+    assert_matches_schema(&value, "schemas/changes.response.json");
+    let result = &value["result"];
+    assert_eq!(result["comparison"]["mode"], "working_tree");
+    assert!(
+        result["symbols"]
+            .as_array()
+            .expect("symbols")
+            .iter()
+            .any(|symbol| symbol["selector"]
+                .as_str()
+                .is_some_and(|s| s.contains("#extra:"))),
+        "the untracked file's symbol is a change: {result}"
+    );
+    assert_eq!(result["timings"]["head_cache"], "disabled");
+
+    let status_after = common::git_command(&repository)
+        .args(["status", "--porcelain"])
+        .output()
+        .expect("git status")
+        .stdout;
+    assert_eq!(
+        status_before, status_after,
+        "the working tree and index are untouched"
+    );
+    assert!(!repository.join(".orbit-graph").exists());
+    for entry in fs::read_dir(state.path()).expect("read plugin state") {
+        let scratch = entry.expect("state entry").path().join("changes-scratch");
+        if scratch.exists() {
+            assert_eq!(
+                fs::read_dir(&scratch).expect("read scratch").count(),
+                0,
+                "no temporary tree outlives the call"
+            );
+        }
+    }
+}
+
+/// Without plugin state the tool caches nothing and says so, rather than
+/// falling back to the repository.
+#[test]
+fn changes_tool_without_plugin_state_caches_nothing_and_says_so() {
+    let (fixture, base, head) = changes_fixture();
+    let repository = fixture.path().canonicalize().expect("canonical fixture");
+    let value = plugin_success(&plugin_output_with_env(
+        fixture.path(),
+        CHANGES_TOOL_NAME,
+        json!({"repository": repository, "base": base, "head": head}),
+        &[],
+    ));
+    assert_eq!(value["complete"], true);
+    assert!(
+        value["result"]["notices"]
+            .as_array()
+            .expect("notices")
+            .iter()
+            .any(|notice| notice
+                .as_str()
+                .is_some_and(|n| n.contains("ORBIT_PLUGIN_STATE"))),
+        "{value}"
+    );
+    assert!(!repository.join(".orbit-graph").exists());
+}
+
+/// Caps are applied and signalled, never silent.
+#[test]
+fn changes_tool_signals_every_cap_it_applies() {
+    let (fixture, base, head) = changes_fixture();
+    let repository = fixture.path().canonicalize().expect("canonical fixture");
+    let value = plugin_success(&plugin_output_with_env(
+        fixture.path(),
+        CHANGES_TOOL_NAME,
+        json!({
+            "repository": repository,
+            "base": base,
+            "head": head,
+            "max_symbols": 1,
+            "confidence": "fuzzy_name"
+        }),
+        &[],
+    ));
+    assert_matches_schema(&value, "schemas/changes.response.json");
+    assert_eq!(value["truncated"], true);
+    let result = &value["result"];
+    assert_eq!(result["symbols"].as_array().map(Vec::len), Some(1));
+    assert!(
+        !result["not_analysed"]
+            .as_array()
+            .expect("not analysed")
+            .is_empty(),
+        "{result}"
+    );
+    assert!(
+        result["truncation"]
+            .as_array()
+            .expect("truncation")
+            .iter()
+            .any(|flag| flag["bound"] == "max_symbols"),
+        "{result}"
+    );
+}
+
+/// Bad input fails with `invalid_request` before anything is indexed; a
+/// missing repository is `repository_unavailable`.
+#[test]
+fn changes_tool_rejects_bad_input_before_indexing() {
+    let (fixture, _base, head) = changes_fixture();
+    let repository = fixture.path().canonicalize().expect("canonical fixture");
+    let state = TempDir::new().expect("plugin state");
+    let environment = [("ORBIT_PLUGIN_STATE", state.path().as_os_str())];
+    for (input, code) in [
+        (
+            json!({"repository": repository, "base": "no-such-ref", "head": head}),
+            "invalid_request",
+        ),
+        (
+            json!({"repository": repository, "head": head}),
+            "invalid_request",
+        ),
+        (
+            json!({"repository": repository, "budget_ms": 120_000}),
+            "invalid_request",
+        ),
+        (
+            json!({"repository": repository, "symbols": ["file:src/lib.rs"]}),
+            "invalid_request",
+        ),
+        (
+            json!({"repository": repository, "unknown": true}),
+            "invalid_request",
+        ),
+        (
+            json!({"repository": repository.join("missing")}),
+            "repository_unavailable",
+        ),
+    ] {
+        let output = plugin_output_with_env(
+            fixture.path(),
+            CHANGES_TOOL_NAME,
+            input.clone(),
+            &environment,
+        );
+        let response = assert_plugin_error(&output, &input.to_string());
+        assert_eq!(response["error"]["code"], code, "{input}: {response}");
+    }
+    assert_eq!(
+        fs::read_dir(state.path())
+            .expect("read plugin state")
+            .count(),
+        0,
+        "nothing is indexed or cached for rejected input"
+    );
 }

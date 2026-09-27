@@ -6,8 +6,10 @@ and entry-point evidence, suggests candidate tests, and builds a deterministic
 JSON report. A working-tree comparison mode includes uncommitted changes.
 
 The library uses only the public `orbit_graph` API. It has no executable,
-HTTP service, or UI. The follow-up task will expose it through
-`orbit-graph changes` and the `orbit.graph.changes` plugin tool.
+HTTP service, or UI. Agents reach it through `orbit-graph changes` and the
+`orbit.graph.changes` plugin tool, both built on the `analysis` module: a
+validated, bounded request in, one `ChangesDocument` (`schema_version` 1)
+out. See [the changes-command decisions](../../docs/design/changes-command/4_decisions.md).
 
 See [the design contract](../../docs/design/change-explorer.md) for snapshot
 semantics, changed-symbol identity, evidence categories and JSON fields.
