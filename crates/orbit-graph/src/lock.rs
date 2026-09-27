@@ -5,6 +5,9 @@
 //!
 //! - the lock is a kernel advisory lock (`flock` on Unix) on a sidecar file
 //!   that std opens close-on-exec, so a crashed holder never wedges it;
+//! - the lock file is state like any other (`STD-05 §R7`–`§R9`): it is
+//!   opened without following a symlink, refused when it is not a regular
+//!   file the current user owns, and created or repaired to `0600`;
 //! - acquisition polls `try_lock` until a deadline instead of blocking, so a
 //!   stuck holder produces an error rather than a silent hang;
 //! - just after acquiring, the holder writes its PID, acquisition time and a
@@ -14,7 +17,7 @@
 //!   contention, never a free lock.
 
 use std::fmt::{Display, Formatter};
-use std::fs::{File, OpenOptions, TryLockError};
+use std::fs::{File, TryLockError};
 use std::io::{Read, Seek, Write};
 use std::path::{Path, PathBuf};
 use std::thread;
@@ -23,6 +26,7 @@ use std::time::{Duration, Instant};
 use serde::{Deserialize, Serialize};
 
 use crate::GraphError;
+use crate::state_dir::{StateAccess, open_state_file};
 
 /// Default wait for a graph lock before failing (`STD-03 §R7`).
 pub(crate) const DEFAULT_LOCK_TIMEOUT: Duration = Duration::from_secs(30);
@@ -87,13 +91,13 @@ impl FileLockGuard {
         timeout: Duration,
         operation: &'static str,
     ) -> Result<Self, GraphError> {
-        let file = OpenOptions::new()
-            .create(true)
-            .truncate(false)
-            .read(true)
-            .write(true)
-            .open(lock_path)
-            .map_err(|source| GraphError::io(operation, lock_path, source))?;
+        let Some(file) = open_state_file(lock_path, StateAccess::Write)? else {
+            return Err(GraphError::io(
+                operation,
+                lock_path,
+                std::io::Error::from(std::io::ErrorKind::NotFound),
+            ));
+        };
         let started = Instant::now();
         let mut interval = FIRST_POLL_INTERVAL;
         loop {
@@ -195,8 +199,8 @@ fn write_holder(mut file: &File, holder: &LockHolder) -> std::io::Result<()> {
 /// Reads the holder record, or `None` when it is missing or unreadable.
 pub(crate) fn read_holder(lock_path: &Path) -> Option<LockHolder> {
     let mut bytes = Vec::new();
-    File::open(lock_path)
-        .ok()?
+    open_state_file(lock_path, StateAccess::Read)
+        .ok()??
         .take(HOLDER_RECORD_LIMIT)
         .read_to_end(&mut bytes)
         .ok()?;

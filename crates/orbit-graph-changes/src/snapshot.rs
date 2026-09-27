@@ -46,7 +46,8 @@ use std::time::{Duration, Instant};
 use git2::{ObjectType, Oid, Repository, RepositoryInitOptions, Status, StatusOptions, TreeEntry};
 use orbit_graph::{
     Confidence, Graph, GraphError, ImpactResult, RefOpts, RefResult, Selector, SyncMode,
-    SyncObserver, SyncOutcome, SyncPhase, SyncPolicy, SyncProgress,
+    SyncObserver, SyncOutcome, SyncPhase, SyncPolicy, SyncProgress, atomic_write,
+    create_private_dir_all, write_new_private_file,
 };
 use tempfile::TempDir;
 use thiserror::Error;
@@ -698,9 +699,10 @@ impl Snapshot {
         let found = match cache.lookup(commit_sha.as_str()) {
             Ok(found) => found,
             // The commit's directory holds an entry this binary may neither
-            // use nor remove (a newer binary's, an unreadable one, or one in
-            // use elsewhere): index this side into a temporary tree instead.
-            Err(error @ CacheError::Kept { .. }) => {
+            // use nor remove (a newer binary's, an unreadable or untrusted
+            // one, or one in use elsewhere), or a path in it is refused:
+            // index this side into a temporary tree instead.
+            Err(error @ (CacheError::Kept { .. } | CacheError::UnsafeStatePath { .. })) => {
                 let note = format!(
                     "{error}; this side was indexed into a task-owned temporary tree and \
                      reused nothing."
@@ -1237,7 +1239,7 @@ impl Comparison {
         }
 
         let mut cache_note = None;
-        let cache_dir = if options.no_cache {
+        let cache = if options.no_cache {
             cache_note = Some("Snapshot caching was disabled for this launch.".to_string());
             None
         } else {
@@ -1245,8 +1247,8 @@ impl Comparison {
                 .cache_dir
                 .clone()
                 .unwrap_or_else(|| default_cache_dir(workdir.as_path()));
-            match SnapshotCache::open(dir.as_path()) {
-                Ok(cache) => Some(cache.dir().to_path_buf()),
+            match SnapshotCache::open_for_worktree(dir.as_path(), workdir.as_path()) {
+                Ok(cache) => Some(cache),
                 Err(error) => {
                     cache_note = Some(format!(
                         "Snapshot cache at {} is unusable ({error}); this launch indexed into \
@@ -1270,7 +1272,7 @@ impl Comparison {
                     repository,
                     SnapshotSide::Base,
                     base_ref,
-                    cache_dir.as_deref(),
+                    cache.as_ref(),
                     progress,
                 )
             });
@@ -1279,7 +1281,7 @@ impl Comparison {
                     repository,
                     SnapshotSide::Head,
                     head_ref,
-                    cache_dir.as_deref(),
+                    cache.as_ref(),
                     progress,
                 )
             });
@@ -1302,7 +1304,7 @@ impl Comparison {
             base,
             head,
             working_tree,
-            cache_dir,
+            cache_dir: cache.map(|cache| cache.dir().to_path_buf()),
             cache_note,
             prepared_in: started.elapsed(),
         })))
@@ -1363,15 +1365,11 @@ fn build_snapshot_side(
     repository: &Path,
     side: SnapshotSide,
     requested_ref: &str,
-    cache_dir: Option<&Path>,
+    cache: Option<&SnapshotCache>,
     progress: &dyn ComparisonProgress,
 ) -> Result<Option<Snapshot>, SnapshotError> {
     let repo = open_working_tree(repository)?;
-    let cache = cache_dir
-        .map(SnapshotCache::open)
-        .transpose()
-        .map_err(cache_error)?;
-    Snapshot::build(&repo, side, requested_ref, cache.as_ref(), progress)
+    Snapshot::build(&repo, side, requested_ref, cache, progress)
 }
 
 /// Open `path` as a Git repository with a working tree.
@@ -1542,10 +1540,12 @@ fn materialize_tree(
                         reason: source.message().to_string(),
                     })?;
                 let child_dir = dest.join(name.as_str());
-                fs::create_dir_all(child_dir.as_path()).map_err(|source| SnapshotError::Io {
-                    operation: "create snapshot directory",
-                    path: child_dir.clone(),
-                    reason: source.to_string(),
+                create_private_dir_all(child_dir.as_path()).map_err(|source| {
+                    SnapshotError::Io {
+                        operation: "create snapshot directory",
+                        path: child_dir.clone(),
+                        reason: source.to_string(),
+                    }
                 })?;
                 materialize_tree(repo, &child, child_dir.as_path(), path.as_str(), report)?;
             }
@@ -1588,8 +1588,9 @@ fn materialize_blob(
         return Ok(());
     }
 
-    // Written without the executable bit: the explorer never runs repository
-    // content, and a non-executable tree cannot be invoked by accident.
+    // Written owner-only (`0600`) and without the executable bit: the explorer
+    // never runs repository content, and a non-executable tree cannot be
+    // invoked by accident (STD-05 §R8).
     let Ok(name) = entry.name() else {
         report.excluded.push(ExcludedEntry {
             path,
@@ -1598,7 +1599,16 @@ fn materialize_blob(
         return Ok(());
     };
     let file_path = dest.join(name);
-    fs::write(file_path.as_path(), blob.content()).map_err(|source| SnapshotError::Io {
+    let written = match write_new_private_file(file_path.as_path(), blob.content()) {
+        // Two tree entries that differ only in case share one file on a
+        // case-insensitive filesystem; the later one replaces the earlier,
+        // as it always has.
+        Err(source) if source.kind() == std::io::ErrorKind::AlreadyExists => {
+            atomic_write(file_path.as_path(), blob.content())
+        }
+        written => written,
+    };
+    written.map_err(|source| SnapshotError::Io {
         operation: "write snapshot file",
         path: file_path,
         reason: source.to_string(),

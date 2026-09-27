@@ -1,6 +1,10 @@
 //! JSON report contract through the public change-analysis library.
 
 #![allow(clippy::expect_used)]
+#![allow(
+    clippy::disallowed_methods,
+    reason = "fixtures are written with fs::write; clippy.toml bans it only from shipped code"
+)]
 
 use orbit_graph_changes::report::{ExcerptMode, ReportOptions, build_report};
 use orbit_graph_changes::snapshot::Comparison;

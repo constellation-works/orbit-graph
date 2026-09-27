@@ -39,6 +39,15 @@
 //! - **The user repository's own `.orbit-graph/*.db` files are never read or
 //!   written.** The cache lives in its own `explorer/snapshots` subdirectory and
 //!   every graph handle is opened with an explicit database path inside it.
+//! - **Repository content can neither redirect nor pre-populate the cache**
+//!   (STD-05 §R6–§R9). The directory is resolved through
+//!   `orbit_graph::scratch_state_dir` or `chosen_state_dir`: a symlinked,
+//!   dangling or tracked component is refused with
+//!   [`CacheError::UnsafeStatePath`]. Directories are created `0700`, and
+//!   locks, the marker, `entry.json` and `last_used` are `0600` files opened
+//!   without following a symlink. An entry is trusted only while its directory
+//!   is a real directory owned like the cache with no group or other
+//!   permission bits; any other entry is rebuilt or kept, never read.
 //!
 //! An entry is published by building into a staging directory and renaming it
 //! into place, so a crashed or concurrent build can never leave a half-indexed
@@ -50,7 +59,10 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-use orbit_graph::{EXTRACTOR_VERSION, STORE_SCHEMA_VERSION};
+use orbit_graph::{
+    EXTRACTOR_VERSION, GraphError, STORE_SCHEMA_VERSION, StateAccess, atomic_write,
+    check_state_file, chosen_state_dir, create_private_dir_all, open_state_file, scratch_state_dir,
+};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
@@ -104,8 +116,18 @@ pub enum CacheError {
         /// Failure reason.
         reason: String,
     },
+    /// A cache path is a symlink, a dangling link, not the kind of entry the
+    /// cache creates, owned by another user, or tracked by the repository's
+    /// Git index, so it is neither followed nor written (STD-05 §R7).
+    #[error("refusing orbit-graph state path {}: {reason}", path.display())]
+    UnsafeStatePath {
+        /// Path that was refused.
+        path: PathBuf,
+        /// Why it was refused.
+        reason: String,
+    },
     /// An entry occupies the commit's directory, but this binary may neither
-    /// use nor remove it: it is newer, unreadable, or in use.
+    /// use nor remove it: it is newer, unreadable, untrusted, or in use.
     #[error(
         "snapshot cache entry {path} is kept ({}) and cannot be used by this binary",
         reason.label()
@@ -124,6 +146,27 @@ impl CacheError {
             operation,
             path: path.to_path_buf(),
             reason: source.to_string(),
+        }
+    }
+
+    /// A refusal or failure from the orbit-graph state-path checks.
+    fn state(operation: &'static str, fallback: &Path, source: GraphError) -> Self {
+        match source {
+            GraphError::UnsafeStatePath { path, reason } => Self::UnsafeStatePath { path, reason },
+            GraphError::Io {
+                operation,
+                path,
+                reason,
+            } => Self::Io {
+                operation,
+                path,
+                reason,
+            },
+            other => Self::Io {
+                operation,
+                path: fallback.to_path_buf(),
+                reason: other.to_string(),
+            },
         }
     }
 }
@@ -366,12 +409,52 @@ pub struct SnapshotCache {
 }
 
 impl SnapshotCache {
-    /// Open, creating the directory when it does not exist, and mark it as a
-    /// snapshot cache.
+    /// Open, creating the directory owner-only when it does not exist, and
+    /// mark it as a snapshot cache.
+    ///
+    /// `dir` is the caller's choice: its spelling is trusted up to its nearest
+    /// existing ancestor, and every directory created below that is `0700`.
+    /// The final directory must be a real directory the current user owns.
     pub fn open(dir: &Path) -> Result<Self, CacheError> {
-        fs::create_dir_all(dir)
-            .map_err(|source| CacheError::io("create snapshot cache directory", dir, &source))?;
-        let dir = fs::canonicalize(dir).unwrap_or_else(|_| dir.to_path_buf());
+        Self::adopt(dir, chosen_state_dir(dir, None, StateAccess::Write))
+    }
+
+    /// Open the cache at `dir` for the repository whose working tree is
+    /// `worktree`, as [`SnapshotCache::open`] does, but checking the part of
+    /// `dir` inside the worktree as repository content.
+    ///
+    /// The default directory ([`default_cache_dir`]) is the worktree's
+    /// `.orbit-graph/` scratch directory: it is refused when any component is
+    /// a symlink or dangling link, or when the Git index tracks
+    /// `.orbit-graph` or anything below it, so a committed cache entry or a
+    /// committed link redirecting the cache is never trusted or written
+    /// through. Any other `dir` inside the worktree gets the same checks from
+    /// the worktree down.
+    pub fn open_for_worktree(dir: &Path, worktree: &Path) -> Result<Self, CacheError> {
+        let physical = if dir == default_cache_dir(worktree) {
+            scratch_state_dir(
+                worktree,
+                Path::new("explorer").join("snapshots").as_path(),
+                StateAccess::Write,
+            )
+        } else {
+            chosen_state_dir(dir, Some(worktree), StateAccess::Write)
+        };
+        Self::adopt(dir, physical)
+    }
+
+    fn adopt(
+        requested: &Path,
+        physical: Result<Option<PathBuf>, GraphError>,
+    ) -> Result<Self, CacheError> {
+        const OPERATION: &str = "create snapshot cache directory";
+        let dir = physical
+            .map_err(|source| CacheError::state(OPERATION, requested, source))?
+            .ok_or_else(|| CacheError::Io {
+                operation: OPERATION,
+                path: requested.to_path_buf(),
+                reason: "the directory does not exist".to_string(),
+            })?;
         write_marker(dir.as_path())?;
         Ok(Self { dir })
     }
@@ -398,13 +481,24 @@ impl SnapshotCache {
     /// place.
     pub fn lookup(&self, commit_sha: &str) -> Result<Option<CachedEntry>, CacheError> {
         let root = self.entry_root(commit_sha)?;
-        if !root.exists() {
-            return Ok(None);
-        }
         let kept = |reason| CacheError::Kept {
             path: root.clone(),
             reason,
         };
+        // Provenance check, fail closed (STD-05 §R9): only this user's
+        // private entry directory is evidence of a build this cache ran.
+        match self.provenance(root.as_path())? {
+            Provenance::Missing => return Ok(None),
+            Provenance::Private => {}
+            Provenance::Loose => {
+                return if self.remove_entry_if_unused(root.as_path())? {
+                    Ok(None)
+                } else {
+                    Err(kept(CleanReason::InUse))
+                };
+            }
+            Provenance::Foreign => return Err(kept(CleanReason::Untrusted)),
+        }
         // Integrity check, fail closed (STD-02 §R31): only a readable key is
         // evidence of what the directory holds.
         let metadata = match read_metadata(root.as_path()) {
@@ -423,7 +517,8 @@ impl SnapshotCache {
                 };
             }
         }
-        let Some(in_use) = open_lock(lock_path(root.as_path(), IN_USE_LOCK_FILE), true)? else {
+        let Some(in_use) = open_lock(lock_path(root.as_path(), IN_USE_LOCK_FILE), Create::Yes)?
+        else {
             // The directory was removed since its key was read.
             return Ok(None);
         };
@@ -435,7 +530,7 @@ impl SnapshotCache {
         }
         // The entry may have been removed between reading its key and taking
         // the lock; the lock is then on an unlinked file.
-        if !metadata_path(root.as_path()).is_file() {
+        if !is_real_file(metadata_path(root.as_path()).as_path()) {
             return Ok(None);
         }
         let entry = CachedEntry {
@@ -443,7 +538,7 @@ impl SnapshotCache {
             metadata,
             _in_use: Arc::new(in_use),
         };
-        if !entry.tree().is_dir() || !entry.db().is_file() {
+        if !is_real_dir(entry.tree().as_path()) || !is_real_file(entry.db().as_path()) {
             drop(entry);
             return if self.remove_entry_if_unused(root.as_path())? {
                 Ok(None)
@@ -469,7 +564,7 @@ impl SnapshotCache {
             STAGE_SEQUENCE.fetch_add(1, Ordering::Relaxed)
         );
         let root = self.dir.join(name);
-        fs::create_dir(root.as_path()).map_err(|source| {
+        create_private_dir(root.as_path()).map_err(|source| {
             CacheError::io("create staged snapshot entry", root.as_path(), &source)
         })?;
         // Lock before writing anything else, so `clean` sees a held builder
@@ -482,10 +577,10 @@ impl SnapshotCache {
             lock_path(root.as_path(), IN_USE_LOCK_FILE),
             LockKind::Shared,
         )?;
-        fs::create_dir_all(root.join("tree")).map_err(|source| {
+        create_private_dir_all(root.join("tree").as_path()).map_err(|source| {
             CacheError::io("create staged snapshot tree", root.as_path(), &source)
         })?;
-        fs::create_dir_all(root.join("index")).map_err(|source| {
+        create_private_dir_all(root.join("index").as_path()).map_err(|source| {
             CacheError::io("create staged snapshot index", root.as_path(), &source)
         })?;
         Ok(StagedEntry {
@@ -601,12 +696,21 @@ impl SnapshotCache {
             kept: Vec::new(),
             applied: options.apply,
         };
-        if !self.dir.exists() {
+        // A report changes nothing, so the directory is only checked, never
+        // repaired (STD-01 §R31); a symlinked or foreign one is refused.
+        let checked =
+            chosen_state_dir(self.dir.as_path(), None, StateAccess::Read).map_err(|source| {
+                CacheError::state("check snapshot cache directory", &self.dir, source)
+            })?;
+        if checked.is_none() {
             return Ok(report);
         }
         // Ownership check, fail closed (STD-02 §R31): only a directory this
         // module marked is a cache whose entries it may judge.
-        if !self.dir.join(CACHE_MARKER_FILE).is_file() {
+        if !matches!(
+            check_state_file(self.dir.join(CACHE_MARKER_FILE).as_path()),
+            Ok(true)
+        ) {
             report.kept.push(CleanedEntry::new(
                 self.dir.clone(),
                 CleanReason::NoCacheMarker,
@@ -648,6 +752,24 @@ impl SnapshotCache {
                 ));
                 continue;
             }
+            match self.provenance(path.as_path())? {
+                Provenance::Private => {}
+                // Removed between listing and checking: nothing to judge.
+                Provenance::Missing => continue,
+                Provenance::Loose => {
+                    candidates.push((
+                        CleanedEntry::new(path, CleanReason::Untrusted, size_bytes),
+                        IN_USE_LOCK_FILE,
+                    ));
+                    continue;
+                }
+                Provenance::Foreign => {
+                    report
+                        .kept
+                        .push(CleanedEntry::new(path, CleanReason::Untrusted, size_bytes));
+                    continue;
+                }
+            }
             let metadata = match read_metadata(path.as_path()) {
                 Ok(Some(metadata)) => metadata,
                 Ok(None) | Err(_) => {
@@ -683,13 +805,10 @@ impl SnapshotCache {
                         continue;
                     }
                     Liveness::Live => {
-                        // Age is a side channel of the retention policy: an
-                        // unreadable `last_used` falls back to `published_at`,
-                        // and an unknown age never expires.
-                        let age = read_last_used(path.as_path())
-                            .ok()
-                            .flatten()
-                            .or(metadata.published_at);
+                        // Age is a side channel of the retention policy: a
+                        // missing, torn or unreadable `last_used` falls back to
+                        // `published_at`, and an unknown age never expires.
+                        let age = read_last_used(path.as_path()).or(metadata.published_at);
                         current.push((
                             age,
                             CleanedEntry::new(path, CleanReason::Current, size_bytes),
@@ -755,8 +874,25 @@ impl SnapshotCache {
 
         for (entry, lock_name) in candidates {
             let busy = match mode {
-                Mode::Plan => lock_is_held(lock_path(entry.path.as_path(), lock_name))?,
-                Mode::Apply => !self.remove_if_unlocked(entry.path.as_path(), lock_name)?,
+                Mode::Plan => lock_is_held(lock_path(entry.path.as_path(), lock_name)),
+                Mode::Apply => self
+                    .remove_if_unlocked(entry.path.as_path(), lock_name)
+                    .map(|removed| !removed),
+            };
+            let busy = match busy {
+                Ok(busy) => busy,
+                // A lock this module never creates (a symlink, a directory,
+                // another user's file) is kept with the reason, never
+                // followed, and the rest of the clean goes on.
+                Err(error @ CacheError::UnsafeStatePath { .. }) => {
+                    report.kept.push(CleanedEntry {
+                        reason: CleanReason::Untrusted,
+                        detail: Some(error.to_string()),
+                        ..entry
+                    });
+                    continue;
+                }
+                Err(error) => return Err(error),
             };
             if busy {
                 let reason = if lock_name == BUILDING_LOCK_FILE {
@@ -798,7 +934,7 @@ impl SnapshotCache {
     /// Remove `path` while holding its `lock_name` exclusively. Returns
     /// `false`, removing nothing, when another process holds that lock.
     fn remove_if_unlocked(&self, path: &Path, lock_name: &str) -> Result<bool, CacheError> {
-        let Some(lock) = open_lock(lock_path(path, lock_name), true)? else {
+        let Some(lock) = open_lock(lock_path(path, lock_name), Create::Yes)? else {
             // The directory itself is gone: nothing left to remove.
             return Ok(true);
         };
@@ -813,6 +949,114 @@ impl SnapshotCache {
         drop(lock);
         Ok(true)
     }
+
+    /// Whether the entry directory `root` is this user's private cache state.
+    ///
+    /// Owner and permission bits are compared with the cache directory, which
+    /// [`SnapshotCache::open`] verified is the current user's own. They guard
+    /// against an entry another user or a permissive umask could have
+    /// written, not against a concurrent attacker (STD-05 §R5).
+    fn provenance(&self, root: &Path) -> Result<Provenance, CacheError> {
+        let metadata = match fs::symlink_metadata(root) {
+            Ok(metadata) => metadata,
+            Err(source) if source.kind() == std::io::ErrorKind::NotFound => {
+                return Ok(Provenance::Missing);
+            }
+            Err(source) => {
+                return Err(CacheError::io(
+                    "inspect snapshot cache entry",
+                    root,
+                    &source,
+                ));
+            }
+        };
+        if !metadata.is_dir() {
+            return Ok(Provenance::Foreign);
+        }
+        let cache = fs::symlink_metadata(self.dir.as_path()).map_err(|source| {
+            CacheError::io("inspect snapshot cache directory", &self.dir, &source)
+        })?;
+        if !same_owner(&metadata, &cache) {
+            return Ok(Provenance::Foreign);
+        }
+        let key = match fs::symlink_metadata(metadata_path(root)) {
+            Ok(key) => Some(key),
+            Err(source) if source.kind() == std::io::ErrorKind::NotFound => None,
+            Err(source) => {
+                return Err(CacheError::io(
+                    "inspect snapshot cache entry",
+                    root,
+                    &source,
+                ));
+            }
+        };
+        let key_is_private = key.as_ref().is_none_or(|key| {
+            key.file_type().is_file() && same_owner(key, &cache) && is_owner_only(key)
+        });
+        Ok(if is_owner_only(&metadata) && key_is_private {
+            Provenance::Private
+        } else {
+            Provenance::Loose
+        })
+    }
+}
+
+/// How far an entry directory is this user's own cache state.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Provenance {
+    /// Nothing exists at the entry's path.
+    Missing,
+    /// A real directory owned like the cache, with no group or other
+    /// permission bits, whose `entry.json` (when present) is the same.
+    Private,
+    /// Owned like the cache, but it or its `entry.json` is readable or
+    /// writable by others, or the key is not a regular file: what it holds is
+    /// not evidence, so it is rebuilt.
+    Loose,
+    /// A symlink, not a directory, or owned by someone else: never read,
+    /// written or removed.
+    Foreign,
+}
+
+#[cfg(unix)]
+fn same_owner(left: &fs::Metadata, right: &fs::Metadata) -> bool {
+    use std::os::unix::fs::MetadataExt;
+    left.uid() == right.uid()
+}
+
+#[cfg(not(unix))]
+fn same_owner(_left: &fs::Metadata, _right: &fs::Metadata) -> bool {
+    true
+}
+
+#[cfg(unix)]
+fn is_owner_only(metadata: &fs::Metadata) -> bool {
+    use std::os::unix::fs::PermissionsExt;
+    metadata.permissions().mode() & 0o077 == 0
+}
+
+#[cfg(not(unix))]
+fn is_owner_only(_metadata: &fs::Metadata) -> bool {
+    true
+}
+
+/// A directory, not a symlink to one.
+fn is_real_dir(path: &Path) -> bool {
+    fs::symlink_metadata(path).is_ok_and(|metadata| metadata.is_dir())
+}
+
+/// A regular file, not a symlink to one.
+fn is_real_file(path: &Path) -> bool {
+    fs::symlink_metadata(path).is_ok_and(|metadata| metadata.is_file())
+}
+
+/// Create the single new directory `path` owner-only (`0700`), failing when
+/// anything already has that name.
+fn create_private_dir(path: &Path) -> std::io::Result<()> {
+    let mut builder = fs::DirBuilder::new();
+    #[cfg(unix)]
+    std::os::unix::fs::DirBuilderExt::mode(&mut builder, 0o700);
+    builder.create(path)
 }
 
 /// Why `clean` removed or kept a directory.
@@ -847,6 +1091,10 @@ pub enum CleanReason {
     Unverifiable,
     /// The directory lacks the cache-root marker, so nothing in it is judged.
     NoCacheMarker,
+    /// The entry is not this user's private state: it, its `entry.json` or
+    /// its lock is shared with other users, a symlink, or owned by someone
+    /// else. A shared entry of ours is rebuilt; anything else is kept.
+    Untrusted,
 }
 
 impl CleanReason {
@@ -867,6 +1115,7 @@ impl CleanReason {
             Self::UnknownAge => "unknown_age",
             Self::Unverifiable => "unverifiable",
             Self::NoCacheMarker => "no_cache_marker",
+            Self::Untrusted => "untrusted",
         }
     }
 }
@@ -943,33 +1192,47 @@ fn lock_path(root: &Path, name: &str) -> PathBuf {
     root.join(name)
 }
 
-/// Open a lock file, creating it when `create` is set. `None` means the file
-/// does not exist (`create` unset) or its directory is gone.
-fn open_lock(path: PathBuf, create: bool) -> Result<Option<fs::File>, CacheError> {
-    match fs::OpenOptions::new()
-        .read(true)
-        .write(true)
-        .create(create)
-        .truncate(false)
-        .open(path.as_path())
-    {
-        Ok(file) => Ok(Some(file)),
-        Err(source) if source.kind() == std::io::ErrorKind::NotFound => Ok(None),
-        Err(source) => Err(CacheError::io(
-            "open snapshot cache lock",
-            path.as_path(),
-            &source,
-        )),
+/// Whether [`open_lock`] creates a missing lock file.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Create {
+    Yes,
+    No,
+}
+
+/// Open a lock file without following a symlink, creating it `0600` (and
+/// repairing an existing one's mode) with [`Create::Yes`]. `None` means the
+/// file does not exist ([`Create::No`]) or its directory is gone.
+fn open_lock(path: PathBuf, create: Create) -> Result<Option<fs::File>, CacheError> {
+    const OPERATION: &str = "open snapshot cache lock";
+    let access = match create {
+        Create::Yes => StateAccess::Write,
+        Create::No => StateAccess::Read,
+    };
+    match open_state_file(path.as_path(), access) {
+        Ok(file) => Ok(file),
+        // The entry directory was removed while this call was running.
+        Err(GraphError::Io { .. })
+            if path
+                .parent()
+                .is_some_and(|dir| fs::symlink_metadata(dir).is_err()) =>
+        {
+            Ok(None)
+        }
+        Err(source) => Err(CacheError::state(OPERATION, path.as_path(), source)),
     }
 }
 
-/// Create a new lock file and take it. Another process having created it
-/// first means the directory is not this builder's alone, which is an error.
+/// Create a new owner-only lock file and take it. Another process having
+/// created it first means the directory is not this builder's alone, which is
+/// an error.
 fn create_locked(path: PathBuf, kind: LockKind) -> Result<fs::File, CacheError> {
-    let file = fs::OpenOptions::new()
-        .read(true)
-        .write(true)
-        .create_new(true)
+    let mut options = fs::OpenOptions::new();
+    // `create_new` never follows a symlink: an existing name, a link
+    // included, fails the open.
+    options.read(true).write(true).create_new(true);
+    #[cfg(unix)]
+    std::os::unix::fs::OpenOptionsExt::mode(&mut options, 0o600);
+    let file = options
         .open(path.as_path())
         .map_err(|source| CacheError::io("create snapshot cache lock", path.as_path(), &source))?;
     let locked = match kind {
@@ -1010,7 +1273,7 @@ fn lock_shared_within(file: &fs::File, wait: Duration) -> std::io::Result<bool> 
 /// Whether another process holds `path`, checked without creating it: a lock
 /// file that does not exist is held by no one.
 fn lock_is_held(path: PathBuf) -> Result<bool, CacheError> {
-    let Some(lock) = open_lock(path.clone(), false)? else {
+    let Some(lock) = open_lock(path.clone(), Create::No)? else {
         return Ok(false);
     };
     match lock.try_lock() {
@@ -1024,28 +1287,26 @@ fn lock_is_held(path: PathBuf) -> Result<bool, CacheError> {
     }
 }
 
-/// Write the cache-root marker unless it is already there.
+/// Write the cache-root marker unless it is already there, as an owner-only
+/// file opened without following a symlink.
 fn write_marker(dir: &Path) -> Result<(), CacheError> {
+    const OPERATION: &str = "write snapshot cache marker";
     let path = dir.join(CACHE_MARKER_FILE);
-    if path.is_file() {
+    let Some(mut file) = open_state_file(path.as_path(), StateAccess::Write)
+        .map_err(|source| CacheError::state(OPERATION, path.as_path(), source))?
+    else {
         return Ok(());
+    };
+    let empty = file
+        .metadata()
+        .map_err(|source| CacheError::io(OPERATION, path.as_path(), &source))?
+        .len()
+        == 0;
+    if empty {
+        std::io::Write::write_all(&mut file, CACHE_MARKER_CONTENTS.as_bytes())
+            .map_err(|source| CacheError::io(OPERATION, path.as_path(), &source))?;
     }
-    match fs::OpenOptions::new()
-        .write(true)
-        .create_new(true)
-        .open(path.as_path())
-    {
-        Ok(mut file) => std::io::Write::write_all(&mut file, CACHE_MARKER_CONTENTS.as_bytes())
-            .map_err(|source| {
-                CacheError::io("write snapshot cache marker", path.as_path(), &source)
-            }),
-        Err(source) if source.kind() == std::io::ErrorKind::AlreadyExists => Ok(()),
-        Err(source) => Err(CacheError::io(
-            "write snapshot cache marker",
-            path.as_path(),
-            &source,
-        )),
-    }
+    Ok(())
 }
 
 /// Remove `path`, refusing anything that is not inside `root`.
@@ -1076,33 +1337,25 @@ fn last_used_path(root: &Path) -> PathBuf {
     root.join(LAST_USED_FILE)
 }
 
-fn read_last_used(root: &Path) -> Result<Option<u64>, CacheError> {
+/// The recorded last-used time, or `None` when it is missing, unreadable, or
+/// not a complete newline-terminated number: a torn or empty file (from a
+/// crash mid-write, or a binary that wrote it in place) counts as absent, so
+/// a truncated number is never read as a much older time.
+fn read_last_used(root: &Path) -> Option<u64> {
     let path = last_used_path(root);
-    let contents = match fs::read_to_string(path.as_path()) {
-        Ok(contents) => contents,
-        Err(source) if source.kind() == std::io::ErrorKind::NotFound => return Ok(None),
-        Err(source) => {
-            return Err(CacheError::io(
-                "read cache last-used time",
-                path.as_path(),
-                &source,
-            ));
-        }
-    };
-    contents
-        .trim()
-        .parse::<u64>()
-        .map(Some)
-        .map_err(|source| CacheError::Metadata {
-            operation: "parse cache last-used time",
-            path,
-            reason: source.to_string(),
-        })
+    let mut file = open_state_file(path.as_path(), StateAccess::Read).ok()??;
+    let mut contents = String::new();
+    std::io::Read::read_to_string(&mut file, &mut contents).ok()?;
+    let digits = contents.strip_suffix('\n')?;
+    if digits.is_empty() || !digits.bytes().all(|byte| byte.is_ascii_digit()) {
+        return None;
+    }
+    digits.parse().ok()
 }
 
 fn write_last_used(root: &Path, seconds: u64) -> Result<(), CacheError> {
     let path = last_used_path(root);
-    fs::write(path.as_path(), seconds.to_string())
+    atomic_write(path.as_path(), format!("{seconds}\n").as_bytes())
         .map_err(|source| CacheError::io("write cache last-used time", path.as_path(), &source))
 }
 
@@ -1124,18 +1377,16 @@ fn entry_size(path: &Path) -> Result<u64, CacheError> {
 }
 
 fn read_metadata(root: &Path) -> Result<Option<EntryMetadata>, CacheError> {
+    const OPERATION: &str = "read snapshot cache entry";
     let path = metadata_path(root);
-    let bytes = match fs::read(path.as_path()) {
-        Ok(bytes) => bytes,
-        Err(source) if source.kind() == std::io::ErrorKind::NotFound => return Ok(None),
-        Err(source) => {
-            return Err(CacheError::io(
-                "read snapshot cache entry",
-                path.as_path(),
-                &source,
-            ));
-        }
+    let Some(mut file) = open_state_file(path.as_path(), StateAccess::Read)
+        .map_err(|source| CacheError::state(OPERATION, path.as_path(), source))?
+    else {
+        return Ok(None);
     };
+    let mut bytes = Vec::new();
+    std::io::Read::read_to_end(&mut file, &mut bytes)
+        .map_err(|source| CacheError::io(OPERATION, path.as_path(), &source))?;
     serde_json::from_slice(bytes.as_slice())
         .map(Some)
         .map_err(|source| CacheError::Metadata {
@@ -1152,7 +1403,7 @@ fn write_metadata(root: &Path, metadata: &EntryMetadata) -> Result<(), CacheErro
         path: path.clone(),
         reason: source.to_string(),
     })?;
-    fs::write(path.as_path(), bytes)
+    atomic_write(path.as_path(), bytes.as_slice())
         .map_err(|source| CacheError::io("write snapshot cache entry", path.as_path(), &source))
 }
 
@@ -1204,8 +1455,8 @@ mod tests {
 
     fn write_current_entry(cache: &SnapshotCache, commit: &str, last_used: u64) {
         let root = cache.dir().join(commit);
-        fs::create_dir_all(root.join("tree")).expect("tree");
-        fs::create_dir_all(root.join("index")).expect("index");
+        create_private_dir_all(root.join("tree").as_path()).expect("tree");
+        create_private_dir_all(root.join("index").as_path()).expect("index");
         fs::write(root.join("tree").join("source.rs"), b"fn source() {}\n").expect("source");
         write_metadata(
             root.as_path(),
@@ -1294,10 +1545,7 @@ mod tests {
 
         assert!(cache.lookup(commit.as_str()).expect("lookup").is_some());
         assert!(
-            read_last_used(entry.root())
-                .expect("read last used")
-                .unwrap_or_default()
-                > 0,
+            read_last_used(entry.root()).unwrap_or_default() > 0,
             "a hit refreshes the sidecar timestamp"
         );
     }
@@ -1308,8 +1556,8 @@ mod tests {
         let cache = SnapshotCache::open(dir.path()).expect("open cache");
         let commit = sha('3');
         let root = dir.path().join(commit.as_str());
-        fs::create_dir_all(root.join("tree")).expect("tree");
-        fs::create_dir_all(root.join("index")).expect("index");
+        create_private_dir_all(root.join("tree").as_path()).expect("tree");
+        create_private_dir_all(root.join("index").as_path()).expect("index");
         let mut metadata = EntryMetadata {
             schema_version: CACHE_SCHEMA_VERSION,
             commit_sha: commit.clone(),
@@ -1358,7 +1606,11 @@ mod tests {
         let unreadable = sha('5');
         write_current_entry(&cache, unreadable.as_str(), 100);
         let unreadable_root = cache.dir().join(unreadable.as_str());
-        fs::write(metadata_path(unreadable_root.as_path()), b"{not json").expect("corrupt");
+        atomic_write(
+            metadata_path(unreadable_root.as_path()).as_path(),
+            b"{not json",
+        )
+        .expect("corrupt");
         assert!(matches!(
             cache.lookup(unreadable.as_str()),
             Err(CacheError::Kept {
@@ -1412,7 +1664,7 @@ mod tests {
             ),
         ] {
             let root = dir.path().join(commit);
-            fs::create_dir_all(root.join("tree")).expect("tree");
+            create_private_dir_all(root.join("tree").as_path()).expect("tree");
             write_metadata(
                 root.as_path(),
                 &EntryMetadata {
@@ -1690,5 +1942,189 @@ mod tests {
             assert!(!path.exists(), "{} was planned and removed", path.display());
         }
         assert!(cache.dir().join(unknown.as_str()).exists());
+    }
+
+    fn report_reasons(report: &CleanReport) -> Vec<(String, &'static str, bool)> {
+        report
+            .would_delete
+            .iter()
+            .map(|entry| (entry, true))
+            .chain(report.kept.iter().map(|entry| (entry, false)))
+            .map(|(entry, removed)| {
+                (
+                    entry
+                        .path
+                        .file_name()
+                        .unwrap()
+                        .to_string_lossy()
+                        .into_owned(),
+                    entry.reason.label(),
+                    removed,
+                )
+            })
+            .collect()
+    }
+
+    #[test]
+    fn a_torn_or_empty_last_used_counts_as_absent_and_does_not_abort_clean() {
+        let dir = TempDir::new().expect("cache directory");
+        let cache = SnapshotCache::open(dir.path()).expect("open cache");
+        let torn = sha('a');
+        let empty = sha('b');
+        let garbled = sha('c');
+        for commit in [&torn, &empty, &garbled] {
+            write_current_entry(&cache, commit.as_str(), 1_000);
+        }
+        // A crash while `1000` was written in place leaves a prefix that
+        // parses as a much older time; only a complete, newline-terminated
+        // number is a recorded time.
+        for (commit, contents) in [(&torn, "10"), (&empty, ""), (&garbled, "1x0\n")] {
+            atomic_write(
+                last_used_path(cache.dir().join(commit.as_str()).as_path()).as_path(),
+                contents.as_bytes(),
+            )
+            .expect("tear last_used");
+        }
+        assert_eq!(
+            read_last_used(cache.dir().join(torn.as_str()).as_path()),
+            None
+        );
+
+        let report = cache
+            .clean_with_options(
+                &live_if(|_| true),
+                &CleanOptions {
+                    older_than: Some(Duration::from_secs(100)),
+                    now_seconds: Some(1_050),
+                    apply: true,
+                    ..CleanOptions::default()
+                },
+            )
+            .expect("a torn last_used does not abort clean");
+        let reasons = report_reasons(&report);
+        for commit in [&torn, &empty, &garbled] {
+            assert!(
+                reasons.contains(&(commit.clone(), "current", false)),
+                "the age falls back to published_at: {reasons:?}"
+            );
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn entries_and_state_files_are_owner_only_and_loose_entries_are_rebuilt() {
+        use std::os::unix::fs::PermissionsExt;
+        let mode = |path: &Path| {
+            fs::symlink_metadata(path)
+                .expect("metadata")
+                .permissions()
+                .mode()
+                & 0o777
+        };
+        let dir = TempDir::new().expect("cache directory");
+        let cache = SnapshotCache::open(dir.path().join("nested/cache").as_path()).expect("open");
+        assert_eq!(mode(dir.path().join("nested").as_path()), 0o700);
+        assert_eq!(mode(cache.dir()), 0o700);
+        assert_eq!(mode(cache.dir().join(CACHE_MARKER_FILE).as_path()), 0o600);
+
+        let commit = sha('1');
+        let staged = cache.stage(commit.as_str()).expect("stage");
+        atomic_write(staged.db().as_path(), b"index").expect("database");
+        let entry = cache
+            .publish(staged, StoredBuild::default())
+            .expect("publish");
+        let root = entry.root().to_path_buf();
+        drop(entry);
+        for directory in [root.clone(), root.join("tree"), root.join("index")] {
+            assert_eq!(mode(directory.as_path()), 0o700, "{}", directory.display());
+        }
+        for file in [
+            metadata_path(root.as_path()),
+            last_used_path(root.as_path()),
+            lock_path(root.as_path(), IN_USE_LOCK_FILE),
+        ] {
+            assert_eq!(mode(file.as_path()), 0o600, "{}", file.display());
+        }
+
+        // An entry other users could have written is not evidence: lookup
+        // removes and rebuilds it, and clean lists it as untrusted.
+        fs::set_permissions(root.as_path(), fs::Permissions::from_mode(0o775)).expect("loosen");
+        assert!(cache.lookup(commit.as_str()).expect("lookup").is_none());
+        assert!(!root.exists(), "the loose entry was removed for a rebuild");
+
+        let loose = sha('2');
+        write_current_entry(&cache, loose.as_str(), 1);
+        fs::set_permissions(
+            metadata_path(cache.dir().join(loose.as_str()).as_path()).as_path(),
+            fs::Permissions::from_mode(0o664),
+        )
+        .expect("loosen entry.json");
+        let report = cache
+            .clean_with_options(&live_if(|_| true), &CleanOptions::default())
+            .expect("plan");
+        assert!(
+            report_reasons(&report).contains(&(loose.clone(), "untrusted", true)),
+            "{:?}",
+            report_reasons(&report)
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_symlinked_entry_or_lock_is_never_followed() {
+        let dir = TempDir::new().expect("cache directory");
+        let outside = TempDir::new().expect("outside");
+        let victim = outside.path().join("victim");
+        atomic_write(victim.as_path(), b"keep").expect("victim");
+        let cache = SnapshotCache::open(dir.path()).expect("open cache");
+
+        let linked = sha('3');
+        std::os::unix::fs::symlink(outside.path(), cache.dir().join(linked.as_str()))
+            .expect("entry link");
+        assert!(matches!(
+            cache.lookup(linked.as_str()),
+            Err(CacheError::Kept {
+                reason: CleanReason::Untrusted,
+                ..
+            })
+        ));
+
+        let locked = sha('4');
+        write_current_entry(&cache, locked.as_str(), 1);
+        std::os::unix::fs::symlink(
+            victim.as_path(),
+            lock_path(
+                cache.dir().join(locked.as_str()).as_path(),
+                IN_USE_LOCK_FILE,
+            ),
+        )
+        .expect("lock link");
+        assert!(matches!(
+            cache.lookup(locked.as_str()),
+            Err(CacheError::UnsafeStatePath { .. })
+        ));
+        let report = cache
+            .clean_with_options(&live_if(|_| false), &apply())
+            .expect("a refused lock does not abort clean");
+        let reasons = report_reasons(&report);
+        assert!(
+            reasons.contains(&(linked.clone(), "unrecognized", false)),
+            "{reasons:?}"
+        );
+        assert!(
+            reasons.contains(&(locked.clone(), "untrusted", false)),
+            "{reasons:?}"
+        );
+        assert!(cache.dir().join(locked.as_str()).exists());
+        assert_eq!(fs::read(victim.as_path()).expect("victim"), b"keep");
+        assert_eq!(fs::read_dir(outside.path()).expect("outside").count(), 1);
+
+        let marker_dir = TempDir::new().expect("marker directory");
+        std::os::unix::fs::symlink(victim.as_path(), marker_dir.path().join(CACHE_MARKER_FILE))
+            .expect("marker link");
+        assert!(matches!(
+            SnapshotCache::open(marker_dir.path()),
+            Err(CacheError::UnsafeStatePath { .. })
+        ));
     }
 }

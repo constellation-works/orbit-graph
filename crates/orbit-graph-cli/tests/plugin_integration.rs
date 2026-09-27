@@ -1,6 +1,10 @@
 //! Real-executable coverage for Orbit plugin and chronological evaluation paths.
 
 #![allow(clippy::expect_used)]
+#![allow(
+    clippy::disallowed_methods,
+    reason = "fixtures are written with fs::write; clippy.toml bans it only from shipped code"
+)]
 
 use std::fs;
 #[cfg(unix)]
@@ -625,6 +629,169 @@ fn plugin_state_contains_every_index_file() {
             "code-graph index file {published} missing from plugin state: {names:?}"
         );
     }
+}
+
+/// Plugin state is created owner-only whatever the umask (STD-05 §R8): the
+/// state root and the repository's `<hash>/` directory are `0700`, and every
+/// index file, lock and pointer in it is `0600`. The umask is set on the
+/// child process only (STD-04 §R6).
+#[cfg(unix)]
+#[test]
+fn plugin_state_is_owner_only_under_a_permissive_umask() {
+    let fixture = evaluation_fixture();
+    let parent = TempDir::new().expect("plugin state parent");
+    let state = parent.path().join("state");
+    for input in [
+        json!({"operation": "history_sync", "branch": "main", "limit": 100}),
+        json!({"operation": "graph_sync"}),
+    ] {
+        let request = json!({
+            "schema_version": 1,
+            "tool": MAINTAIN_TOOL_NAME,
+            "input": input,
+            "context": {
+                "workspace_root": fixture.path(),
+                "agent": "plugin-integration-test",
+                "model": "test"
+            }
+        });
+        let mut child = Command::new("sh")
+            .current_dir(fixture.path())
+            .args(["-c", "umask 0002; exec \"$@\"", "sh"])
+            .arg(env!("CARGO_BIN_EXE_orbit-graph"))
+            .env("ORBIT_TOOL_NAME", MAINTAIN_TOOL_NAME)
+            .env("ORBIT_PLUGIN_STATE", &state)
+            .stdin(std::process::Stdio::piped())
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped())
+            .spawn()
+            .expect("spawn plugin under umask 0002");
+        child
+            .stdin
+            .take()
+            .expect("plugin stdin")
+            .write_all(request.to_string().as_bytes())
+            .expect("write plugin request");
+        let output = child.wait_with_output().expect("run plugin");
+        let _ = plugin_success(&output);
+    }
+
+    let mode = |path: &Path| {
+        fs::symlink_metadata(path)
+            .expect("state metadata")
+            .permissions()
+            .mode()
+            & 0o777
+    };
+    assert_eq!(mode(&state), 0o700, "plugin state root");
+    let repositories = fs::read_dir(&state)
+        .expect("read plugin state")
+        .map(|entry| entry.expect("state entry").path())
+        .collect::<Vec<_>>();
+    assert_eq!(repositories.len(), 1, "{repositories:?}");
+    let repository_state = &repositories[0];
+    assert_eq!(
+        mode(repository_state),
+        0o700,
+        "{}",
+        repository_state.display()
+    );
+    let mut files = 0;
+    for entry in fs::read_dir(repository_state).expect("read repository state") {
+        let path = entry.expect("state file").path();
+        let expected = if path.is_dir() { 0o700 } else { 0o600 };
+        assert_eq!(mode(&path), expected, "{}", path.display());
+        files += 1;
+    }
+    assert!(
+        files >= 4,
+        "graph, history, lock and pointer files expected"
+    );
+}
+
+/// The evaluation workspace is a fresh `0700` directory with a random name
+/// (STD-05 §R8), so a directory another process planted at a predictable
+/// `<tmp>/orbit-graph-evaluation-<pid>-<n>` is neither used nor removed.
+#[cfg(unix)]
+#[test]
+fn evaluation_workspace_never_reuses_or_removes_a_predictable_temp_path() {
+    let fixture = evaluation_fixture();
+    let repository = fixture.path().canonicalize().expect("canonical fixture");
+    let target_revision = git_stdout(fixture.path(), ["rev-parse", "HEAD~2"]);
+    let temp = TempDir::new().expect("evaluation temp root");
+    let corpus_path = temp.path().join("evaluation.json");
+    let corpus = json!({
+        "schema_version": 1,
+        "repository": repository,
+        "landing_branch": "main",
+        "source": {"system": "test-public-export", "record_id": "fixture-v1"},
+        "complete": true,
+        "coverage_note": "complete two-delivery synthetic fixture",
+        "k": 3,
+        "training_deliveries": [
+            fixture_delivery(fixture.path(), "training"),
+            fixture_delivery(fixture.path(), "future")
+        ],
+        "cases": [{
+            "id": "prospective-target",
+            "target_revision": target_revision,
+            "cutoff": "unix:20",
+            "task_snapshot": task_snapshot("TASK-TARGET", "parser validation", 15),
+            "held_out_delivery": fixture_delivery(fixture.path(), "held-out"),
+            "source": {"system": "test-public-observation", "record_id": "target@15"}
+        }]
+    });
+    fs::write(
+        &corpus_path,
+        serde_json::to_vec_pretty(&corpus).expect("encode corpus"),
+    )
+    .expect("write corpus");
+    let tmpdir = temp.path().join("tmp");
+    fs::create_dir(&tmpdir).expect("temp dir");
+
+    // `$$` is the shell's pid, which `exec` hands to orbit-graph: the planted
+    // directory is the path the first evaluation workspace used to take.
+    let output = Command::new("sh")
+        .current_dir(fixture.path())
+        .env("TMPDIR", &tmpdir)
+        .args([
+            "-c",
+            "planted=\"$TMPDIR/orbit-graph-evaluation-$$-0\"; \
+             mkdir \"$planted\" && echo planted > \"$planted/sentinel\" && exec \"$@\"",
+            "sh",
+        ])
+        .arg(env!("CARGO_BIN_EXE_orbit-graph"))
+        .args(["--format", "json", "evaluate", "--input"])
+        .arg(&corpus_path)
+        .output()
+        .expect("run evaluation");
+    assert!(
+        output.status.success(),
+        "evaluation failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let report: Value = serde_json::from_slice(&output.stdout).expect("evaluation JSON");
+    assert_eq!(report["coverage"]["cases_evaluated"], 1, "{report}");
+
+    let remaining = fs::read_dir(&tmpdir)
+        .expect("read temp dir")
+        .map(|entry| entry.expect("temp entry").path())
+        .collect::<Vec<_>>();
+    assert_eq!(
+        remaining.len(),
+        1,
+        "only the planted directory remains: {remaining:?}"
+    );
+    let sentinel = remaining[0].join("sentinel");
+    assert_eq!(
+        fs::read_to_string(&sentinel).expect("the planted directory is untouched"),
+        "planted\n"
+    );
+    assert_eq!(
+        fs::read_dir(&remaining[0]).expect("planted dir").count(),
+        1,
+        "nothing was cloned into the planted directory"
+    );
 }
 
 /// A repository with a call chain and an import for the query tools.

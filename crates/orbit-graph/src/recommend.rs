@@ -2350,9 +2350,8 @@ fn read_target_symbol_cache(path: &Path, tree: Oid) -> Option<BTreeMap<String, V
     )
 }
 
-/// Atomically publish a cache entry (owner-only temp file in the same
-/// directory, then rename) and prune stale entries. Failures are ignored: the
-/// cache only saves work.
+/// Atomically publish a cache entry through [`crate::atomic_write`] and
+/// prune stale entries. Failures are ignored: the cache only saves work.
 fn write_target_symbol_cache(
     dir: &Path,
     path: &Path,
@@ -2387,25 +2386,10 @@ fn write_target_symbol_cache(
     let Ok(bytes) = serde_json::to_vec(&cache) else {
         return;
     };
-    let temp = path.with_extension(format!("json.tmp-{}", std::process::id()));
-    if write_private_file(temp.as_path(), bytes.as_slice()).is_err()
-        || std::fs::rename(temp.as_path(), path).is_err()
-    {
-        let _ = std::fs::remove_file(temp.as_path());
+    if crate::atomic_write(path, bytes.as_slice()).is_err() {
         return;
     }
     prune_target_symbol_caches(dir, path);
-}
-
-fn write_private_file(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
-    use std::io::Write;
-    let mut options = std::fs::OpenOptions::new();
-    options.write(true).create_new(true);
-    #[cfg(unix)]
-    std::os::unix::fs::OpenOptionsExt::mode(&mut options, 0o600);
-    let mut file = options.open(path)?;
-    file.write_all(bytes)?;
-    file.sync_all()
 }
 
 /// Record a warm hit as the entry's last use, so pruning keeps the entries
@@ -2418,8 +2402,9 @@ fn touch_target_symbol_cache(path: &Path) {
 
 /// A file name this cache owns, parsed from its exact grammar:
 /// `recommend-target.<extractor u32>.<40 hex tree OID>.json`, or the same name
-/// plus `.tmp-<pid>` while it is being written. Anything else in the
-/// directory is not ours and is never deleted (STD-03 §R29).
+/// plus `.tmp-<pid>-<n>` (`.tmp-<pid>` from older writers) while it is being
+/// written. Anything else in the directory is not ours and is never deleted
+/// (STD-03 §R29).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum TargetSymbolCacheName {
     Entry { extractor_version: u32 },
@@ -2448,7 +2433,10 @@ fn parse_target_symbol_cache_name(name: &str) -> Option<TargetSymbolCacheName> {
     if suffix == "json" {
         return Some(TargetSymbolCacheName::Entry { extractor_version });
     }
-    let pid = decimal::<u32>(suffix.strip_prefix("json.tmp-")?)?;
+    // `json.tmp-<pid>-<n>` from `atomic_write`, or `json.tmp-<pid>` as
+    // writers before it named their temp files.
+    let pid = crate::atomic_write_temp_pid(suffix, "json")
+        .or_else(|| decimal::<u32>(suffix.strip_prefix("json.tmp-")?))?;
     Some(TargetSymbolCacheName::Temp {
         extractor_version,
         pid,

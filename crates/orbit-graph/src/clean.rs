@@ -4,6 +4,7 @@ use std::path::{Path, PathBuf};
 use git2::Repository;
 use serde::Serialize;
 
+use crate::state_dir::{StateAccess, open_state_file};
 use crate::{EXTRACTOR_VERSION, GraphError, store};
 
 /// Report which graph database files [`clean_old_databases`] would delete.
@@ -60,23 +61,25 @@ fn clean_old_databases_excluding(
         deleted: Vec::new(),
     };
 
-    if !report.graph_dir.exists() {
+    // The directory is checked as state before anything in it is read or
+    // removed (STD-05 §R6, §R7): a symlinked, foreign or Git-tracked
+    // `.orbit-graph` is refused, never enumerated. Neither mode creates it.
+    let Some(graph_dir) = store::existing_index_dir(worktree_root, active_db_path)? else {
         return Ok(report);
-    }
+    };
+    let active_db_path = active_db_path
+        .file_name()
+        .map_or_else(|| active_db_path.to_path_buf(), |name| graph_dir.join(name));
+    let active_db_path = active_db_path.as_path();
 
-    let entries = fs::read_dir(report.graph_dir.as_path()).map_err(|source| {
-        GraphError::io("read graph database directory", &report.graph_dir, source)
-    })?;
+    let entries = fs::read_dir(graph_dir.as_path())
+        .map_err(|source| GraphError::io("read graph database directory", &graph_dir, source))?;
     // Every file of one database (the `.db` and its sidecars) is decided and
     // removed together, keyed by the `.db` path.
     let mut families = std::collections::BTreeSet::new();
     for entry in entries {
         let entry = entry.map_err(|source| {
-            GraphError::io(
-                "read graph database directory entry",
-                &report.graph_dir,
-                source,
-            )
+            GraphError::io("read graph database directory entry", &graph_dir, source)
         })?;
         let path = entry.path();
         let is_graph_file = path
@@ -84,7 +87,14 @@ fn clean_old_databases_excluding(
             .and_then(|name| name.to_str())
             .and_then(graph_db_file_metadata)
             .is_some();
-        if is_graph_file && path.is_file() && !is_active_graph_db_family(&path, active_db_path) {
+        if !is_graph_file {
+            continue;
+        }
+        // A database file name that is a symlink, or another user's file, is
+        // refused rather than skipped or followed, the active family's too.
+        if crate::state_dir::check_state_file(path.as_path())?
+            && !is_active_graph_db_family(&path, active_db_path)
+        {
             families.insert(graph_db_base_path(path.as_path()));
         }
     }
@@ -136,12 +146,8 @@ fn existing_graph_db_family_files_if_unlocked(
     db_path: &Path,
 ) -> Result<Option<Vec<PathBuf>>, GraphError> {
     let lock_path = graph_db_sidecar(db_path, ".lock");
-    match fs::OpenOptions::new()
-        .read(true)
-        .write(true)
-        .open(&lock_path)
-    {
-        Ok(lock) => match lock.try_lock() {
+    if let Some(lock) = open_state_file(&lock_path, StateAccess::Read)? {
+        match lock.try_lock() {
             Ok(()) => drop(lock),
             Err(fs::TryLockError::WouldBlock) => return Ok(None),
             Err(fs::TryLockError::Error(source)) => {
@@ -151,22 +157,15 @@ fn existing_graph_db_family_files_if_unlocked(
                     source,
                 ));
             }
-        },
-        Err(source) if source.kind() == std::io::ErrorKind::NotFound => {}
-        Err(source) => {
-            return Err(GraphError::io(
-                "open old graph database lock",
-                &lock_path,
-                source,
-            ));
         }
     }
-    Ok(Some(
-        graph_db_family_files(db_path)
-            .into_iter()
-            .filter(|path| path.exists())
-            .collect(),
-    ))
+    let mut existing = Vec::new();
+    for path in graph_db_family_files(db_path) {
+        if crate::state_dir::check_state_file(&path)? {
+            existing.push(path);
+        }
+    }
+    Ok(Some(existing))
 }
 
 fn graph_db_family_files(db_path: &Path) -> [PathBuf; 4] {
@@ -184,14 +183,15 @@ fn graph_db_family_files(db_path: &Path) -> [PathBuf; 4] {
 fn delete_graph_db_family_if_unlocked(db_path: &Path) -> Result<Option<Vec<PathBuf>>, GraphError> {
     let lock_path = graph_db_sidecar(db_path, ".lock");
     // A lock file this call creates only to take the lock is not reported.
-    let lock_existed = lock_path.exists();
-    let lock = fs::OpenOptions::new()
-        .read(true)
-        .write(true)
-        .create(true)
-        .truncate(false)
-        .open(&lock_path)
-        .map_err(|source| GraphError::io("open old graph database lock", &lock_path, source))?;
+    // Every file of the family is checked before any is removed: a symlink
+    // among them is refused, never followed (STD-05 §R7).
+    let lock_existed = crate::state_dir::check_state_file(&lock_path)?;
+    for path in graph_db_family_files(db_path) {
+        crate::state_dir::check_state_file(&path)?;
+    }
+    let Some(lock) = open_state_file(&lock_path, StateAccess::Write)? else {
+        return Ok(None);
+    };
     match lock.try_lock() {
         Ok(()) => {}
         Err(fs::TryLockError::WouldBlock) => {

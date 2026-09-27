@@ -317,6 +317,7 @@ impl CliError {
             Self::Graph(GraphError::IndexMissing { .. }) => "index_missing",
             Self::Graph(GraphError::IndexIncompatible { .. }) => "index_incompatible",
             Self::Graph(GraphError::VersionMismatch(_)) => "version_mismatch",
+            Self::Graph(GraphError::UnsafeStatePath { .. }) => "unsafe_state_path",
             Self::Graph(_) => "graph_error",
             Self::Tool(error) => error.code().as_str(),
             Self::Selector(_) => "selector_parse_error",

@@ -1,5 +1,10 @@
 // Unit tests use unwrap/expect for fixture setup; production call sites remain linted.
-#![cfg_attr(test, allow(clippy::expect_used, clippy::unwrap_used))]
+// Test fixtures write files with `fs::write`, which `clippy.toml` bans from
+// shipped code in favour of `orbit_graph::atomic_write` (STD-03 §R5).
+#![cfg_attr(
+    test,
+    allow(clippy::expect_used, clippy::unwrap_used, clippy::disallowed_methods)
+)]
 
 //! Command-line interface for the standalone graph index.
 

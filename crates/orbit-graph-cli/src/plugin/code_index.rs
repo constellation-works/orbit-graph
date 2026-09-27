@@ -37,8 +37,9 @@ const POINTER_FILE: &str = "graph.current.json";
 const LOCK_FILE: &str = "graph.maintain.lock";
 /// Provenance record: the generation databases builds created here.
 const OWNED_FILE: &str = "graph.owned.json";
-/// Suffix of a staging file `write_durably` renames into place.
-const STAGING_SUFFIX: &str = ".tmp";
+/// Suffix of the staging files builds before [`orbit_graph::atomic_write`]
+/// left behind, which `sync` still reclaims.
+const LEGACY_STAGING_SUFFIX: &str = ".tmp";
 /// Share of the budget pass 1 may use before it stops starting new files, so
 /// reference resolution can still finish inside the budget.
 const EXTRACTION_SHARE_PERCENT: u32 = 60;
@@ -887,31 +888,17 @@ fn write_pointer(index_dir: &Path, published: &PublishedIndex) -> Result<(), Gra
     write_durably(index_dir, POINTER_FILE, &bytes)
 }
 
-/// The one durable-write path of this module (STD-03 R5): write a private
-/// temp file beside `name`, flush it, rename it over `name`, and flush the
-/// directory, so readers see the old or the new file, never a partial one.
+/// The durable-write path of this module: [`orbit_graph::atomic_write`]
+/// (STD-03 R5) writes a private temp file beside `name`, flushes it, renames
+/// it over `name`, and flushes the directory, so readers see the old or the
+/// new file, never a partial one. Callers hold the build lock, and `sync`
+/// reclaims temp files a dead build left behind.
 fn write_durably(index_dir: &Path, name: &str, bytes: &[u8]) -> Result<(), GraphError> {
     let target = index_dir.join(name);
-    let staging = index_dir.join(format!("{name}.{}{STAGING_SUFFIX}", std::process::id()));
-    let written = (|| {
-        // A fresh file only: `create_new` never follows or reuses whatever is
-        // at the staging path (STD-05 R7). Callers hold the build lock, and
-        // `sync` reclaims staging files a dead build left behind.
-        let mut options = OpenOptions::new();
-        options.write(true).create_new(true);
-        #[cfg(unix)]
-        options.mode(0o600);
-        let mut file = options.open(&staging)?;
-        file.write_all(bytes)?;
-        file.write_all(b"\n")?;
-        file.sync_all()?;
-        fs::rename(&staging, &target)?;
-        File::open(index_dir)?.sync_all()
-    })();
-    written.map_err(|source| {
-        let _ = fs::remove_file(&staging);
-        GraphError::io("write code-graph index file", target, source)
-    })
+    let mut contents = bytes.to_vec();
+    contents.push(b'\n');
+    orbit_graph::atomic_write(&target, &contents)
+        .map_err(|source| GraphError::io("write code-graph index file", target, source))
 }
 
 /// Best-effort removal of the generation this attempt created; the next build
@@ -977,13 +964,17 @@ fn reclaim_staging_files(index_dir: &Path) -> Result<(), GraphError> {
     Ok(())
 }
 
-/// `graph.current.json.<pid>.tmp` or `graph.owned.json.<pid>.tmp`.
+/// A temp file of the pointer or provenance record: the
+/// [`orbit_graph::atomic_write`] spelling `graph.current.json.tmp-<pid>-<n>`,
+/// or `graph.owned.json.<pid>.tmp` as builds before it named them.
 fn is_staging_name(name: &str) -> bool {
     [POINTER_FILE, OWNED_FILE].iter().any(|file| {
-        name.strip_prefix(file)
-            .and_then(|rest| rest.strip_prefix('.'))
-            .and_then(|rest| rest.strip_suffix(STAGING_SUFFIX))
-            .is_some_and(|pid| !pid.is_empty() && pid.bytes().all(|byte| byte.is_ascii_digit()))
+        orbit_graph::atomic_write_temp_pid(name, file).is_some()
+            || name
+                .strip_prefix(file)
+                .and_then(|rest| rest.strip_prefix('.'))
+                .and_then(|rest| rest.strip_suffix(LEGACY_STAGING_SUFFIX))
+                .is_some_and(|pid| !pid.is_empty() && pid.bytes().all(|byte| byte.is_ascii_digit()))
     })
 }
 

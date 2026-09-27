@@ -1,6 +1,11 @@
 // A library prints nothing (STD-02 §R15).
 #![deny(clippy::print_stderr, clippy::print_stdout)]
-#![cfg_attr(test, allow(clippy::expect_used, clippy::unwrap_used))]
+// Test fixtures write files with `fs::write`, which `clippy.toml` bans from
+// shipped code in favour of `orbit_graph::atomic_write` (STD-03 §R5).
+#![cfg_attr(
+    test,
+    allow(clippy::expect_used, clippy::unwrap_used, clippy::disallowed_methods)
+)]
 
 //! Pure extraction contracts for the Orbit graph backend.
 //!

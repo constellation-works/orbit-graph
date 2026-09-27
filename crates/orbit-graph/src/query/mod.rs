@@ -35,18 +35,35 @@ pub(crate) fn symbol_selector(file_path: &str, qualified: &str, kind: &str) -> S
 /// caller touches the filesystem. Query commands open the database with manual
 /// sync, so a stale or attacker-supplied row must not be able to make `show`,
 /// `search`, `refs`, or `callees` return bytes from outside the repository.
+///
+/// Containment is then decided on the physical path (`STD-05 §R6`): when the
+/// joined path exists, it is canonicalized, and a path that a symlinked
+/// component carries outside the canonical worktree is rejected. A path that
+/// does not exist is returned as joined; reading it fails on its own.
 pub(crate) fn contained_worktree_source(
     worktree_root: &Path,
     stored_path: &str,
 ) -> Result<PathBuf, GraphError> {
     let relative = Path::new(stored_path);
-    if relative.is_absolute() || path_leaves_worktree(relative) {
-        return Err(GraphError::invalid_data(
+    let outside = |detail: &str| {
+        GraphError::invalid_data(
             "resolve graph source path",
-            format!("source path must stay inside the worktree: {stored_path}"),
-        ));
+            format!("source path must stay inside the worktree: {stored_path}{detail}"),
+        )
+    };
+    if relative.is_absolute() || path_leaves_worktree(relative) {
+        return Err(outside(""));
     }
-    Ok(worktree_root.join(relative))
+    let joined = worktree_root.join(relative);
+    if let (Ok(physical), Ok(root)) = (joined.canonicalize(), worktree_root.canonicalize())
+        && !physical.starts_with(root.as_path())
+    {
+        return Err(outside(&format!(
+            " (a symbolic link resolves it to {})",
+            physical.display()
+        )));
+    }
+    Ok(joined)
 }
 
 fn path_leaves_worktree(path: &Path) -> bool {
@@ -93,5 +110,31 @@ mod contained_worktree_source_tests {
             assert!(rendered.contains("worktree"), "{rendered}");
             assert!(rendered.contains(stored), "{rendered}");
         }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_symlinked_component_leaving_the_worktree_is_rejected() {
+        let root = tempfile::tempdir().expect("tempdir");
+        let worktree = root.path().join("repo");
+        let outside = root.path().join("outside");
+        std::fs::create_dir_all(worktree.join("src")).expect("worktree");
+        std::fs::create_dir(&outside).expect("outside");
+        std::fs::write(outside.join("secret.rs"), b"fn secret() {}\n").expect("secret");
+        std::fs::write(worktree.join("src/lib.rs"), b"fn lib() {}\n").expect("lib");
+        std::os::unix::fs::symlink(&outside, worktree.join("src/dir")).expect("link out");
+        std::os::unix::fs::symlink(worktree.join("src"), worktree.join("alias")).expect("link in");
+
+        let error = contained_worktree_source(&worktree, "src/dir/secret.rs")
+            .expect_err("a link out of the worktree is rejected");
+        assert!(error.to_string().contains("symbolic link"), "{error}");
+        assert_eq!(
+            contained_worktree_source(&worktree, "alias/lib.rs").expect("a link inside"),
+            worktree.join("alias/lib.rs")
+        );
+        assert_eq!(
+            contained_worktree_source(&worktree, "src/missing.rs").expect("missing"),
+            worktree.join("src/missing.rs")
+        );
     }
 }

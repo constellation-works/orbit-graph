@@ -8,6 +8,10 @@
 
 #![cfg(unix)]
 #![allow(clippy::expect_used)]
+#![allow(
+    clippy::disallowed_methods,
+    reason = "fixtures are written with fs::write; clippy.toml bans it only from shipped code"
+)]
 
 mod common;
 
