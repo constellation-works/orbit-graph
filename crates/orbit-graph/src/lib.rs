@@ -188,7 +188,9 @@ pub use state_dir::{
 /// follows those imports for spelled module-path calls.
 ///
 /// Version 21 redacts credential-shaped values before graph strings are stored.
-pub const EXTRACTOR_VERSION: u32 = 21;
+///
+/// Version 22 rebuilds config keys with their actual source lines.
+pub const EXTRACTOR_VERSION: u32 = 22;
 
 /// SQLite schema version used by the graph store.
 ///
