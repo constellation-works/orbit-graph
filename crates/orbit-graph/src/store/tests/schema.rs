@@ -495,6 +495,118 @@ fn reopening_existing_db_preserves_meta_rows() {
     assert_eq!(meta.get("branch").map(String::as_str), Some("manual"));
 }
 
+#[cfg(unix)]
+#[test]
+fn writer_refuses_future_delete_journal_schema_without_changing_the_index() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let worktree = TestWorktree::new("future-delete-journal", "main");
+    worktree.init_git_repo();
+    let graph = Graph::open(worktree.path(), SyncPolicy::Manual).expect("initialize graph");
+    let db_path = graph.db_path().path().to_path_buf();
+    drop(graph);
+
+    {
+        let conn = open_test_connection(&db_path);
+        conn.pragma_update(None, "journal_mode", "DELETE")
+            .expect("switch to rollback journal");
+        conn.execute(
+            "UPDATE meta SET value = '999' WHERE key = 'schema_version'",
+            [],
+        )
+        .expect("stamp future schema");
+    }
+    let lock_path = PathBuf::from(format!("{}.lock", db_path.display()));
+    fs::remove_file(&lock_path).expect("remove the first open's setup lock");
+    let dir = db_path.parent().expect("database directory");
+    fs::set_permissions(&db_path, fs::Permissions::from_mode(0o644))
+        .expect("set observable database mode");
+    fs::set_permissions(dir, fs::Permissions::from_mode(0o755))
+        .expect("set observable directory mode");
+    let before = fs::read(&db_path).expect("read database before refused open");
+
+    let error = Graph::open(worktree.path(), SyncPolicy::Manual)
+        .err()
+        .expect("future schema must be refused");
+    assert!(matches!(error, crate::GraphError::IndexIncompatible { .. }));
+    assert!(error.to_string().contains("schema_version 999"), "{error}");
+    assert_eq!(
+        fs::read(&db_path).expect("read database after refusal"),
+        before
+    );
+    assert_eq!(
+        fs::metadata(&db_path)
+            .expect("database metadata")
+            .permissions()
+            .mode()
+            & 0o777,
+        0o644
+    );
+    assert_eq!(
+        fs::metadata(dir)
+            .expect("directory metadata")
+            .permissions()
+            .mode()
+            & 0o777,
+        0o755
+    );
+    for suffix in ["-wal", "-shm", "-journal", ".lock"] {
+        assert!(
+            !PathBuf::from(format!("{}{suffix}", db_path.display())).exists(),
+            "refused open created a {suffix} sidecar"
+        );
+    }
+    let conn = Connection::open_with_flags(&db_path, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)
+        .expect("inspect journal mode read-only");
+    let mode: String = conn
+        .pragma_query_value(None, "journal_mode", |row| row.get(0))
+        .expect("read journal mode");
+    assert_eq!(mode.to_ascii_lowercase(), "delete");
+}
+
+#[test]
+fn concurrent_first_writers_initialize_fresh_and_compatible_delete_journal_databases() {
+    use std::sync::{Arc, Barrier};
+
+    for existing in [false, true] {
+        let worktree = TestWorktree::new("concurrent-first-writers", "main");
+        worktree.init_git_repo();
+        if existing {
+            let graph = Graph::open(worktree.path(), SyncPolicy::Manual)
+                .expect("initialize compatible graph");
+            let db_path = graph.db_path().path().to_path_buf();
+            drop(graph);
+            let conn = open_test_connection(&db_path);
+            conn.pragma_update(None, "journal_mode", "DELETE")
+                .expect("switch compatible graph to rollback journal");
+        }
+
+        let barrier = Arc::new(Barrier::new(8));
+        let root = worktree.path().to_path_buf();
+        std::thread::scope(|scope| {
+            let workers = (0..8)
+                .map(|_| {
+                    let barrier = Arc::clone(&barrier);
+                    let root = root.clone();
+                    scope.spawn(move || {
+                        barrier.wait();
+                        Graph::open(&root, SyncPolicy::Manual).map(drop)
+                    })
+                })
+                .collect::<Vec<_>>();
+            for worker in workers {
+                worker.join().expect("writer thread").expect("open graph");
+            }
+        });
+        let graph = Graph::open(worktree.path(), SyncPolicy::Manual).expect("reopen graph");
+        let conn = open_test_connection(graph.db_path().path());
+        assert_eq!(
+            read_meta(&conn).get("schema_version").map(String::as_str),
+            Some(SCHEMA_VERSION.to_string().as_str())
+        );
+    }
+}
+
 #[test]
 fn refs_target_symbol_hint_has_no_symbol_foreign_key() {
     let worktree = TestWorktree::new("refs-no-fk", "main");

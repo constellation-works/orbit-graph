@@ -27,7 +27,12 @@ pub(crate) struct OpenedGraph {
 pub(crate) fn open(worktree_root: &Path) -> Result<OpenedGraph, GraphError> {
     let git = GitContext::for_worktree(worktree_root)?;
     let db_path = git.db_path(worktree_root);
-    open_at_path(db_path, &git, IndexDirOwner::Scratch { worktree_root })
+    open_at_path(
+        worktree_root,
+        db_path,
+        &git,
+        IndexDirOwner::Scratch { worktree_root },
+    )
 }
 
 /// The database path the worktree's current branch or detached commit selects,
@@ -63,7 +68,12 @@ pub(crate) fn open_for_revision(
         git.commit_sha.as_str(),
         EXTRACTOR_VERSION,
     );
-    open_at_path(db_path, &git, IndexDirOwner::Scratch { worktree_root })
+    open_at_path(
+        worktree_root,
+        db_path,
+        &git,
+        IndexDirOwner::Scratch { worktree_root },
+    )
 }
 
 pub(crate) fn open_with_db_path(
@@ -79,7 +89,7 @@ pub(crate) fn open_with_db_path(
     }
     let git = GitContext::for_worktree(worktree_root)?;
     let db_path = GraphDbPath::new(db_path.to_path_buf(), git.branch.clone(), EXTRACTOR_VERSION);
-    open_at_path(db_path, &git, owner)
+    open_at_path(worktree_root, db_path, &git, owner)
 }
 
 /// Describe an existing database for a read-only open: nothing is created,
@@ -137,6 +147,7 @@ pub(crate) fn check_sidecars(physical_db: &Path) -> Result<(), GraphError> {
 }
 
 fn open_at_path(
+    worktree_root: &Path,
     db_path: GraphDbPath,
     git: &GitContext,
     owner: IndexDirOwner<'_>,
@@ -151,24 +162,60 @@ fn open_at_path(
             ),
         ));
     };
+    // Check a populated database before even repairing its directory or
+    // permissions. An incompatible index must be left exactly as found.
+    let existing = existing_physical_db(worktree_root, db_path.path())?;
+    let mut setup_lock = None;
+    let needs_initialization = if let Some(path) = existing.as_deref() {
+        let initialized = match validate_nonempty_identity(path, db_path.path()) {
+            Ok(initialized) => initialized,
+            // A first writer can briefly leave WAL frames without a wal-index
+            // while closing. Its setup lock already exists; wait for it and
+            // inspect again before touching the database or its directory.
+            Err(error)
+                if matches!(
+                    error,
+                    GraphError::InvalidData {
+                        operation: "open index read-only",
+                        ..
+                    }
+                ) && setup_lock_exists(path)? =>
+            {
+                setup_lock = Some(DbLockGuard::acquire(path)?);
+                validate_nonempty_identity(path, db_path.path())?
+            }
+            Err(error) => return Err(error),
+        };
+        !initialized
+    } else {
+        true
+    };
     let physical_db =
         create_index_dir(parent, owner, "create graph database directory")?.join(file_name);
 
+    // Switching a new file to WAL needs the database to itself, and SQLite
+    // answers a concurrent switch with SQLITE_BUSY instead of waiting. First
+    // opens therefore serialize on the sync lock until the schema is ready;
+    // an initialized WAL database needs no lock (STD-03 §R6).
+    let setup_lock = if setup_lock.is_some() {
+        setup_lock
+    } else if !needs_initialization
+        && database_uses_wal(physical_db.as_path(), "read graph database header")?
+    {
+        None
+    } else {
+        Some(DbLockGuard::acquire(physical_db.as_path())?)
+    };
+    // Another first opener may have initialized the database while we waited
+    // for the setup lock. Recheck its identity before any writable open.
+    if setup_lock.is_some() {
+        validate_nonempty_identity(physical_db.as_path(), db_path.path())?;
+    }
     // SQLite's default creation mode can expose indexed source text. Create
     // the database with private permissions before SQLite opens it, repair an
     // existing one to 0600, and refuse a symlink in its name (STD-05 §R7-§R9);
     // SQLite gives the -wal and -shm sidecars the database's mode.
     drop(open_state_file(physical_db.as_path(), StateAccess::Write)?);
-
-    // Switching a new file to WAL needs the database to itself, and SQLite
-    // answers a concurrent switch with SQLITE_BUSY instead of waiting. First
-    // opens therefore serialize on the sync lock until the file is a WAL
-    // database; an initialized one needs no lock (STD-03 §R6).
-    let setup_lock = if database_uses_wal(physical_db.as_path(), "read graph database header")? {
-        None
-    } else {
-        Some(DbLockGuard::acquire(physical_db.as_path())?)
-    };
     let mut conn = open_writer(physical_db.as_path(), "open graph database")?;
     configure_connection(&conn)?;
 
@@ -184,15 +231,43 @@ fn open_at_path(
             },
         )?;
     }
-    drop(setup_lock);
     // A database whose stored schema identity differs is never written
     // (STD-03 §R10).
     schema::validate_identity(&conn, db_path.path())?;
+    drop(setup_lock);
 
     Ok(OpenedGraph {
         db_path,
         physical_db,
     })
+}
+
+fn setup_lock_exists(path: &Path) -> Result<bool, GraphError> {
+    let mut name = path.as_os_str().to_os_string();
+    name.push(".lock");
+    crate::state_dir::check_state_file(Path::new(&name))
+}
+
+/// Return whether an existing database has a complete, compatible schema.
+/// An empty SQLite database is left for initialization under the setup lock.
+fn validate_nonempty_identity(path: &Path, db_path: &Path) -> Result<bool, GraphError> {
+    let Some(file) = open_state_file(path, StateAccess::Read)? else {
+        return Ok(false);
+    };
+    if file
+        .metadata()
+        .map_err(|source| GraphError::io("inspect graph database", path, source))?
+        .len()
+        == 0
+    {
+        return Ok(false);
+    }
+    let conn = open_observational(path, "inspect graph database identity")?;
+    if schema::database_is_empty(&conn)? {
+        return Ok(false);
+    }
+    schema::validate_identity(&conn, db_path)?;
+    Ok(true)
 }
 
 /// Open the physical database `path` read-write with `SQLITE_OPEN_NOFOLLOW`,
