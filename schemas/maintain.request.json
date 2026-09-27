@@ -36,7 +36,7 @@
       "maximum": 1000
     },
     "delivery": {
-      "description": "DeliveryImport v2 envelope; required for operation=import and refused for every other operation.",
+      "description": "DeliveryImport v2 envelope; required for operation=import and refused for every other operation. A caller's verified_delivery claim is stored as caller_attested after Git validation.",
       "type": "object"
     },
     "workspace": {
@@ -61,7 +61,7 @@
       }
     },
     "task_snapshots": {
-      "description": "orbit_sync only: earlier public task snapshots used instead of live task text. Refused for every other operation.",
+      "description": "orbit_sync only: caller-supplied task snapshots stored separately with caller_supplied provenance; they never replace Orbit-observed task text. Refused for every other operation.",
       "type": "array",
       "items": {
         "type": "object"

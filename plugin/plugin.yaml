@@ -349,7 +349,7 @@ spec:
               description: Source of task-similarity hits, such as local_lexical or orbit.search_hybrid.
               type: string
             task_text:
-              description: Source of the ranked text, such as request_query or orbit.task.show_public_observation.
+              description: Source of the ranked text, such as request_query, orbit.task.show_public_observation, or supplied_snapshot+verified_task_id. The last label means Orbit verified the task ID, not the supplied text.
               type: string
             warnings:
               description: Degradations the adapter applied, such as a lexical fallback after an orbit.search failure.
@@ -457,7 +457,7 @@ spec:
           minimum: 1000
           type: integer
         delivery:
-          description: DeliveryImport v2 envelope; required for operation=import and refused for every other operation.
+          description: DeliveryImport v2 envelope; required for operation=import and refused for every other operation. A caller's verified_delivery claim is stored as caller_attested after Git validation.
           type: object
         full:
           default: false
@@ -497,7 +497,7 @@ spec:
             type: string
           type: array
         task_snapshots:
-          description: 'orbit_sync only: earlier public task snapshots used instead of live task text. Refused for every other operation.'
+          description: 'orbit_sync only: caller-supplied task snapshots stored separately with caller_supplied provenance; they never replace Orbit-observed task text. Refused for every other operation.'
           items:
             type: object
           type: array
@@ -592,6 +592,31 @@ spec:
           type: object
         coverage:
           description: 'What this call covered and how to resume a partial result. graph_sync: complete, state (published or budget_exhausted), phase reached when the budget ran out, and a resume hint.'
+          type: object
+        evidence:
+          additionalProperties: false
+          description: 'import only: requested and stored delivery evidence, including whether a verified_delivery claim was downgraded to caller_attested.'
+          properties:
+            downgraded:
+              description: Whether the requested verified claim was reduced to caller_attested.
+              type: boolean
+            requested:
+              description: Evidence value supplied in the request.
+              enum:
+              - verified_delivery
+              - caller_attested
+              - git_only
+              type: string
+            stored:
+              description: Evidence value persisted by the plugin.
+              enum:
+              - caller_attested
+              - git_only
+              type: string
+          required:
+          - requested
+          - stored
+          - downgraded
           type: object
         operation:
           description: The maintenance operation that ran.

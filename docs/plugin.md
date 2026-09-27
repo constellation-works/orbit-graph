@@ -178,7 +178,9 @@ labels started/completed text as post-execution, and may use that current
 observation for a recommendation made afterward. An explicit `cutoff` switches
 to strict historical replay: only text attested `known_pre_execution` and
 strictly before that cutoff is eligible. A supplied snapshot on a live request
-still verifies the task, workspace, and repository through the public API.
+still verifies the task ID, workspace, and repository through the public API.
+The response labels this `supplied_snapshot+verified_task_id`: Orbit verifies
+the ID, while the caller remains the source of the snapshot text.
 Over Git-only history, a live free-text `query` request may also rank from
 commit messages: those contributions use the reason kind
 `historical_change_commit_text`, are labelled post-execution, are down-weighted
@@ -193,6 +195,9 @@ uses; the adapter does not bypass Orbit policy. `orbit.workspace.list` is served
 only over MCP, so the adapter reaches it through a short-lived, bounded
 `orbit mcp serve` stdio session and binds the requested repository to the
 workspace by matching the repository's `origin` to the published `git_remote`.
+This URL match is an accident guard against routing to the wrong workspace;
+the checkout owner can rewrite `origin`. Orbit's per-call tool authorization is
+the security boundary (STD-05 §R5).
 With narrower grants, pass an earlier public snapshot and use lexical/offline
 hits.
 
@@ -247,6 +252,13 @@ is opened, each field it does not read, naming them all:
 | `import` | `branch`, `delivery` |
 | `orbit_sync` | `branch`, `limit`, `workspace`, `task_ids`, `run_ids`, `task_snapshots` |
 | `graph_sync` | `full`, `budget_ms` |
+
+`import` validates Git boundaries but stamps any caller claim of
+`verified_delivery` as `caller_attested` and reports the requested and stored
+values in `evidence`. Caller-attested deliveries have the same 0.55 ranking
+weight as Git-only deliveries; only `orbit_sync` can store run-observed
+`verified_delivery` at weight 1.0. `orbit_sync.task_snapshots` are stored in
+separate `caller_supplied` rows and never replace run-observed task text.
 
 `recommend` likewise refuses `hybrid_limit` without `hybrid: true`, and every
 tool refuses an empty string as a field's value (or an item of a list field)

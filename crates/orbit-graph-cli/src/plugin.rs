@@ -321,7 +321,7 @@ fn recommend(
                 snapshot = Some(observed);
                 task_text_source = "orbit.task.show_public_observation".to_string();
             } else {
-                task_text_source = "supplied_snapshot+verified_live_workspace".to_string();
+                task_text_source = "supplied_snapshot+verified_task_id".to_string();
             }
         } else if snapshot.is_none() {
             snapshot = Some(adapter.task_snapshot(task_id)?);
@@ -633,17 +633,26 @@ fn maintain(mut input: MaintainToolInput, config: &PluginConfig) -> Result<Value
             }))
         }
         MaintenanceOperation::Import => {
-            let delivery = delivery.ok_or_else(|| {
+            let mut delivery = delivery.ok_or_else(|| {
                 ToolError::invalid_request(
                     "validate plugin import",
                     "delivery is required for operation=import",
                 )
             })?;
+            let requested_evidence = delivery.evidence;
+            if delivery.evidence == orbit_graph::DeliveryEvidence::VerifiedDelivery {
+                delivery.evidence = orbit_graph::DeliveryEvidence::CallerAttested;
+            }
             Ok(json!({
                 "schema_version": PLUGIN_SCHEMA_VERSION,
                 "operation": "import",
                 "repository": repository,
                 "branch": branch,
+                "evidence": {
+                    "requested": requested_evidence.as_str(),
+                    "stored": delivery.evidence.as_str(),
+                    "downgraded": requested_evidence != delivery.evidence,
+                },
                 "result": history_index()?.import(delivery)?,
             }))
         }
@@ -802,7 +811,7 @@ fn sync_orbit(
     let mut outcomes = Vec::new();
     for run_id in &run_ids {
         match adapter.delivery_from_run(run_id, branch, &snapshots, index.repository()) {
-            Ok(delivery) => {
+            Ok((delivery, supplied_snapshot)) => {
                 let delivery_id = delivery.delivery_id.clone();
                 let task_ids = delivery
                     .tasks
@@ -814,16 +823,36 @@ fn sync_orbit(
                     existing.delivery.before_revision == delivery.before_revision
                         && existing.delivery.after_revision == delivery.after_revision
                 }) {
-                    outcomes.push(json!({
-                        "run_id": run_id,
-                        "delivery_id": delivery_id,
-                        "task_ids": task_ids,
-                        "status": "already_indexed",
-                        "reason": "preserved immutable first-observed delivery envelope",
-                    }));
+                    match supplied_snapshot {
+                        Some(snapshot) => match index.add_supplied_snapshot(&delivery_id, snapshot) {
+                            Ok(inserted) => outcomes.push(json!({
+                                "run_id": run_id,
+                                "delivery_id": delivery_id,
+                                "task_ids": task_ids,
+                                "status": "already_indexed",
+                                "supplied_snapshot": if inserted { "inserted" } else { "already_indexed" },
+                                "reason": "preserved first-observed delivery task text and provenance",
+                            })),
+                            Err(error) => outcomes.push(json!({
+                                "run_id": run_id,
+                                "status": "excluded",
+                                "reason": error.to_string(),
+                            })),
+                        },
+                        None => outcomes.push(json!({
+                            "run_id": run_id,
+                            "delivery_id": delivery_id,
+                            "task_ids": task_ids,
+                            "status": "already_indexed",
+                            "reason": "preserved immutable first-observed delivery envelope",
+                        })),
+                    }
                     continue;
                 }
-                match index.import(delivery) {
+                match index.import_with_supplied_snapshots(
+                    delivery,
+                    supplied_snapshot.into_iter().collect(),
+                ) {
                     Ok(report) => outcomes.push(json!({
                         "run_id": run_id,
                         "delivery_id": delivery_id,

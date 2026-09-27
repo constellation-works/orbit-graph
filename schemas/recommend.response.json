@@ -40,7 +40,7 @@
           ]
         },
         "task_text": {
-          "description": "Source of the ranked text, such as request_query or orbit.task.show_public_observation.",
+          "description": "Source of the ranked text, such as request_query, orbit.task.show_public_observation, or supplied_snapshot+verified_task_id. The last label means Orbit verified the task ID, not the supplied text.",
           "type": "string"
         },
         "hybrid_search": {

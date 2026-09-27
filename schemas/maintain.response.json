@@ -29,6 +29,17 @@
       "description": "history_sync, import and orbit_sync: the landing branch the call worked on, which is the request's branch, else the plugin's configured branch, else main. Absent for graph_sync.",
       "type": "string"
     },
+    "evidence": {
+      "description": "import only: requested and stored delivery evidence, including whether a verified_delivery claim was downgraded to caller_attested.",
+      "type": "object",
+      "required": ["requested", "stored", "downgraded"],
+      "properties": {
+        "requested": {"description": "Evidence value supplied in the request.", "type": "string", "enum": ["verified_delivery", "caller_attested", "git_only"]},
+        "stored": {"description": "Evidence value persisted by the plugin.", "type": "string", "enum": ["caller_attested", "git_only"]},
+        "downgraded": {"description": "Whether the requested verified claim was reduced to caller_attested.", "type": "boolean"}
+      },
+      "additionalProperties": false
+    },
     "authority": {
       "description": "orbit_sync: the workspace and public interfaces the adapter used.",
       "type": "object"

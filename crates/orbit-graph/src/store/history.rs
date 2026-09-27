@@ -23,15 +23,12 @@ use crate::{GraphError, lock};
 
 /// Version of the history SQLite schema.
 ///
-/// Version 4 adds `history_path_lineage`: each delivery's own rename and
-/// deletion steps, persisted at ingest so recommendation can follow a
-/// historical path forward without query-time rename detection. Opening a v4
-/// index beside a compatible v3 index copies the v3 deliveries and cursors once
-/// (see [`HistoryIndex::open`]); `history rebuild` also repopulates lineage.
-pub const HISTORY_INDEX_SCHEMA_VERSION: u32 = 4;
+/// Version 5 keeps caller-supplied task snapshots separate from run-observed
+/// task memberships. Compatible v4 payloads and cursors are copied once.
+pub const HISTORY_INDEX_SCHEMA_VERSION: u32 = 5;
 
 /// Previous schema version whose payloads can be re-inserted without re-extraction.
-const PREVIOUS_HISTORY_INDEX_SCHEMA_VERSION: u32 = 3;
+const PREVIOUS_HISTORY_INDEX_SCHEMA_VERSION: u32 = 4;
 
 /// `history_meta` key recording that the one-time previous-schema copy was attempted.
 const LEGACY_COPY_META_KEY: &str = "legacy_copy";
@@ -103,7 +100,7 @@ pub struct HistoryStatus {
     pub complete: bool,
     /// Total delivery rows in this scope.
     pub deliveries: usize,
-    /// Deliveries backed by supplied verified delivery evidence.
+    /// Deliveries backed by trusted verified delivery evidence.
     pub verified_deliveries: usize,
     /// Deliveries inferred only from Git first-parent history.
     pub git_only_deliveries: usize,
@@ -387,7 +384,7 @@ impl HistoryIndex {
 
     /// Populate a fresh index from a compatible previous-schema database once.
     ///
-    /// Schema v4 only adds derived lineage rows, so v3 delivery payloads (which
+    /// Schema v5 adds caller-supplied snapshot rows, so v4 delivery payloads (which
     /// include externally verified imports that `history rebuild` cannot
     /// recreate) are re-inserted unchanged and their lineage derived on insert.
     /// The previous database is read, never modified. The attempt is recorded
@@ -473,15 +470,43 @@ impl HistoryIndex {
     }
 
     /// Atomically validate, extract, and import one versioned delivery envelope.
-    pub fn import(&self, mut delivery: DeliveryImport) -> Result<HistoryImportReport, GraphError> {
+    pub fn import(&self, delivery: DeliveryImport) -> Result<HistoryImportReport, GraphError> {
+        self.import_with_supplied_snapshots(delivery, Vec::new())
+    }
+
+    /// Import a run-observed delivery while retaining caller text in a separate,
+    /// explicitly labelled snapshot record. The delivery task remains the
+    /// authoritative observed text used by recommendation.
+    pub fn import_with_supplied_snapshots(
+        &self,
+        mut delivery: DeliveryImport,
+        mut supplied_snapshots: Vec<TaskAssociation>,
+    ) -> Result<HistoryImportReport, GraphError> {
         self.refuse_read_only("import history delivery")?;
         normalize_tasks(&mut delivery.tasks)?;
+        normalize_tasks(&mut supplied_snapshots)?;
+        for snapshot in &supplied_snapshots {
+            if !delivery
+                .tasks
+                .iter()
+                .any(|task| task.task_id == snapshot.task_id)
+            {
+                return Err(GraphError::invalid_data(
+                    "validate caller-supplied task snapshot",
+                    format!(
+                        "task {} is absent from the observed delivery",
+                        snapshot.task_id
+                    ),
+                ));
+            }
+        }
         delivery.landing_branch = normalize_branch(delivery.landing_branch.as_str());
         self.ensure_scope(&delivery)?;
         let repo = Repository::open(self.repo_root.as_path()).map_err(|error| {
             GraphError::invalid_data("open repository for history import", error.to_string())
         })?;
-        let extracted = extract_delivery(&repo, delivery)?;
+        let mut extracted = extract_delivery(&repo, delivery)?;
+        extracted.supplied_snapshots = supplied_snapshots;
         let _lock = HistoryLock::acquire(self.db_path.as_path(), "history import")?;
         let mut conn = self.open_connection()?;
         let tx = conn
@@ -491,6 +516,82 @@ impl HistoryIndex {
         tx.commit()
             .map_err(|source| GraphError::sqlite("commit history import", source))?;
         Ok(report)
+    }
+
+    /// Attach a first caller-supplied snapshot to an already observed delivery
+    /// without changing its task text or provenance. A conflicting replay is
+    /// refused; an exact replay is idempotent.
+    pub fn add_supplied_snapshot(
+        &self,
+        delivery_id: &str,
+        snapshot: TaskAssociation,
+    ) -> Result<bool, GraphError> {
+        self.refuse_read_only("store caller-supplied task snapshot")?;
+        validate_task_association(&snapshot)?;
+        let _lock = HistoryLock::acquire(self.db_path.as_path(), "store task snapshot")?;
+        let mut conn = self.open_connection()?;
+        let tx = conn
+            .transaction_with_behavior(TransactionBehavior::Immediate)
+            .map_err(|source| GraphError::sqlite("begin task snapshot insert", source))?;
+        let payload: String = tx
+            .query_row(
+                "SELECT payload_json FROM history_deliveries WHERE repository=?1 AND landing_branch=?2 AND delivery_id=?3",
+                params![self.repository, self.landing_branch, delivery_id],
+                |row| row.get(0),
+            )
+            .map_err(|source| GraphError::sqlite("read delivery for task snapshot", source))?;
+        let mut change: DeliveredChange = serde_json::from_str(&payload).map_err(|error| {
+            GraphError::invalid_data("decode delivery for task snapshot", error.to_string())
+        })?;
+        if change.delivery.evidence != DeliveryEvidence::VerifiedDelivery
+            || !change
+                .delivery
+                .tasks
+                .iter()
+                .any(|task| task.task_id == snapshot.task_id)
+        {
+            return Err(GraphError::invalid_data(
+                "validate caller-supplied task snapshot",
+                "snapshot requires a verified run-observed delivery with the same task ID",
+            ));
+        }
+        if let Some(existing) = change
+            .supplied_snapshots
+            .iter()
+            .find(|stored| stored.task_id == snapshot.task_id)
+        {
+            if existing == &snapshot {
+                return Ok(false);
+            }
+            return Err(GraphError::invalid_data(
+                "deduplicate caller-supplied task snapshot",
+                format!(
+                    "task {} already has a different supplied snapshot",
+                    snapshot.task_id
+                ),
+            ));
+        }
+        let task_id = snapshot.task_id.clone();
+        let snapshot_json = serde_json::to_string(&snapshot).map_err(|error| {
+            GraphError::invalid_data("encode caller-supplied task snapshot", error.to_string())
+        })?;
+        change.supplied_snapshots.push(snapshot);
+        let updated = serde_json::to_string(&change).map_err(|error| {
+            GraphError::invalid_data("encode delivery with task snapshot", error.to_string())
+        })?;
+        tx.execute(
+            "UPDATE history_deliveries SET payload_json=?4 WHERE repository=?1 AND landing_branch=?2 AND delivery_id=?3",
+            params![self.repository, self.landing_branch, delivery_id, updated],
+        )
+        .map_err(|source| GraphError::sqlite("update delivery task snapshot", source))?;
+        tx.execute(
+            "INSERT INTO history_supplied_task_snapshots(repository,landing_branch,delivery_id,task_id,provenance,payload_json) VALUES(?1,?2,?3,?4,'caller_supplied',?5)",
+            params![self.repository, self.landing_branch, delivery_id, task_id, snapshot_json],
+        )
+        .map_err(|source| GraphError::sqlite("insert caller-supplied task snapshot", source))?;
+        tx.commit()
+            .map_err(|source| GraphError::sqlite("commit task snapshot insert", source))?;
+        Ok(true)
     }
 
     /// Validate and extract an envelope without mutating the derived history index.
@@ -581,11 +682,14 @@ impl HistoryIndex {
         } else {
             self.deliveries()?
                 .into_iter()
-                .filter(|change| change.delivery.evidence == DeliveryEvidence::VerifiedDelivery)
-                .map(|change| {
+                .filter(|change| change.delivery.evidence != DeliveryEvidence::GitOnly)
+                .map(|change| -> Result<DeliveredChange, GraphError> {
+                    let supplied_snapshots = change.supplied_snapshots;
                     let mut delivery = change.delivery;
                     delivery.schema_version = DELIVERY_IMPORT_SCHEMA_VERSION;
-                    extract_delivery(&repo, delivery).map_err(GraphError::from)
+                    let mut extracted = extract_delivery(&repo, delivery)?;
+                    extracted.supplied_snapshots = supplied_snapshots;
+                    Ok(extracted)
                 })
                 .collect::<Result<Vec<_>, _>>()?
         };
@@ -1284,6 +1388,13 @@ CREATE TABLE IF NOT EXISTS history_tasks (
   FOREIGN KEY(repository, landing_branch, delivery_id)
     REFERENCES history_deliveries(repository, landing_branch, delivery_id) ON DELETE CASCADE
 ) STRICT;
+CREATE TABLE IF NOT EXISTS history_supplied_task_snapshots (
+  repository TEXT NOT NULL, landing_branch TEXT NOT NULL, delivery_id TEXT NOT NULL,
+  task_id TEXT NOT NULL, provenance TEXT NOT NULL, payload_json TEXT NOT NULL,
+  PRIMARY KEY(repository, landing_branch, delivery_id, task_id),
+  FOREIGN KEY(repository, landing_branch, delivery_id)
+    REFERENCES history_deliveries(repository, landing_branch, delivery_id) ON DELETE CASCADE
+) STRICT;
 CREATE TABLE IF NOT EXISTS history_files (
   repository TEXT NOT NULL, landing_branch TEXT NOT NULL, delivery_id TEXT NOT NULL,
   ordinal INTEGER NOT NULL, old_path TEXT, new_path TEXT, change_kind TEXT NOT NULL,
@@ -1356,9 +1467,14 @@ fn insert_delivery(
     ).optional().map_err(|source| GraphError::sqlite("check duplicate history delivery", source))?;
     let symbol_count = change.files.iter().map(|file| file.symbols.len()).sum();
     if let Some((before, after, existing_payload)) = existing {
+        let previous: DeliveredChange =
+            serde_json::from_str(&existing_payload).map_err(|error| {
+                GraphError::invalid_data("decode existing history delivery", error.to_string())
+            })?;
         if before != delivery.before_revision
             || after != delivery.after_revision
-            || existing_payload != payload
+            || previous.delivery != change.delivery
+            || previous.files != change.files
         {
             return Err(GraphError::invalid_data(
                 "deduplicate history delivery",
@@ -1387,6 +1503,15 @@ fn insert_delivery(
             "INSERT INTO history_tasks(repository,landing_branch,delivery_id,task_id,title,description,acceptance_criteria_json,source_system,source_record_id,created_status,created_at,created_source_system,created_source_record_id,snapshot_status,snapshot_available_at,snapshot_source_system,snapshot_source_record_id,text_availability,captured_at) VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17,?18,?19)",
             params![delivery.repository, delivery.landing_branch, delivery.delivery_id, task.task_id, task.title, task.description, criteria, task.source.system, task.source.record_id, temporal_status(task.created_at.status), task.created_at.timestamp, task.created_at.source.system, task.created_at.source.record_id, temporal_status(task.snapshot_available_at.status), task.snapshot_available_at.timestamp, task.snapshot_available_at.source.system, task.snapshot_available_at.source.record_id, task_text_availability(task.text_availability), task.captured_at],
         ).map_err(|source| GraphError::sqlite("insert history task association", source))?;
+    }
+    for snapshot in &change.supplied_snapshots {
+        let snapshot_json = serde_json::to_string(snapshot).map_err(|error| {
+            GraphError::invalid_data("encode caller-supplied task snapshot", error.to_string())
+        })?;
+        tx.execute(
+            "INSERT INTO history_supplied_task_snapshots(repository,landing_branch,delivery_id,task_id,provenance,payload_json) VALUES(?1,?2,?3,?4,'caller_supplied',?5)",
+            params![delivery.repository, delivery.landing_branch, delivery.delivery_id, snapshot.task_id, snapshot_json],
+        ).map_err(|source| GraphError::sqlite("insert caller-supplied task snapshot", source))?;
     }
     for (file_ordinal, file) in change.files.iter().enumerate() {
         tx.execute(

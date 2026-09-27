@@ -53,3 +53,15 @@ tests:
     expect:
       error:
         code: invalid_request
+  # The Git-backed binary test checks supplied_snapshot+verified_task_id.
+  - name: recommend_requires_a_complete_supplied_snapshot
+    tool: recommend
+    input:
+      schema_version: 1
+      repository: "{{workspace}}"
+      workspace: ws_graph
+      task_id: TASK-1
+      task_snapshot: {task_id: TASK-1}
+    expect:
+      error:
+        code: invalid_request

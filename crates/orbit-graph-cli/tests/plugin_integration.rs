@@ -79,7 +79,7 @@ fn no_argv_plugin_supports_status_and_query_and_task_id_both_levels() {
         json!({"schema_version": 1, "repository": repository, "branch": "main"}),
     );
     assert_eq!(status["operation"], "status");
-    assert_eq!(status["status"]["verified_deliveries"], 1);
+    assert_eq!(status["status"]["verified_deliveries"], 0);
     let status_with_mode_environment = plugin_output_with_env(
         fixture.path(),
         STATUS_TOOL_NAME,
@@ -146,6 +146,107 @@ fn no_argv_plugin_supports_status_and_query_and_task_id_both_levels() {
             "task recommendations missing in {level}: {task}"
         );
     }
+}
+
+#[test]
+fn plugin_import_claim_is_stored_as_caller_attested_and_weighted_below_verified() {
+    let fixture = evaluation_fixture();
+    let repository = fixture.path().canonicalize().expect("canonical fixture");
+    let imported = plugin_json(
+        fixture.path(),
+        MAINTAIN_TOOL_NAME,
+        json!({
+            "schema_version": 1,
+            "operation": "import",
+            "repository": repository,
+            "branch": "main",
+            "delivery": fixture_delivery(fixture.path(), "training")
+        }),
+    );
+    assert_eq!(imported["evidence"]["requested"], "verified_delivery");
+    assert_eq!(imported["evidence"]["stored"], "caller_attested");
+    assert_eq!(imported["evidence"]["downgraded"], true);
+    let index = orbit_graph::HistoryIndex::open_read_only(&repository, "main")
+        .expect("read imported delivery");
+    let delivery = index
+        .delivery("fixture:training")
+        .expect("read delivery")
+        .expect("imported delivery");
+    assert_eq!(
+        serde_json::to_value(delivery.delivery.evidence).expect("encode evidence"),
+        "caller_attested"
+    );
+    let conn = rusqlite::Connection::open(index.database_path()).expect("open history rows");
+    let evidence: String = conn
+        .query_row(
+            "SELECT evidence FROM history_deliveries WHERE delivery_id=?1",
+            ["fixture:training"],
+            |row| row.get(0),
+        )
+        .expect("stored evidence");
+    assert_eq!(evidence, "caller_attested");
+    let recommend = |repo: &Path| {
+        plugin_json(
+            repo,
+            RECOMMEND_TOOL_NAME,
+            json!({
+                "schema_version": 1,
+                "repository": repo,
+                "branch": "main",
+                "query": "parser validation",
+                "level": "file",
+                "cutoff": "unix:20"
+            }),
+        )
+    };
+    let attested = recommend(&repository);
+    let reasons = &attested["result"]["recommendations"][0]["reasons"];
+    assert!(
+        reasons.to_string().contains("actual-change evidence 0.55"),
+        "{attested}"
+    );
+
+    // The standalone import is the trusted producer path. It still keeps
+    // verified evidence and its full weight on the same agent-main shape.
+    let trusted = evaluation_fixture();
+    let trusted_repository = trusted.path().canonicalize().expect("trusted repository");
+    let delivery_path = trusted.path().join("trusted-delivery.json");
+    fs::write(
+        &delivery_path,
+        serde_json::to_vec(&fixture_delivery(trusted.path(), "training")).expect("encode delivery"),
+    )
+    .expect("write delivery");
+    let output = run(
+        trusted.path(),
+        [
+            "history",
+            "import",
+            "--input",
+            delivery_path.to_str().expect("delivery path"),
+        ],
+    );
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let trusted_index = orbit_graph::HistoryIndex::open_read_only(&trusted_repository, "main")
+        .expect("read trusted index");
+    assert_eq!(
+        trusted_index
+            .delivery("fixture:training")
+            .expect("read trusted delivery")
+            .expect("trusted delivery")
+            .delivery
+            .evidence,
+        orbit_graph::DeliveryEvidence::VerifiedDelivery
+    );
+    let verified = recommend(&trusted_repository);
+    let reasons = &verified["result"]["recommendations"][0]["reasons"];
+    assert!(
+        reasons.to_string().contains("actual-change evidence 1.00"),
+        "{verified}"
+    );
 }
 
 #[test]
@@ -2128,10 +2229,67 @@ fn public_adapter_is_idempotent_and_supports_honest_live_task_observations() {
     let first = sync();
     let first = plugin_success(&first);
     assert_eq!(first["outcomes"][0]["status"], "inserted");
+    let index = orbit_graph::HistoryIndex::open_read_only(repository.as_path(), "main")
+        .expect("read run-observed index");
+    let observed = index
+        .delivery("orbit-run:RUN-1:TASK-PRIOR")
+        .expect("read delivery")
+        .expect("run delivery");
+    assert_eq!(
+        observed.delivery.evidence,
+        orbit_graph::DeliveryEvidence::VerifiedDelivery
+    );
+    assert_eq!(observed.delivery.tasks[0].title, "parser validation");
+    assert_eq!(observed.delivery.tasks[0].source.system, "orbit.task.show");
+    let conn = rusqlite::Connection::open(index.database_path()).expect("open history rows");
+    let (title, source): (String, String) = conn
+        .query_row(
+            "SELECT title,source_system FROM history_tasks WHERE delivery_id=?1",
+            ["orbit-run:RUN-1:TASK-PRIOR"],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .expect("run-observed task row");
+    assert_eq!(title, "parser validation");
+    assert_eq!(source, "orbit.task.show");
+    let (provenance, supplied): (String, String) = conn
+        .query_row(
+            "SELECT provenance,payload_json FROM history_supplied_task_snapshots WHERE delivery_id=?1",
+            ["orbit-run:RUN-1:TASK-PRIOR"],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .expect("supplied snapshot row");
+    assert_eq!(provenance, "caller_supplied");
+    let supplied: Value = serde_json::from_str(&supplied).expect("snapshot payload");
+    assert_eq!(supplied["title"], "original parser observation");
     let second = sync();
     let second = plugin_success(&second);
     assert_eq!(second["outcomes"][0]["status"], "already_indexed");
     assert_eq!(second["status"]["deliveries"], 1);
+    assert_eq!(
+        index
+            .delivery("orbit-run:RUN-1:TASK-PRIOR")
+            .expect("read replay"),
+        Some(observed)
+    );
+
+    let supplied_recommendation = plugin_output_with_env(
+        repository.as_path(),
+        RECOMMEND_TOOL_NAME,
+        json!({
+            "schema_version": 1,
+            "repository": repository,
+            "branch": "main",
+            "workspace": "ws-test",
+            "task_id": "TASK-TARGET",
+            "task_snapshot": task_snapshot("TASK-TARGET", "caller text", 15),
+            "level": "file"
+        }),
+        &[("PATH", callback_path.as_os_str())],
+    );
+    assert_eq!(
+        plugin_success(&supplied_recommendation)["adapter"]["task_text"],
+        "supplied_snapshot+verified_task_id"
+    );
 
     for input in [
         json!({
@@ -2246,6 +2404,66 @@ fn public_adapter_is_idempotent_and_supports_honest_live_task_observations() {
     assert_eq!(
         supplied_snapshot_bypass["outcomes"][0]["status"], "excluded",
         "supplied snapshots must not bypass public workspace verification"
+    );
+}
+
+#[test]
+fn orbit_sync_can_store_a_later_supplied_snapshot_without_replacing_observed_text() {
+    let fixture = adapter_fixture();
+    let repository = fixture
+        .path()
+        .join("repo")
+        .canonicalize()
+        .expect("repository");
+    let callback_path = executable_path_with(fixture.path());
+    let sync = |snapshot: Option<Value>| {
+        let mut input = json!({
+            "schema_version": 1,
+            "operation": "orbit_sync",
+            "repository": repository,
+            "branch": "main",
+            "workspace": "ws-test",
+            "run_ids": ["RUN-1"]
+        });
+        if let Some(snapshot) = snapshot {
+            input["task_snapshots"] = json!([snapshot]);
+        }
+        plugin_success(&plugin_output_with_env(
+            &repository,
+            MAINTAIN_TOOL_NAME,
+            input,
+            &[("PATH", callback_path.as_os_str())],
+        ))
+    };
+    assert_eq!(sync(None)["outcomes"][0]["status"], "inserted");
+    let index = orbit_graph::HistoryIndex::open_read_only(&repository, "main")
+        .expect("read observed delivery");
+    let original = index
+        .delivery("orbit-run:RUN-1:TASK-PRIOR")
+        .expect("read delivery")
+        .expect("observed delivery");
+    let snapshot = task_snapshot("TASK-PRIOR", "earlier caller text", 5);
+    let backfill = sync(Some(snapshot.clone()));
+    assert_eq!(backfill["outcomes"][0]["status"], "already_indexed");
+    assert_eq!(backfill["outcomes"][0]["supplied_snapshot"], "inserted");
+    let stored = index
+        .delivery("orbit-run:RUN-1:TASK-PRIOR")
+        .expect("read updated delivery")
+        .expect("updated delivery");
+    assert_eq!(stored.delivery, original.delivery);
+    assert_eq!(stored.files, original.files);
+    let conn = rusqlite::Connection::open(index.database_path()).expect("open history rows");
+    let provenance: String = conn
+        .query_row(
+            "SELECT provenance FROM history_supplied_task_snapshots WHERE delivery_id=?1",
+            ["orbit-run:RUN-1:TASK-PRIOR"],
+            |row| row.get(0),
+        )
+        .expect("supplied provenance");
+    assert_eq!(provenance, "caller_supplied");
+    assert_eq!(
+        sync(Some(snapshot))["outcomes"][0]["supplied_snapshot"],
+        "already_indexed"
     );
 }
 

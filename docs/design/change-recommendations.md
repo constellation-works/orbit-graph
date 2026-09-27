@@ -13,11 +13,12 @@ mutation target. The crate reads no Orbit database, configuration, task store,
 or private API and remains usable without Orbit.
 
 The SQLite database is a local derived index at
-`.orbit-graph/change-history.4.sqlite3` (the file name carries
+`.orbit-graph/change-history.5.sqlite3` (the file name carries
 `HISTORY_INDEX_SCHEMA_VERSION`). It is not task authority. External
 delivery/task systems retain authority and should be able to replay the public
 envelopes if a producer must replay them. A confirmed `history rebuild`
-re-extracts Git evidence and preserves verified deliveries by default.
+re-extracts Git evidence and preserves imported verified and caller-attested
+deliveries by default.
 
 Stage 1 supplies ingestion, extraction, provenance, current-symbol resolution,
 and stable types. Stage 2 will rank candidate destinations from this evidence.
@@ -83,9 +84,12 @@ Required semantics:
 - Exact duplicate task memberships are collapsed. Conflicting snapshots for one
   task ID in one delivery are rejected. Multiple distinct task IDs are retained;
   their association does not claim that every task changed every extracted file.
-- `verified_delivery` means the producer supplied verified landing evidence.
-  The importer validates Git boundaries but does not invent this strength.
-  `git_only` is always weaker, including task IDs parsed from `Task-Id:` or
+- `verified_delivery` is retained for trusted producers and Orbit run records
+  observed through the adapter. A plugin `maintain import` claim of this value
+  is stored as `caller_attested`; the response reports the downgrade. Its
+  recommendation weight is 0.55, equal to `git_only`, versus 1.0 for verified.
+  Git boundaries are validated, but that cannot verify the caller's source.
+  `git_only` is always weaker than verified, including task IDs parsed from `Task-Id:` or
   `Orbit-Task:` commit trailers.
 - `captured_at` is ingestion/snapshot capture time, not delivery, creation, or
   historical availability time. `delivered_at`, task `created_at`, and
@@ -204,8 +208,9 @@ orbit-graph --format json history rebuild --branch main [--limit 1000] [--confir
 ```
 
 `status` reports repository/branch, database path, versions, cursor, total
-deliveries, verified versus Git-only counts, and task-membership count. It is
-safe for operational inspection but is not a task status API.
+deliveries, verified and Git-only counts, and task-membership count.
+Caller-attested deliveries are included in the total and in neither subtype
+count. It is safe for operational inspection but is not a task status API.
 
 ## Version compatibility and later evaluation
 
@@ -214,7 +219,7 @@ temporal fields change the meaning needed for leakage-safe evaluation, and
 unknown fields were rejected by v1. Producers must emit `schema_version: 2`;
 v1 envelopes fail closed rather than receiving guessed timestamps. The history
 index and change extractor also advance independently to version 2, selecting a fresh
-`change-history.4.sqlite3` database. Existing v1 databases are left untouched;
+`change-history.5.sqlite3` database. Existing v1 databases are left untouched;
 verified producers replay v2 envelopes and Git-only evidence can be rebuilt.
 The crate/package version remains unchanged because this task is not a release.
 
@@ -228,6 +233,14 @@ repeated. The v3 file is read, never modified, and the copy runs at most once
 incompatible or absent v3 index is recorded as skipped. `history rebuild` and
 `history sync` populate lineage for Git-only evidence at any time.
 
+History schema v5 (`change-history.5.sqlite3`) adds separate
+`history_supplied_task_snapshots` rows. A supplied `orbit_sync.task_snapshots`
+entry retains its original payload under `caller_supplied` provenance; the
+verified delivery's task membership always contains the text observed from
+`orbit.task.show`. Recommendations use that observed membership. Compatible v4
+deliveries and cursors are copied once into v5, and rebuild preserves a
+separate snapshot with its verified delivery.
+
 Tree-sitter extraction is syntactic; macros, generated code, dynamic dispatch,
 and malformed files can reduce evidence. Rename detection follows libgit2
 similarity heuristics, applied once per delivery at ingest. File moves plus semantic rewrites may remain unmatched,
@@ -235,7 +248,8 @@ which is preferable to invented identity. Root commits lack a commit-valued
 before boundary and are used only as the starting cursor; their initial tree is
 not emitted as a delivery in v2.
 
-Stage 2 ranking must weight verified delivery evidence above Git-only evidence,
+Stage 2 ranking must weight verified delivery evidence above Git-only and
+caller-attested evidence,
 retain multi-task uncertainty, exclude task text unless `text_availability` is
 `known_pre_execution`, fail closed on unavailable or uncertain cutoffs, filter
 current-resolution results to `live`, and measure file versus symbol precision
@@ -474,6 +488,11 @@ Orbit read through `orbit tool run`: `orbit.workspace.list`,
 `orbit.task.show`, `orbit.search`, and `orbit.workflow.run.show`. It never reads
 SQLite, task bundles, or another private store.
 
+Matching the checkout's `origin` URL to a registered workspace's `git_remote`
+is an accident guard against selecting the wrong workspace. The checkout owner
+can rewrite `origin`, so this match does not authorize access. Orbit's per-call
+tool authorization is the security boundary (STD-05 §R5).
+
 An Orbit delivery is marked verified only when a successful public run exposes
 a committed step with exact base, commit, and task ID, and Git verifies both
 strict ancestry and landing-branch reachability. Public `orbit.workspace.list`
@@ -485,8 +504,9 @@ run's finish time is an uncertain landing-time proxy unless a future public feed
 attests exact delivery time. Current task text is `known_pre_execution` only
 when observed while the public lifecycle has no start and is still pending;
 otherwise it is explicitly post-execution or uncertain. Earlier versioned
-`TaskAssociation` observations can be supplied without becoming a second task
-authority.
+`TaskAssociation` observations can be supplied; they are stored in separate
+`caller_supplied` rows and never replace run-observed task text or its
+provenance. They do not become a second task authority.
 
 Orbit resolves its own global root when the adapter invokes each registered
 tool; the plugin never supplies `--root`. After validating the selected
