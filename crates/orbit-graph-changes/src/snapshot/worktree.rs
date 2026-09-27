@@ -8,10 +8,16 @@
 //! files, unsafe names), writes into a task-owned temporary tree, and is never
 //! cached: it is not an immutable revision. Nothing in the working tree or the
 //! Git index is written.
+//!
+//! A file is read only after its physical path is known to stay inside the
+//! worktree (`STD-05 §R6`), and the bytes come from that resolved path
+//! (`STD-05 §R7`). A tracked directory replaced by a symlink that points
+//! outside the repository takes its descendants with it: they are excluded as
+//! symlinks, and those external bytes are neither copied nor indexed.
 
 use std::collections::BTreeMap;
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::time::Instant;
 
 use git2::{Repository, StatusOptions};
@@ -126,6 +132,11 @@ fn materialize_working_tree(
         }
     }
 
+    let root = fs::canonicalize(workdir).map_err(|error| SnapshotError::Io {
+        operation: "resolve the working tree",
+        path: workdir.to_path_buf(),
+        reason: error.to_string(),
+    })?;
     let mut report = MaterializationReport::default();
     for (path, mode) in paths {
         if is_graph_scratch(path.as_str()) {
@@ -155,20 +166,25 @@ fn materialize_working_tree(
             }
             _ => {}
         }
-        copy_working_file(workdir, dest, path, &mut report)?;
+        copy_working_file(root.as_path(), dest, path, &mut report)?;
     }
     Ok(report)
 }
 
 /// Copy one working-tree file, or record why it was left out. A tracked path
 /// that no longer exists on disk is a deletion and is simply absent.
+///
+/// `root` is the canonical worktree. Containment is decided on the file's
+/// physical path, and a file that stays inside is read from that same path
+/// (`STD-05 §R6`, `STD-05 §R7`). A path whose ancestor symlink resolves
+/// outside the worktree is excluded as a symlink and is not read.
 fn copy_working_file(
-    workdir: &Path,
+    root: &Path,
     dest: &Path,
     path: String,
     report: &mut MaterializationReport,
 ) -> Result<(), SnapshotError> {
-    let source = workdir.join(path.as_str());
+    let source = root.join(path.as_str());
     let metadata = match fs::symlink_metadata(source.as_path()) {
         Ok(metadata) => metadata,
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(()),
@@ -181,25 +197,54 @@ fn copy_working_file(
         }
     };
     let file_type = metadata.file_type();
-    let reason = if file_type.is_symlink() {
-        Some(ExclusionReason::Symlink)
-    } else if !file_type.is_file() {
-        Some(ExclusionReason::UnsupportedKind)
-    } else if metadata.len() > DEFAULT_MAX_BLOB_BYTES {
-        Some(ExclusionReason::OversizeBlob {
-            bytes: metadata.len(),
-        })
-    } else {
-        None
+    if file_type.is_symlink() {
+        report.excluded.push(ExcludedEntry {
+            path,
+            reason: ExclusionReason::Symlink,
+        });
+        return Ok(());
+    }
+    if !file_type.is_file() {
+        report.excluded.push(ExcludedEntry {
+            path,
+            reason: ExclusionReason::UnsupportedKind,
+        });
+        return Ok(());
+    }
+    // Resolve before the size check so an escaped path is never classified, or
+    // read, as an ordinary file. `NotFound` here is the same deletion race as
+    // above: the path vanished between the leaf check and resolution.
+    let physical = match contained_physical_file(root, source.as_path()) {
+        Ok(Some(physical)) => physical,
+        Ok(None) => {
+            report.excluded.push(ExcludedEntry {
+                path,
+                reason: ExclusionReason::Symlink,
+            });
+            return Ok(());
+        }
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+        Err(error) => {
+            return Err(SnapshotError::Io {
+                operation: "resolve working-tree file",
+                path: source,
+                reason: error.to_string(),
+            });
+        }
     };
-    if let Some(reason) = reason {
-        report.excluded.push(ExcludedEntry { path, reason });
+    if metadata.len() > DEFAULT_MAX_BLOB_BYTES {
+        report.excluded.push(ExcludedEntry {
+            path,
+            reason: ExclusionReason::OversizeBlob {
+                bytes: metadata.len(),
+            },
+        });
         return Ok(());
     }
 
-    let bytes = fs::read(source.as_path()).map_err(|error| SnapshotError::Io {
+    let bytes = fs::read(physical.as_path()).map_err(|error| SnapshotError::Io {
         operation: "read working-tree file",
-        path: source.clone(),
+        path: physical.clone(),
         reason: error.to_string(),
     })?;
     let target = dest.join(path.as_str());
@@ -221,6 +266,20 @@ fn copy_working_file(
         .bytes_written
         .saturating_add(u64::try_from(bytes.len()).unwrap_or(u64::MAX));
     Ok(())
+}
+
+/// Physical path of `source` when it stays inside the canonical `root`.
+///
+/// `Ok(None)` means resolution left the worktree, so the caller must not read
+/// `source`. `NotFound` means the file disappeared. Any other resolution
+/// failure, including a symlink cycle, is returned.
+fn contained_physical_file(root: &Path, source: &Path) -> std::io::Result<Option<PathBuf>> {
+    let physical = fs::canonicalize(source)?;
+    if physical.starts_with(root) {
+        Ok(Some(physical))
+    } else {
+        Ok(None)
+    }
 }
 
 /// The base a working-tree comparison uses when the caller names none: the
