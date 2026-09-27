@@ -1,7 +1,6 @@
 //! Inbound reference and relation query.
 
 use std::collections::BTreeMap;
-use std::fs;
 use std::path::Path;
 
 use orbit_graph_extract::Selector;
@@ -564,9 +563,10 @@ impl<'a> LineCache<'a> {
     fn index(&mut self, file: &str) -> Result<&LineIndex, GraphError> {
         if !self.files.contains_key(file) {
             let path = super::contained_worktree_source(self.worktree_root, file)?;
-            let bytes = fs::read(path.as_path()).map_err(|source| {
-                GraphError::io("read source file for graph ref line", path, source)
-            })?;
+            let bytes = super::source::read_indexed_source(
+                path.as_path(),
+                "read source file for graph ref line",
+            )?;
             self.files.insert(file.to_string(), LineIndex::new(bytes));
         }
         self.files.get(file).ok_or_else(|| {

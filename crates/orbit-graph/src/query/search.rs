@@ -1,7 +1,5 @@
 //! Full-text search over indexed symbols, strings, and configs.
 
-use std::fs;
-
 use rusqlite::{Connection, params};
 use serde::Serialize;
 
@@ -315,9 +313,10 @@ fn materialize_match(graph: &Graph, raw: RawMatch) -> Result<Match, GraphError> 
 fn symbol_line(graph: &Graph, path: &str, span_start: i64) -> Result<usize, GraphError> {
     let span_start = i64_to_usize("convert graph search symbol span", span_start)?;
     let source_path = super::contained_worktree_source(graph.worktree_root.as_path(), path)?;
-    let bytes = fs::read(source_path.as_path()).map_err(|source| {
-        GraphError::io("read source file for graph search", source_path, source)
-    })?;
+    let bytes = super::source::read_indexed_source(
+        source_path.as_path(),
+        "read source file for graph search",
+    )?;
     if span_start > bytes.len() {
         return Err(GraphError::invalid_data(
             "read source line for graph search",
