@@ -25,6 +25,10 @@
       "description": "Canonical path of the routed repository.",
       "type": "string"
     },
+    "branch": {
+      "description": "history_sync, import and orbit_sync: the landing branch the call worked on, which is the request's branch, else the plugin's configured branch, else main. Absent for graph_sync.",
+      "type": "string"
+    },
     "authority": {
       "description": "orbit_sync: the workspace and public interfaces the adapter used.",
       "type": "object"

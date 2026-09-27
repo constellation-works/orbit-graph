@@ -1,121 +1,2409 @@
-schemaVersion: 2
+# Generated from ../plugin.yaml; do not edit. Regenerate with
+# UPDATE_GOLDENS=1 cargo test -p orbit-graph-cli --test plugin_contract --locked
 kind: Plugin
 metadata:
-  name: graph
-  version: 0.10.0
   description: Leakage-safe file and symbol recommendations from verified change history.
-  publisher: constellation-works
-  origin: orbit
   homepage: https://github.com/constellation-works/orbit-graph
+  name: graph
+  origin: orbit
+  publisher: constellation-works
+  version: 0.10.0
+schemaVersion: 2
 spec:
-  requires:
-    orbit: ">=0.23.0 <1.0.0"
-    host_api: 1
-    platforms: [linux, macos]
-    programs: [git, orbit]
   backend:
-    type: exec
+    args: [--allow-unbound-backend]
     command: bin/orbit-graph
-    timeout_ms: 120000
     sandbox: default
+    timeout_ms: 120000
+    type: exec
   permissions:
     fs:
-      read: ["{{workspace}}"]
-      write: ["{{workspace}}/.orbit-graph", "{{plugin_state}}"]
+      read:
+      - '{{workspace}}'
+      write:
+      - '{{workspace}}/.orbit-graph'
+      - '{{plugin_state}}'
     network: none
     orbit_tools:
-      - orbit.task.show
-      - orbit.search
-      - orbit.workspace.list
-      - orbit.workflow.run.show
+    - orbit.task.show
+    - orbit.search
+    - orbit.workspace.list
+    - orbit.workflow.run.show
+  requires:
+    host_api: 1
+    orbit: '>=0.23.0 <1.0.0'
+    platforms:
+    - linux
+    - macos
+    programs:
+    - git
+    - orbit
+  skills:
+  - skills/orbit-graph
+  tests:
+  - tests/conformance/*.yaml
   tools:
-    - name: version
-      description: Report deterministic crate and index contract versions.
-      execution_kind: read_only
-      mcp_scope: workspace
-      input_schema:
-        type: object
-        properties: {}
-        additionalProperties: false
-      output_schema:
-        type: object
-        additionalProperties: false
-        required:
-          - crate_version
+  - description: Report deterministic crate and index contract versions.
+    execution_kind: read_only
+    input_schema:
+      additionalProperties: false
+      properties: {}
+      type: object
+    mcp_scope: workspace
+    name: version
+    output_schema:
+      additionalProperties: false
+      properties:
+        crate_version:
+          description: orbit-graph crate version that served the request; equals the plugin's metadata.version.
+          type: string
+        extractor_version:
+          description: Code-graph extractor version; an index built by another version is not reused.
+          type: integer
+        history_schema_version:
+          description: SQLite schema version of the change-history index.
+          type: integer
+        plugin_schema_version:
+          description: Version of the plugin request/response contract; requests must send the same schema_version.
+          type: integer
+        store_schema_version:
+          description: SQLite schema version of the code-graph index.
+          type: integer
+      required:
+      - crate_version
+      - extractor_version
+      - store_schema_version
+      - history_schema_version
+      - plugin_schema_version
+      type: object
+  - description: Report recommendation-history freshness and index versions.
+    execution_kind: read_only
+    input_schema:
+      additionalProperties: false
+      properties:
+        branch:
+          description: Landing branch whose history scope is reported; when omitted, the plugin's configured branch (default main).
+          minLength: 1
+          type: string
+        repository:
+          description: Absolute path of the Git repository to inspect. Defaults to the caller's workspace root; never inferred from the tool cwd.
+          minLength: 1
+          type: string
+        schema_version:
+          const: 1
+          description: Request contract version; must be 1 when present. An omitted version is read as version 1, the only one there has been.
+          type: integer
+      type: object
+    mcp_scope: workspace
+    name: status
+    output_schema:
+      additionalProperties: false
+      properties:
+        code_index:
+          additionalProperties: false
+          description: 'Present when the tool runs under Orbit (ORBIT_PLUGIN_STATE set): the plugin-owned code-graph index that combined and graph-only recommendations read structure from. Maintained by graph_sync.'
+          properties:
+            checkout_revision:
+              description: Current checkout commit, or null when HEAD is unborn or unreadable.
+              type:
+              - string
+              - 'null'
+            directory:
+              description: Plugin state directory that holds this repository's code-graph index.
+              type: string
+            fresh:
+              description: True when a ready index was built at checkout_revision, so recommendations for the checkout apply structure; false means graph_sync should run.
+              type: boolean
+            published:
+              additionalProperties: false
+              description: Metadata of the published generation (present unless state is missing).
+              properties:
+                database:
+                  description: Generation database file name inside the plugin state directory.
+                  type: string
+                extractor_version:
+                  description: Extractor version that built the index.
+                  type: integer
+                files:
+                  description: Files in the index.
+                  type: integer
+                mode:
+                  description: full when every file was extracted, incremental when the build started from the previous published index.
+                  enum:
+                  - full
+                  - incremental
+                  type: string
+                revision:
+                  description: Checkout commit when the build started; null on an unborn branch.
+                  type:
+                  - string
+                  - 'null'
+                store_schema_version:
+                  description: Graph store schema version that built the index.
+                  type: integer
+                synced_at:
+                  description: Build completion time (RFC 3339, UTC).
+                  type: string
+                worktree_dirty:
+                  description: Whether tracked or untracked (non-ignored) files differed from revision when the build started; the index reflects the working tree.
+                  type: boolean
+              required:
+              - database
+              - extractor_version
+              - store_schema_version
+              - revision
+              - worktree_dirty
+              - synced_at
+              - mode
+              - files
+              type: object
+            state:
+              description: 'missing: nothing published yet (run graph_sync); incompatible: built by another extractor or schema (run graph_sync with full: true); ready: a complete index is published.'
+              enum:
+              - missing
+              - incompatible
+              - ready
+              type: string
+          required:
+          - state
+          - directory
+          - checkout_revision
+          - fresh
+          type: object
+        operation:
+          const: status
+          description: Always "status".
+          type: string
+        repository:
+          description: Canonical path of the routed repository.
+          type: string
+        schema_version:
+          const: 1
+          description: Response contract version.
+          type: integer
+        status:
+          additionalProperties: false
+          description: Change-history index state for the requested landing branch.
+          properties:
+            bootstrap_resume_from:
+              description: Oldest not-yet-visited commit the next bounded history_sync resumes from, or null.
+              type:
+              - string
+              - 'null'
+            bootstrap_tip:
+              description: Frozen tip of an in-progress bounded bootstrap, or null.
+              type:
+              - string
+              - 'null'
+            complete:
+              description: False while only a newest-first suffix of the frozen first-parent history is indexed.
+              type: boolean
+            cursor:
+              description: Last landing-branch tip indexed atomically, or null before the first complete sync.
+              type:
+              - string
+              - 'null'
+            database_path:
+              description: Path of the rebuildable change-history SQLite database.
+              type: string
+            deliveries:
+              description: Delivery rows in this scope.
+              type: integer
+            extractor_version:
+              description: Active historical change-extractor version.
+              type: integer
+            git_only_deliveries:
+              description: Deliveries inferred only from first-parent Git history.
+              type: integer
+            landing_branch:
+              description: First-parent landing branch scope.
+              type: string
+            repository:
+              description: Stable repository identity recorded in the index.
+              type: string
+            schema_version:
+              description: Active change-history schema version.
+              type: integer
+            task_associations:
+              description: Task memberships across deliveries; one delivery may associate several tasks.
+              type: integer
+            verified_deliveries:
+              description: Deliveries backed by verified public delivery evidence.
+              type: integer
+          required:
+          - repository
+          - landing_branch
+          - database_path
+          - schema_version
           - extractor_version
-          - store_schema_version
-          - history_schema_version
-          - plugin_schema_version
-        properties:
-          crate_version: {type: string}
-          extractor_version: {type: integer}
-          store_schema_version: {type: integer}
-          history_schema_version: {type: integer}
-          plugin_schema_version: {type: integer}
-    - name: status
-      description: Report recommendation-history freshness and index versions.
-      execution_kind: read_only
-      mcp_scope: workspace
-      input_schema:
-        type: object
-        properties:
-          schema_version: {type: integer}
-          repository: {type: string}
-          branch: {type: string}
-        additionalProperties: false
-      output_schema: {type: object}
-    - name: recommend
-      description: Recommend repository files or symbols from verified change history.
-      execution_kind: read_only
-      mcp_scope: workspace
-      input_schema:
-        type: object
-        properties:
-          schema_version: {type: integer}
-          repository: {type: string}
-          branch: {type: string}
-          workspace: {type: string}
-          query: {type: string}
-          task_id: {type: string}
-          task_snapshot: {type: object}
-          level: {type: string}
-          limit: {type: integer}
-          revision: {type: string}
-          cutoff: {type: string}
-          hybrid: {type: boolean}
-          hybrid_limit: {type: integer}
-          hybrid_hits: {type: array}
-        additionalProperties: false
-      output_schema: {type: object}
-      cli:
-        positional: [query]
-    - name: maintain
-      description: Import or synchronize bounded verified change history, or refresh the code-graph index.
-      execution_kind: mutating
-      mcp_scope: workspace
-      input_schema:
-        type: object
-        required: [operation]
-        properties:
-          schema_version: {type: integer}
-          operation: {type: string}
-          repository: {type: string}
-          branch: {type: string}
-          limit: {type: integer}
-          delivery: {type: object}
-          workspace: {type: string}
-          task_ids: {type: array, items: {type: string}}
-          run_ids: {type: array, items: {type: string}}
-          task_snapshots: {type: array}
-          full: {type: boolean}
-          budget_ms: {type: integer}
-        additionalProperties: false
-      output_schema: {type: object}
+          - complete
+          - deliveries
+          - verified_deliveries
+          - git_only_deliveries
+          - task_associations
+          type: object
+      required:
+      - schema_version
+      - operation
+      - repository
+      - status
+      type: object
+  - cli:
+      positional:
+      - query
+    description: Recommend repository files or symbols from verified change history.
+    execution_kind: read_only
+    input_schema:
+      additionalProperties: false
+      not:
+        required:
+        - query
+        - task_id
+      properties:
+        branch:
+          description: Landing branch whose verified history supplies evidence; when omitted, the plugin's configured branch (default main).
+          minLength: 1
+          type: string
+        cutoff:
+          description: 'Timestamp (RFC 3339 with an offset, or unix:<seconds>) for strict historical replay: only evidence and task text attested before it are used.'
+          minLength: 1
+          type: string
+        hybrid:
+          default: false
+          description: Also rank similar tasks through the public orbit.search tool; failures fall back to local lexical ranking and are named in adapter.warnings.
+          type: boolean
+        hybrid_hits:
+          description: Pre-ranked task hits to merge instead of, or in addition to, a live orbit.search call.
+          items:
+            additionalProperties: false
+            properties:
+              score:
+                description: Non-negative relevance score of the hit.
+                minimum: 0
+                type: number
+              task_id:
+                description: Task id of one ranked hit.
+                minLength: 1
+                type: string
+            required:
+            - task_id
+            - score
+            type: object
+          type: array
+        hybrid_limit:
+          default: 20
+          description: 'Maximum orbit.search hits requested; applies only with hybrid: true and is refused otherwise.'
+          maximum: 100
+          minimum: 1
+          type: integer
+        level:
+          default: file
+          description: 'Result granularity: file for a change surface, symbol for implementation navigation.'
+          enum:
+          - file
+          - symbol
+          type: string
+        limit:
+          description: Maximum recommendations returned.
+          maximum: 100
+          minimum: 1
+          type: integer
+        query:
+          description: Free-text change description. Send exactly one of query or task_id.
+          minLength: 1
+          type: string
+        repository:
+          description: Absolute path of the Git repository to rank. Defaults to the caller's workspace root; never inferred from the tool cwd.
+          minLength: 1
+          type: string
+        revision:
+          description: Target commit or ref to rank against; defaults to the checkout HEAD.
+          minLength: 1
+          type: string
+        schema_version:
+          const: 1
+          description: Request contract version; must be 1 when present. An omitted version is read as version 1, the only one there has been.
+          type: integer
+        task_id:
+          description: Orbit task id whose public text is the query. Send exactly one of query or task_id.
+          minLength: 1
+          type: string
+        task_snapshot:
+          description: Earlier public task snapshot to use instead of a live orbit.task.show observation; required for strict replay without task callbacks.
+          type: object
+        workspace:
+          description: Owning Orbit workspace (ws_* id or name). Required for task_id lookup and hybrid search.
+          minLength: 1
+          type: string
+      type: object
+    mcp_scope: workspace
+    name: recommend
+    output_schema:
+      additionalProperties: false
+      properties:
+        adapter:
+          additionalProperties: false
+          description: How the Orbit adapter obtained task text and search hits.
+          properties:
+            hybrid_search:
+              description: Source of task-similarity hits, such as local_lexical or orbit.search_hybrid.
+              type: string
+            task_text:
+              description: Source of the ranked text, such as request_query or orbit.task.show_public_observation.
+              type: string
+            warnings:
+              description: Degradations the adapter applied, such as a lexical fallback after an orbit.search failure.
+              items:
+                type: string
+              type: array
+            workspace:
+              description: Workspace the request named, or null.
+              type:
+              - string
+              - 'null'
+          required:
+          - workspace
+          - task_text
+          - hybrid_search
+          - warnings
+          type: object
+        operation:
+          const: recommend
+          description: Always "recommend".
+          type: string
+        repository:
+          description: Canonical path of the routed repository.
+          type: string
+        result:
+          additionalProperties: false
+          description: Ranked recommendations with their evidence and freshness.
+          properties:
+            effective_cutoff:
+              description: Explicit cutoff, or the request observation time when none was sent.
+              type: string
+            fallbacks:
+              description: 'Evidence limitations and fallbacks applied to this response, each with a kind and an actionable reason. Structure kinds under Orbit: structure_index_missing (run graph_sync), structure_index_incompatible (run graph_sync with full: true), structure_index_stale (index built at another revision; run graph_sync), structure_unavailable_for_revision (target is not the checkout), structure_unavailable (no usable structural neighbors).'
+              items:
+                type: object
+              type: array
+            input:
+              description: 'Echo of the intent: the query or the task id.'
+              type: object
+            level:
+              description: Granularity of the recommendations.
+              enum:
+              - file
+              - symbol
+              type: string
+            recommendations:
+              description: Ranked destinations with scores, reasons, and supporting task and delivery ids.
+              items:
+                type: object
+              type: array
+            resolved_target_revision:
+              description: Full commit id the recommendations were resolved against.
+              type: string
+            source_freshness:
+              description: Freshness of the history evidence relative to the target revision.
+              type: object
+            structure_applied:
+              description: Whether code-graph structural evidence contributed to the ranking.
+              type: boolean
+            total:
+              description: Number of ranked destinations before limit was applied; null when unknown.
+              type:
+              - integer
+              - 'null'
+            truncated:
+              description: True when total exceeds the recommendations returned.
+              type: boolean
+            variant:
+              description: Ranking strategy applied; the plugin always uses the combined variant.
+              type: string
+          required:
+          - input
+          - level
+          - variant
+          - resolved_target_revision
+          - effective_cutoff
+          - source_freshness
+          - structure_applied
+          - fallbacks
+          - recommendations
+          type: object
+        schema_version:
+          const: 1
+          description: Response contract version.
+          type: integer
+      required:
+      - schema_version
+      - operation
+      - repository
+      - adapter
+      - result
+      type: object
+  - description: Import or synchronize bounded verified change history, or refresh the code-graph index.
+    execution_kind: mutating
+    input_schema:
+      additionalProperties: false
+      properties:
+        branch:
+          description: Landing branch whose history scope is maintained. Read by history_sync, import and orbit_sync; when omitted, the plugin's configured branch (default main). Refused for graph_sync.
+          minLength: 1
+          type: string
+        budget_ms:
+          description: 'graph_sync only: wall-clock budget in milliseconds (1000-110000; 90000 when omitted), kept under the plugin''s 120 s backend timeout. A build that does not finish is discarded and reported as budget_exhausted. Refused for every other operation.'
+          maximum: 110000
+          minimum: 1000
+          type: integer
+        delivery:
+          description: DeliveryImport v2 envelope; required for operation=import and refused for every other operation.
+          type: object
+        full:
+          default: false
+          description: 'graph_sync only: re-extract every file instead of starting from the published index. Needed after an incompatible index or to rebuild from scratch. Refused for every other operation.'
+          type: boolean
+        limit:
+          description: 'Per-call bound: commits for history_sync (1-1000, default 100) or runs for orbit_sync (1-100, default 25). Refused for import and graph_sync.'
+          maximum: 1000
+          minimum: 1
+          type: integer
+        operation:
+          description: history_sync indexes bounded first-parent Git history; import stores one DeliveryImport v2 envelope; orbit_sync imports deliveries for explicit run or task ids through public Orbit tools; graph_sync builds the code-graph index recommendations read structure from, within budget_ms, and publishes it only when complete.
+          enum:
+          - history_sync
+          - import
+          - orbit_sync
+          - graph_sync
+          type: string
+        repository:
+          description: Absolute path of the Git repository to maintain. Defaults to the caller's workspace root; never inferred from the tool cwd.
+          minLength: 1
+          type: string
+        run_ids:
+          description: 'orbit_sync only: explicit workflow run ids to import. Refused for every other operation.'
+          items:
+            minLength: 1
+            type: string
+          type: array
+        schema_version:
+          const: 1
+          description: Request contract version; must be 1 when present. An omitted version is read as version 1, the only one there has been.
+          type: integer
+        task_ids:
+          description: 'orbit_sync only: tasks whose current job_run_id is examined. Refused for every other operation.'
+          items:
+            minLength: 1
+            type: string
+          type: array
+        task_snapshots:
+          description: 'orbit_sync only: earlier public task snapshots used instead of live task text. Refused for every other operation.'
+          items:
+            type: object
+          type: array
+        workspace:
+          description: Owning Orbit workspace (ws_* id or name); required for orbit_sync and refused for every other operation.
+          minLength: 1
+          type: string
+      required:
+      - operation
+      type: object
+    mcp_scope: workspace
+    name: maintain
+    output_schema:
+      additionalProperties: false
+      properties:
+        authority:
+          description: 'orbit_sync: the workspace and public interfaces the adapter used.'
+          type: object
+        branch:
+          description: 'history_sync, import and orbit_sync: the landing branch the call worked on, which is the request''s branch, else the plugin''s configured branch, else main. Absent for graph_sync.'
+          type: string
+        code_index:
+          additionalProperties: false
+          description: The plugin-owned code-graph index that combined and graph-only recommendations read structure from. Maintained by graph_sync.
+          properties:
+            checkout_revision:
+              description: Current checkout commit, or null when HEAD is unborn or unreadable.
+              type:
+              - string
+              - 'null'
+            directory:
+              description: Plugin state directory that holds this repository's code-graph index.
+              type: string
+            fresh:
+              description: True when a ready index was built at checkout_revision, so recommendations for the checkout apply structure; false means graph_sync should run.
+              type: boolean
+            published:
+              additionalProperties: false
+              description: Metadata of the published generation (present unless state is missing).
+              properties:
+                database:
+                  description: Generation database file name inside the plugin state directory.
+                  type: string
+                extractor_version:
+                  description: Extractor version that built the index.
+                  type: integer
+                files:
+                  description: Files in the index.
+                  type: integer
+                mode:
+                  description: full when every file was extracted, incremental when the build started from the previous published index.
+                  enum:
+                  - full
+                  - incremental
+                  type: string
+                revision:
+                  description: Checkout commit when the build started; null on an unborn branch.
+                  type:
+                  - string
+                  - 'null'
+                store_schema_version:
+                  description: Graph store schema version that built the index.
+                  type: integer
+                synced_at:
+                  description: Build completion time (RFC 3339, UTC).
+                  type: string
+                worktree_dirty:
+                  description: Whether tracked or untracked (non-ignored) files differed from revision when the build started; the index reflects the working tree.
+                  type: boolean
+              required:
+              - database
+              - extractor_version
+              - store_schema_version
+              - revision
+              - worktree_dirty
+              - synced_at
+              - mode
+              - files
+              type: object
+            state:
+              description: 'missing: nothing published yet (run graph_sync); incompatible: built by another extractor or schema (run graph_sync with full: true); ready: a complete index is published.'
+              enum:
+              - missing
+              - incompatible
+              - ready
+              type: string
+          required:
+          - state
+          - directory
+          - checkout_revision
+          - fresh
+          type: object
+        coverage:
+          description: 'What this call covered and how to resume a partial result. graph_sync: complete, state (published or budget_exhausted), phase reached when the budget ran out, and a resume hint.'
+          type: object
+        operation:
+          description: The maintenance operation that ran.
+          enum:
+          - history_sync
+          - import
+          - orbit_sync
+          - graph_sync
+          type: string
+        outcomes:
+          description: 'orbit_sync: per-run outcome (inserted, already_indexed, or excluded with a reason).'
+          items:
+            type: object
+          type: array
+        repository:
+          description: Canonical path of the routed repository.
+          type: string
+        result:
+          description: 'Operation report: the history sync or import outcome, or for graph_sync the requested mode, budget, file counts, per-phase timings, and the failed and skipped paths (each a count and its entries, as in the CLI sync output; null when the budget ran out before the build reported them).'
+          type: object
+        schema_version:
+          const: 1
+          description: Response contract version.
+          type: integer
+        status:
+          description: 'orbit_sync: change-history status after the call.'
+          type: object
+      required:
+      - schema_version
+      - operation
+      - repository
+      type: object
+  - cli:
+      positional:
+      - query
+    description: Full-text search over indexed symbols, string literals, and config keys. Reads the index graph_sync publishes.
+    execution_kind: read_only
+    input_schema:
+      additionalProperties: false
+      properties:
+        kind:
+          description: Restrict matches to one kind.
+          enum:
+          - symbol
+          - string
+          - config
+          type: string
+        lang:
+          description: Restrict matches to files of this language, as overview reports it (for example rust, python).
+          minLength: 1
+          type: string
+        limit:
+          default: 20
+          description: Maximum matches; 1-500, default 20. When more match, truncation.matches reports total_at_least.
+          maximum: 500
+          minimum: 1
+          type: integer
+        query:
+          description: Search text (SQLite FTS5 syntax); must not be blank.
+          minLength: 1
+          type: string
+        repository:
+          description: Absolute path of the Git repository to query. Defaults to the caller's workspace root; never inferred from the tool cwd.
+          minLength: 1
+          type: string
+        schema_version:
+          const: 1
+          description: Request contract version; must be 1 when present. An omitted version is read as version 1, the only one there has been.
+          type: integer
+      required:
+      - query
+      type: object
+    mcp_scope: workspace
+    name: search
+    output_schema:
+      additionalProperties: false
+      properties:
+        index:
+          additionalProperties: false
+          description: The published code-graph index that answered.
+          properties:
+            checkout_revision:
+              description: Current checkout commit; null when HEAD is unborn or unreadable.
+              type:
+              - string
+              - 'null'
+            files:
+              description: Files in the index.
+              type: integer
+            fresh:
+              description: True when the index was built at checkout_revision. When false, results describe older code and stale names the fix.
+              type: boolean
+            revision:
+              description: Commit the index was built at; null on an unborn branch.
+              type:
+              - string
+              - 'null'
+            stale:
+              additionalProperties: false
+              description: 'Present when fresh is false: why, and the call that refreshes the index.'
+              properties:
+                fix:
+                  additionalProperties: false
+                  description: The maintenance call to run, then retry the query.
+                  properties:
+                    input:
+                      description: 'Its input: {"operation":"graph_sync"}.'
+                      type: object
+                    tool:
+                      description: 'Tool to call: orbit.graph.maintain, or graph.maintain for a non-first-party install.'
+                      type: string
+                  required:
+                  - tool
+                  - input
+                  type: object
+                reason:
+                  description: Which revisions differ.
+                  type: string
+              required:
+              - reason
+              - fix
+              type: object
+            synced_at:
+              description: When the index was published (RFC 3339, UTC).
+              type: string
+            worktree_dirty:
+              description: Whether uncommitted changes were indexed along with revision.
+              type: boolean
+          required:
+          - revision
+          - checkout_revision
+          - fresh
+          - worktree_dirty
+          - synced_at
+          - files
+          type: object
+        operation:
+          const: search
+          description: Always "search".
+          type: string
+        repository:
+          description: Canonical path of the routed repository.
+          type: string
+        result:
+          description: 'The orbit-graph library result, passed through unshaped (it may gain fields): SearchResult: matches (symbol, string, and config hits with path and line).'
+          type: object
+        schema_version:
+          const: 1
+          description: Response contract version.
+          type: integer
+        truncated:
+          description: True when any result array, at any depth, was cut to limit or to fit the 256 KiB response ceiling (limit is halved until the result fits).
+          type: boolean
+        truncation:
+          additionalProperties:
+            additionalProperties: false
+            properties:
+              returned:
+                description: Entries returned.
+                type: integer
+              total:
+                description: Entries before the cut.
+                type: integer
+              total_at_least:
+                description: Lower bound on entries before the cut, when counting them all was not needed.
+                type: integer
+            required:
+            - returned
+            type: object
+          description: 'Present only when truncated is true. Keyed by field path, with [] for each entry of an array (files[].symbols, fallback.touched): {returned, total}, where a nested path sums over the returned parent entries. matches reports total_at_least instead of total when more matches exist than limit.'
+          type: object
+      required:
+      - schema_version
+      - operation
+      - repository
+      - index
+      - result
+      - truncated
+      type: object
+  - cli:
+      positional:
+      - selector
+    description: Show one node's metadata and a bounded slice of its source. Reads the index graph_sync publishes.
+    execution_kind: read_only
+    input_schema:
+      additionalProperties: false
+      properties:
+        max_bytes:
+          default: 16384
+          description: Maximum source bytes returned; 1-65536, default 16384. metadata.truncated reports a cut.
+          maximum: 65536
+          minimum: 1
+          type: integer
+        repository:
+          description: Absolute path of the Git repository to query. Defaults to the caller's workspace root; never inferred from the tool cwd.
+          minLength: 1
+          type: string
+        schema_version:
+          const: 1
+          description: Request contract version; must be 1 when present. An omitted version is read as version 1, the only one there has been.
+          type: integer
+        selector:
+          description: 'Selector of the node to query, as search and other results print it: symbol:<path>#<qualified>:<kind>, file:<path>, or dir:<path>.'
+          minLength: 1
+          type: string
+      required:
+      - selector
+      type: object
+    mcp_scope: workspace
+    name: show
+    output_schema:
+      additionalProperties: false
+      properties:
+        index:
+          additionalProperties: false
+          description: The published code-graph index that answered.
+          properties:
+            checkout_revision:
+              description: Current checkout commit; null when HEAD is unborn or unreadable.
+              type:
+              - string
+              - 'null'
+            files:
+              description: Files in the index.
+              type: integer
+            fresh:
+              description: True when the index was built at checkout_revision. When false, results describe older code and stale names the fix.
+              type: boolean
+            revision:
+              description: Commit the index was built at; null on an unborn branch.
+              type:
+              - string
+              - 'null'
+            stale:
+              additionalProperties: false
+              description: 'Present when fresh is false: why, and the call that refreshes the index.'
+              properties:
+                fix:
+                  additionalProperties: false
+                  description: The maintenance call to run, then retry the query.
+                  properties:
+                    input:
+                      description: 'Its input: {"operation":"graph_sync"}.'
+                      type: object
+                    tool:
+                      description: 'Tool to call: orbit.graph.maintain, or graph.maintain for a non-first-party install.'
+                      type: string
+                  required:
+                  - tool
+                  - input
+                  type: object
+                reason:
+                  description: Which revisions differ.
+                  type: string
+              required:
+              - reason
+              - fix
+              type: object
+            synced_at:
+              description: When the index was published (RFC 3339, UTC).
+              type: string
+            worktree_dirty:
+              description: Whether uncommitted changes were indexed along with revision.
+              type: boolean
+          required:
+          - revision
+          - checkout_revision
+          - fresh
+          - worktree_dirty
+          - synced_at
+          - files
+          type: object
+        operation:
+          const: show
+          description: Always "show".
+          type: string
+        repository:
+          description: Canonical path of the routed repository.
+          type: string
+        result:
+          description: 'The orbit-graph library result, passed through unshaped (it may gain fields): NodeView: metadata and source bytes; null when the selector names nothing in the index.'
+          type:
+          - object
+          - 'null'
+        schema_version:
+          const: 1
+          description: Response contract version.
+          type: integer
+        truncated:
+          description: 'Always false: max_bytes bounds show, and metadata.truncated reports a source cut.'
+          type: boolean
+        truncation:
+          description: Never present for show.
+          type: object
+      required:
+      - schema_version
+      - operation
+      - repository
+      - index
+      - result
+      - truncated
+      type: object
+  - cli:
+      positional:
+      - selector
+    description: Inbound references and structural relations of a symbol. Reads the index graph_sync publishes.
+    execution_kind: read_only
+    input_schema:
+      additionalProperties: false
+      properties:
+        confidence:
+          default: same_module
+          description: 'Minimum resolution confidence: exact, import_resolved, same_module, or fuzzy_name (name-only matches, which include cross-crate callers through re-exports). Default same_module; when nothing meets it, fuzzy_name matches are returned under fallback.'
+          enum:
+          - exact
+          - import_resolved
+          - same_module
+          - fuzzy_name
+          type: string
+        kind:
+          description: Restrict to one reference or relation kind.
+          enum:
+          - call
+          - type
+          - use
+          - trait_bound
+          - impl
+          - extends
+          - implements
+          type: string
+        limit:
+          default: 50
+          description: Cap on each result array, nested ones included (refs, relations and the lists inside their entries); 1-500, default 50. Cut arrays are reported in truncation.
+          maximum: 500
+          minimum: 1
+          type: integer
+        repository:
+          description: Absolute path of the Git repository to query. Defaults to the caller's workspace root; never inferred from the tool cwd.
+          minLength: 1
+          type: string
+        schema_version:
+          const: 1
+          description: Request contract version; must be 1 when present. An omitted version is read as version 1, the only one there has been.
+          type: integer
+        selector:
+          description: 'Selector of the node to query, as search and other results print it: symbol:<path>#<qualified>:<kind>, file:<path>, or dir:<path>.'
+          minLength: 1
+          type: string
+      required:
+      - selector
+      type: object
+    mcp_scope: workspace
+    name: refs
+    output_schema:
+      additionalProperties: false
+      properties:
+        index:
+          additionalProperties: false
+          description: The published code-graph index that answered.
+          properties:
+            checkout_revision:
+              description: Current checkout commit; null when HEAD is unborn or unreadable.
+              type:
+              - string
+              - 'null'
+            files:
+              description: Files in the index.
+              type: integer
+            fresh:
+              description: True when the index was built at checkout_revision. When false, results describe older code and stale names the fix.
+              type: boolean
+            revision:
+              description: Commit the index was built at; null on an unborn branch.
+              type:
+              - string
+              - 'null'
+            stale:
+              additionalProperties: false
+              description: 'Present when fresh is false: why, and the call that refreshes the index.'
+              properties:
+                fix:
+                  additionalProperties: false
+                  description: The maintenance call to run, then retry the query.
+                  properties:
+                    input:
+                      description: 'Its input: {"operation":"graph_sync"}.'
+                      type: object
+                    tool:
+                      description: 'Tool to call: orbit.graph.maintain, or graph.maintain for a non-first-party install.'
+                      type: string
+                  required:
+                  - tool
+                  - input
+                  type: object
+                reason:
+                  description: Which revisions differ.
+                  type: string
+              required:
+              - reason
+              - fix
+              type: object
+            synced_at:
+              description: When the index was published (RFC 3339, UTC).
+              type: string
+            worktree_dirty:
+              description: Whether uncommitted changes were indexed along with revision.
+              type: boolean
+          required:
+          - revision
+          - checkout_revision
+          - fresh
+          - worktree_dirty
+          - synced_at
+          - files
+          type: object
+        operation:
+          const: refs
+          description: Always "refs".
+          type: string
+        repository:
+          description: Canonical path of the routed repository.
+          type: string
+        result:
+          description: 'The orbit-graph library result, passed through unshaped (it may gain fields): RefResult: target, refs, relations, skipped_low_confidence, and an optional fuzzy fallback.'
+          type: object
+        schema_version:
+          const: 1
+          description: Response contract version.
+          type: integer
+        truncated:
+          description: True when any result array, at any depth, was cut to limit or to fit the 256 KiB response ceiling (limit is halved until the result fits).
+          type: boolean
+        truncation:
+          additionalProperties:
+            additionalProperties: false
+            properties:
+              returned:
+                description: Entries returned.
+                type: integer
+              total:
+                description: Entries before the cut.
+                type: integer
+            required:
+            - returned
+            type: object
+          description: 'Present only when truncated is true. Keyed by field path, with [] for each entry of an array (files[].symbols, fallback.touched): {returned, total}, where a nested path sums over the returned parent entries.'
+          type: object
+      required:
+      - schema_version
+      - operation
+      - repository
+      - index
+      - result
+      - truncated
+      type: object
+  - cli:
+      positional:
+      - selector
+    description: Outbound call edges from a symbol. Reads the index graph_sync publishes.
+    execution_kind: read_only
+    input_schema:
+      additionalProperties: false
+      properties:
+        include_unresolved:
+          default: false
+          description: Also list unresolved calls whose name has no indexed function, method, class, or struct definition (typically standard-library or prelude calls such as map_err or Ok). By default they are omitted and counted in result.hidden_unresolved.
+          type: boolean
+        limit:
+          default: 50
+          description: Cap on each result array, nested ones included (callees and the lists inside their entries); 1-500, default 50. Cut arrays are reported in truncation.
+          maximum: 500
+          minimum: 1
+          type: integer
+        repository:
+          description: Absolute path of the Git repository to query. Defaults to the caller's workspace root; never inferred from the tool cwd.
+          minLength: 1
+          type: string
+        schema_version:
+          const: 1
+          description: Request contract version; must be 1 when present. An omitted version is read as version 1, the only one there has been.
+          type: integer
+        selector:
+          description: 'Selector of the node to query, as search and other results print it: symbol:<path>#<qualified>:<kind>, file:<path>, or dir:<path>.'
+          minLength: 1
+          type: string
+      required:
+      - selector
+      type: object
+    mcp_scope: workspace
+    name: callees
+    output_schema:
+      additionalProperties: false
+      properties:
+        index:
+          additionalProperties: false
+          description: The published code-graph index that answered.
+          properties:
+            checkout_revision:
+              description: Current checkout commit; null when HEAD is unborn or unreadable.
+              type:
+              - string
+              - 'null'
+            files:
+              description: Files in the index.
+              type: integer
+            fresh:
+              description: True when the index was built at checkout_revision. When false, results describe older code and stale names the fix.
+              type: boolean
+            revision:
+              description: Commit the index was built at; null on an unborn branch.
+              type:
+              - string
+              - 'null'
+            stale:
+              additionalProperties: false
+              description: 'Present when fresh is false: why, and the call that refreshes the index.'
+              properties:
+                fix:
+                  additionalProperties: false
+                  description: The maintenance call to run, then retry the query.
+                  properties:
+                    input:
+                      description: 'Its input: {"operation":"graph_sync"}.'
+                      type: object
+                    tool:
+                      description: 'Tool to call: orbit.graph.maintain, or graph.maintain for a non-first-party install.'
+                      type: string
+                  required:
+                  - tool
+                  - input
+                  type: object
+                reason:
+                  description: Which revisions differ.
+                  type: string
+              required:
+              - reason
+              - fix
+              type: object
+            synced_at:
+              description: When the index was published (RFC 3339, UTC).
+              type: string
+            worktree_dirty:
+              description: Whether uncommitted changes were indexed along with revision.
+              type: boolean
+          required:
+          - revision
+          - checkout_revision
+          - fresh
+          - worktree_dirty
+          - synced_at
+          - files
+          type: object
+        operation:
+          const: callees
+          description: Always "callees".
+          type: string
+        repository:
+          description: Canonical path of the routed repository.
+          type: string
+        result:
+          description: 'The orbit-graph library result, passed through unshaped (it may gain fields): CalleeReport: callees (outbound call edges with target, confidence, and line) and hidden_unresolved (unresolved edges omitted unless include_unresolved is true).'
+          type: object
+        schema_version:
+          const: 1
+          description: Response contract version.
+          type: integer
+        truncated:
+          description: True when any result array, at any depth, was cut to limit or to fit the 256 KiB response ceiling (limit is halved until the result fits).
+          type: boolean
+        truncation:
+          additionalProperties:
+            additionalProperties: false
+            properties:
+              returned:
+                description: Entries returned.
+                type: integer
+              total:
+                description: Entries before the cut.
+                type: integer
+            required:
+            - returned
+            type: object
+          description: 'Present only when truncated is true. Keyed by field path, with [] for each entry of an array (files[].symbols, fallback.touched): {returned, total}, where a nested path sums over the returned parent entries.'
+          type: object
+      required:
+      - schema_version
+      - operation
+      - repository
+      - index
+      - result
+      - truncated
+      type: object
+  - cli:
+      positional:
+      - selector
+    description: 'Bounded blast radius around a symbol: what it reaches and what reaches it. Reads the index graph_sync publishes.'
+    execution_kind: read_only
+    input_schema:
+      additionalProperties: false
+      properties:
+        confidence:
+          default: same_module
+          description: 'Minimum resolution confidence: exact, import_resolved, same_module, or fuzzy_name (name-only matches, which include cross-crate callers through re-exports). Default same_module.'
+          enum:
+          - exact
+          - import_resolved
+          - same_module
+          - fuzzy_name
+          type: string
+        depth:
+          default: 3
+          description: Traversal depth in edges; 1-10, default 3. The library also stops at 200 nodes and sets truncated.
+          maximum: 10
+          minimum: 1
+          type: integer
+        direction:
+          default: both
+          description: Traverse inbound (callers), outbound (callees), or both (default).
+          enum:
+          - both
+          - inbound
+          - outbound
+          type: string
+        limit:
+          default: 50
+          description: Cap on each result array, nested ones included (touched and the lists inside their entries); 1-500, default 50. Cut arrays are reported in truncation.
+          maximum: 500
+          minimum: 1
+          type: integer
+        repository:
+          description: Absolute path of the Git repository to query. Defaults to the caller's workspace root; never inferred from the tool cwd.
+          minLength: 1
+          type: string
+        schema_version:
+          const: 1
+          description: Request contract version; must be 1 when present. An omitted version is read as version 1, the only one there has been.
+          type: integer
+        selector:
+          description: 'Selector of the node to query, as search and other results print it: symbol:<path>#<qualified>:<kind>, file:<path>, or dir:<path>.'
+          minLength: 1
+          type: string
+      required:
+      - selector
+      type: object
+    mcp_scope: workspace
+    name: impact
+    output_schema:
+      additionalProperties: false
+      properties:
+        index:
+          additionalProperties: false
+          description: The published code-graph index that answered.
+          properties:
+            checkout_revision:
+              description: Current checkout commit; null when HEAD is unborn or unreadable.
+              type:
+              - string
+              - 'null'
+            files:
+              description: Files in the index.
+              type: integer
+            fresh:
+              description: True when the index was built at checkout_revision. When false, results describe older code and stale names the fix.
+              type: boolean
+            revision:
+              description: Commit the index was built at; null on an unborn branch.
+              type:
+              - string
+              - 'null'
+            stale:
+              additionalProperties: false
+              description: 'Present when fresh is false: why, and the call that refreshes the index.'
+              properties:
+                fix:
+                  additionalProperties: false
+                  description: The maintenance call to run, then retry the query.
+                  properties:
+                    input:
+                      description: 'Its input: {"operation":"graph_sync"}.'
+                      type: object
+                    tool:
+                      description: 'Tool to call: orbit.graph.maintain, or graph.maintain for a non-first-party install.'
+                      type: string
+                  required:
+                  - tool
+                  - input
+                  type: object
+                reason:
+                  description: Which revisions differ.
+                  type: string
+              required:
+              - reason
+              - fix
+              type: object
+            synced_at:
+              description: When the index was published (RFC 3339, UTC).
+              type: string
+            worktree_dirty:
+              description: Whether uncommitted changes were indexed along with revision.
+              type: boolean
+          required:
+          - revision
+          - checkout_revision
+          - fresh
+          - worktree_dirty
+          - synced_at
+          - files
+          type: object
+        operation:
+          const: impact
+          description: Always "impact".
+          type: string
+        repository:
+          description: Canonical path of the routed repository.
+          type: string
+        result:
+          description: 'The orbit-graph library result, passed through unshaped (it may gain fields): ImpactResult: touched entries with distance, truncated, visited_nodes, and an optional fuzzy fallback.'
+          type: object
+        schema_version:
+          const: 1
+          description: Response contract version.
+          type: integer
+        truncated:
+          description: True when any result array, at any depth, was cut to limit or to fit the 256 KiB response ceiling (limit is halved until the result fits).
+          type: boolean
+        truncation:
+          additionalProperties:
+            additionalProperties: false
+            properties:
+              returned:
+                description: Entries returned.
+                type: integer
+              total:
+                description: Entries before the cut.
+                type: integer
+            required:
+            - returned
+            type: object
+          description: 'Present only when truncated is true. Keyed by field path, with [] for each entry of an array (files[].symbols, fallback.touched): {returned, total}, where a nested path sums over the returned parent entries.'
+          type: object
+      required:
+      - schema_version
+      - operation
+      - repository
+      - index
+      - result
+      - truncated
+      type: object
+  - cli:
+      positional:
+      - command
+    description: Call tree rooted at a command handler. Reads the index graph_sync publishes.
+    execution_kind: read_only
+    input_schema:
+      additionalProperties: false
+      properties:
+        command:
+          description: 'Command name to trace, with or without a command: prefix; must not be blank.'
+          minLength: 1
+          type: string
+        confidence:
+          default: same_module
+          description: 'Minimum resolution confidence: exact, import_resolved, same_module, or fuzzy_name (name-only matches, which include cross-crate callers through re-exports). Default same_module.'
+          enum:
+          - exact
+          - import_resolved
+          - same_module
+          - fuzzy_name
+          type: string
+        depth:
+          default: 5
+          description: Traversal depth in edges; 1-10, default 5. The library also stops at 200 nodes and sets truncated.
+          maximum: 10
+          minimum: 1
+          type: integer
+        repository:
+          description: Absolute path of the Git repository to query. Defaults to the caller's workspace root; never inferred from the tool cwd.
+          minLength: 1
+          type: string
+        schema_version:
+          const: 1
+          description: Request contract version; must be 1 when present. An omitted version is read as version 1, the only one there has been.
+          type: integer
+      required:
+      - command
+      type: object
+    mcp_scope: workspace
+    name: trace
+    output_schema:
+      additionalProperties: false
+      properties:
+        index:
+          additionalProperties: false
+          description: The published code-graph index that answered.
+          properties:
+            checkout_revision:
+              description: Current checkout commit; null when HEAD is unborn or unreadable.
+              type:
+              - string
+              - 'null'
+            files:
+              description: Files in the index.
+              type: integer
+            fresh:
+              description: True when the index was built at checkout_revision. When false, results describe older code and stale names the fix.
+              type: boolean
+            revision:
+              description: Commit the index was built at; null on an unborn branch.
+              type:
+              - string
+              - 'null'
+            stale:
+              additionalProperties: false
+              description: 'Present when fresh is false: why, and the call that refreshes the index.'
+              properties:
+                fix:
+                  additionalProperties: false
+                  description: The maintenance call to run, then retry the query.
+                  properties:
+                    input:
+                      description: 'Its input: {"operation":"graph_sync"}.'
+                      type: object
+                    tool:
+                      description: 'Tool to call: orbit.graph.maintain, or graph.maintain for a non-first-party install.'
+                      type: string
+                  required:
+                  - tool
+                  - input
+                  type: object
+                reason:
+                  description: Which revisions differ.
+                  type: string
+              required:
+              - reason
+              - fix
+              type: object
+            synced_at:
+              description: When the index was published (RFC 3339, UTC).
+              type: string
+            worktree_dirty:
+              description: Whether uncommitted changes were indexed along with revision.
+              type: boolean
+          required:
+          - revision
+          - checkout_revision
+          - fresh
+          - worktree_dirty
+          - synced_at
+          - files
+          type: object
+        operation:
+          const: trace
+          description: Always "trace".
+          type: string
+        repository:
+          description: Canonical path of the routed repository.
+          type: string
+        result:
+          description: 'The orbit-graph library result, passed through unshaped (it may gain fields): TraceResult: root call tree, truncated, and visited_nodes.'
+          type: object
+        schema_version:
+          const: 1
+          description: Response contract version.
+          type: integer
+        truncated:
+          description: True when any children array in the call tree was cut to 50 entries or to fit the 256 KiB response ceiling (the cap is halved until the result fits). result.truncated separately reports the library's 200-node stop.
+          type: boolean
+        truncation:
+          additionalProperties:
+            additionalProperties: false
+            properties:
+              returned:
+                description: Entries returned.
+                type: integer
+              total:
+                description: Entries before the cut.
+                type: integer
+            required:
+            - returned
+            type: object
+          description: 'Present only when truncated is true. Keyed by field path, with [] for each entry of an array (files[].symbols, fallback.touched): {returned, total}, where a nested path sums over the returned parent entries.'
+          type: object
+      required:
+      - schema_version
+      - operation
+      - repository
+      - index
+      - result
+      - truncated
+      type: object
+  - cli:
+      positional:
+      - selector
+    description: Outbound source-level import edges of a file or directory (not Cargo crate edges). Reads the index graph_sync publishes.
+    execution_kind: read_only
+    input_schema:
+      additionalProperties: false
+      properties:
+        limit:
+          default: 50
+          description: Cap on each result array, nested ones included (imports and the lists inside their entries); 1-500, default 50. Cut arrays are reported in truncation.
+          maximum: 500
+          minimum: 1
+          type: integer
+        repository:
+          description: Absolute path of the Git repository to query. Defaults to the caller's workspace root; never inferred from the tool cwd.
+          minLength: 1
+          type: string
+        schema_version:
+          const: 1
+          description: Request contract version; must be 1 when present. An omitted version is read as version 1, the only one there has been.
+          type: integer
+        selector:
+          description: 'File or directory selector: file:<path> or dir:<path>.'
+          minLength: 1
+          type: string
+      required:
+      - selector
+      type: object
+    mcp_scope: workspace
+    name: deps
+    output_schema:
+      additionalProperties: false
+      properties:
+        index:
+          additionalProperties: false
+          description: The published code-graph index that answered.
+          properties:
+            checkout_revision:
+              description: Current checkout commit; null when HEAD is unborn or unreadable.
+              type:
+              - string
+              - 'null'
+            files:
+              description: Files in the index.
+              type: integer
+            fresh:
+              description: True when the index was built at checkout_revision. When false, results describe older code and stale names the fix.
+              type: boolean
+            revision:
+              description: Commit the index was built at; null on an unborn branch.
+              type:
+              - string
+              - 'null'
+            stale:
+              additionalProperties: false
+              description: 'Present when fresh is false: why, and the call that refreshes the index.'
+              properties:
+                fix:
+                  additionalProperties: false
+                  description: The maintenance call to run, then retry the query.
+                  properties:
+                    input:
+                      description: 'Its input: {"operation":"graph_sync"}.'
+                      type: object
+                    tool:
+                      description: 'Tool to call: orbit.graph.maintain, or graph.maintain for a non-first-party install.'
+                      type: string
+                  required:
+                  - tool
+                  - input
+                  type: object
+                reason:
+                  description: Which revisions differ.
+                  type: string
+              required:
+              - reason
+              - fix
+              type: object
+            synced_at:
+              description: When the index was published (RFC 3339, UTC).
+              type: string
+            worktree_dirty:
+              description: Whether uncommitted changes were indexed along with revision.
+              type: boolean
+          required:
+          - revision
+          - checkout_revision
+          - fresh
+          - worktree_dirty
+          - synced_at
+          - files
+          type: object
+        operation:
+          const: deps
+          description: Always "deps".
+          type: string
+        repository:
+          description: Canonical path of the routed repository.
+          type: string
+        result:
+          description: 'The orbit-graph library result, passed through unshaped (it may gain fields): DepsResult: scope and imports (from_file, target_path, optional target_symbol).'
+          type: object
+        schema_version:
+          const: 1
+          description: Response contract version.
+          type: integer
+        truncated:
+          description: True when any result array, at any depth, was cut to limit or to fit the 256 KiB response ceiling (limit is halved until the result fits).
+          type: boolean
+        truncation:
+          additionalProperties:
+            additionalProperties: false
+            properties:
+              returned:
+                description: Entries returned.
+                type: integer
+              total:
+                description: Entries before the cut.
+                type: integer
+            required:
+            - returned
+            type: object
+          description: 'Present only when truncated is true. Keyed by field path, with [] for each entry of an array (files[].symbols, fallback.touched): {returned, total}, where a nested path sums over the returned parent entries.'
+          type: object
+      required:
+      - schema_version
+      - operation
+      - repository
+      - index
+      - result
+      - truncated
+      type: object
+  - cli:
+      positional:
+      - selector
+    description: Summarize indexed files, symbols, and languages for the repository or a scope. Reads the index graph_sync publishes.
+    execution_kind: read_only
+    input_schema:
+      additionalProperties: false
+      properties:
+        format:
+          default: summary
+          description: summary (counts and the highest-symbol files, default) or full (every in-scope file with its symbols).
+          enum:
+          - summary
+          - full
+          type: string
+        limit:
+          default: 50
+          description: Cap on each result array, nested ones included (files and the lists inside their entries); 1-500, default 50. Cut arrays are reported in truncation.
+          maximum: 500
+          minimum: 1
+          type: integer
+        repository:
+          description: Absolute path of the Git repository to query. Defaults to the caller's workspace root; never inferred from the tool cwd.
+          minLength: 1
+          type: string
+        schema_version:
+          const: 1
+          description: Request contract version; must be 1 when present. An omitted version is read as version 1, the only one there has been.
+          type: integer
+        selector:
+          description: Optional dir:<path> or file:<path> scope; the whole repository when absent.
+          minLength: 1
+          type: string
+      type: object
+    mcp_scope: workspace
+    name: overview
+    output_schema:
+      additionalProperties: false
+      properties:
+        index:
+          additionalProperties: false
+          description: The published code-graph index that answered.
+          properties:
+            checkout_revision:
+              description: Current checkout commit; null when HEAD is unborn or unreadable.
+              type:
+              - string
+              - 'null'
+            files:
+              description: Files in the index.
+              type: integer
+            fresh:
+              description: True when the index was built at checkout_revision. When false, results describe older code and stale names the fix.
+              type: boolean
+            revision:
+              description: Commit the index was built at; null on an unborn branch.
+              type:
+              - string
+              - 'null'
+            stale:
+              additionalProperties: false
+              description: 'Present when fresh is false: why, and the call that refreshes the index.'
+              properties:
+                fix:
+                  additionalProperties: false
+                  description: The maintenance call to run, then retry the query.
+                  properties:
+                    input:
+                      description: 'Its input: {"operation":"graph_sync"}.'
+                      type: object
+                    tool:
+                      description: 'Tool to call: orbit.graph.maintain, or graph.maintain for a non-first-party install.'
+                      type: string
+                  required:
+                  - tool
+                  - input
+                  type: object
+                reason:
+                  description: Which revisions differ.
+                  type: string
+              required:
+              - reason
+              - fix
+              type: object
+            synced_at:
+              description: When the index was published (RFC 3339, UTC).
+              type: string
+            worktree_dirty:
+              description: Whether uncommitted changes were indexed along with revision.
+              type: boolean
+          required:
+          - revision
+          - checkout_revision
+          - fresh
+          - worktree_dirty
+          - synced_at
+          - files
+          type: object
+        operation:
+          const: overview
+          description: Always "overview".
+          type: string
+        repository:
+          description: Canonical path of the routed repository.
+          type: string
+        result:
+          description: 'The orbit-graph library result, passed through unshaped (it may gain fields): OverviewResult: format, scope, total_files, total_symbols, languages, symbol_kinds, and files.'
+          type: object
+        schema_version:
+          const: 1
+          description: Response contract version.
+          type: integer
+        truncated:
+          description: True when any result array, at any depth, was cut to limit or to fit the 256 KiB response ceiling (limit is halved until the result fits).
+          type: boolean
+        truncation:
+          additionalProperties:
+            additionalProperties: false
+            properties:
+              returned:
+                description: Entries returned.
+                type: integer
+              total:
+                description: Entries before the cut.
+                type: integer
+            required:
+            - returned
+            type: object
+          description: 'Present only when truncated is true. Keyed by field path, with [] for each entry of an array (files[].symbols, fallback.touched): {returned, total}, where a nested path sums over the returned parent entries.'
+          type: object
+      required:
+      - schema_version
+      - operation
+      - repository
+      - index
+      - result
+      - truncated
+      type: object
+  - description: Changed symbols between two revisions or in the working tree, with labelled callers, entry points, and candidate tests. Call after implementing, before review, and to pick tests. Indexes both sides itself (about 12 s cold, cached under plugin state) within budget_ms.
+    execution_kind: read_only
+    input_schema:
+      additionalProperties: false
+      properties:
+        base:
+          description: 'Base revision (branch, tag, or commit). Omitted: the merge base of HEAD and the branch the work lands on (its upstream, else origin/HEAD, else main, else master); the choice is reported in result.default_base. Nothing is fetched.'
+          minLength: 1
+          type: string
+        budget_ms:
+          default: 90000
+          description: 'Wall-clock budget for the whole call, indexing included, in milliseconds; 1000-110000, default 90000, below the 120 s tool timeout. When it runs out the call returns complete: false with the reason instead of hanging.'
+          maximum: 110000
+          minimum: 1000
+          type: integer
+        confidence:
+          default: same_module
+          description: 'Minimum resolution confidence of every hop: exact, import_resolved, same_module, or fuzzy_name (name-only matches). Default same_module.'
+          enum:
+          - exact
+          - import_resolved
+          - same_module
+          - fuzzy_name
+          type: string
+        depth:
+          default: 3
+          description: Maximum hops from a changed symbol to a caller or entry point; 1-10, default 3.
+          maximum: 10
+          minimum: 1
+          type: integer
+        head:
+          description: 'Head revision. Omitted: the working tree, including staged, unstaged, and untracked (not ignored) files, which is never cached. Requires base.'
+          minLength: 1
+          type: string
+        language:
+          description: Keep only changed symbols whose file is in this language (for example rust).
+          minLength: 1
+          type: string
+        max_callers:
+          default: 5
+          description: Maximum callers kept per changed symbol, strongest evidence first; 1-500, default 5.
+          maximum: 500
+          minimum: 1
+          type: integer
+        max_entry_points:
+          default: 3
+          description: Maximum entry points kept per changed symbol, nearest first; 1-100, default 3.
+          maximum: 100
+          minimum: 1
+          type: integer
+        max_symbols:
+          default: 25
+          description: Maximum changed symbols analysed, in changed-symbol order; 1-1000, default 25. The rest are listed in result.not_analysed.
+          maximum: 1000
+          minimum: 1
+          type: integer
+        max_tests:
+          default: 5
+          description: Maximum candidate tests kept per changed symbol, strongest source first; 1-500, default 5.
+          maximum: 500
+          minimum: 1
+          type: integer
+        node_cap:
+          default: 200
+          description: Maximum nodes, and paths, one traversal may return; 1-2000, default 200.
+          maximum: 2000
+          minimum: 1
+          type: integer
+        query_budget_ms:
+          default: 5000
+          description: Wall-clock budget of one traversal in milliseconds; 100-60000, default 5000. Capped at the time left in budget_ms.
+          maximum: 60000
+          minimum: 100
+          type: integer
+        repository:
+          description: Absolute path of the Git repository to analyse. Defaults to the caller's workspace root; never inferred from the tool cwd.
+          minLength: 1
+          type: string
+        schema_version:
+          const: 1
+          description: Request contract version; must be 1 when present. An omitted version is read as version 1, the only one there has been.
+          type: integer
+        scope:
+          description: Keep only changed symbols whose path starts with this prefix.
+          minLength: 1
+          type: string
+        symbols:
+          description: Changed-symbol selectors (symbol:<path>#<name>:<kind>) to analyse; default every changed symbol up to max_symbols. A selector that matches no changed symbol is listed in result.unmatched_selection.
+          items:
+            minLength: 1
+            type: string
+          type: array
+      type: object
+    mcp_scope: workspace
+    name: changes
+    output_schema:
+      additionalProperties: false
+      properties:
+        complete:
+          description: 'Mirrors result.complete: false when budget_ms ran out before every selected symbol was analysed.'
+          type: boolean
+        operation:
+          const: changes
+          description: Always "changes".
+          type: string
+        repository:
+          description: Canonical path of the routed repository.
+          type: string
+        result:
+          description: The orbit-graph-changes ChangesDocument (it may gain fields).
+          properties:
+            comparison:
+              description: 'The resolved comparison: mode (direct_base_head or working_tree), base and head refs and SHAs (head is "worktree" for the working tree), working-tree state, and per-snapshot file counts and exclusions; null when indexing did not finish.'
+              type:
+              - object
+              - 'null'
+            complete:
+              description: False when budget_ms ran out; incomplete says where.
+              type: boolean
+            default_base:
+              description: 'How the base was chosen when base was omitted: reference, source (upstream, origin_head, main, master), and merge_base; null otherwise.'
+              type:
+              - object
+              - 'null'
+            filtered_out:
+              description: What the language and scope filters removed.
+              items:
+                type: object
+              type: array
+            generated_at:
+              description: When the analysis ran (RFC 3339, UTC).
+              type: string
+            incomplete:
+              description: Why the call stopped early; null when complete.
+              properties:
+                bound:
+                  description: Always budget_ms.
+                  type: string
+                message:
+                  description: What to do next.
+                  type: string
+                phase:
+                  description: indexing (no changed symbols computed) or analysis (some symbols in not_analysed).
+                  type: string
+                value:
+                  description: The budget in milliseconds.
+                  type: integer
+              type:
+              - object
+              - 'null'
+            not_analysed:
+              description: Changed symbols a bound left unanalysed.
+              items:
+                description: One unanalysed symbol.
+                properties:
+                  reason:
+                    description: 'The bound: max_symbols, time_budget_ms, or max_response_bytes.'
+                    type: string
+                  selector:
+                    description: Primary selector.
+                    type: string
+                  status:
+                    description: How it changed.
+                    type: string
+                required:
+                - selector
+                - status
+                - reason
+                type: object
+              type: array
+            notices:
+              description: 'Human-readable qualifications: working-tree state, cache notes.'
+              items:
+                type: string
+              type: array
+            out_of_scope:
+              description: Changed paths the extractor did not index (unsupported language, excluded file).
+              items:
+                type: object
+              type: array
+            query:
+              description: Selection, confidence floor, and every bound in force.
+              type: object
+            schema_version:
+              const: 1
+              description: ChangesDocument version.
+              type: integer
+            summary:
+              description: 'Counts: changed_symbols, analysed_symbols, not_analysed_symbols, not_selected_symbols, callers, entry_points, candidate_tests, out_of_scope_paths.'
+              type: object
+            symbols:
+              description: Analysed changed symbols, in changed-symbol order.
+              items:
+                description: One analysed changed symbol.
+                properties:
+                  base:
+                    description: 'Base-side occurrence: selector, snapshot, commit_sha; null when added.'
+                    type:
+                    - object
+                    - 'null'
+                  callers:
+                    description: Callers, strongest and nearest first.
+                    items:
+                      description: One caller.
+                      properties:
+                        caller:
+                          description: A symbol or file endpoint.
+                          properties:
+                            label:
+                              description: 'Display label: <path>#<symbol>, or <path> for a file.'
+                              type: string
+                            origin:
+                              description: symbol or file.
+                              type: string
+                            selector:
+                              description: Canonical selector, copyable into other tools.
+                              type: string
+                            snapshot:
+                              description: 'Snapshot it resolves in: base or head.'
+                              type: string
+                          required:
+                          - selector
+                          - snapshot
+                          - label
+                          - origin
+                          type: object
+                        category:
+                          description: 'Evidence category: resolved_call, observed_reference, import_relationship, heuristic_match, or runtime_invocation (weakest on the path).'
+                          type: string
+                        confidence:
+                          description: 'Weakest orbit_graph confidence on the path: exact, import_resolved, same_module, or fuzzy_name; exact at distance 0.'
+                          type: string
+                        distance:
+                          description: Hops to the changed symbol.
+                          type: integer
+                        evidence:
+                          description: 'Evidence path from the affected endpoint to the changed symbol: the report''s ReportEvidencePath, with every edge''s relationship, category, confidence, and file:line@sha reference.'
+                          properties:
+                            category:
+                              description: Weakest evidence category on the path.
+                              type: string
+                            distance:
+                              description: Edges on the path.
+                              type: integer
+                            edges:
+                              description: Edges, outermost hop first.
+                              items:
+                                type: object
+                              type: array
+                            from:
+                              description: Affected endpoint.
+                              type: object
+                            path_id:
+                              description: Identifier of the path within its query.
+                              type: string
+                            schema_version:
+                              description: Evidence payload version.
+                              type: integer
+                            to:
+                              description: Queried changed symbol.
+                              type: object
+                            truncated:
+                              description: Whether a bound cut this path.
+                              type: boolean
+                            truncated_by:
+                              description: Which bound cut it, when truncated.
+                              type:
+                              - string
+                              - 'null'
+                          required:
+                          - path_id
+                          - from
+                          - to
+                          - distance
+                          - category
+                          - truncated
+                          - edges
+                          type: object
+                        snapshots:
+                          description: Snapshots (base, head) it was found in.
+                          items:
+                            type: string
+                          type: array
+                        source:
+                          description: 'How the endpoint reaches the changed symbol: call_path (every hop a call), import_relationship (a hop is an import), reference_path (type or other references), or changed_symbol (distance 0: the changed symbol is itself the endpoint).'
+                          enum:
+                          - call_path
+                          - import_relationship
+                          - reference_path
+                          - changed_symbol
+                          type: string
+                      required:
+                      - caller
+                      - snapshots
+                      - distance
+                      - source
+                      - category
+                      - confidence
+                      - evidence
+                      type: object
+                    type: array
+                  callers_found:
+                    description: Distinct callers found before max_callers applied.
+                    type: integer
+                  candidate_tests:
+                    description: Candidate tests, strongest source first. Candidates, not proof of coverage.
+                    items:
+                      description: One candidate test.
+                      properties:
+                        category:
+                          description: 'Evidence category: resolved_call, observed_reference, import_relationship, heuristic_match, or runtime_invocation (weakest on the path).'
+                          type: string
+                        confidence:
+                          description: Weakest orbit_graph confidence on the evidence path; file_import for an import candidate, name_only for a naming or runtime candidate.
+                          type: string
+                        evidence:
+                          description: Evidence path behind a call_path candidate; null otherwise.
+                          type:
+                          - object
+                          - 'null'
+                        note:
+                          description: Why it is plausible.
+                          type:
+                          - string
+                          - 'null'
+                        snapshots:
+                          description: Snapshots (base, head) it was found in.
+                          items:
+                            type: string
+                          type: array
+                        source:
+                          description: call_path (a test calls it), import_relationship (a test file imports its module), naming_heuristic (name or location only), or runtime_invocation (a test starts a program its package ships).
+                          enum:
+                          - call_path
+                          - import_relationship
+                          - naming_heuristic
+                          - runtime_invocation
+                          type: string
+                        test:
+                          description: A symbol or file endpoint.
+                          properties:
+                            label:
+                              description: 'Display label: <path>#<symbol>, or <path> for a file.'
+                              type: string
+                            origin:
+                              description: symbol or file.
+                              type: string
+                            selector:
+                              description: Canonical selector, copyable into other tools.
+                              type: string
+                            snapshot:
+                              description: 'Snapshot it resolves in: base or head.'
+                              type: string
+                          required:
+                          - selector
+                          - snapshot
+                          - label
+                          - origin
+                          type: object
+                        truncated:
+                          description: Whether a bound cut the search that produced it.
+                          type: boolean
+                      required:
+                      - test
+                      - snapshots
+                      - source
+                      - category
+                      - confidence
+                      - truncated
+                      type: object
+                    type: array
+                  candidate_tests_found:
+                    description: Distinct candidate tests found before max_tests applied.
+                    type: integer
+                  entry_points:
+                    description: Entry points (tests, mains, command handlers, public API) that reach the symbol, nearest first.
+                    items:
+                      description: One entry point.
+                      properties:
+                        category:
+                          description: 'Evidence category: resolved_call, observed_reference, import_relationship, heuristic_match, or runtime_invocation (weakest on the path).'
+                          type: string
+                        confidence:
+                          description: 'Weakest orbit_graph confidence on the path: exact, import_resolved, same_module, or fuzzy_name; exact at distance 0.'
+                          type: string
+                        distance:
+                          description: Hops to the changed symbol.
+                          type: integer
+                        entry_point:
+                          description: A symbol or file endpoint.
+                          properties:
+                            label:
+                              description: 'Display label: <path>#<symbol>, or <path> for a file.'
+                              type: string
+                            origin:
+                              description: symbol or file.
+                              type: string
+                            selector:
+                              description: Canonical selector, copyable into other tools.
+                              type: string
+                            snapshot:
+                              description: 'Snapshot it resolves in: base or head.'
+                              type: string
+                          required:
+                          - selector
+                          - snapshot
+                          - label
+                          - origin
+                          type: object
+                        evidence:
+                          description: 'Evidence path from the affected endpoint to the changed symbol: the report''s ReportEvidencePath, with every edge''s relationship, category, confidence, and file:line@sha reference.'
+                          properties:
+                            category:
+                              description: Weakest evidence category on the path.
+                              type: string
+                            distance:
+                              description: Edges on the path.
+                              type: integer
+                            edges:
+                              description: Edges, outermost hop first.
+                              items:
+                                type: object
+                              type: array
+                            from:
+                              description: Affected endpoint.
+                              type: object
+                            path_id:
+                              description: Identifier of the path within its query.
+                              type: string
+                            schema_version:
+                              description: Evidence payload version.
+                              type: integer
+                            to:
+                              description: Queried changed symbol.
+                              type: object
+                            truncated:
+                              description: Whether a bound cut this path.
+                              type: boolean
+                            truncated_by:
+                              description: Which bound cut it, when truncated.
+                              type:
+                              - string
+                              - 'null'
+                          required:
+                          - path_id
+                          - from
+                          - to
+                          - distance
+                          - category
+                          - truncated
+                          - edges
+                          type: object
+                        note:
+                          description: What the rule observed.
+                          type:
+                          - string
+                          - 'null'
+                        rule:
+                          description: Rule that classified it.
+                          type: string
+                        rules:
+                          description: Every rule that fired, in priority order.
+                          items:
+                            type: string
+                          type: array
+                        snapshots:
+                          description: Snapshots (base, head) it was found in.
+                          items:
+                            type: string
+                          type: array
+                        source:
+                          description: 'How the endpoint reaches the changed symbol: call_path (every hop a call), import_relationship (a hop is an import), reference_path (type or other references), or changed_symbol (distance 0: the changed symbol is itself the endpoint).'
+                          enum:
+                          - call_path
+                          - import_relationship
+                          - reference_path
+                          - changed_symbol
+                          type: string
+                      required:
+                      - entry_point
+                      - rule
+                      - snapshots
+                      - distance
+                      - source
+                      - category
+                      - confidence
+                      - evidence
+                      type: object
+                    type: array
+                  entry_points_found:
+                    description: Distinct entry points found before max_entry_points applied.
+                    type: integer
+                  file_change:
+                    description: How Git classified the containing file.
+                    type: string
+                  head:
+                    description: Head-side occurrence; null when removed.
+                    type:
+                    - object
+                    - 'null'
+                  note:
+                    description: Qualification of this entry.
+                    type:
+                    - string
+                    - 'null'
+                  pairing:
+                    description: Which pairing rung matched base and head occurrences.
+                    type: string
+                  pairing_evidence:
+                    description: What evidence supports that rung.
+                    type: string
+                  selector:
+                    description: 'Primary selector: head-side when the symbol exists in head.'
+                    type: string
+                  status:
+                    description: 'How it changed: added, removed, modified, signature_changed, moved, renamed, or uncertain.'
+                    type: string
+                  uncertain_candidates:
+                    description: Every candidate partner of an uncertain pairing.
+                    items:
+                      type: object
+                    type: array
+                required:
+                - selector
+                - status
+                - pairing
+                - callers
+                - callers_found
+                - entry_points
+                - entry_points_found
+                - candidate_tests
+                - candidate_tests_found
+                type: object
+              type: array
+            tests:
+              description: 'Distinct candidate tests across every analysed symbol, strongest source first: the test-selection view.'
+              items:
+                description: One test to consider running.
+                properties:
+                  category:
+                    description: 'Evidence category: resolved_call, observed_reference, import_relationship, heuristic_match, or runtime_invocation (weakest on the path).'
+                    type: string
+                  changed_symbols:
+                    description: Changed symbols it is a candidate for.
+                    items:
+                      type: string
+                    type: array
+                  confidence:
+                    description: Confidence of that strongest candidate.
+                    type: string
+                  source:
+                    description: Strongest source across its symbols.
+                    type: string
+                  test:
+                    description: A symbol or file endpoint.
+                    properties:
+                      label:
+                        description: 'Display label: <path>#<symbol>, or <path> for a file.'
+                        type: string
+                      origin:
+                        description: symbol or file.
+                        type: string
+                      selector:
+                        description: Canonical selector, copyable into other tools.
+                        type: string
+                      snapshot:
+                        description: 'Snapshot it resolves in: base or head.'
+                        type: string
+                    required:
+                    - selector
+                    - snapshot
+                    - label
+                    - origin
+                    type: object
+                required:
+                - test
+                - source
+                - category
+                - confidence
+                - changed_symbols
+                type: object
+              type: array
+            timings:
+              description: prepare_ms (resolve, materialize, index), analysis_ms, total_ms, and base_cache and head_cache (hit, miss, or disabled).
+              type: object
+            truncated:
+              description: Whether any bound cut anything.
+              type: boolean
+            truncation:
+              description: Every bound reached, deduplicated.
+              items:
+                description: One bound that was reached.
+                properties:
+                  bound:
+                    description: Bound name, such as max_callers, max_symbols, time_budget_ms, node_cap, depth, or max_response_bytes.
+                    type: string
+                  value:
+                    description: The bound's value in its own unit.
+                    type: integer
+                  what:
+                    description: 'What it cut: a list, a query (evidence:<selector>@<side>), or changed_symbols.'
+                    type: string
+                required:
+                - what
+                - bound
+                - value
+                type: object
+              type: array
+            unmatched_selection:
+              description: Selectors in symbols that matched no changed symbol.
+              items:
+                type: string
+              type: array
+            unresolved:
+              description: Queries with no result, and the reasons one could be missing.
+              items:
+                type: object
+              type: array
+          required:
+          - schema_version
+          - generated_at
+          - complete
+          - query
+          - summary
+          - symbols
+          - not_analysed
+          - tests
+          - truncated
+          - truncation
+          - timings
+          - notices
+          type: object
+        schema_version:
+          const: 1
+          description: Response contract version.
+          type: integer
+        truncated:
+          description: 'Mirrors result.truncated: true when any bound, including the 512 KiB response ceiling, cut the result; result.truncation names each.'
+          type: boolean
+      required:
+      - schema_version
+      - operation
+      - repository
+      - complete
+      - truncated
+      - result
+      type: object
   web:
     panels:
-      - id: version
-        title: Graph versions
-        source: tool:version
-        render: kv
-        group: diagnostics
-  tests: [tests/conformance/*.yaml]
+    - group: diagnostics
+      id: version
+      render: kv
+      source: tool:version
+      title: Graph versions

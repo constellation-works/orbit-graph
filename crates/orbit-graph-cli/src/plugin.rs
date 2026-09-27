@@ -58,6 +58,63 @@ pub fn recognizes_tool(name: &str) -> bool {
         )
 }
 
+/// The plugin's effective `[plugins.graph]` configuration, which Orbit sends
+/// as the envelope's `context.config` (manifest defaults under the operator's
+/// values). A bare v1 request carries none, and then every key is unset.
+#[derive(Debug, Clone, Default)]
+pub struct PluginConfig {
+    /// `branch`: the landing branch a call that names none works on.
+    branch: Option<String>,
+}
+
+impl PluginConfig {
+    /// Decode `context.config`. A key this backend does not read is returned
+    /// for the caller to warn about and is otherwise ignored, so a config
+    /// written for another plugin version keeps loading (STD-02 §R16).
+    pub fn from_context(config: Option<&Value>) -> Result<(Self, Vec<String>), ToolError> {
+        let Some(config) = config.filter(|config| !config.is_null()) else {
+            return Ok((Self::default(), Vec::new()));
+        };
+        let Some(config) = config.as_object() else {
+            return Err(ToolError::invalid_request(
+                "read plugin configuration",
+                "context.config must be an object",
+            ));
+        };
+        let mut plugin_config = Self::default();
+        let mut ignored = Vec::new();
+        for (key, value) in config {
+            match key.as_str() {
+                "branch" => {
+                    plugin_config.branch = match value {
+                        Value::Null => None,
+                        Value::String(branch) if !branch.trim().is_empty() => Some(branch.clone()),
+                        _ => {
+                            return Err(ToolError::invalid_request(
+                                "read plugin configuration",
+                                "context.config.branch must be a non-empty string",
+                            ));
+                        }
+                    };
+                }
+                _ => ignored.push(key.clone()),
+            }
+        }
+        Ok((plugin_config, ignored))
+    }
+
+    /// The branch a call works on: its own `branch`, else the configured one,
+    /// else `main`.
+    fn branch(&self, requested: Option<String>) -> String {
+        requested
+            .or_else(|| self.branch.clone())
+            .unwrap_or_else(|| DEFAULT_BRANCH.to_string())
+    }
+}
+
+/// The landing branch when neither the call nor the configuration names one.
+const DEFAULT_BRANCH: &str = "main";
+
 /// Execute one no-argv Orbit external-tool request from JSON stdin bytes.
 ///
 /// Failures carry a stable [`error::ToolErrorCode`]: a request the tool refuses
@@ -67,15 +124,21 @@ pub fn recognizes_tool(name: &str) -> bool {
 /// code-graph index is [`error::ToolErrorCode::IndexMissing`] or
 /// [`error::ToolErrorCode::IndexIncompatible`], and every other failure is
 /// [`error::ToolErrorCode::GraphError`].
-pub fn execute_external_tool(name: &str, input: &[u8]) -> Result<Value, ToolError> {
+pub fn execute_external_tool(
+    name: &str,
+    input: &[u8],
+    config: &PluginConfig,
+) -> Result<Value, ToolError> {
     if let Some(tool) = QueryTool::from_tool_name(name) {
         return query::execute(tool, name, input);
     }
     match name {
         changes::TOOL_NAME | changes::V2_TOOL_NAME => changes::execute(input),
-        RECOMMEND_TOOL_NAME | V2_RECOMMEND_TOOL_NAME => recommend(name, decode_input(input)?),
-        STATUS_TOOL_NAME | V2_STATUS_TOOL_NAME => status(name, decode_input(input)?),
-        MAINTAIN_TOOL_NAME | V2_MAINTAIN_TOOL_NAME => maintain(decode_input(input)?),
+        RECOMMEND_TOOL_NAME | V2_RECOMMEND_TOOL_NAME => {
+            recommend(name, decode_input(input)?, config)
+        }
+        STATUS_TOOL_NAME | V2_STATUS_TOOL_NAME => status(name, decode_input(input)?, config),
+        MAINTAIN_TOOL_NAME | V2_MAINTAIN_TOOL_NAME => maintain(decode_input(input)?, config),
         VERSION_TOOL_NAME | V2_VERSION_TOOL_NAME => version(decode_input(input)?),
         _ => Err(ToolError::invalid_request(
             "dispatch Orbit external tool",
@@ -84,8 +147,33 @@ pub fn execute_external_tool(name: &str, input: &[u8]) -> Result<Value, ToolErro
     }
 }
 
+/// Decode a tool's input. Every string the request schemas declare has
+/// `minLength: 1`, so an empty string, top-level or in a top-level array, is
+/// refused here, named, before any field is interpreted.
 fn decode_input<T: serde::de::DeserializeOwned>(input: &[u8]) -> Result<T, ToolError> {
-    serde_json::from_slice(input)
+    let value: Value = serde_json::from_slice(input).map_err(|error| {
+        ToolError::invalid_request("decode plugin tool input", error.to_string())
+    })?;
+    if let Some(fields) = value.as_object() {
+        let empty = fields
+            .iter()
+            .filter(|(_, value)| match value {
+                Value::String(text) => text.is_empty(),
+                Value::Array(items) => items
+                    .iter()
+                    .any(|item| item.as_str().is_some_and(str::is_empty)),
+                _ => false,
+            })
+            .map(|(field, _)| field.as_str())
+            .collect::<Vec<_>>();
+        if !empty.is_empty() {
+            return Err(ToolError::invalid_request(
+                "decode plugin tool input",
+                format!("empty string in {}; omit a field instead", empty.join(", ")),
+            ));
+        }
+    }
+    serde_json::from_value(value)
         .map_err(|error| ToolError::invalid_request("decode plugin tool input", error.to_string()))
 }
 
@@ -106,11 +194,11 @@ fn version(_input: VersionToolInput) -> Result<Value, ToolError> {
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct RecommendToolInput {
-    #[serde(default = "default_schema_version")]
-    schema_version: u32,
+    #[serde(default)]
+    schema_version: Option<u32>,
     repository: PathBuf,
-    #[serde(default = "default_branch")]
-    branch: String,
+    #[serde(default)]
+    branch: Option<String>,
     #[serde(default)]
     workspace: Option<String>,
     #[serde(default)]
@@ -129,8 +217,8 @@ struct RecommendToolInput {
     cutoff: Option<String>,
     #[serde(default)]
     hybrid: bool,
-    #[serde(default = "default_hybrid_limit")]
-    hybrid_limit: usize,
+    #[serde(default)]
+    hybrid_limit: Option<usize>,
     #[serde(default)]
     hybrid_hits: Vec<HybridTaskHit>,
 }
@@ -160,14 +248,43 @@ struct AdapterEvidence {
     warnings: Vec<String>,
 }
 
-fn recommend(name: &str, input: RecommendToolInput) -> Result<Value, ToolError> {
+/// Upper bound of `recommend`'s `limit`, as `schemas/recommend.request.json`
+/// declares it.
+const MAX_RECOMMEND_LIMIT: usize = 100;
+/// Bounds and default of `recommend`'s `hybrid_limit`.
+const MAX_HYBRID_LIMIT: usize = 100;
+const DEFAULT_HYBRID_LIMIT: usize = 20;
+
+fn recommend(
+    name: &str,
+    input: RecommendToolInput,
+    config: &PluginConfig,
+) -> Result<Value, ToolError> {
     validate_schema(input.schema_version)?;
-    if input.hybrid && (input.hybrid_limit == 0 || input.hybrid_limit > 100) {
+    if !input.hybrid && input.hybrid_limit.is_some() {
+        // STD-01 R29: never accept a field and silently ignore it.
         return Err(ToolError::invalid_request(
-            "validate hybrid search bound",
-            "hybrid_limit must be between 1 and 100",
+            "validate recommend input",
+            "hybrid_limit applies only with hybrid: true; remove hybrid_limit or set hybrid",
         ));
     }
+    let hybrid_limit = input.hybrid_limit.unwrap_or(DEFAULT_HYBRID_LIMIT);
+    if !(1..=MAX_HYBRID_LIMIT).contains(&hybrid_limit) {
+        return Err(ToolError::invalid_request(
+            "validate hybrid search bound",
+            format!("hybrid_limit must be between 1 and {MAX_HYBRID_LIMIT}"),
+        ));
+    }
+    if input
+        .limit
+        .is_some_and(|limit| !(1..=MAX_RECOMMEND_LIMIT).contains(&limit))
+    {
+        return Err(ToolError::invalid_request(
+            "validate recommendation bound",
+            format!("limit must be between 1 and {MAX_RECOMMEND_LIMIT}"),
+        ));
+    }
+    let branch = config.branch(input.branch);
     let (intent, mut snapshot, mut task_text_source) = match (input.query, input.task_id) {
         (Some(query), None) if !query.trim().is_empty() => (
             RecommendationInput::Query(query),
@@ -219,7 +336,7 @@ fn recommend(name: &str, input: RecommendToolInput) -> Result<Value, ToolError> 
     let mut warnings = Vec::new();
     let mut hybrid_hits = input.hybrid_hits;
     let hybrid_source = if input.hybrid {
-        match adapter.hybrid_search(query_text.as_str(), input.hybrid_limit) {
+        match adapter.hybrid_search(query_text.as_str(), hybrid_limit) {
             Ok(mut hits) => {
                 hits.append(&mut hybrid_hits);
                 hybrid_hits = hits;
@@ -241,13 +358,13 @@ fn recommend(name: &str, input: RecommendToolInput) -> Result<Value, ToolError> 
     let engine = match index_dir.as_deref() {
         Some(index_dir) => RecommendationEngine::open_with_index_dir(
             repository.as_path(),
-            input.branch.as_str(),
+            branch.as_str(),
             index_dir,
             IndexState::read(index_dir)?.structure_index(index_dir),
         ),
-        None => RecommendationEngine::open(repository.as_path(), input.branch.as_str()),
+        None => RecommendationEngine::open(repository.as_path(), branch.as_str()),
     }
-    .map_err(|error| history_read_error(error, name, input.branch.as_str()))?;
+    .map_err(|error| history_read_error(error, name, branch.as_str()))?;
     let result = engine.recommend(&RecommendationRequest {
         input: intent,
         level: input.level.into(),
@@ -278,25 +395,26 @@ fn recommend(name: &str, input: RecommendToolInput) -> Result<Value, ToolError> 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct StatusToolInput {
-    #[serde(default = "default_schema_version")]
-    schema_version: u32,
+    #[serde(default)]
+    schema_version: Option<u32>,
     repository: PathBuf,
-    #[serde(default = "default_branch")]
-    branch: String,
+    #[serde(default)]
+    branch: Option<String>,
 }
 
-fn status(name: &str, input: StatusToolInput) -> Result<Value, ToolError> {
+fn status(name: &str, input: StatusToolInput, config: &PluginConfig) -> Result<Value, ToolError> {
     validate_schema(input.schema_version)?;
+    let branch = config.branch(input.branch);
     let repository = routed_repository(input.repository.as_path())?;
     let index = match plugin_index_dir(repository.as_path())?.as_deref() {
         Some(index_dir) => HistoryIndex::open_read_only_with_index_dir(
             repository.as_path(),
-            input.branch.as_str(),
+            branch.as_str(),
             index_dir,
         ),
-        None => HistoryIndex::open_read_only(repository.as_path(), input.branch.as_str()),
+        None => HistoryIndex::open_read_only(repository.as_path(), branch.as_str()),
     }
-    .map_err(|error| history_read_error(error, name, input.branch.as_str()))?;
+    .map_err(|error| history_read_error(error, name, branch.as_str()))?;
     let mut response = json!({
         "schema_version": PLUGIN_SCHEMA_VERSION,
         "operation": "status",
@@ -318,44 +436,122 @@ enum MaintenanceOperation {
     GraphSync,
 }
 
+impl MaintenanceOperation {
+    const fn name(self) -> &'static str {
+        match self {
+            Self::HistorySync => "history_sync",
+            Self::Import => "import",
+            Self::OrbitSync => "orbit_sync",
+            Self::GraphSync => "graph_sync",
+        }
+    }
+
+    /// The optional fields this operation reads. Any other supplied one is
+    /// refused, never dropped (STD-01 §R29).
+    const fn reads(self) -> &'static [&'static str] {
+        match self {
+            Self::HistorySync => &["branch", "limit"],
+            Self::Import => &["branch", "delivery"],
+            Self::OrbitSync => &[
+                "branch",
+                "limit",
+                "workspace",
+                "task_ids",
+                "run_ids",
+                "task_snapshots",
+            ],
+            Self::GraphSync => &["full", "budget_ms"],
+        }
+    }
+}
+
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct MaintainToolInput {
-    #[serde(default = "default_schema_version")]
-    schema_version: u32,
+    #[serde(default)]
+    schema_version: Option<u32>,
     operation: MaintenanceOperation,
     repository: PathBuf,
-    /// Landing branch for history operations; `None` means `main`.
+    /// Landing branch for history operations; `None` means the configured
+    /// branch, else `main`.
     #[serde(default)]
     branch: Option<String>,
     #[serde(default)]
     limit: Option<usize>,
+    /// A `DeliveryImport`, decoded only for `import` so that another
+    /// operation refuses it by name rather than by its shape.
     #[serde(default)]
-    delivery: Option<DeliveryImport>,
+    delivery: Option<Value>,
     #[serde(default)]
     workspace: Option<String>,
     #[serde(default)]
-    task_ids: Vec<String>,
+    task_ids: Option<Vec<String>>,
     #[serde(default)]
-    run_ids: Vec<String>,
+    run_ids: Option<Vec<String>>,
+    /// `TaskAssociation`s, decoded only for `orbit_sync`, like `delivery`.
     #[serde(default)]
-    task_snapshots: Vec<TaskAssociation>,
+    task_snapshots: Option<Vec<Value>>,
     #[serde(default)]
-    full: bool,
+    full: Option<bool>,
     #[serde(default)]
     budget_ms: Option<u64>,
 }
 
-fn maintain(input: MaintainToolInput) -> Result<Value, ToolError> {
+impl MaintainToolInput {
+    /// The optional fields the caller supplied, in schema order.
+    fn supplied(&self) -> Vec<&'static str> {
+        [
+            ("branch", self.branch.is_some()),
+            ("limit", self.limit.is_some()),
+            ("delivery", self.delivery.is_some()),
+            ("workspace", self.workspace.is_some()),
+            ("task_ids", self.task_ids.is_some()),
+            ("run_ids", self.run_ids.is_some()),
+            ("task_snapshots", self.task_snapshots.is_some()),
+            ("full", self.full.is_some()),
+            ("budget_ms", self.budget_ms.is_some()),
+        ]
+        .into_iter()
+        .filter_map(|(field, supplied)| supplied.then_some(field))
+        .collect()
+    }
+}
+
+/// `history_sync`'s commit bound: default and maximum.
+const DEFAULT_HISTORY_LIMIT: usize = 100;
+const MAX_HISTORY_LIMIT: usize = 1_000;
+/// `orbit_sync`'s run bound: default and maximum.
+const DEFAULT_ORBIT_SYNC_LIMIT: usize = 25;
+const MAX_ORBIT_SYNC_LIMIT: usize = 100;
+
+fn maintain(mut input: MaintainToolInput, config: &PluginConfig) -> Result<Value, ToolError> {
     validate_schema(input.schema_version)?;
+    let operation = input.operation;
+    let inapplicable = input
+        .supplied()
+        .into_iter()
+        .filter(|field| !operation.reads().contains(field))
+        .collect::<Vec<_>>();
+    if !inapplicable.is_empty() {
+        // STD-01 R29: never accept a field and silently ignore it.
+        return Err(ToolError::invalid_request(
+            "validate plugin maintenance input",
+            format!(
+                "operation={} does not use {}; it reads only {}",
+                operation.name(),
+                inapplicable.join(", "),
+                operation.reads().join(", ")
+            ),
+        ));
+    }
     let mut budget_ms = code_index::DEFAULT_BUDGET_MS;
-    match input.operation {
+    match operation {
         MaintenanceOperation::HistorySync => {
-            let limit = input.limit.unwrap_or(100);
-            if limit == 0 || limit > 1_000 {
+            let limit = input.limit.unwrap_or(DEFAULT_HISTORY_LIMIT);
+            if !(1..=MAX_HISTORY_LIMIT).contains(&limit) {
                 return Err(ToolError::invalid_request(
                     "validate plugin history sync bound",
-                    "limit must be between 1 and 1000",
+                    format!("limit must be between 1 and {MAX_HISTORY_LIMIT}"),
                 ));
             }
         }
@@ -368,11 +564,11 @@ fn maintain(input: MaintainToolInput) -> Result<Value, ToolError> {
             }
         }
         MaintenanceOperation::OrbitSync => {
-            let bound = input.limit.unwrap_or(25);
-            if bound == 0 || bound > 100 {
+            let bound = input.limit.unwrap_or(DEFAULT_ORBIT_SYNC_LIMIT);
+            if !(1..=MAX_ORBIT_SYNC_LIMIT).contains(&bound) {
                 return Err(ToolError::invalid_request(
                     "validate Orbit adapter sync bound",
-                    "limit must be between 1 and 100",
+                    format!("limit must be between 1 and {MAX_ORBIT_SYNC_LIMIT}"),
                 ));
             }
         }
@@ -388,28 +584,6 @@ fn maintain(input: MaintainToolInput) -> Result<Value, ToolError> {
                     ),
                 ));
             }
-            let inapplicable = [
-                ("branch", input.branch.is_some()),
-                ("limit", input.limit.is_some()),
-                ("delivery", input.delivery.is_some()),
-                ("workspace", input.workspace.is_some()),
-                ("task_ids", !input.task_ids.is_empty()),
-                ("run_ids", !input.run_ids.is_empty()),
-                ("task_snapshots", !input.task_snapshots.is_empty()),
-            ]
-            .into_iter()
-            .filter_map(|(field, supplied)| supplied.then_some(field))
-            .collect::<Vec<_>>();
-            if !inapplicable.is_empty() {
-                // STD-01 R29: never accept a field and silently ignore it.
-                return Err(ToolError::invalid_request(
-                    "validate graph_sync input",
-                    format!(
-                        "operation=graph_sync does not use {}; it indexes the checkout as it is",
-                        inapplicable.join(", ")
-                    ),
-                ));
-            }
             if env::var_os("ORBIT_PLUGIN_STATE").is_none_or(|state| state.is_empty()) {
                 return Err(ToolError::invalid_request(
                     "validate graph_sync environment",
@@ -420,25 +594,32 @@ fn maintain(input: MaintainToolInput) -> Result<Value, ToolError> {
             }
         }
     }
-    if !matches!(input.operation, MaintenanceOperation::GraphSync)
-        && (input.full || input.budget_ms.is_some())
-    {
-        return Err(ToolError::invalid_request(
-            "validate plugin maintenance input",
-            "full and budget_ms apply only to operation=graph_sync",
-        ));
-    }
+    let delivery = input
+        .delivery
+        .take()
+        .map(serde_json::from_value::<DeliveryImport>)
+        .transpose()
+        .map_err(|error| ToolError::invalid_request("decode delivery", error.to_string()))?;
+    let task_snapshots = input
+        .task_snapshots
+        .take()
+        .unwrap_or_default()
+        .into_iter()
+        .map(serde_json::from_value::<TaskAssociation>)
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|error| ToolError::invalid_request("decode task_snapshots", error.to_string()))?;
     let repository = routed_repository(input.repository.as_path())?;
-    let branch = input.branch.clone().unwrap_or_else(default_branch);
+    let branch = config.branch(input.branch.clone());
     let history_index = || open_history_index(repository.as_path(), branch.as_str());
-    match input.operation {
+    match operation {
         MaintenanceOperation::HistorySync => {
-            let limit = input.limit.unwrap_or(100);
+            let limit = input.limit.unwrap_or(DEFAULT_HISTORY_LIMIT);
             let result = history_index()?.sync(Some(limit))?;
             Ok(json!({
                 "schema_version": PLUGIN_SCHEMA_VERSION,
                 "operation": "history_sync",
                 "repository": repository,
+                "branch": branch,
                 "coverage": {
                     "complete": result.complete,
                     "kind": "bounded_first_parent_git",
@@ -452,7 +633,7 @@ fn maintain(input: MaintainToolInput) -> Result<Value, ToolError> {
             }))
         }
         MaintenanceOperation::Import => {
-            let delivery = input.delivery.ok_or_else(|| {
+            let delivery = delivery.ok_or_else(|| {
                 ToolError::invalid_request(
                     "validate plugin import",
                     "delivery is required for operation=import",
@@ -462,14 +643,18 @@ fn maintain(input: MaintainToolInput) -> Result<Value, ToolError> {
                 "schema_version": PLUGIN_SCHEMA_VERSION,
                 "operation": "import",
                 "repository": repository,
+                "branch": branch,
                 "result": history_index()?.import(delivery)?,
             }))
         }
         MaintenanceOperation::OrbitSync => {
             let index = history_index()?;
-            sync_orbit(repository, index, input).map_err(ToolError::graph)
+            sync_orbit(repository, branch.as_str(), index, input, task_snapshots)
+                .map_err(ToolError::graph)
         }
-        MaintenanceOperation::GraphSync => graph_sync(repository, input.full, budget_ms),
+        MaintenanceOperation::GraphSync => {
+            graph_sync(repository, input.full.unwrap_or(false), budget_ms)
+        }
     }
 }
 
@@ -581,17 +766,20 @@ fn code_index_status(
 
 fn sync_orbit(
     repository: PathBuf,
+    branch: &str,
     index: HistoryIndex,
     input: MaintainToolInput,
+    task_snapshots: Vec<TaskAssociation>,
 ) -> Result<Value, GraphError> {
-    let bound = input.limit.unwrap_or(25);
+    let bound = input.limit.unwrap_or(DEFAULT_ORBIT_SYNC_LIMIT);
     let adapter = OrbitAdapter::new(repository.as_path(), input.workspace.as_deref());
-    let explicit_run_count = input.run_ids.len();
-    let task_count = input.task_ids.len();
-    let mut run_ids = input.run_ids;
+    let requested_task_ids = input.task_ids.unwrap_or_default();
+    let mut run_ids = input.run_ids.unwrap_or_default();
+    let explicit_run_count = run_ids.len();
+    let task_count = requested_task_ids.len();
     let mut task_ids_examined = 0;
     let mut truncated = false;
-    for task_id in &input.task_ids {
+    for task_id in &requested_task_ids {
         if run_ids.len() >= bound {
             truncated = true;
             break;
@@ -607,19 +795,13 @@ fn sync_orbit(
     truncated |= run_ids.len() > bound || task_ids_examined < task_count;
     let discovered_run_count = run_ids.len();
     run_ids.truncate(bound);
-    let snapshots = input
-        .task_snapshots
+    let snapshots = task_snapshots
         .into_iter()
         .map(|snapshot| (snapshot.task_id.clone(), snapshot))
         .collect::<std::collections::BTreeMap<_, _>>();
     let mut outcomes = Vec::new();
     for run_id in &run_ids {
-        match adapter.delivery_from_run(
-            run_id,
-            input.branch.as_deref().unwrap_or("main"),
-            &snapshots,
-            index.repository(),
-        ) {
+        match adapter.delivery_from_run(run_id, branch, &snapshots, index.repository()) {
             Ok(delivery) => {
                 let delivery_id = delivery.delivery_id.clone();
                 let task_ids = delivery
@@ -666,6 +848,7 @@ fn sync_orbit(
         "schema_version": PLUGIN_SCHEMA_VERSION,
         "operation": "orbit_sync",
         "repository": repository,
+        "branch": branch,
         "authority": {
             "workspace": input.workspace,
             "interfaces": ["orbit.workspace.list", "orbit.task.show", "orbit.workflow.run.show", "git"],
@@ -687,14 +870,18 @@ fn sync_orbit(
     }))
 }
 
-fn validate_schema(version: u32) -> Result<(), ToolError> {
-    if version == PLUGIN_SCHEMA_VERSION {
-        Ok(())
-    } else {
-        Err(ToolError::invalid_request(
+/// Check a request's `schema_version`. It stays `None` when the caller sent
+/// none: nothing fabricates the current version at decode time (STD-02
+/// §R16). An unversioned request is read under version 1, the only request
+/// contract there has been; a future version 2 must decide what an
+/// unversioned request means before it ships.
+fn validate_schema(version: Option<u32>) -> Result<(), ToolError> {
+    match version {
+        None | Some(PLUGIN_SCHEMA_VERSION) => Ok(()),
+        Some(version) => Err(ToolError::invalid_request(
             "validate Orbit plugin schema",
             format!("expected schema_version {PLUGIN_SCHEMA_VERSION}, got {version}"),
-        ))
+        )),
     }
 }
 
@@ -785,16 +972,4 @@ fn plugin_index_dir(repository: &std::path::Path) -> Result<Option<PathBuf>, Gra
         )?;
     }
     Ok(Some(index_dir))
-}
-
-fn default_branch() -> String {
-    "main".to_string()
-}
-
-const fn default_schema_version() -> u32 {
-    PLUGIN_SCHEMA_VERSION
-}
-
-fn default_hybrid_limit() -> usize {
-    20
 }

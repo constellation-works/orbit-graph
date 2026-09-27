@@ -463,8 +463,8 @@ enum FormatInput {
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct SearchInput {
-    #[serde(default = "super::default_schema_version")]
-    schema_version: u32,
+    #[serde(default)]
+    schema_version: Option<u32>,
     repository: PathBuf,
     query: String,
     #[serde(default)]
@@ -505,8 +505,8 @@ impl SearchInput {
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct ShowInput {
-    #[serde(default = "super::default_schema_version")]
-    schema_version: u32,
+    #[serde(default)]
+    schema_version: Option<u32>,
     repository: PathBuf,
     selector: String,
     #[serde(default)]
@@ -537,8 +537,8 @@ impl ShowInput {
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct RefsInput {
-    #[serde(default = "super::default_schema_version")]
-    schema_version: u32,
+    #[serde(default)]
+    schema_version: Option<u32>,
     repository: PathBuf,
     selector: String,
     #[serde(default)]
@@ -577,8 +577,8 @@ impl RefsInput {
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct CalleesInput {
-    #[serde(default = "super::default_schema_version")]
-    schema_version: u32,
+    #[serde(default)]
+    schema_version: Option<u32>,
     repository: PathBuf,
     selector: String,
     #[serde(default)]
@@ -604,8 +604,8 @@ impl CalleesInput {
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct ImpactInput {
-    #[serde(default = "super::default_schema_version")]
-    schema_version: u32,
+    #[serde(default)]
+    schema_version: Option<u32>,
     repository: PathBuf,
     selector: String,
     #[serde(default)]
@@ -641,8 +641,8 @@ impl ImpactInput {
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct TraceInput {
-    #[serde(default = "super::default_schema_version")]
-    schema_version: u32,
+    #[serde(default)]
+    schema_version: Option<u32>,
     repository: PathBuf,
     command: String,
     #[serde(default)]
@@ -680,8 +680,8 @@ impl TraceInput {
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct DepsInput {
-    #[serde(default = "super::default_schema_version")]
-    schema_version: u32,
+    #[serde(default)]
+    schema_version: Option<u32>,
     repository: PathBuf,
     selector: String,
     #[serde(default)]
@@ -702,8 +702,8 @@ impl DepsInput {
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct OverviewInput {
-    #[serde(default = "super::default_schema_version")]
-    schema_version: u32,
+    #[serde(default)]
+    schema_version: Option<u32>,
     repository: PathBuf,
     #[serde(default)]
     selector: Option<String>,

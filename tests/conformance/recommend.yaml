@@ -43,3 +43,13 @@ tests:
     expect:
       error:
         code: invalid_request
+  - name: recommend_refuses_hybrid_limit_without_hybrid
+    tool: recommend
+    input:
+      schema_version: 1
+      repository: "{{workspace}}"
+      query: repair parser cache
+      hybrid_limit: 5
+    expect:
+      error:
+        code: invalid_request

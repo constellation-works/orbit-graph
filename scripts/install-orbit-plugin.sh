@@ -31,12 +31,17 @@ if [ "$binary_set" -eq 1 ] && [ -z "$graph_binary" ]; then
     usage
 fi
 
+# The executable is chosen by the bundled binary, --binary or PATH only; an
+# environment variable that silently redirected it is refused, not ignored.
+if [ -n "${ORBIT_GRAPH_BIN:-}" ]; then
+    echo "ORBIT_GRAPH_BIN is no longer honoured; unset it and pass --binary PATH" >&2
+    exit 2
+fi
+
 script_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd -P)
 plugin_dir=$(dirname "$script_dir")/plugin
 if [ -e "$plugin_dir/bin/orbit-graph.bin" ]; then
     graph_binary=$plugin_dir/bin/orbit-graph.bin
-elif [ "$binary_set" -eq 0 ] && [ -n "${ORBIT_GRAPH_BIN:-}" ]; then
-    graph_binary=$ORBIT_GRAPH_BIN
 elif [ -z "$graph_binary" ]; then
     graph_binary=$(command -v orbit-graph) || {
         echo "orbit-graph is not installed; pass --binary PATH" >&2
@@ -62,6 +67,35 @@ probe=$(printf '%s\n' '{"tool":"orbit.graph.version","input":{}}' |
 case "$probe" in
     *'"ok":true'*'"extractor_version":20'*'"plugin_schema_version":1'*) ;;
     *) echo "incompatible orbit-graph binary: $graph_binary (expected v2 envelope, plugin_schema_version=1, extractor_version=20)" >&2; exit 1 ;;
+esac
+# The same binding rule as the plugin launcher, read from plugin/plugin.yaml
+# `spec.backend.args`: a recorded --backend-sha256 must match, and the
+# --allow-unbound-backend override is reported. `orbit tool add` registers the
+# executable itself, so this is checked once, here.
+backend_args=$(sed -n 's/^    args: \[\(.*\)\]$/\1/p' "$plugin_dir/plugin.yaml")
+case "$backend_args" in
+    '--backend-sha256, '*)
+        expected_sha256=${backend_args#--backend-sha256, }
+        if command -v sha256sum >/dev/null 2>&1; then
+            actual_sha256=$(sha256sum < "$graph_binary" | cut -d ' ' -f 1)
+        elif command -v shasum >/dev/null 2>&1; then
+            actual_sha256=$(shasum -a 256 < "$graph_binary" | cut -d ' ' -f 1)
+        else
+            echo "incompatible_binary: neither sha256sum nor shasum is available to verify $graph_binary" >&2
+            exit 1
+        fi
+        [ "$actual_sha256" = "$expected_sha256" ] || {
+            echo "incompatible_binary: $graph_binary has SHA-256 $actual_sha256, but plugin/plugin.yaml binds $expected_sha256" >&2
+            exit 1
+        }
+        ;;
+    --allow-unbound-backend)
+        echo "backend override: registering $graph_binary unverified (plugin/plugin.yaml has --allow-unbound-backend and records no --backend-sha256)" >&2
+        ;;
+    *)
+        echo "incompatible_binary: plugin/plugin.yaml spec.backend.args records neither --backend-sha256 nor --allow-unbound-backend" >&2
+        exit 1
+        ;;
 esac
 for manifest in \
     "$plugin_dir/orbit-graph-recommend.orbit-tool.yaml" \

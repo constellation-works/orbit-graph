@@ -10,5 +10,8 @@ spec:
   action: plugin.tool_call
   config:
     tool: orbit.graph.maintain
+    # No branch: the plugin syncs its configured `[plugins.graph] branch`
+    # (default main), which Orbit sends to the backend as context.config.
+    # Orbit does not render {{config.*}} templates in tool-call input.
     input:
       operation: history_sync

@@ -49,6 +49,27 @@ analysis library. After an intended report output change (including an
 `UPDATE_GOLDENS=1 cargo test -p orbit-graph-changes --test derived_artifacts --locked`
 and review the diff.
 
+The compatibility plugin tree under `plugin/` is generated from the root
+`plugin.yaml` and `skills/orbit-graph/`, and `plugin_contract` fails when it
+drifts. After changing the root manifest, a schema or the skill, regenerate it
+with
+`UPDATE_GOLDENS=1 cargo test -p orbit-graph-cli --test plugin_contract --locked`
+and review the diff; `bin/orbit-graph` and `plugin/bin/orbit-graph` must stay
+identical.
+
+Two tests register the plugin with a real Orbit and are `#[ignore]`d in the
+normal run; CI's `plugin-conformance` job runs them against the pinned Orbit
+release. Run them locally, with an isolated Orbit root they create themselves,
+as
+
+```sh
+ORBIT_GRAPH_TEST_ORBIT_BIN=/absolute/path/to/orbit \
+  cargo test -p orbit-graph-cli --test plugin_integration --locked -- --ignored
+```
+
+With `--ignored` and no `ORBIT_GRAPH_TEST_ORBIT_BIN` they fail rather than
+pass vacuously.
+
 Changes must follow the constellation standards vendored in
 [`docs/standards/`](docs/standards/README.md); cite a rule as `STD-nn §Rn`.
 Those files are read-only: never edit them, re-sync instead.

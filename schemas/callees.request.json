@@ -5,7 +5,7 @@
   ],
   "properties": {
     "schema_version": {
-      "description": "Request contract version; must be 1 when present.",
+      "description": "Request contract version; must be 1 when present. An omitted version is read as version 1, the only one there has been.",
       "type": "integer",
       "const": 1
     },

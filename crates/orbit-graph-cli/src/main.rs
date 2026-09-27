@@ -112,33 +112,60 @@ fn main() -> ExitCode {
     }
 }
 
+/// Set by the plugin launcher (`bin/orbit-graph`) when the manifest's named
+/// `--allow-unbound-backend` override ran this executable without a recorded
+/// SHA-256; the value is the executable's path. Every response then carries
+/// it as `backend_override`, so an override call is never indistinguishable
+/// from a bound one (STD-05 §R4). It only labels the response: it grants
+/// nothing.
+const BACKEND_OVERRIDE_ENV: &str = "ORBIT_GRAPH_BACKEND_OVERRIDE";
+
 fn run_external_tool(environment_tool: &str) -> ExitCode {
+    let backend_override = std::env::var(BACKEND_OVERRIDE_ENV)
+        .ok()
+        .filter(|path| !path.is_empty());
     let mut input = Vec::new();
     if let Err(source) = io::stdin().read_to_end(&mut input) {
-        return report_plugin_error(&CliError::Stdin(source));
+        return report_plugin_error(&CliError::Stdin(source), backend_override.as_deref());
     }
     match decode_external_tool_request(environment_tool, input.as_slice())
-        .and_then(|(tool_name, input)| {
-            crate::plugin::execute_external_tool(tool_name.as_str(), input.as_slice())
+        .and_then(|(tool_name, input, config)| {
+            crate::plugin::execute_external_tool(tool_name.as_str(), input.as_slice(), &config)
                 .map_err(CliError::Tool)
         })
-        .and_then(|output| write_plugin_response(&json!({"ok": true, "output": output})))
-    {
+        .and_then(|output| {
+            write_plugin_response(&with_backend_override(
+                json!({"ok": true, "output": output}),
+                backend_override.as_deref(),
+            ))
+        }) {
         Ok(()) => ExitCode::SUCCESS,
         Err(error) if error.is_broken_pipe() => ExitCode::SUCCESS,
-        Err(error) => report_plugin_error(&error),
+        Err(error) => report_plugin_error(&error, backend_override.as_deref()),
     }
 }
 
-fn report_plugin_error(error: &CliError) -> ExitCode {
-    let _ = write_plugin_response(&ErrorPayload::from(error));
+fn report_plugin_error(error: &CliError, backend_override: Option<&str>) -> ExitCode {
+    let payload = serde_json::to_value(ErrorPayload::from(error)).unwrap_or_else(|_| {
+        json!({"ok": false, "error": {"code": error.code(), "message": error.to_string(), "retryable": false}})
+    });
+    let _ = write_plugin_response(&with_backend_override(payload, backend_override));
     ExitCode::SUCCESS
+}
+
+/// Add `backend_override` beside `ok` when the launcher ran this executable
+/// under the unbound-backend override.
+fn with_backend_override(mut response: Value, backend_override: Option<&str>) -> Value {
+    if let (Some(path), Some(fields)) = (backend_override, response.as_object_mut()) {
+        fields.insert("backend_override".to_string(), json!(path));
+    }
+    response
 }
 
 fn decode_external_tool_request(
     environment_tool: &str,
     request: &[u8],
-) -> Result<(String, Vec<u8>), CliError> {
+) -> Result<(String, Vec<u8>, crate::plugin::PluginConfig), CliError> {
     let value: Value = serde_json::from_slice(request)
         .map_err(|error| invalid_request("decode Orbit plugin request", error.to_string()))?;
     let envelope_tool = value
@@ -179,8 +206,18 @@ fn decode_external_tool_request(
                 Value::String(workspace_root.to_string()),
             );
         }
+        // The effective `[plugins.graph]` section: `branch` defaults the
+        // landing branch of calls that name none.
+        let (config, ignored) =
+            crate::plugin::PluginConfig::from_context(value.pointer("/context/config"))
+                .map_err(CliError::Tool)?;
+        for key in ignored {
+            emit_notice(&format!(
+                "warning: ignoring plugin config key {key:?}, which this orbit-graph does not read"
+            ));
+        }
         let input = serde_json::to_vec(&input).map_err(CliError::Json)?;
-        return Ok((envelope_tool.to_string(), input));
+        return Ok((envelope_tool.to_string(), input, config));
     }
 
     let tool_name = environment_tool;
@@ -193,7 +230,11 @@ fn decode_external_tool_request(
     emit_notice(
         "warning: bare Orbit plugin requests are deprecated; send the v2 tool/input envelope",
     );
-    Ok((tool_name.to_string(), request.to_vec()))
+    Ok((
+        tool_name.to_string(),
+        request.to_vec(),
+        crate::plugin::PluginConfig::default(),
+    ))
 }
 
 fn invalid_request(operation: &'static str, reason: String) -> CliError {
