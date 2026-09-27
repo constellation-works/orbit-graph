@@ -54,10 +54,9 @@ impl EvaluateCommand {
             return json_value(report);
         }
         let Some(input) = self.input.as_ref() else {
-            return Err(CliError::Graph(GraphError::invalid_data(
-                "validate evaluate arguments",
-                "--input is required unless --live is set",
-            )));
+            return Err(CliError::Usage(
+                "--input is required unless --live is set".to_string(),
+            ));
         };
         let bytes = fs::read(input.as_path()).map_err(|source| {
             CliError::Graph(GraphError::io(
@@ -67,11 +66,9 @@ impl EvaluateCommand {
             ))
         })?;
         let corpus: EvaluationCorpus =
-            serde_json::from_slice(bytes.as_slice()).map_err(|error| {
-                CliError::Graph(GraphError::invalid_data(
-                    "decode evaluation corpus",
-                    error.to_string(),
-                ))
+            serde_json::from_slice(bytes.as_slice()).map_err(|error| CliError::Input {
+                operation: "decode evaluation corpus",
+                reason: error.to_string(),
             })?;
         json_value(evaluate_corpus(context.worktree_root(), &corpus)?)
     }

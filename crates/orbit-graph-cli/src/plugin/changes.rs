@@ -8,7 +8,7 @@
 //! runs out the result is returned with `complete: false` and the reason,
 //! never left to hang.
 
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 use orbit_graph::GraphError;
 use orbit_graph_changes::analysis::{
@@ -22,12 +22,9 @@ use serde_json::{Value, json};
 
 use super::code_index;
 use super::query::ConfidenceInput;
-use super::{PLUGIN_SCHEMA_VERSION, ToolError, decode_input, routed_repository, validate_schema};
-
-/// External tool name, from a verified first-party install.
-pub(crate) const TOOL_NAME: &str = "orbit.graph.changes";
-/// External tool name otherwise.
-pub(crate) const V2_TOOL_NAME: &str = "graph.changes";
+use super::{
+    PLUGIN_SCHEMA_VERSION, ToolCall, ToolError, decode_input, routed_repository, validate_schema,
+};
 
 /// Plugin default: changed symbols analysed per call.
 const DEFAULT_MAX_SYMBOLS: usize = 25;
@@ -149,16 +146,16 @@ impl ChangesInput {
 }
 
 /// Run the `changes` tool.
-pub(crate) fn execute(input: &[u8]) -> Result<Value, ToolError> {
-    let mut request = decode_input::<ChangesInput>(input)?.validate()?;
+pub(crate) fn execute(call: &ToolCall<'_>) -> Result<Value, ToolError> {
+    let mut request = decode_input::<ChangesInput>(call.input)?.validate()?;
     let repository = routed_repository(request.repository.as_path())?;
     request.repository = repository.clone();
     let mut notices = Vec::new();
-    request.cache = match std::env::var_os("ORBIT_PLUGIN_STATE").filter(|state| !state.is_empty()) {
+    request.cache = match call.environment.state_root() {
         Some(state_root) => {
             // The manifest grants writes to plugin state, not to the system
             // temporary directory, so the working-tree head is built there too.
-            let state = super::index_dir_in(Path::new(&state_root), repository.as_path());
+            let state = super::index_dir_in(state_root, repository.as_path());
             ComparisonOptions {
                 cache_dir: Some(state.join(CACHE_DIR_NAME)),
                 no_cache: false,

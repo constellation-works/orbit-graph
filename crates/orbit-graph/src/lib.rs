@@ -23,6 +23,7 @@ mod lock;
 mod query;
 mod recommend;
 pub mod redaction;
+mod runtime;
 mod state_dir;
 mod store;
 mod sync;
@@ -44,7 +45,7 @@ pub use clean::{
 pub use db_path::{
     GraphDbPath, resolve_db_path, resolve_db_path_for_commit, resolve_worktree_db_path,
 };
-pub use error::{GraphError, VersionMismatchDetails};
+pub use error::{ErrorSource, GraphError, GraphErrorClass, VersionMismatchDetails};
 pub use graph::Graph;
 pub(crate) use graph::open_read_connection;
 pub use query::types::{
@@ -55,6 +56,7 @@ pub use query::types::{
     RuntimeInvocation, RuntimeInvocationSymbol, TraceNode, TraceResult,
 };
 pub(crate) use query::types::{SymbolSpan, resolve_symbol_span};
+pub use runtime::{DEFAULT_LOCK_TIMEOUT, RuntimeConfig, SyncFaultPoint, install_runtime};
 pub use sync::report::{
     SyncFailure, SyncMode, SyncObserver, SyncOutcome, SyncPhase, SyncPolicy, SyncProgress,
     SyncReport, SyncSkip,

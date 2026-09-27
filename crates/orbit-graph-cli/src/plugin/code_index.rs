@@ -645,12 +645,9 @@ impl Shared {
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         loop {
-            if matches!(*slot, Slot::Finished(_)) {
-                let Slot::Finished(result) = std::mem::take(&mut *slot) else {
-                    unreachable!("slot was just checked");
-                };
-                *slot = Slot::Abandoned;
-                return Some(*result);
+            match std::mem::replace(&mut *slot, Slot::Abandoned) {
+                Slot::Finished(result) => return Some(*result),
+                pending @ (Slot::Running | Slot::Abandoned) => *slot = pending,
             }
             let now = Instant::now();
             if now >= deadline {

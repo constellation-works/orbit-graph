@@ -127,7 +127,7 @@ pub(crate) fn run(
     let midway = refs_by_file.len() / 2;
     for (index, file_refs) in refs_by_file.into_iter().enumerate() {
         if index == midway && index > 0 {
-            super::inject_fault(super::FaultPoint::MidPass2);
+            super::inject_fault(crate::runtime::SyncFaultPoint::MidPass2);
         }
         rewritten_files.insert(file_refs.file_path.clone());
         delete_refs_for_file(&tx, &file_refs.file_path)?;

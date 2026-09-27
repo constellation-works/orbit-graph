@@ -59,10 +59,9 @@ impl RecommendCommand {
             (Some(query), None) => RecommendationInput::Query(query.clone()),
             (None, Some(task_id)) => RecommendationInput::TaskId(task_id.clone()),
             _ => {
-                return Err(CliError::Graph(GraphError::invalid_data(
-                    "validate recommend arguments",
-                    "exactly one of --query or --task-id is required",
-                )));
+                return Err(CliError::Usage(
+                    "exactly one of --query or --task-id is required".to_string(),
+                ));
             }
         };
         let hybrid_hits = match &self.hybrid_hits {
@@ -75,10 +74,10 @@ impl RecommendCommand {
                     ))
                 })?;
                 serde_json::from_slice::<Vec<HybridTaskHit>>(bytes.as_slice()).map_err(|error| {
-                    CliError::Graph(GraphError::invalid_data(
-                        "decode recommendation hybrid hits JSON",
-                        error.to_string(),
-                    ))
+                    CliError::Input {
+                        operation: "decode recommendation hybrid hits JSON",
+                        reason: error.to_string(),
+                    }
                 })?
             }
             None => Vec::new(),
@@ -229,11 +228,9 @@ fn read_json<T: serde::de::DeserializeOwned>(
             source,
         ))
     })?;
-    serde_json::from_slice(bytes.as_slice()).map_err(|error| {
-        CliError::Graph(GraphError::invalid_data(
-            "decode recommendation JSON input",
-            format!("invalid {description}: {error}"),
-        ))
+    serde_json::from_slice(bytes.as_slice()).map_err(|error| CliError::Input {
+        operation: "decode recommendation JSON input",
+        reason: format!("invalid {description}: {error}"),
     })
 }
 

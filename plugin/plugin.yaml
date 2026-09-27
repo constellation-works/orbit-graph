@@ -345,6 +345,10 @@ spec:
           additionalProperties: false
           description: How the Orbit adapter obtained task text and search hits.
           properties:
+            hybrid_hits_dropped:
+              description: 'When orbit.search ran: how many of its results were dropped as malformed (no string id or no numeric score). Absent when no authoritative hybrid search ran.'
+              minimum: 0
+              type: integer
             hybrid_search:
               description: Source of task-similarity hits, such as local_lexical or orbit.search_hybrid.
               type: string
@@ -591,7 +595,7 @@ spec:
           - fresh
           type: object
         coverage:
-          description: 'What this call covered and how to resume a partial result. graph_sync: complete, state (published or budget_exhausted), phase reached when the budget ran out, and a resume hint.'
+          description: 'What this call covered and how to resume a partial result. graph_sync: complete, state (published or budget_exhausted), phase reached when the budget ran out, and a resume hint. orbit_sync: the runs and tasks examined, with excluded (runs examined and judged ineligible) and failed (tasks and runs that could not be examined) counted separately.'
           type: object
         evidence:
           additionalProperties: false
@@ -627,7 +631,7 @@ spec:
           - graph_sync
           type: string
         outcomes:
-          description: 'orbit_sync: per-run outcome (inserted, already_indexed, or excluded with a reason).'
+          description: 'orbit_sync: per-run or per-task outcome, identified by run_id or task_id: inserted, already_indexed, excluded with a reason (a verdict on the run), or failed with a reason and a structured error {code, message, retryable, orbit?} (the item could not be examined; the rest of the batch continues).'
           items:
             type: object
           type: array

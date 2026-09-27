@@ -14,6 +14,16 @@ pub(crate) fn is_broken_pipe(error: &CliError) -> bool {
     match error {
         CliError::Json(error) => error.io_error_kind() == Some(ErrorKind::BrokenPipe),
         CliError::Stdout(error) => error.kind() == ErrorKind::BrokenPipe,
-        _ => false,
+        CliError::Clap(_)
+        | CliError::Usage(_)
+        | CliError::NotFound(_)
+        | CliError::Input { .. }
+        | CliError::CurrentDir(_)
+        | CliError::Stdin(_)
+        | CliError::Graph(_)
+        | CliError::Tool(_)
+        | CliError::Changes(_)
+        | CliError::Selector(_)
+        | CliError::Stderr(_) => false,
     }
 }

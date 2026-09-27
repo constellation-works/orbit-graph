@@ -216,7 +216,7 @@ impl DbLockGuard {
     /// Takes the graph database's sync lock, waiting at most the configured
     /// [`lock::lock_timeout`].
     pub(crate) fn acquire(db_path: &Path) -> Result<Self, GraphError> {
-        Self::acquire_within(db_path, lock::lock_timeout()?)
+        Self::acquire_within(db_path, lock::lock_timeout())
     }
 
     pub(crate) fn acquire_within(

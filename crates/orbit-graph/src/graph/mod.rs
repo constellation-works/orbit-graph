@@ -54,7 +54,7 @@ impl Graph {
     pub fn open(worktree_root: &Path, policy: SyncPolicy) -> Result<Self, GraphError> {
         // Phase 4 query methods will call this; keep the dispatcher live under dead-code lints.
         let _ensure_synced: fn(&Self) -> Result<(), GraphError> = Self::ensure_synced;
-        let opened = store::open(worktree_root, policy)?;
+        let opened = store::open(worktree_root)?;
         Self::from_opened(worktree_root, policy, opened)
     }
 

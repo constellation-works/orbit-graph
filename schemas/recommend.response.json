@@ -47,6 +47,11 @@
           "description": "Source of task-similarity hits, such as local_lexical or orbit.search_hybrid.",
           "type": "string"
         },
+        "hybrid_hits_dropped": {
+          "description": "When orbit.search ran: how many of its results were dropped as malformed (no string id or no numeric score). Absent when no authoritative hybrid search ran.",
+          "type": "integer",
+          "minimum": 0
+        },
         "warnings": {
           "description": "Degradations the adapter applied, such as a lexical fallback after an orbit.search failure.",
           "type": "array",

@@ -178,8 +178,9 @@ impl HistoryIndex {
     ) -> Result<Self, GraphError> {
         let mut index = Self::resolve(repo_root, landing_branch, None)?;
         if index.landing_branch == "agent-main" {
-            return Err(GraphError::invalid_data(
+            return Err(GraphError::invalid_input(
                 "rebuild history",
+                "branch",
                 "rebuilding agent-main is refused because it is the agent work branch",
             ));
         }
@@ -293,9 +294,8 @@ impl HistoryIndex {
         landing_branch: &str,
         index_dir: Option<&Path>,
     ) -> Result<Self, GraphError> {
-        let repo = Repository::discover(repo_root).map_err(|error| {
-            GraphError::invalid_data("open history Git repository", error.to_string())
-        })?;
+        let repo = Repository::discover(repo_root)
+            .map_err(|error| GraphError::git("open history Git repository", error))?;
         let workdir = repo.workdir().ok_or_else(|| {
             GraphError::invalid_data(
                 "open history Git repository",
@@ -308,8 +308,9 @@ impl HistoryIndex {
         let repository = repository_identity(&repo)?;
         let landing_branch = normalize_branch(landing_branch);
         if landing_branch.is_empty() {
-            return Err(GraphError::invalid_data(
+            return Err(GraphError::invalid_input(
                 "open history index",
+                "branch",
                 "landing branch must be non-empty",
             ));
         }
@@ -502,9 +503,8 @@ impl HistoryIndex {
         }
         delivery.landing_branch = normalize_branch(delivery.landing_branch.as_str());
         self.ensure_scope(&delivery)?;
-        let repo = Repository::open(self.repo_root.as_path()).map_err(|error| {
-            GraphError::invalid_data("open repository for history import", error.to_string())
-        })?;
+        let repo = Repository::open(self.repo_root.as_path())
+            .map_err(|error| GraphError::git("open repository for history import", error))?;
         let mut extracted = extract_delivery(&repo, delivery)?;
         extracted.supplied_snapshots = supplied_snapshots;
         let _lock = HistoryLock::acquire(self.db_path.as_path(), "history import")?;
@@ -603,9 +603,8 @@ impl HistoryIndex {
         normalize_tasks(&mut delivery.tasks)?;
         delivery.landing_branch = normalize_branch(delivery.landing_branch.as_str());
         self.ensure_scope(&delivery)?;
-        let repo = Repository::open(self.repo_root.as_path()).map_err(|error| {
-            GraphError::invalid_data("open repository for history preview", error.to_string())
-        })?;
+        let repo = Repository::open(self.repo_root.as_path())
+            .map_err(|error| GraphError::git("open repository for history preview", error))?;
         Ok(extract_delivery(&repo, delivery)?)
     }
 
@@ -628,8 +627,9 @@ impl HistoryIndex {
         discard_verified: bool,
     ) -> Result<HistoryRebuildReport, GraphError> {
         if self.landing_branch == "agent-main" {
-            return Err(GraphError::invalid_data(
+            return Err(GraphError::invalid_input(
                 "rebuild history",
+                "branch",
                 "rebuilding agent-main is refused because it is the agent work branch",
             ));
         }
@@ -638,14 +638,14 @@ impl HistoryIndex {
         }
         let limit = limit.unwrap_or(DEFAULT_HISTORY_SYNC_LIMIT);
         if limit == 0 {
-            return Err(GraphError::invalid_data(
+            return Err(GraphError::invalid_input(
                 "rebuild history",
+                "limit",
                 "limit must be greater than zero",
             ));
         }
-        let repo = Repository::open(self.repo_root.as_path()).map_err(|error| {
-            GraphError::invalid_data("open repository for history rebuild", error.to_string())
-        })?;
+        let repo = Repository::open(self.repo_root.as_path())
+            .map_err(|error| GraphError::git("open repository for history rebuild", error))?;
         let tip = branch_tip(&repo, self.landing_branch.as_str())?;
         let (existing, verified, cursor_before) = self.rebuild_scope_counts()?;
         if !confirm {
@@ -786,9 +786,8 @@ impl HistoryIndex {
                 |row| row.get(0),
             )
             .map_err(|source| GraphError::sqlite("read history task status", source))?;
-        let repo = Repository::open(self.repo_root.as_path()).map_err(|error| {
-            GraphError::invalid_data("open repository for history status", error.to_string())
-        })?;
+        let repo = Repository::open(self.repo_root.as_path())
+            .map_err(|error| GraphError::git("open repository for history status", error))?;
         let tip = branch_tip(&repo, self.landing_branch.as_str())?.to_string();
         let complete =
             scope.bootstrap_tip.is_none() && scope.cursor.as_deref() == Some(tip.as_str());
@@ -881,10 +880,7 @@ impl HistoryIndex {
         historical: &SymbolIdentity,
     ) -> Result<CurrentRevisionResolution, GraphError> {
         let repo = Repository::open(self.repo_root.as_path()).map_err(|error| {
-            GraphError::invalid_data(
-                "open repository for current symbol resolution",
-                error.to_string(),
-            )
+            GraphError::git("open repository for current symbol resolution", error)
         })?;
         let tip = branch_tip(&repo, self.landing_branch.as_str())?;
         let commit = repo
@@ -978,14 +974,14 @@ impl HistoryIndex {
 
     fn sync_impl(&self, limit: usize) -> Result<HistorySyncReport, GraphError> {
         if limit == 0 {
-            return Err(GraphError::invalid_data(
+            return Err(GraphError::invalid_input(
                 "sync history",
+                "limit",
                 "limit must be greater than zero",
             ));
         }
-        let repo = Repository::open(self.repo_root.as_path()).map_err(|error| {
-            GraphError::invalid_data("open repository for history sync", error.to_string())
-        })?;
+        let repo = Repository::open(self.repo_root.as_path())
+            .map_err(|error| GraphError::git("open repository for history sync", error))?;
         let conn = self.open_connection()?;
         let scope = read_scope(
             &conn,
@@ -997,9 +993,7 @@ impl HistoryIndex {
             .cursor
             .as_deref()
             .map(|value| {
-                Oid::from_str(value).map_err(|error| {
-                    GraphError::invalid_data("read history cursor", error.to_string())
-                })
+                Oid::from_str(value).map_err(|error| GraphError::git("read history cursor", error))
             })
             .transpose()?;
         let tip = branch_tip(&repo, self.landing_branch.as_str())?;
@@ -1568,7 +1562,11 @@ fn lineage_step(file: &FileChange) -> Option<(&str, Option<&str>)> {
             (new_path != old_path).then_some((old_path, Some(new_path)))
         }
         FileChangeKind::Deleted => Some((old_path, None)),
-        _ => None,
+        FileChangeKind::Added
+        | FileChangeKind::Modified
+        | FileChangeKind::Copied
+        | FileChangeKind::TypeChanged
+        | FileChangeKind::Unreadable => None,
     }
 }
 
@@ -1857,7 +1855,7 @@ fn usize_from_i64(value: i64, field: &str) -> Result<usize, GraphError> {
 }
 
 fn git_error(operation: &'static str) -> impl FnOnce(git2::Error) -> GraphError {
-    move |error| GraphError::invalid_data(operation, error.to_string())
+    move |error| GraphError::git(operation, error)
 }
 
 #[cfg(test)]
@@ -1899,7 +1897,7 @@ impl HistoryLock {
         let guard = lock::FileLockGuard::acquire(
             path.as_path(),
             lock::holder_label(activity).as_str(),
-            lock::lock_timeout()?,
+            lock::lock_timeout(),
             "lock history index",
         )?;
         Ok(Self { _guard: guard })

@@ -731,21 +731,25 @@ fn render_location(
     mode: ExcerptMode,
     what: &str,
 ) -> LocationEvidence {
-    if matches!(mode, ExcerptMode::None) {
-        return LocationEvidence::Reference {
-            reference: reference_pointer(file, line.map(|l| (l, l)), commit_sha),
-        };
-    }
+    let full_span = match mode {
+        ExcerptMode::None => {
+            return LocationEvidence::Reference {
+                reference: reference_pointer(file, line.map(|l| (l, l)), commit_sha),
+            };
+        }
+        ExcerptMode::FullSpan => true,
+        ExcerptMode::Controlled => false,
+    };
     let Some((lines, file_truncated)) = state.lines(side, file) else {
         return LocationEvidence::Reference {
             reference: reference_pointer(file, line.map(|l| (l, l)), commit_sha),
         };
     };
     let total = lines.len();
-    let span = match mode {
-        ExcerptMode::FullSpan => Some((1usize, total.max(1))),
-        ExcerptMode::Controlled => line.map(|current| window(current, total, EXCERPT_RADIUS_LINES)),
-        ExcerptMode::None => unreachable!("handled above"),
+    let span = if full_span {
+        Some((1usize, total.max(1)))
+    } else {
+        line.map(|current| window(current, total, EXCERPT_RADIUS_LINES))
     };
     let Some((start, end)) = span else {
         return LocationEvidence::Reference {

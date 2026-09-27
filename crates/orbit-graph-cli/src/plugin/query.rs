@@ -14,7 +14,10 @@ use serde::Deserialize;
 use serde_json::{Map, Value, json};
 
 use super::code_index::{self, IndexState, PublishedIndex};
-use super::{PLUGIN_SCHEMA_VERSION, ToolError, decode_input, routed_repository, validate_schema};
+use super::{
+    MAINTAIN_TOOL, PLUGIN_SCHEMA_VERSION, ToolCall, ToolError, decode_input, routed_repository,
+    validate_schema,
+};
 use orbit_graph::{
     CalleeOpts, DEFAULT_IMPACT_DEPTH, DEFAULT_SEARCH_LIMIT, DEFAULT_TRACE_DEPTH, Graph,
     ImpactDirection, OverviewFormat, RefConfidence, RefKind, RefOpts, SearchKind, SearchQuery,
@@ -50,6 +53,7 @@ pub(crate) enum QueryTool {
 
 impl QueryTool {
     /// Every query tool, in manifest order.
+    #[cfg(test)]
     pub(crate) const ALL: [Self; 8] = [
         Self::Search,
         Self::Show,
@@ -74,15 +78,6 @@ impl QueryTool {
             Self::Overview => "overview",
         }
     }
-
-    /// The query tool `name` selects: `orbit.graph.<verb>` from a verified
-    /// first-party install, or `graph.<verb>` otherwise.
-    pub(crate) fn from_tool_name(name: &str) -> Option<Self> {
-        let verb = name
-            .strip_prefix("orbit.graph.")
-            .or_else(|| name.strip_prefix("graph."))?;
-        Self::ALL.into_iter().find(|tool| tool.verb() == verb)
-    }
 }
 
 /// Decode and validate a query tool's input without touching any repository.
@@ -99,27 +94,21 @@ fn validate(tool: QueryTool, input: &[u8]) -> Result<QueryRequest, ToolError> {
     }
 }
 
-/// Run query tool `tool`, invoked under `name`.
-pub(crate) fn execute(tool: QueryTool, name: &str, input: &[u8]) -> Result<Value, ToolError> {
-    let maintain = if name.starts_with("orbit.") {
-        "orbit.graph.maintain"
-    } else {
-        "graph.maintain"
-    };
-    let request = validate(tool, input)?;
+/// Run query tool `tool` for `call`.
+pub(crate) fn execute(tool: QueryTool, call: &ToolCall<'_>) -> Result<Value, ToolError> {
+    let maintain = call.spelling(&MAINTAIN_TOOL);
+    let request = validate(tool, call.input)?;
     // Checked before routing: without plugin state there is no index to read.
-    let state_root = std::env::var_os("ORBIT_PLUGIN_STATE")
-        .filter(|state| !state.is_empty())
-        .ok_or_else(|| {
-            ToolError::invalid_request(
-                "locate code-graph index",
-                "query tools read the plugin's code-graph index and need ORBIT_PLUGIN_STATE, \
+    let state_root = call.environment.state_root().ok_or_else(|| {
+        ToolError::invalid_request(
+            "locate code-graph index",
+            "query tools read the plugin's code-graph index and need ORBIT_PLUGIN_STATE, \
                  which Orbit sets for plugin tools; outside Orbit, run the orbit-graph CLI in \
                  the repository instead",
-            )
-        })?;
+        )
+    })?;
     let repository = routed_repository(request.repository.as_path())?;
-    let index_dir = super::index_dir_in(Path::new(&state_root), repository.as_path());
+    let index_dir = super::index_dir_in(state_root, repository.as_path());
     let published = match IndexState::read(index_dir.as_path())? {
         IndexState::Ready(published) => published,
         IndexState::Missing => {
@@ -166,7 +155,12 @@ pub(crate) fn execute(tool: QueryTool, name: &str, input: &[u8]) -> Result<Value
             }
             (result, truncation)
         }
-        _ => bound(raw, request.limit)?,
+        Query::Refs { .. }
+        | Query::Callees { .. }
+        | Query::Impact { .. }
+        | Query::Trace { .. }
+        | Query::Deps(_)
+        | Query::Overview { .. } => bound(raw, request.limit)?,
     };
     let mut response = json!({
         "schema_version": PLUGIN_SCHEMA_VERSION,
@@ -874,20 +868,16 @@ mod tests {
     }
 
     #[test]
-    fn tool_names_select_verbs_in_both_spellings() {
+    fn every_query_tool_is_served_under_its_verb_in_both_spellings() {
         for tool in QueryTool::ALL {
             let verb = tool.verb();
-            assert_eq!(
-                QueryTool::from_tool_name(&format!("orbit.graph.{verb}")),
-                Some(tool)
-            );
-            assert_eq!(
-                QueryTool::from_tool_name(&format!("graph.{verb}")),
-                Some(tool)
-            );
+            for name in [format!("orbit.graph.{verb}"), format!("graph.{verb}")] {
+                assert!(
+                    super::super::find_tool(&name).is_some(),
+                    "{name} is not in the tool table"
+                );
+            }
         }
-        assert_eq!(QueryTool::from_tool_name("graph.recommend"), None);
-        assert_eq!(QueryTool::from_tool_name("search"), None);
     }
 
     #[test]

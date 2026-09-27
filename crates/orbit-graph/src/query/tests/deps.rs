@@ -98,5 +98,11 @@ fn deps_rejects_non_path_selector() {
             qualified: "orbit_core::scheduler".to_string(),
         })
         .expect_err("module selector should be rejected");
-    assert!(matches!(error, GraphError::InvalidData { .. }));
+    assert!(matches!(
+        error,
+        GraphError::InvalidInput {
+            field: "selector",
+            ..
+        }
+    ));
 }

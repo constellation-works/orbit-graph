@@ -505,14 +505,14 @@ fn plugin_errors_carry_stable_codes_and_validate_before_routing() {
         json!({"operation": "history_sync", "limit": 10}),
     );
     // A well-formed request naming an unknown revision of a real repository
-    // fails inside the graph layer.
+    // is `not_found`, distinct from a graph failure.
     assert_eq!(
         code(
             fixture.path(),
             RECOMMEND_TOOL_NAME,
             json!({"query": "parser", "revision": "no-such-revision"})
         ),
-        "graph_error"
+        "not_found"
     );
 }
 
@@ -2523,9 +2523,19 @@ fn orbit_sync_can_store_a_later_supplied_snapshot_without_replacing_observed_tex
 #[test]
 fn public_adapter_bounds_time_and_pipe_output() {
     let adapter_timeout = ADAPTER_TIMEOUT_SECONDS.to_string();
-    for (body, expected) in [
-        (format!("sleep {}", stuck_seconds()), "timed out"),
-        ("head -c 2097152 /dev/zero".to_string(), "exceeded"),
+    for (body, expected, code, retryable) in [
+        (
+            format!("sleep {}", stuck_seconds()),
+            "timed out",
+            "timeout",
+            true,
+        ),
+        (
+            "head -c 2097152 /dev/zero".to_string(),
+            "exceeded",
+            "graph_error",
+            false,
+        ),
     ] {
         let fixture = adapter_fixture();
         let repository = fixture
@@ -2564,7 +2574,44 @@ fn public_adapter_bounds_time_and_pipe_output() {
         assert!(
             error["error"]["message"]
                 .as_str()
-                .is_some_and(|message| message.contains(expected))
+                .is_some_and(|message| message.contains(expected)),
+            "{body}: {error}"
+        );
+        assert_eq!(error["error"]["code"], code, "{body}: {error}");
+        assert_eq!(error["error"]["retryable"], retryable, "{body}: {error}");
+    }
+}
+
+/// The plugin's environment is validated once, before any tool runs: a bad
+/// value is refused naming its variable, even for a tool that would not
+/// read it (STD-02 §R28).
+#[test]
+fn a_malformed_plugin_environment_is_refused_before_any_tool_runs() {
+    let fixture = adapter_fixture();
+    let repository = fixture
+        .path()
+        .join("repo")
+        .canonicalize()
+        .expect("repository");
+    for (variable, value) in [
+        ("GRAPH_ORBIT_TIMEOUT_SECONDS", "0"),
+        ("GRAPH_ORBIT_TIMEOUT_SECONDS", "61"),
+        ("GRAPH_ORBIT_TIMEOUT_SECONDS", "soon"),
+        ("ORBIT_PLUGIN_STATE", ""),
+        ("ORBIT_GRAPH_LOCK_TIMEOUT_MS", "-1"),
+    ] {
+        let output = plugin_output_with_env(
+            repository.as_path(),
+            "orbit.graph.version",
+            json!({}),
+            &[(variable, std::ffi::OsStr::new(value))],
+        );
+        let error = assert_plugin_error(&output, variable);
+        assert!(
+            error["error"]["message"]
+                .as_str()
+                .is_some_and(|message| message.contains(variable)),
+            "{variable}={value:?}: {error}"
         );
     }
 }
@@ -2708,7 +2755,28 @@ fn public_adapter_enforces_callback_denials() {
                 .is_some_and(|message| message.contains(expected)),
             "{mode}: {error}"
         );
+        assert_eq!(error["error"]["retryable"], false, "{mode}: {error}");
     }
+    // An MCP refusal keeps Orbit's own code beside the plugin's.
+    let denied = plugin_output_with_env(
+        repository.as_path(),
+        RECOMMEND_TOOL_NAME,
+        recommend.clone(),
+        &[
+            ("PATH", callback_path.as_os_str()),
+            ("GRAPH_TEST_DISCOVERY", std::ffi::OsStr::new("denied")),
+        ],
+    );
+    let denied = assert_plugin_error(&denied, "an MCP refusal");
+    assert_eq!(denied["error"]["code"], "orbit_refused", "{denied}");
+    assert_eq!(
+        denied["error"]["orbit"]["code"], "policy_denied",
+        "{denied}"
+    );
+    assert_eq!(
+        denied["error"]["orbit"]["tool"], "orbit.workspace.list",
+        "{denied}"
+    );
 
     let sync = plugin_output_with_env(
         repository.as_path(),
@@ -2727,15 +2795,211 @@ fn public_adapter_enforces_callback_denials() {
         ],
     );
     let sync = plugin_success(&sync);
+    // A refused run read is infrastructure, not a verdict on the run: it is
+    // `failed`, with Orbit's refusal code preserved.
     assert_eq!(sync["outcomes"][0]["run_id"], "RUN-1", "{sync}");
-    assert_eq!(sync["outcomes"][0]["status"], "excluded", "{sync}");
+    assert_eq!(sync["outcomes"][0]["status"], "failed", "{sync}");
     assert!(
         sync["outcomes"][0]["reason"]
             .as_str()
             .is_some_and(|reason| reason.contains("operator")),
         "{sync}"
     );
+    let error = &sync["outcomes"][0]["error"];
+    assert_eq!(error["code"], "orbit_refused", "{sync}");
+    assert_eq!(error["orbit"]["code"], "policy_denied", "{sync}");
+    assert_eq!(error["orbit"]["tool"], "orbit.workflow.run.show", "{sync}");
+    assert_eq!(error["retryable"], false, "{sync}");
+    assert_eq!(sync["coverage"]["failed"], 1, "{sync}");
+    assert_eq!(sync["coverage"]["excluded"], 0, "{sync}");
     assert_eq!(sync["status"]["deliveries"], 0);
+}
+
+#[test]
+fn orbit_sync_reports_an_unreadable_task_as_failed_and_imports_the_rest() {
+    let fixture = adapter_fixture();
+    let repository = fixture
+        .path()
+        .join("repo")
+        .canonicalize()
+        .expect("repository");
+    let callback_path = executable_path_with(fixture.path());
+    let sync = plugin_output_with_env(
+        repository.as_path(),
+        MAINTAIN_TOOL_NAME,
+        json!({
+            "schema_version": 1,
+            "operation": "orbit_sync",
+            "repository": repository,
+            "branch": "main",
+            "workspace": "ws-test",
+            "task_ids": ["TASK-MISSING", "TASK-PRIOR"]
+        }),
+        &[("PATH", callback_path.as_os_str())],
+    );
+    let sync = plugin_success(&sync);
+    let outcomes = sync["outcomes"].as_array().expect("outcomes");
+    let missing = outcomes
+        .iter()
+        .find(|outcome| outcome["task_id"] == "TASK-MISSING")
+        .unwrap_or_else(|| panic!("the unreadable task is reported by identity: {sync}"));
+    assert_eq!(missing["status"], "failed", "{sync}");
+    assert_eq!(missing["error"]["code"], "orbit_refused", "{sync}");
+    assert_eq!(
+        missing["error"]["orbit"]["code"], "task_not_found",
+        "{sync}"
+    );
+    let delivered = outcomes
+        .iter()
+        .find(|outcome| outcome["run_id"] == "RUN-1")
+        .unwrap_or_else(|| panic!("the readable task's run is still imported: {sync}"));
+    assert_eq!(delivered["status"], "inserted", "{sync}");
+    assert_eq!(sync["coverage"]["task_ids_examined"], 2, "{sync}");
+    assert_eq!(sync["coverage"]["failed"], 1, "{sync}");
+    assert_eq!(sync["coverage"]["excluded"], 0, "{sync}");
+    assert_eq!(sync["status"]["deliveries"], 1, "{sync}");
+
+    // A run that is examined and judged ineligible is `excluded`, counted
+    // apart from failures.
+    let wrong_workspace = plugin_success(&plugin_output_with_env(
+        repository.as_path(),
+        MAINTAIN_TOOL_NAME,
+        json!({
+            "schema_version": 1,
+            "operation": "orbit_sync",
+            "repository": repository,
+            "branch": "main",
+            "workspace": "ws-wrong",
+            "run_ids": ["RUN-1"]
+        }),
+        &[("PATH", callback_path.as_os_str())],
+    ));
+    assert_eq!(
+        wrong_workspace["outcomes"][0]["status"], "excluded",
+        "{wrong_workspace}"
+    );
+    assert_eq!(
+        wrong_workspace["coverage"]["excluded"], 1,
+        "{wrong_workspace}"
+    );
+    assert_eq!(
+        wrong_workspace["coverage"]["failed"], 0,
+        "{wrong_workspace}"
+    );
+}
+
+/// Run a hybrid `recommend` against the adapter fixture with the fake
+/// `orbit.search` in `mode`, returning the response and how long it took.
+#[cfg(unix)]
+fn hybrid_recommend(fixture: &TempDir, mode: &str) -> (Value, Duration) {
+    let repository = fixture
+        .path()
+        .join("repo")
+        .canonicalize()
+        .expect("repository");
+    let callback_path = executable_path_with(fixture.path());
+    plugin_json(
+        repository.as_path(),
+        MAINTAIN_TOOL_NAME,
+        json!({"operation": "history_sync", "limit": 10}),
+    );
+    let adapter_timeout = ADAPTER_TIMEOUT_SECONDS.to_string();
+    let started = Instant::now();
+    let output = plugin_output_with_env(
+        repository.as_path(),
+        RECOMMEND_TOOL_NAME,
+        json!({
+            "schema_version": 1,
+            "repository": repository,
+            "branch": "main",
+            "workspace": "ws-test",
+            "query": "parser validation",
+            "hybrid": true,
+            "level": "file"
+        }),
+        &[
+            ("PATH", callback_path.as_os_str()),
+            ("GRAPH_TEST_SEARCH", std::ffi::OsStr::new(mode)),
+            (
+                "GRAPH_ORBIT_TIMEOUT_SECONDS",
+                std::ffi::OsStr::new(&adapter_timeout),
+            ),
+        ],
+    );
+    (plugin_success(&output), started.elapsed())
+}
+
+#[cfg(unix)]
+fn hybrid_warnings(response: &Value) -> String {
+    response["adapter"]["warnings"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(Value::as_str)
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn public_adapter_stops_a_grandchild_that_holds_orbit_stdout() {
+    let fixture = adapter_fixture();
+    let (response, elapsed) = hybrid_recommend(&fixture, "fork");
+    // The grandchild sleeps for stuck_seconds(), past the ceiling, holding
+    // the pipe: finishing inside the ceiling proves the group was swept.
+    assert!(
+        elapsed < adapter_latency_ceiling(),
+        "took {elapsed:?}, over the {:?} ceiling",
+        adapter_latency_ceiling()
+    );
+    assert_eq!(
+        response["adapter"]["hybrid_search"], "orbit.search_hybrid",
+        "{response}"
+    );
+    let pid = fs::read_to_string(fixture.path().join("grandchild.pid")).expect("grandchild pid");
+    let proc_entry = Path::new("/proc").join(pid.trim());
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while proc_entry.exists() && Instant::now() < deadline {
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    assert!(
+        !proc_entry.exists(),
+        "grandchild {pid} outlived the adapter call"
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn public_adapter_reports_signals_marks_truncated_stderr_and_counts_dropped_hits() {
+    let fixture = adapter_fixture();
+    let (killed, _) = hybrid_recommend(&fixture, "signal");
+    assert_eq!(
+        killed["adapter"]["hybrid_search"], "local_lexical_fallback",
+        "{killed}"
+    );
+    assert!(
+        hybrid_warnings(&killed).contains("signal 9"),
+        "a signal-killed child is reported as a signal: {killed}"
+    );
+
+    let (noisy, _) = hybrid_recommend(&fixture, "noisy");
+    let warnings = hybrid_warnings(&noisy);
+    assert!(
+        warnings.contains("exit 3") && warnings.contains("…[truncated 1904 bytes]"),
+        "truncated stderr is marked with what was cut: {noisy}"
+    );
+
+    let (malformed, _) = hybrid_recommend(&fixture, "malformed");
+    assert_eq!(
+        malformed["adapter"]["hybrid_hits_dropped"], 1,
+        "{malformed}"
+    );
+    assert!(
+        hybrid_warnings(&malformed).contains("dropped 1 malformed"),
+        "{malformed}"
+    );
+    let (clean, _) = hybrid_recommend(&fixture, "");
+    assert_eq!(clean["adapter"]["hybrid_hits_dropped"], 0, "{clean}");
 }
 
 #[cfg(target_os = "linux")]
@@ -3499,7 +3763,20 @@ fn adapter_fixture() -> TempDir {
     let linger = fixture.path().join("linger.pid");
     // GRAPH_TEST_DISCOVERY selects the MCP server's behaviour (granted, denied
     // by the callback allowlist, refused before serving, or lingering after
-    // EOF); GRAPH_TEST_RUN_SHOW=denied models the operator-only run read.
+    // EOF); GRAPH_TEST_RUN_SHOW=denied models the operator-only run read, as
+    // Orbit's structured stderr refusal. GRAPH_TEST_SEARCH selects how
+    // `orbit.search` misbehaves: a grandchild holding stdout (fork), death by
+    // SIGKILL (signal), oversized stderr (noisy) or a malformed hit.
+    // TASK-MISSING is always refused as `task_not_found`.
+    let run_show_denied = json!({
+        "code": "policy_denied",
+        "error": "orbit.workflow.run.show requires the operator capability"
+    });
+    let task_missing =
+        json!({"code": "task_not_found", "error": "task TASK-MISSING was not found"});
+    let malformed_search =
+        json!({"results": [{"id": "TASK-PRIOR", "score": 1.0}, {"id": "TASK-TARGET"}]});
+    let grandchild = fixture.path().join("grandchild.pid");
     let script = format!(
         r#"#!/bin/sh
 printf '%s\n' "$*" >> "{log}"
@@ -3529,18 +3806,35 @@ case "$*" in
     fi ;;
   *"tool run orbit.workflow.run.show"*"RUN-1"*)
     if [ "$GRAPH_TEST_RUN_SHOW" = denied ]; then
-      printf '%s\n' "policy_denied: orbit.workflow.run.show requires the operator capability" >&2
+      printf '%s\n' '{run_show_denied}' >&2
       exit 1
     fi
     printf '%s\n' '{run_show}' ;;
+  *"tool run orbit.task.show"*"TASK-MISSING"*)
+    printf '%s\n' '{task_missing}' >&2
+    exit 1 ;;
   *"tool run orbit.task.show"*"TASK-PRIOR"*) printf '%s\n' '{prior}' ;;
   *"tool run orbit.task.show"*"TASK-TARGET"*) printf '%s\n' '{target}' ;;
-  *"tool run orbit.search"*) printf '%s\n' '{search}' ;;
+  *"tool run orbit.search"*)
+    case "$GRAPH_TEST_SEARCH" in
+      fork)
+        sleep {stuck} &
+        printf '%s' "$!" > "{grandchild}" ;;
+      signal) kill -9 $$ ;;
+      noisy)
+        head -c 6000 /dev/zero | tr '\0' x >&2
+        exit 3 ;;
+      malformed)
+        printf '%s\n' '{malformed_search}'
+        exit 0 ;;
+    esac
+    printf '%s\n' '{search}' ;;
   *) exit 9 ;;
 esac
 "#,
         log = log.display(),
         linger = linger.display(),
+        grandchild = grandchild.display(),
         stuck = stuck_seconds(),
     );
     executable(&fixture.path().join("orbit"), script);
@@ -3694,7 +3988,10 @@ fn assert_plugin_error(output: &Output, context: &str) -> Value {
         response["error"]["message"].is_string(),
         "{context}: {response}"
     );
-    assert_eq!(response["error"]["retryable"], false, "{context}");
+    assert!(
+        response["error"]["retryable"].is_boolean(),
+        "{context}: {response}"
+    );
     response
 }
 

@@ -122,6 +122,39 @@ fn every_read_succeeds_on_a_read_only_index_and_changes_nothing() {
     assert_eq!(snapshot(&index), index_before, "a plugin read changed it");
 }
 
+/// A selector of the wrong kind is the caller's input: `invalid_request`,
+/// not retryable, and distinct from a graph failure. The CLI reports the
+/// same failure as `invalid_input`.
+#[test]
+fn a_selector_of_the_wrong_kind_is_refused_as_invalid_input() {
+    let repo = fixture_repository();
+    run_json(repo.path(), &["sync"]);
+    let state = TempDir::new().expect("plugin state");
+    plugin_ok(
+        repo.path(),
+        Some(state.path()),
+        "orbit.graph.maintain",
+        json!({"operation": "graph_sync"}),
+    );
+    let symbol = "symbol:src/lib.rs#helper:function";
+    for (tool, input) in [
+        ("orbit.graph.deps", json!({"selector": symbol})),
+        ("orbit.graph.overview", json!({"selector": symbol})),
+    ] {
+        let response = plugin_response(repo.path(), Some(state.path()), tool, input);
+        assert_eq!(response["ok"], false, "{tool}: {response}");
+        assert_eq!(
+            response["error"]["code"], "invalid_request",
+            "{tool}: {response}"
+        );
+        assert_eq!(response["error"]["retryable"], false, "{tool}: {response}");
+    }
+    let output = run_cli(repo.path(), &["deps", symbol]);
+    assert!(!output.status.success(), "a symbol is not a deps selector");
+    let error: Value = serde_json::from_slice(&output.stderr).expect("JSON error");
+    assert_eq!(error["code"], "invalid_input", "{error}");
+}
+
 /// On a repository that was never synced every read fails with
 /// `index_missing` naming the command that builds the index, and creates
 /// nothing; `db-path` reports the would-be path.

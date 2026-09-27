@@ -167,11 +167,9 @@ impl HistoryImportCommand {
     fn run(&self, context: &CommandContext) -> Result<serde_json::Value, CliError> {
         let bytes = read_input(self.input.as_path())?;
         let delivery: DeliveryImport =
-            serde_json::from_slice(bytes.as_slice()).map_err(|error| {
-                CliError::Graph(GraphError::invalid_data(
-                    "decode delivery import JSON",
-                    error.to_string(),
-                ))
+            serde_json::from_slice(bytes.as_slice()).map_err(|error| CliError::Input {
+                operation: "decode delivery import JSON",
+                reason: error.to_string(),
             })?;
         let index = HistoryIndex::open(context.worktree_root(), delivery.landing_branch.as_str())?;
         scoped_json(&index, index.import(delivery)?)

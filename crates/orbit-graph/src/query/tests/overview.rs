@@ -116,5 +116,8 @@ fn overview_rejects_symbol_selector_scope() {
             OverviewFormat::Summary,
         )
         .expect_err("symbol selector should be rejected");
-    assert!(matches!(error, GraphError::InvalidData { .. }));
+    assert!(matches!(
+        error,
+        GraphError::InvalidInput { field: "scope", .. }
+    ));
 }
