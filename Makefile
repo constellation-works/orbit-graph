@@ -151,7 +151,10 @@ watch:
 	$(CARGO) watch -x "check --workspace --locked" -x "nextest run --workspace --locked"
 
 # Bundle a freshly built release executable beside the plugin launcher
-# (bin/orbit-graph.bin, git-ignored), where it wins over PATH.
+# (bin/orbit-graph.bin, git-ignored), where it wins over PATH, and bind
+# plugin.yaml to its SHA-256 (`--backend-sha256`). That binding is local to
+# this host: re-approve with `orbit plugin add . --force` and do not commit the
+# rewritten plugin.yaml; `git checkout plugin.yaml` restores the override.
 plugin-bundle: release
 	scripts/bundle-plugin-binary.sh --binary "$(CARGO_TARGET_DIR)/release/$(BINARY)" .
 
@@ -161,4 +164,5 @@ plugin-bundle: release
 plugin-check:
 	$(CARGO) build -p $(BINARY_PACKAGE) --bin $(BINARY) --locked --target-dir "$(CARGO_TARGET_DIR)"
 	$(ORBIT) plugin validate --first-party .
+	$(ORBIT) plugin validate --first-party plugin
 	PATH="$(abspath $(CARGO_TARGET_DIR))/debug:$$PATH" $(ORBIT) plugin test --first-party .

@@ -36,6 +36,26 @@ const CHANGES_TOOL_NAME: &str = "orbit.graph.changes";
 const PLUGIN_SCHEMA_VERSION: u32 = 1;
 /// Tools of the root manifest that are not read-only code-graph queries.
 const NON_QUERY_TOOLS: [&str; 5] = ["version", "status", "recommend", "maintain", "changes"];
+/// `GRAPH_ORBIT_TIMEOUT_SECONDS` for the adapter tests that bound time.
+const ADAPTER_TIMEOUT_SECONDS: u64 = 1;
+/// What a bounded adapter call may take beyond its timeout: process start-up,
+/// history reads and scheduling under a loaded CI host. Generous, because a
+/// stuck subprocess is killed at the timeout, so a passing run never waits
+/// for it, and a failing one waits [`STUCK_PAST_CEILING`] longer.
+const LATENCY_MARGIN: Duration = Duration::from_secs(10);
+/// How long the fake Orbit's stuck subprocesses outlive the ceiling, so a call
+/// that waited for one instead of timing out cannot pass.
+const STUCK_PAST_CEILING: Duration = Duration::from_secs(10);
+
+/// The longest a call bounded by [`ADAPTER_TIMEOUT_SECONDS`] may take.
+fn adapter_latency_ceiling() -> Duration {
+    Duration::from_secs(ADAPTER_TIMEOUT_SECONDS) + LATENCY_MARGIN
+}
+
+/// How long a stuck fake Orbit subprocess sleeps.
+fn stuck_seconds() -> u64 {
+    (adapter_latency_ceiling() + STUCK_PAST_CEILING).as_secs()
+}
 
 #[test]
 fn no_argv_plugin_supports_status_and_query_and_task_id_both_levels() {
@@ -396,7 +416,7 @@ fn launchers_reject_a_stale_path_binary_and_ignore_the_environment() {
         // Orbit clears a backend's environment, so an override variable can
         // never select the executable: only the bundled binary and PATH do.
         let real_str = real.to_str().expect("UTF-8 binary path");
-        let rejected = launcher_version(&launcher, &stale_path, Some(real_str));
+        let rejected = launcher_version(&launcher, &[UNBOUND], &stale_path, Some(real_str));
         assert_eq!(rejected.status.code(), Some(0), "{launcher:?}");
         let response: Value = serde_json::from_slice(&rejected.stdout).expect("structured error");
         assert_eq!(response["ok"], false);
@@ -420,7 +440,7 @@ fn launchers_reject_a_stale_path_binary_and_ignore_the_environment() {
             String::from_utf8_lossy(&rejected.stderr)
         );
 
-        let selected = launcher_version(&launcher, &current_path, None);
+        let selected = launcher_version(&launcher, &[UNBOUND], &current_path, None);
         assert_eq!(
             selected.status.code(),
             Some(0),
@@ -429,6 +449,9 @@ fn launchers_reject_a_stale_path_binary_and_ignore_the_environment() {
         );
         let response: Value = serde_json::from_slice(&selected.stdout).expect("version envelope");
         assert_eq!(response["ok"], true, "{launcher:?}: {response}");
+        // The committed manifests run under the named override, which every
+        // call reports.
+        assert_override_reported(&selected, real);
         assert_eq!(
             response["output"]["plugin_schema_version"],
             PLUGIN_SCHEMA_VERSION
@@ -448,6 +471,11 @@ fn bundled_binary_precedes_path() {
     fs::create_dir(&launcher_dir).expect("launcher directory");
     let launcher = launcher_dir.join("orbit-graph");
     fs::copy(repository_root().join("bin/orbit-graph"), &launcher).expect("copy launcher");
+    fs::copy(
+        repository_root().join("plugin.yaml"),
+        fixture.path().join("plugin.yaml"),
+    )
+    .expect("copy manifest");
     let stale_dir = fixture.path().join("stale");
     fs::create_dir(&stale_dir).expect("stale directory");
     fs::write(stale_dir.join("orbit-graph"), "#!/bin/sh\nexit 1\n").expect("stale PATH binary");
@@ -492,7 +520,23 @@ fn bundled_binary_precedes_path() {
         "Orbit refuses plugin trees containing symbolic links"
     );
 
-    let selected = launcher_version(&launcher, &path, None);
+    assert!(
+        String::from_utf8_lossy(&bundled.stderr).contains("orbit plugin add"),
+        "the bundler names the re-consent step: {}",
+        String::from_utf8_lossy(&bundled.stderr)
+    );
+    let digest = sha256_hex(&bundled_binary);
+    let manifest = fs::read_to_string(fixture.path().join("plugin.yaml")).expect("manifest");
+    assert!(
+        manifest.contains(&format!("    args: [--backend-sha256, {digest}]\n")),
+        "the bundler binds the manifest to the bundled executable:\n{manifest}"
+    );
+    assert!(
+        !manifest.contains(&format!("args: [{UNBOUND}]")),
+        "{manifest}"
+    );
+
+    let selected = launcher_version(&launcher, &["--backend-sha256", &digest], &path, None);
     assert_eq!(selected.status.code(), Some(0));
     let response: Value = serde_json::from_slice(&selected.stdout).expect("version envelope");
     assert_eq!(response["ok"], true, "{response}");
@@ -500,13 +544,177 @@ fn bundled_binary_precedes_path() {
         response["output"]["plugin_schema_version"],
         PLUGIN_SCHEMA_VERSION
     );
+    assert!(response.get("backend_override").is_none(), "{response}");
+    assert!(
+        selected.stderr.is_empty(),
+        "{}",
+        String::from_utf8_lossy(&selected.stderr)
+    );
+
+    // --unbound needs the named override and leaves a bound manifest alone.
+    let unbound = Command::new("sh")
+        .env("PATH", &path)
+        .arg(&bundle)
+        .args(["--unbound", "--binary", env!("CARGO_BIN_EXE_orbit-graph")])
+        .arg(fixture.path())
+        .output()
+        .expect("run bundler unbound against a bound manifest");
+    assert_eq!(unbound.status.code(), Some(1));
+    assert_eq!(
+        fs::read_to_string(fixture.path().join("plugin.yaml")).expect("manifest"),
+        manifest
+    );
+    fs::copy(
+        repository_root().join("plugin.yaml"),
+        fixture.path().join("plugin.yaml"),
+    )
+    .expect("restore the committed manifest");
+    let unbound = Command::new("sh")
+        .env("PATH", &path)
+        .arg(&bundle)
+        .args(["--unbound", "--binary", env!("CARGO_BIN_EXE_orbit-graph")])
+        .arg(fixture.path())
+        .output()
+        .expect("run bundler unbound");
+    assert!(
+        unbound.status.success(),
+        "{}",
+        String::from_utf8_lossy(&unbound.stderr)
+    );
+    assert_eq!(
+        fs::read_to_string(fixture.path().join("plugin.yaml")).expect("manifest"),
+        fs::read_to_string(repository_root().join("plugin.yaml")).expect("committed manifest")
+    );
+    let selected = launcher_version(&launcher, &[UNBOUND], &path, None);
+    assert_eq!(selected.status.code(), Some(0));
+    assert_override_reported(&selected, &bundled_binary);
+}
+
+/// The named override in `spec.backend.args`: run a compatible executable
+/// whatever its digest, and say so.
+#[cfg(unix)]
+const UNBOUND: &str = "--allow-unbound-backend";
+
+#[cfg(unix)]
+#[test]
+fn launcher_runs_only_the_executable_its_manifest_binds() {
+    let fixture = TempDir::new().expect("binding fixture");
+    let fake_dir = fixture.path().join("fake");
+    fs::create_dir(&fake_dir).expect("fake directory");
+    let fake = fake_dir.join("orbit-graph");
+    let ran = fixture.path().join("fake-ran");
+    // A PATH impostor that answers the version probe exactly as the real
+    // executable does, so only the digest can tell them apart.
+    executable(
+        &fake,
+        format!(
+            "#!/bin/sh\ncat >/dev/null\n: > '{}'\nprintf '%s\\n' '{{\"ok\":true,\"output\":{{\"plugin_schema_version\":{PLUGIN_SCHEMA_VERSION},\"extractor_version\":{EXTRACTOR_VERSION}}}}}'\n",
+            ran.display()
+        ),
+    );
+    let fake_path = format!("{}:/usr/bin:/bin", fake_dir.display());
+    let real = Path::new(env!("CARGO_BIN_EXE_orbit-graph"));
+    let real_path = format!(
+        "{}:/usr/bin:/bin",
+        real.parent().expect("binary directory").display()
+    );
+    let real_digest = sha256_hex(real);
+    let fake_digest = sha256_hex(&fake);
+
+    for launcher in ["bin/orbit-graph", "plugin/bin/orbit-graph"] {
+        let launcher = repository_root().join(launcher);
+        let bound = ["--backend-sha256", real_digest.as_str()];
+
+        let refused = launcher_version(&launcher, &bound, &fake_path, None);
+        assert_eq!(refused.status.code(), Some(0), "{launcher:?}");
+        let response: Value = serde_json::from_slice(&refused.stdout).expect("structured error");
+        assert_eq!(response["ok"], false, "{launcher:?}: {response}");
+        assert_eq!(response["error"]["code"], "incompatible_binary");
+        assert_eq!(response["error"]["path"], fake.to_str().expect("UTF-8"));
+        assert_eq!(response["error"]["detail"]["expected_sha256"], real_digest);
+        assert_eq!(response["error"]["detail"]["actual_sha256"], fake_digest);
+        assert!(
+            !ran.exists(),
+            "{launcher:?}: the digest is checked before the executable runs"
+        );
+
+        let selected = launcher_version(&launcher, &bound, &real_path, None);
+        let response: Value = serde_json::from_slice(&selected.stdout).expect("version envelope");
+        assert_eq!(response["ok"], true, "{launcher:?}: {response}");
+        assert!(response.get("backend_override").is_none(), "{response}");
+        assert!(selected.stderr.is_empty(), "{launcher:?}");
+
+        // A manifest that neither binds nor names the override, or both, or
+        // carries anything else, runs nothing.
+        for args in [
+            &[][..],
+            &[UNBOUND, "--backend-sha256", real_digest.as_str()][..],
+            &["--backend-sha256", "not-a-digest"][..],
+            &["--verbose"][..],
+        ] {
+            let refused = launcher_version(&launcher, args, &real_path, None);
+            let response: Value =
+                serde_json::from_slice(&refused.stdout).expect("structured error");
+            assert_eq!(
+                response["error"]["code"], "incompatible_binary",
+                "{launcher:?} {args:?}: {response}"
+            );
+        }
+
+        // The operator override runs the impostor, and says so on stderr.
+        let overridden = launcher_version(&launcher, &[UNBOUND], &fake_path, None);
+        let response: Value = serde_json::from_slice(&overridden.stdout).expect("version envelope");
+        assert_eq!(response["ok"], true, "{launcher:?}: {response}");
+        let notice = String::from_utf8_lossy(&overridden.stderr);
+        assert!(
+            notice.contains("backend override") && notice.contains(fake.to_str().expect("UTF-8")),
+            "{launcher:?}: {notice}"
+        );
+        fs::remove_file(&ran).expect("reset the impostor marker");
+    }
 }
 
 #[cfg(unix)]
-fn launcher_version(launcher: &Path, path: &str, environment_binary: Option<&str>) -> Output {
+fn assert_override_reported(output: &Output, binary: &Path) {
+    let response: Value = serde_json::from_slice(&output.stdout).expect("response envelope");
+    let binary = binary.to_str().expect("UTF-8 path");
+    assert_eq!(response["backend_override"], binary, "{response}");
+    let notice = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        notice.contains("backend override") && notice.contains(binary),
+        "stderr names the override: {notice}"
+    );
+}
+
+#[cfg(unix)]
+fn sha256_hex(path: &Path) -> String {
+    for (program, args) in [("sha256sum", &[][..]), ("shasum", &["-a", "256"][..])] {
+        if let Ok(output) = Command::new(program).args(args).arg(path).output()
+            && output.status.success()
+        {
+            let stdout = String::from_utf8(output.stdout).expect("digest output");
+            return stdout
+                .split_whitespace()
+                .next()
+                .expect("digest")
+                .to_string();
+        }
+    }
+    panic!("neither sha256sum nor shasum is available");
+}
+
+#[cfg(unix)]
+fn launcher_version(
+    launcher: &Path,
+    args: &[&str],
+    path: &str,
+    environment_binary: Option<&str>,
+) -> Output {
     let mut command = Command::new(launcher);
     command
+        .args(args)
         .env("PATH", path)
+        .env_remove("ORBIT_GRAPH_BACKEND_OVERRIDE")
         .env("ORBIT_TOOL_NAME", VERSION_TOOL_NAME)
         .env_remove("ORBIT_GRAPH_BIN")
         .stdin(std::process::Stdio::piped())
@@ -567,6 +775,192 @@ fn v2_context_defaults_repository_and_explicit_input_wins() {
     assert_eq!(
         explicit["repository"],
         repository.to_string_lossy().as_ref()
+    );
+}
+
+/// A plugin envelope as Orbit sends it, with the effective
+/// `[plugins.graph]` section as `context.config`.
+fn configured_output(repository: &Path, tool: &str, input: Value, config: Value) -> Output {
+    let request = json!({
+        "schema_version": 1,
+        "tool": tool,
+        "input": input,
+        "context": {
+            "workspace_root": repository,
+            "agent": "plugin-integration-test",
+            "model": "test",
+            "config": config
+        }
+    });
+    plugin_raw_output(repository, Some(tool), request, &[])
+}
+
+#[test]
+fn configured_branch_is_what_calls_naming_no_branch_work_on() {
+    let fixture = evaluation_fixture();
+    run_git(fixture.path(), ["branch", "agent-main", "HEAD~2"]);
+    let agent_main = git_stdout(fixture.path(), ["rev-parse", "agent-main"]);
+    let config = json!({"branch": "agent-main"});
+
+    // The seeded activity's input, exactly as Orbit hands it to the tool.
+    let activity: Value = serde_norway::from_str(
+        &fs::read_to_string(repository_root().join("definitions/activities/history-sync.yaml"))
+            .expect("history-sync activity"),
+    )
+    .expect("activity YAML");
+    assert_eq!(activity["spec"]["config"]["tool"], MAINTAIN_TOOL_NAME);
+    let activity_input = activity["spec"]["config"]["input"].clone();
+    assert!(activity_input.get("branch").is_none(), "{activity_input}");
+    let synced = plugin_success(&configured_output(
+        fixture.path(),
+        MAINTAIN_TOOL_NAME,
+        activity_input,
+        config.clone(),
+    ));
+    assert_eq!(synced["branch"], "agent-main", "{synced}");
+    assert_eq!(synced["result"]["snapshot_tip"], agent_main.as_str());
+
+    let status = plugin_success(&configured_output(
+        fixture.path(),
+        STATUS_TOOL_NAME,
+        json!({}),
+        config.clone(),
+    ));
+    assert_eq!(status["status"]["landing_branch"], "agent-main");
+    assert_eq!(status["status"]["cursor"], agent_main.as_str());
+
+    // A call's own branch wins over the configuration.
+    let explicit = plugin_success(&configured_output(
+        fixture.path(),
+        MAINTAIN_TOOL_NAME,
+        json!({"operation": "history_sync", "branch": "main"}),
+        config.clone(),
+    ));
+    assert_eq!(explicit["branch"], "main");
+    let status = plugin_success(&configured_output(
+        fixture.path(),
+        STATUS_TOOL_NAME,
+        json!({"branch": "main"}),
+        config,
+    ));
+    assert_eq!(status["status"]["landing_branch"], "main");
+
+    // Without configuration the default is main.
+    let default = plugin_json(
+        fixture.path(),
+        MAINTAIN_TOOL_NAME,
+        json!({"operation": "history_sync"}),
+    );
+    assert_eq!(default["branch"], "main");
+
+    // A key this backend does not read is named on stderr and otherwise
+    // ignored; a malformed branch is refused.
+    let ignored = configured_output(
+        fixture.path(),
+        STATUS_TOOL_NAME,
+        json!({}),
+        json!({"branch": "agent-main", "index_dir": ".orbit-graph"}),
+    );
+    plugin_success(&ignored);
+    assert!(
+        String::from_utf8_lossy(&ignored.stderr)
+            .contains("ignoring plugin config key \"index_dir\""),
+        "{}",
+        String::from_utf8_lossy(&ignored.stderr)
+    );
+    for config in [json!({"branch": ""}), json!({"branch": 7}), json!("main")] {
+        let refused = configured_output(fixture.path(), STATUS_TOOL_NAME, json!({}), config);
+        let response = assert_plugin_error(&refused, "malformed config");
+        assert_eq!(response["error"]["code"], "invalid_request", "{response}");
+    }
+}
+
+#[test]
+fn inapplicable_fields_are_refused_by_name_before_any_index_is_opened() {
+    let fixture = evaluation_fixture();
+    let state = TempDir::new().expect("plugin state");
+    let refusal = |tool: &str, input: Value| -> String {
+        let output = plugin_output_with_env(
+            fixture.path(),
+            tool,
+            input.clone(),
+            &[("ORBIT_PLUGIN_STATE", state.path().as_os_str())],
+        );
+        let response = assert_plugin_error(&output, tool);
+        assert_eq!(response["error"]["code"], "invalid_request", "{input}");
+        response["error"]["message"]
+            .as_str()
+            .expect("message")
+            .to_string()
+    };
+    let delivery = fixture_delivery(fixture.path(), "training");
+    let snapshot = task_snapshot("TASK-1", "Parser", 1);
+    for (operation, fields) in [
+        (
+            "history_sync",
+            json!({"delivery": delivery, "workspace": "ws", "task_ids": ["T-1"],
+                   "run_ids": ["R-1"], "task_snapshots": [snapshot], "full": true,
+                   "budget_ms": 5000}),
+        ),
+        (
+            "import",
+            json!({"delivery": delivery, "limit": 10, "workspace": "ws", "task_ids": ["T-1"],
+                   "run_ids": ["R-1"], "task_snapshots": [snapshot], "full": true,
+                   "budget_ms": 5000}),
+        ),
+        (
+            "orbit_sync",
+            json!({"workspace": "ws", "delivery": delivery, "full": true, "budget_ms": 5000}),
+        ),
+        (
+            "graph_sync",
+            json!({"branch": "main", "limit": 10, "delivery": delivery, "workspace": "ws",
+                   "task_ids": ["T-1"], "run_ids": ["R-1"], "task_snapshots": [snapshot]}),
+        ),
+    ] {
+        let reads: &[&str] = match operation {
+            "history_sync" => &["branch", "limit"],
+            "import" => &["branch", "delivery"],
+            "orbit_sync" => &[
+                "branch",
+                "limit",
+                "workspace",
+                "task_ids",
+                "run_ids",
+                "task_snapshots",
+            ],
+            _ => &["full", "budget_ms"],
+        };
+        let mut input = fields.clone();
+        input["operation"] = json!(operation);
+        let message = refusal(MAINTAIN_TOOL_NAME, input);
+        let named = message
+            .split_once(" does not use ")
+            .and_then(|(_, rest)| rest.split_once("; it reads only "))
+            .map(|(named, _)| named.split(", ").collect::<Vec<_>>())
+            .unwrap_or_else(|| panic!("{operation}: {message}"));
+        for field in fields.as_object().expect("fields").keys() {
+            assert_eq!(
+                named.contains(&field.as_str()),
+                !reads.contains(&field.as_str()),
+                "{operation}: {field} in {message}"
+            );
+        }
+    }
+    let message = refusal(
+        RECOMMEND_TOOL_NAME,
+        json!({"query": "parser", "hybrid_limit": 5}),
+    );
+    assert!(message.contains("hybrid_limit"), "{message}");
+
+    assert!(
+        !fixture.path().join(".orbit-graph").exists(),
+        "no history index was opened"
+    );
+    assert_eq!(
+        fs::read_dir(state.path()).expect("plugin state").count(),
+        0,
+        "no plugin state was written"
     );
 }
 
@@ -1729,7 +2123,6 @@ fn public_adapter_is_idempotent_and_supports_honest_live_task_observations() {
     let first = sync();
     let first = plugin_success(&first);
     assert_eq!(first["outcomes"][0]["status"], "inserted");
-    std::thread::sleep(Duration::from_millis(20));
     let second = sync();
     let second = plugin_success(&second);
     assert_eq!(second["outcomes"][0]["status"], "already_indexed");
@@ -1853,9 +2246,10 @@ fn public_adapter_is_idempotent_and_supports_honest_live_task_observations() {
 
 #[test]
 fn public_adapter_bounds_time_and_pipe_output() {
+    let adapter_timeout = ADAPTER_TIMEOUT_SECONDS.to_string();
     for (body, expected) in [
-        ("sleep 5", "timed out"),
-        ("head -c 2097152 /dev/zero", "exceeded"),
+        (format!("sleep {}", stuck_seconds()), "timed out"),
+        ("head -c 2097152 /dev/zero".to_string(), "exceeded"),
     ] {
         let fixture = adapter_fixture();
         let repository = fixture
@@ -1878,11 +2272,19 @@ fn public_adapter_bounds_time_and_pipe_output() {
             }),
             &[
                 ("PATH", callback_path.as_os_str()),
-                ("GRAPH_ORBIT_TIMEOUT_SECONDS", std::ffi::OsStr::new("1")),
+                (
+                    "GRAPH_ORBIT_TIMEOUT_SECONDS",
+                    std::ffi::OsStr::new(&adapter_timeout),
+                ),
             ],
         );
         let error = assert_plugin_error(&output, "bounded adapter failure");
-        assert!(started.elapsed() < Duration::from_secs(3));
+        let elapsed = started.elapsed();
+        assert!(
+            elapsed < adapter_latency_ceiling(),
+            "{body}: took {elapsed:?}, over the {:?} ceiling",
+            adapter_latency_ceiling()
+        );
         assert!(
             error["error"]["message"]
                 .as_str()
@@ -2075,6 +2477,7 @@ fn public_adapter_reaps_an_mcp_server_that_outlives_its_session() {
         MAINTAIN_TOOL_NAME,
         json!({"operation": "history_sync", "limit": 10}),
     );
+    let adapter_timeout = ADAPTER_TIMEOUT_SECONDS.to_string();
     let started = Instant::now();
     let output = plugin_output_with_env(
         repository.as_path(),
@@ -2090,13 +2493,21 @@ fn public_adapter_reaps_an_mcp_server_that_outlives_its_session() {
         &[
             ("PATH", callback_path.as_os_str()),
             ("GRAPH_TEST_DISCOVERY", std::ffi::OsStr::new("linger")),
-            ("GRAPH_ORBIT_TIMEOUT_SECONDS", std::ffi::OsStr::new("1")),
+            (
+                "GRAPH_ORBIT_TIMEOUT_SECONDS",
+                std::ffi::OsStr::new(&adapter_timeout),
+            ),
         ],
     );
     plugin_success(&output);
-    // The fake server lingers for 30 s after EOF, so finishing well inside that
-    // proves it was reaped; a tight bound only measured CI load.
-    assert!(started.elapsed() < Duration::from_secs(20));
+    // The fake server lingers for stuck_seconds() after EOF, past the
+    // ceiling, so finishing inside the ceiling proves it was reaped.
+    let elapsed = started.elapsed();
+    assert!(
+        elapsed < adapter_latency_ceiling(),
+        "took {elapsed:?}, over the {:?} ceiling",
+        adapter_latency_ceiling()
+    );
     let pid = fs::read_to_string(fixture.path().join("linger.pid")).expect("lingering pid");
     assert!(
         !Path::new("/proc").join(pid.trim()).exists(),
@@ -2206,16 +2617,15 @@ fn manifests_are_versioned_and_describe_all_registered_tools() {
 }
 
 #[test]
+#[ignore = "requires an Orbit binary in ORBIT_GRAPH_TEST_ORBIT_BIN"]
 fn installed_orbit_registration_and_invocation_when_authority_binary_is_requested() {
-    let Ok(orbit_bin) = std::env::var("ORBIT_GRAPH_TEST_ORBIT_BIN") else {
-        return;
-    };
+    let orbit_bin = test_orbit_bin();
     let fixture = evaluation_fixture();
     let isolated = TempDir::new().expect("isolated Orbit root");
     let isolated_root = isolated.path().join(".orbit");
     let graph_bin = env!("CARGO_BIN_EXE_orbit-graph");
     let plugin = repository_root().join("plugin");
-    let initialized = Command::new(&orbit_bin)
+    let initialized = orbit_command(&orbit_bin)
         .current_dir(fixture.path())
         .args([
             "workspace",
@@ -2239,7 +2649,7 @@ fn installed_orbit_registration_and_invocation_when_authority_binary_is_requeste
         "orbit-graph-status.orbit-tool.yaml",
         "orbit-graph-maintain.orbit-tool.yaml",
     ] {
-        let output = Command::new(&orbit_bin)
+        let output = orbit_command(&orbit_bin)
             .args(["tool", "add", graph_bin, "--manifest"])
             .arg(plugin.join(manifest))
             .args(["--root"])
@@ -2252,34 +2662,6 @@ fn installed_orbit_registration_and_invocation_when_authority_binary_is_requeste
             String::from_utf8_lossy(&output.stderr)
         );
     }
-    let input = json!({
-        "schema_version": 1,
-        "repository": fixture.path().canonicalize().expect("canonical fixture"),
-        "branch": "main"
-    });
-    let output = Command::new(&orbit_bin)
-        .current_dir(fixture.path())
-        .env_remove("ORBIT_MANAGED_RUN_CONTEXT")
-        .env_remove("ORBIT_ACTIVITY_TOOLS")
-        .env_remove("ORBIT_ACTIVE_TASK_ID")
-        .env_remove("ORBIT_TASK_ID")
-        .env_remove("ORBIT_RUN_ID")
-        .env_remove("ORBIT_REGISTRY_ROOT")
-        .env_remove("ORBIT_WORKSPACE")
-        .args(["tool", "run", STATUS_TOOL_NAME, "--input"])
-        .arg(input.to_string())
-        .args(["--full", "--root"])
-        .arg(&isolated_root)
-        .output()
-        .expect("invoke installed external tool");
-    assert!(
-        output.status.success(),
-        "installed invocation failed: {}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-    let value: Value = serde_json::from_slice(&output.stdout).expect("Orbit tool JSON");
-    assert_eq!(value["operation"], "status");
-
     let maintenance = isolated_tool_run(
         &orbit_bin,
         &isolated_root,
@@ -2298,8 +2680,28 @@ fn installed_orbit_registration_and_invocation_when_authority_binary_is_requeste
         "installed maintenance invocation failed: {}",
         String::from_utf8_lossy(&maintenance.stderr)
     );
-    let value: Value = serde_json::from_slice(&maintenance.stdout).expect("maintenance tool JSON");
-    assert_eq!(value["operation"], "history_sync");
+    let value = installed_output(&maintenance.stdout);
+    assert_eq!(value["operation"], "history_sync", "{value}");
+
+    // Status reads the index history_sync created.
+    let output = isolated_tool_run(
+        &orbit_bin,
+        &isolated_root,
+        fixture.path(),
+        STATUS_TOOL_NAME,
+        json!({
+            "schema_version": 1,
+            "repository": fixture.path().canonicalize().expect("canonical fixture"),
+            "branch": "main"
+        }),
+    );
+    assert!(
+        output.status.success(),
+        "installed invocation failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let value = installed_output(&output.stdout);
+    assert_eq!(value["operation"], "status", "{value}");
 
     for level in ["file", "symbol"] {
         for request in [
@@ -2332,8 +2734,7 @@ fn installed_orbit_registration_and_invocation_when_authority_binary_is_requeste
                 "installed {level} recommendation failed: {}",
                 String::from_utf8_lossy(&output.stderr)
             );
-            let value: Value =
-                serde_json::from_slice(&output.stdout).expect("installed recommendation JSON");
+            let value = installed_output(&output.stdout);
             assert!(
                 value["result"]["recommendations"]
                     .as_array()
@@ -2345,14 +2746,13 @@ fn installed_orbit_registration_and_invocation_when_authority_binary_is_requeste
 }
 
 #[test]
+#[ignore = "requires an Orbit binary in ORBIT_GRAPH_TEST_ORBIT_BIN"]
 fn install_and_uninstall_scripts_work_and_reject_malformed_arguments_first() {
-    let Ok(orbit_bin) = std::env::var("ORBIT_GRAPH_TEST_ORBIT_BIN") else {
-        return;
-    };
+    let orbit_bin = test_orbit_bin();
     let fixture = evaluation_fixture();
     let isolated = TempDir::new().expect("isolated Orbit root");
     let isolated_root = isolated.path().join(".orbit");
-    let initialized = Command::new(&orbit_bin)
+    let initialized = orbit_command(&orbit_bin)
         .current_dir(fixture.path())
         .args([
             "workspace",
@@ -2373,7 +2773,7 @@ fn install_and_uninstall_scripts_work_and_reject_malformed_arguments_first() {
     let graph_bin = env!("CARGO_BIN_EXE_orbit-graph");
     let path = executable_path(&orbit_bin);
 
-    let malformed = Command::new("sh")
+    let malformed = orbit_command("sh")
         .current_dir(fixture.path())
         .env("PATH", &path)
         .arg(&install)
@@ -2382,7 +2782,7 @@ fn install_and_uninstall_scripts_work_and_reject_malformed_arguments_first() {
         .expect("run malformed installer");
     assert_eq!(malformed.status.code(), Some(2));
 
-    let installed = Command::new("sh")
+    let installed = orbit_command("sh")
         .current_dir(fixture.path())
         .env("PATH", &path)
         .arg(&install)
@@ -2393,6 +2793,13 @@ fn install_and_uninstall_scripts_work_and_reject_malformed_arguments_first() {
         .expect("run installer");
     assert!(
         installed.status.success(),
+        "{}",
+        String::from_utf8_lossy(&installed.stderr)
+    );
+    // plugin/plugin.yaml carries the named override, which the installer
+    // reports rather than applies silently.
+    assert!(
+        String::from_utf8_lossy(&installed.stderr).contains("backend override"),
         "{}",
         String::from_utf8_lossy(&installed.stderr)
     );
@@ -2407,9 +2814,13 @@ fn install_and_uninstall_scripts_work_and_reject_malformed_arguments_first() {
             "branch": "main"
         }),
     );
-    assert!(status.status.success());
+    assert!(
+        status.status.success(),
+        "{}",
+        String::from_utf8_lossy(&status.stderr)
+    );
 
-    let removed = Command::new("sh")
+    let removed = orbit_command("sh")
         .current_dir(fixture.path())
         .env("PATH", &path)
         .arg(&uninstall)
@@ -2435,6 +2846,150 @@ fn install_and_uninstall_scripts_work_and_reject_malformed_arguments_first() {
     assert!(!missing.status.success());
 }
 
+/// The legacy installer applies the launcher's binding rule and refuses the
+/// retired `ORBIT_GRAPH_BIN`, all before registering anything. A recording
+/// `orbit` stands in for Orbit, so this runs without one.
+#[cfg(unix)]
+#[test]
+fn installer_follows_the_backend_binding_and_refuses_orbit_graph_bin() {
+    let fixture = TempDir::new().expect("installer fixture");
+    let root = repository_root();
+    fs::create_dir(fixture.path().join("scripts")).expect("scripts directory");
+    fs::create_dir(fixture.path().join("plugin")).expect("plugin directory");
+    fs::create_dir(fixture.path().join("fake-bin")).expect("fake bin directory");
+    let install = fixture.path().join("scripts/install-orbit-plugin.sh");
+    fs::copy(root.join("scripts/install-orbit-plugin.sh"), &install).expect("copy installer");
+    for manifest in [
+        "orbit-graph-recommend.orbit-tool.yaml",
+        "orbit-graph-status.orbit-tool.yaml",
+        "orbit-graph-maintain.orbit-tool.yaml",
+    ] {
+        fs::copy(
+            root.join("plugin").join(manifest),
+            fixture.path().join("plugin").join(manifest),
+        )
+        .expect("copy sidecar manifest");
+    }
+    let registrations = fixture.path().join("registrations");
+    executable(
+        &fixture.path().join("fake-bin/orbit"),
+        format!(
+            "#!/bin/sh\nprintf '%s\\n' \"$*\" >> '{}'\n",
+            registrations.display()
+        ),
+    );
+    let path = format!(
+        "{}:/usr/bin:/bin",
+        fixture.path().join("fake-bin").display()
+    );
+    let graph_bin = env!("CARGO_BIN_EXE_orbit-graph");
+    let committed = fs::read_to_string(root.join("plugin/plugin.yaml")).expect("plugin manifest");
+    let with_args = |args: &str| {
+        fs::write(
+            fixture.path().join("plugin/plugin.yaml"),
+            committed.replace(
+                &format!("    args: [{UNBOUND}]\n"),
+                &format!("    args: [{args}]\n"),
+            ),
+        )
+        .expect("write plugin manifest");
+    };
+    let run = |environment_binary: Option<&str>| {
+        let mut command = orbit_command("sh");
+        command
+            .env("PATH", &path)
+            .arg(&install)
+            .args(["--binary", graph_bin]);
+        if let Some(binary) = environment_binary {
+            command.env("ORBIT_GRAPH_BIN", binary);
+        }
+        command.output().expect("run installer")
+    };
+    let registered = || fs::read_to_string(&registrations).unwrap_or_default();
+
+    with_args(UNBOUND);
+    let refused = run(Some(graph_bin));
+    assert_eq!(refused.status.code(), Some(2));
+    assert!(String::from_utf8_lossy(&refused.stderr).contains("ORBIT_GRAPH_BIN"));
+    assert!(registered().is_empty());
+
+    with_args(&format!("--backend-sha256, {}", "0".repeat(64)));
+    let refused = run(None);
+    assert_eq!(refused.status.code(), Some(1));
+    assert!(
+        String::from_utf8_lossy(&refused.stderr).contains("incompatible_binary"),
+        "{}",
+        String::from_utf8_lossy(&refused.stderr)
+    );
+    assert!(registered().is_empty());
+
+    with_args(&format!(
+        "--backend-sha256, {}",
+        sha256_hex(Path::new(graph_bin))
+    ));
+    let bound = run(None);
+    assert!(
+        bound.status.success(),
+        "{}",
+        String::from_utf8_lossy(&bound.stderr)
+    );
+    assert!(
+        !String::from_utf8_lossy(&bound.stderr).contains("backend override"),
+        "{}",
+        String::from_utf8_lossy(&bound.stderr)
+    );
+    assert_eq!(registered().lines().count(), 3, "{}", registered());
+
+    with_args(UNBOUND);
+    let overridden = run(None);
+    assert!(overridden.status.success());
+    let notice = String::from_utf8_lossy(&overridden.stderr);
+    assert!(
+        notice.contains("backend override") && notice.contains(graph_bin),
+        "{notice}"
+    );
+    assert_eq!(registered().lines().count(), 6, "{}", registered());
+}
+
+/// A tool's output from `orbit tool run --full`: the plugin envelope, whose
+/// `output` is unwrapped, or the bare output. A plugin error, which exits
+/// zero, fails the test.
+fn installed_output(stdout: &[u8]) -> Value {
+    let mut value: Value = serde_json::from_slice(stdout).expect("Orbit tool JSON");
+    assert_ne!(value["ok"], false, "{value}");
+    if value["ok"] == true {
+        value["output"].take()
+    } else {
+        value
+    }
+}
+
+/// The Orbit binary the installed-Orbit tests run against. They are
+/// `#[ignore]`d, so reaching this without it is a misconfigured run, not a
+/// skip.
+fn test_orbit_bin() -> String {
+    std::env::var("ORBIT_GRAPH_TEST_ORBIT_BIN")
+        .ok()
+        .filter(|orbit_bin| !orbit_bin.is_empty())
+        .expect(
+            "set ORBIT_GRAPH_TEST_ORBIT_BIN to an Orbit binary to run the installed-Orbit tests \
+             (see CONTRIBUTING.md)",
+        )
+}
+
+/// A command with no inherited Orbit environment: a test run inside an Orbit
+/// agent session would otherwise carry its task, run and policy variables
+/// (such as `ORBIT_PROC_ALLOWED_PROGRAMS`) into the isolated Orbit root.
+fn orbit_command(program: impl AsRef<std::ffi::OsStr>) -> Command {
+    let mut command = Command::new(program);
+    for (key, _) in std::env::vars_os() {
+        if key.to_string_lossy().starts_with("ORBIT_") {
+            command.env_remove(key);
+        }
+    }
+    command
+}
+
 fn isolated_tool_run(
     orbit_bin: &str,
     orbit_root: &Path,
@@ -2442,15 +2997,8 @@ fn isolated_tool_run(
     tool: &str,
     input: Value,
 ) -> Output {
-    Command::new(orbit_bin)
+    orbit_command(orbit_bin)
         .current_dir(repository)
-        .env_remove("ORBIT_MANAGED_RUN_CONTEXT")
-        .env_remove("ORBIT_ACTIVITY_TOOLS")
-        .env_remove("ORBIT_ACTIVE_TASK_ID")
-        .env_remove("ORBIT_TASK_ID")
-        .env_remove("ORBIT_RUN_ID")
-        .env_remove("ORBIT_REGISTRY_ROOT")
-        .env_remove("ORBIT_WORKSPACE")
         .args(["tool", "run", tool, "--input"])
         .arg(input.to_string())
         .args(["--full", "--root"])
@@ -2701,7 +3249,7 @@ case "$*" in
     done
     if [ "$GRAPH_TEST_DISCOVERY" = linger ]; then
       printf '%s' "$$" > "{linger}"
-      exec sleep 30
+      exec sleep {stuck}
     fi ;;
   *"tool run orbit.workflow.run.show"*"RUN-1"*)
     if [ "$GRAPH_TEST_RUN_SHOW" = denied ]; then
@@ -2717,6 +3265,7 @@ esac
 "#,
         log = log.display(),
         linger = linger.display(),
+        stuck = stuck_seconds(),
     );
     executable(&fixture.path().join("orbit"), script);
     fixture
@@ -3032,9 +3581,10 @@ fn run_cli<const N: usize>(repository: &Path, args: [&str; N]) -> Output {
         .expect("run orbit-graph CLI")
 }
 
+/// Fixture git runs hermetically (`common::git_command`): no host or user
+/// configuration, and no inherited `GIT_*` variable, shapes the fixture.
 fn run_git<const N: usize>(repository: &Path, args: [&str; N]) {
-    let output = Command::new("git")
-        .current_dir(repository)
+    let output = common::git_command(repository)
         .args(args)
         .output()
         .expect("run git");
@@ -3046,8 +3596,7 @@ fn run_git<const N: usize>(repository: &Path, args: [&str; N]) {
 }
 
 fn git_stdout<const N: usize>(repository: &Path, args: [&str; N]) -> String {
-    let output = Command::new("git")
-        .current_dir(repository)
+    let output = common::git_command(repository)
         .args(args)
         .output()
         .expect("run git");

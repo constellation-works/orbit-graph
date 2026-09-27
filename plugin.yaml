@@ -16,6 +16,13 @@ spec:
   backend:
     type: exec
     command: bin/orbit-graph
+    # The executable the launcher may run, bound by the manifest digest Orbit
+    # records at consent: `--backend-sha256 <hex>` runs only a binary with
+    # that SHA-256 (scripts/bundle-plugin-binary.sh records it), while the
+    # named override `--allow-unbound-backend` runs a compatible bundled or
+    # PATH binary and labels every response `backend_override`. A release
+    # ships no binary, so it carries the override (docs/plugin.md).
+    args: [--allow-unbound-backend]
     timeout_ms: 120000
     sandbox: default
   permissions:
@@ -133,7 +140,6 @@ spec:
   config:
     schema: schemas/config.json
     defaults:
-      index_dir: .orbit-graph
       branch: main
   web:
     panels:

@@ -49,8 +49,8 @@ const SCRATCH_DIR_NAME: &str = "changes-scratch";
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct ChangesInput {
-    #[serde(default = "super::default_schema_version")]
-    schema_version: u32,
+    #[serde(default)]
+    schema_version: Option<u32>,
     repository: PathBuf,
     #[serde(default)]
     base: Option<String>,

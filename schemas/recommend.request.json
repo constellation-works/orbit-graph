@@ -2,7 +2,7 @@
   "type": "object",
   "properties": {
     "schema_version": {
-      "description": "Request contract version; must be 1 when present.",
+      "description": "Request contract version; must be 1 when present. An omitted version is read as version 1, the only one there has been.",
       "type": "integer",
       "const": 1
     },
@@ -12,10 +12,9 @@
       "minLength": 1
     },
     "branch": {
-      "description": "Landing branch whose verified history supplies evidence.",
+      "description": "Landing branch whose verified history supplies evidence; when omitted, the plugin's configured branch (default main).",
       "type": "string",
-      "minLength": 1,
-      "default": "main"
+      "minLength": 1
     },
     "workspace": {
       "description": "Owning Orbit workspace (ws_* id or name). Required for task_id lookup and hybrid search.",
@@ -67,7 +66,7 @@
       "default": false
     },
     "hybrid_limit": {
-      "description": "Maximum orbit.search hits requested when hybrid is true.",
+      "description": "Maximum orbit.search hits requested; applies only with hybrid: true and is refused otherwise.",
       "type": "integer",
       "minimum": 1,
       "maximum": 100,

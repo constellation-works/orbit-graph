@@ -2,7 +2,7 @@
   "type": "object",
   "properties": {
     "schema_version": {
-      "description": "Request contract version; must be 1 when present.",
+      "description": "Request contract version; must be 1 when present. An omitted version is read as version 1, the only one there has been.",
       "type": "integer",
       "const": 1
     },
@@ -12,10 +12,9 @@
       "minLength": 1
     },
     "branch": {
-      "description": "Landing branch whose history scope is reported.",
+      "description": "Landing branch whose history scope is reported; when omitted, the plugin's configured branch (default main).",
       "type": "string",
-      "minLength": 1,
-      "default": "main"
+      "minLength": 1
     }
   },
   "additionalProperties": false

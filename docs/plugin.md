@@ -31,6 +31,26 @@ this plugin requests no `env_pass`, so no environment variable can redirect the
 launcher; a service's `PATH` is whatever that service was started with (for
 example, `orbit web serve` under systemd often lacks `~/.cargo/bin`).
 
+What the launcher may run is bound to the consent the operator gave: the
+manifest's `spec.backend.args`, which the manifest digest Orbit records at
+`orbit plugin add` covers, carries exactly one of
+
+- `--backend-sha256 <hex>`: run only an executable with that SHA-256. The
+  digest is checked before the executable runs at all, so an impostor on
+  `PATH` that answers the version probe correctly is still refused with
+  `incompatible_binary`, whose `detail` gives `path`, `expected_sha256` and
+  `actual_sha256`;
+- `--allow-unbound-backend`: the named operator override. The launcher runs a
+  compatible executable whatever its digest, writes
+  `orbit-graph launcher: backend override: running <path> unverified …` to
+  stderr, and every response carries a top-level `backend_override` naming the
+  executable (Orbit reads only `ok` and `output`, so the field is visible to a
+  direct caller and in the backend's stderr log).
+
+Anything else in `spec.backend.args` (neither, both, a malformed digest, an
+unknown argument) runs nothing and returns `incompatible_binary`. A release
+carries the override, because a release ships no executable to bind.
+
 The preferred release path bundles the executable, so every Orbit service on
 the host runs the binary built from the installed tag regardless of its `PATH`:
 
@@ -39,34 +59,48 @@ cargo install --git https://github.com/constellation-works/orbit-graph --tag <ta
 orbit plugin add git+https://github.com/constellation-works/orbit-graph#<tag> --enable --grant fs,orbit_tools
 # Copy (never link) that executable into the installed tree as bin/orbit-graph.bin.
 plugin_root=$(orbit plugin show graph | sed -n 's/^Install path: //p')
-sh "$plugin_root/scripts/bundle-plugin-binary.sh" --binary "$HOME/.cargo/bin/orbit-graph"
+sh "$plugin_root/scripts/bundle-plugin-binary.sh" --unbound --binary "$HOME/.cargo/bin/orbit-graph"
 orbit plugin test "$plugin_root"   # certifies the installed digest
 orbit plugin show graph
 ```
 
 `scripts/bundle-plugin-binary.sh` probes the candidate against the launcher's
 pinned `extractor_version` and `plugin_schema_version` and refuses an
-incompatible one. `orbit plugin add` and `orbit plugin upgrade` replace the
-whole installed tree, so repeat the bundle step after each. Without a bundled
-executable the plugin falls back to `PATH`, which must then resolve to the same
-tagged build in every service that calls the plugin. The `fs` and
-`orbit_tools` grants are required for the requested workspace/index access and
-bounded callbacks; the plugin requests no network access.
+incompatible one. By default it also binds the tree: it records the copied
+executable's SHA-256 as `--backend-sha256` in that tree's `plugin.yaml`. That
+changes the manifest digest, so Orbit treats the tree as a new manifest until
+the operator approves it again with `orbit plugin add <tree> --force`; the
+bundler prints that step. A tree installed from `git+` cannot be re-added in
+place (its `origin: orbit` claim is honoured only for the `git+` source), so
+bundle a first-party install with `--unbound`, as above: the manifest keeps
+`--allow-unbound-backend` and every call reports the override. Bind a tree you
+install from a local directory, which drops the `origin` claim. `orbit plugin
+add` and `orbit plugin upgrade` replace the whole installed tree, so repeat the
+bundle step after each. Without a bundled executable the plugin falls back to
+`PATH`, which must then resolve to the same tagged build in every service that
+calls the plugin. The `fs` and `orbit_tools` grants are required for the
+requested workspace/index access and bounded callbacks; the plugin requests no
+network access.
 
 For a checkout, `make plugin-check` builds the executable and runs
-`orbit plugin validate --first-party .` and `orbit plugin test --first-party .`
-with the fresh build first on `PATH` (`--first-party` checks the checkout as it
-would load after a verified `git+` install); `make plugin-bundle` bundles a
-release build as the git-ignored `bin/orbit-graph.bin` instead.
+`orbit plugin validate --first-party` on both manifests and
+`orbit plugin test --first-party .` with the fresh build first on `PATH`
+(`--first-party` checks the checkout as it would load after a verified `git+`
+install); `make plugin-bundle` bundles a release build as the git-ignored
+`bin/orbit-graph.bin` and binds the checkout's `plugin.yaml` to it, a local
+change not to commit.
 
 The older `orbit tool add` installation path and
 `scripts/install-orbit-plugin.sh` / `scripts/uninstall-orbit-plugin.sh` are
 deprecated and remain available for one compatibility release. They register
 only the three v1 sidecars. The installer uses the bundled executable when
-present, then `--binary` (or `ORBIT_GRAPH_BIN` in the installing shell when
-`--binary` is absent), then `PATH`, and verifies the v2 envelope before
-registration. Pass `--binary /absolute/path/to/orbit-graph` for a development
-build and
+present, then `--binary`, then `PATH`, verifies the v2 envelope, and applies
+the launcher's binding rule from `plugin/plugin.yaml` before registering
+anything: a recorded `--backend-sha256` must match (otherwise it exits 1 with
+`incompatible_binary`), and the `--allow-unbound-backend` override is reported
+on stderr as `backend override: registering <path> unverified …`. It refuses a
+set `ORBIT_GRAPH_BIN` (exit 2) rather than silently honouring or ignoring it.
+Pass `--binary /absolute/path/to/orbit-graph` for a development build and
 `--orbit-root /absolute/path/to/.orbit` for a non-default Orbit authority.
 Removing either the plugin or the legacy registrations deliberately retains
 derived `.orbit-graph/` indexes.
@@ -90,10 +124,28 @@ codes, the Orbit subprocess adapter and the plugin-state code-graph index. The
 `orbit-graph` library has no plugin API and reads neither `ORBIT_PLUGIN_STATE`
 nor `GRAPH_ORBIT_TIMEOUT_SECONDS`.
 
+## Configuration
+
+The plugin reads one `[plugins.graph]` key, which Orbit passes to the backend
+as the envelope's `context.config`:
+
+| Key | Default | Meaning |
+|---|---|---|
+| `branch` | `main` | Landing branch whose first-parent history `status`, `recommend` and `maintain` (`history_sync`, `import`, `orbit_sync`) work on when the call names no `branch`, including the seeded `history-sync` routine. A call's own `branch` wins. |
+
+For example, `branch = "agent-main"` makes the seeded routine and any
+`maintain` call without `branch` sync `agent-main`; each such response reports
+the `branch` it used. The former `index_dir` key is gone: no code path honoured
+it (the history index lives under the repository's `.orbit-graph/`, the code
+graph under plugin state). The config schema is closed, so Orbit refuses a
+config that still sets `index_dir` and names the key; delete it. A key the
+backend itself does not read is named on its stderr and otherwise ignored.
+
 ## Usage
 
-Every plugin request requires `schema_version: 1` and an explicit absolute
-`repository`. Task-ID and hybrid queries also require the owning `workspace`;
+Every plugin request takes an explicit absolute `repository` (defaulting to
+the envelope's workspace root). `schema_version` is optional and must be 1
+when present. Task-ID and hybrid queries also require the owning `workspace`;
 the adapter never infers authority from cwd or `ORBIT_TOOL_WORKSPACE_ROOT`.
 
 ```sh
@@ -185,6 +237,20 @@ it runs past the budget the call still answers at the budget with
 `budget_exhausted` and the unfinished build is discarded. `graph_sync` indexes the checkout as it is
 and rejects the history fields (`branch`, `limit`, `delivery`, `workspace`,
 `task_ids`, `run_ids`, `task_snapshots`) rather than ignoring them.
+
+Every `maintain` operation refuses, with `invalid_request` and before any index
+is opened, each field it does not read, naming them all:
+
+| `operation` | Reads |
+|---|---|
+| `history_sync` | `branch`, `limit` |
+| `import` | `branch`, `delivery` |
+| `orbit_sync` | `branch`, `limit`, `workspace`, `task_ids`, `run_ids`, `task_snapshots` |
+| `graph_sync` | `full`, `budget_ms` |
+
+`recommend` likewise refuses `hybrid_limit` without `hybrid: true`, and every
+tool refuses an empty string as a field's value (or an item of a list field)
+rather than reading it as absent; omit the field instead.
 `result.failed` and `result.skipped` have the same shape as the CLI `sync`
 output: a `count` and one entry per path the build could not read or extract,
 or deliberately left out (see [usage](usage.md#index-lifecycle-and-location)).
@@ -281,8 +347,13 @@ of returning an empty result:
 
 The error message names the exact call, in the caller's own tool spelling. The
 query tools use the existing `fs` read grant and request no new permissions.
-The deprecated `plugin/` compatibility tree and its v1 sidecars do not
-advertise them.
+The deprecated `plugin/` compatibility tree advertises every tool of the root
+manifest; its v1 sidecars register only `recommend`, `status` and `maintain`.
+
+The `plugin/` tree is generated from the root `plugin.yaml` (schemas inlined,
+no routines, jobs or config, so it seeds no schedule), and its skill mirrors
+`skills/orbit-graph/` exactly. `plugin_contract` fails when either drifts; see
+CONTRIBUTING.md for the regeneration command.
 
 ## Change analysis
 
@@ -389,14 +460,16 @@ DeliveryImport v2 envelope.
 
 Failed calls return a stable `error.code`: `invalid_request` when the request
 is refused before any repository is read (unknown tool or field, unsupported
-`schema_version`, out-of-range bound, missing required field) or, for
+`schema_version`, out-of-range bound, missing required field, empty string, a
+field the operation does not read, or a malformed `context.config`) or, for
 `changes`, before anything is indexed (a `base` or `head` that does not
 resolve, or no default base to compare the working tree against),
 `repository_unavailable` when the routed `repository` is missing or not a Git
 repository, `index_missing` or `index_incompatible` when a query tool has no
 usable code-graph index, `index_missing` when `status` or `recommend` finds no
-history index, and `graph_error` for every other index, Git, or callback
-failure.
+history index, `incompatible_binary` from the launcher when the executable is
+stale or not the one `spec.backend.args` binds, and `graph_error` for every
+other index, Git, or callback failure.
 
 
 The bundled agent guidance is in

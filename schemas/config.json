@@ -1,14 +1,8 @@
 {
   "type": "object",
   "properties": {
-    "index_dir": {
-      "description": "Directory, relative to the workspace root, for repository-local graph and history indexes when the plugin runs outside Orbit's plugin state.",
-      "type": "string",
-      "minLength": 1,
-      "default": ".orbit-graph"
-    },
     "branch": {
-      "description": "Default landing branch whose first-parent history scopes recommendations.",
+      "description": "Landing branch whose first-parent history the plugin works on when a status, recommend, or maintain call names none, including the bundled history-sync activity. A call's own branch wins.",
       "type": "string",
       "minLength": 1,
       "default": "main"

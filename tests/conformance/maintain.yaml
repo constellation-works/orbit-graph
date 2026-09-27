@@ -73,3 +73,36 @@ tests:
     expect:
       error:
         code: invalid_request
+  # STD-01 R29: a field the operation does not read is refused, not dropped.
+  - name: maintain_history_sync_refuses_fields_it_does_not_read
+    tool: maintain
+    input:
+      schema_version: 1
+      operation: history_sync
+      repository: "{{workspace}}"
+      run_ids: [jrun-1]
+      workspace: ws_graph
+    expect:
+      error:
+        code: invalid_request
+  - name: maintain_import_refuses_a_limit
+    tool: maintain
+    input:
+      schema_version: 1
+      operation: import
+      repository: "{{workspace}}"
+      limit: 10
+    expect:
+      error:
+        code: invalid_request
+  - name: maintain_orbit_sync_refuses_a_delivery
+    tool: maintain
+    input:
+      schema_version: 1
+      operation: orbit_sync
+      repository: "{{workspace}}"
+      workspace: ws_graph
+      delivery: {}
+    expect:
+      error:
+        code: invalid_request
