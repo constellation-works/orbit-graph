@@ -189,3 +189,155 @@ fn program_names_come_from_the_nearest_manifests() {
         .expect_err("a path leaving the worktree is refused");
     assert!(error.to_string().contains("worktree"), "{error}");
 }
+
+#[cfg(unix)]
+#[test]
+fn program_names_skip_external_manifests_and_find_contained_ancestors() {
+    use std::os::unix::fs::symlink;
+
+    let dir = fixture_dir();
+    let outside = tempfile::tempdir().expect("outside");
+    write(dir.path(), "Cargo.toml", "[package]\nname = \"root\"\n");
+    write(
+        dir.path(),
+        "pyproject.toml",
+        "[project.scripts]\nroot-cli = \"root:main\"\n",
+    );
+    write(dir.path(), "nested/src/lib.rs", "pub fn run() {}\n");
+    write(
+        outside.path(),
+        "Cargo.toml",
+        "[package]\nname = \"outside\"\n",
+    );
+    write(
+        outside.path(),
+        "pyproject.toml",
+        "[project.scripts]\noutside-cli = \"outside:main\"\n",
+    );
+    symlink(
+        outside.path().join("Cargo.toml"),
+        dir.path().join("nested/Cargo.toml"),
+    )
+    .expect("external Cargo manifest link");
+    symlink(
+        outside.path().join("pyproject.toml"),
+        dir.path().join("nested/pyproject.toml"),
+    )
+    .expect("external pyproject manifest link");
+
+    let graph = Graph::open(dir.path(), SyncPolicy::Manual).expect("open graph");
+    let names: Vec<_> = graph
+        .program_names("nested/src/lib.rs")
+        .expect("contained ancestor names")
+        .into_iter()
+        .map(|name| (name.name, name.manifest))
+        .collect();
+    assert_eq!(
+        names,
+        vec![
+            ("root".to_string(), "Cargo.toml".to_string()),
+            ("root-cli".to_string(), "pyproject.toml".to_string()),
+        ]
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn program_names_skip_external_bin_directory_and_targets() {
+    use std::os::unix::fs::symlink;
+
+    let dir = fixture_dir();
+    let outside = tempfile::tempdir().expect("outside");
+    write(dir.path(), "Cargo.toml", "[package]\nname = \"safe\"\n");
+    write(dir.path(), "src/lib.rs", "pub fn run() {}\n");
+    write(outside.path(), "external.rs", "fn main() {}\n");
+    symlink(outside.path(), dir.path().join("src/bin")).expect("external bin directory link");
+    let graph = Graph::open(dir.path(), SyncPolicy::Manual).expect("open graph");
+    let names: Vec<_> = graph
+        .program_names("src/lib.rs")
+        .expect("program names")
+        .into_iter()
+        .map(|name| name.name)
+        .collect();
+    assert_eq!(names, vec!["safe"]);
+
+    let nested = fixture_dir();
+    write(nested.path(), "Cargo.toml", "[package]\nname = \"safe\"\n");
+    write(nested.path(), "src/lib.rs", "pub fn run() {}\n");
+    write(nested.path(), "src/bin/local.rs", "fn main() {}\n");
+    write(outside.path(), "external-dir/main.rs", "fn main() {}\n");
+    symlink(
+        outside.path().join("external.rs"),
+        nested.path().join("src/bin/external.rs"),
+    )
+    .expect("external bin file link");
+    symlink(
+        outside.path().join("external-dir"),
+        nested.path().join("src/bin/external-dir"),
+    )
+    .expect("external bin target directory link");
+    let graph = Graph::open(nested.path(), SyncPolicy::Manual).expect("open graph");
+    let names: Vec<_> = graph
+        .program_names("src/lib.rs")
+        .expect("program names")
+        .into_iter()
+        .map(|name| name.name)
+        .collect();
+    assert_eq!(names, vec!["local", "safe"]);
+}
+
+#[cfg(unix)]
+#[test]
+fn program_names_follow_internal_manifest_and_bin_symlinks() {
+    use std::os::unix::fs::symlink;
+
+    let dir = fixture_dir();
+    write(dir.path(), "nested/src/lib.rs", "pub fn run() {}\n");
+    write(
+        dir.path(),
+        "shared/Cargo.toml",
+        "[package]\nname = \"linked\"\n",
+    );
+    write(
+        dir.path(),
+        "shared/pyproject.toml",
+        "[project.scripts]\nlinked-cli = \"linked:main\"\n",
+    );
+    write(dir.path(), "shared/bins/direct.rs", "fn main() {}\n");
+    write(dir.path(), "shared/bins/nested/main.rs", "fn main() {}\n");
+    symlink(
+        dir.path().join("shared/Cargo.toml"),
+        dir.path().join("nested/Cargo.toml"),
+    )
+    .expect("internal Cargo manifest link");
+    symlink(
+        dir.path().join("shared/pyproject.toml"),
+        dir.path().join("nested/pyproject.toml"),
+    )
+    .expect("internal pyproject manifest link");
+    symlink(
+        dir.path().join("shared/bins"),
+        dir.path().join("nested/src/bin"),
+    )
+    .expect("internal bin directory link");
+
+    let graph = Graph::open(dir.path(), SyncPolicy::Manual).expect("open graph");
+    let names: Vec<_> = graph
+        .program_names("nested/src/lib.rs")
+        .expect("program names")
+        .into_iter()
+        .map(|name| (name.name, name.manifest))
+        .collect();
+    assert_eq!(
+        names,
+        vec![
+            ("direct".to_string(), "nested/Cargo.toml".to_string()),
+            ("linked".to_string(), "nested/Cargo.toml".to_string()),
+            (
+                "linked-cli".to_string(),
+                "nested/pyproject.toml".to_string()
+            ),
+            ("nested".to_string(), "nested/Cargo.toml".to_string()),
+        ]
+    );
+}

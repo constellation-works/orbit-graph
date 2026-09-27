@@ -123,7 +123,8 @@ pub(crate) fn program_names(graph: &Graph, path: &str) -> Result<Vec<ProgramName
 }
 
 fn read_manifest(root: &Path, manifest: &Path) -> Option<(String, toml::Table)> {
-    let text = fs::read_to_string(manifest).ok()?;
+    let physical = contained_existing_path(root, manifest)?;
+    let text = fs::read_to_string(physical).ok()?;
     let table = text.parse::<toml::Table>().ok()?;
     let relative = manifest
         .strip_prefix(root)
@@ -131,6 +132,12 @@ fn read_manifest(root: &Path, manifest: &Path) -> Option<(String, toml::Table)> 
         .to_string_lossy()
         .replace('\\', "/");
     Some((relative, table))
+}
+
+fn contained_existing_path(root: &Path, path: &Path) -> Option<std::path::PathBuf> {
+    let physical_root = root.canonicalize().ok()?;
+    let physical = path.canonicalize().ok()?;
+    physical.starts_with(&physical_root).then_some(physical)
 }
 
 fn cargo_program_names(root: &Path, directory: &Path) -> Option<Vec<ProgramName>> {
@@ -155,12 +162,22 @@ fn cargo_program_names(root: &Path, directory: &Path) -> Option<Vec<ProgramName>
             names.push(entry(name, ProgramNameSource::CargoBin));
         }
     }
-    if let Ok(entries) = fs::read_dir(directory.join("src/bin")) {
+    if let Some(bin_dir) = contained_existing_path(root, &directory.join("src/bin"))
+        && let Ok(entries) = fs::read_dir(bin_dir)
+    {
         for dir_entry in entries.flatten() {
             let entry_path = dir_entry.path();
-            let name = if entry_path.extension().is_some_and(|ext| ext == "rs") {
+            let Some(physical_entry) = contained_existing_path(root, &entry_path) else {
+                continue;
+            };
+            let name = if physical_entry.is_file()
+                && entry_path.extension().is_some_and(|ext| ext == "rs")
+            {
                 entry_path.file_stem()
-            } else if entry_path.join("main.rs").is_file() {
+            } else if physical_entry.is_dir()
+                && contained_existing_path(root, &physical_entry.join("main.rs"))
+                    .is_some_and(|main| main.is_file())
+            {
                 entry_path.file_name()
             } else {
                 None
