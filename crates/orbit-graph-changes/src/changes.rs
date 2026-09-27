@@ -1212,14 +1212,16 @@ impl<'a> Pairer<'a> {
         self.unpaired_head.remove(head_selector);
         let base_source = self.source_of(SnapshotSide::Base, base_selector)?;
         let head_source = self.source_of(SnapshotSide::Head, head_selector)?;
-        let content_identical = match (base_source.as_ref(), head_source.as_ref()) {
-            (Some(base), Some(head)) => Some(base.bytes == head.bytes),
-            _ => None,
-        };
-        let body = match content_identical {
-            Some(true) => "content is byte-identical across the move",
-            Some(false) => "content also changed across the move",
-            None => "content could not be compared across the move",
+        let body = match (base_source.as_ref(), head_source.as_ref()) {
+            (Some(base), Some(head)) if base.bytes != head.bytes => {
+                "content also changed across the move"
+            }
+            (Some(base), Some(head)) if base.truncated || head.truncated => {
+                "available source prefixes match, but at least one was truncated; full content \
+                 equality could not be established"
+            }
+            (Some(_), Some(_)) => "content is byte-identical across the move",
+            _ => "content could not be compared across the move",
         };
         let (_, base_path, head_path) = self.file_change_for_base(base_selector);
         self.symbols.push(ChangedSymbol {
