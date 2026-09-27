@@ -683,6 +683,106 @@ impl ExtractorBackend for PanickingBackend {
     }
 }
 
+#[test]
+fn python_default_argument_credentials_stay_out_of_symbol_rows() {
+    let token = "ghp_12345678901234567890";
+    let worktree = TestWorktree::new("signature-redaction");
+    let graph = Graph::open(worktree.path(), SyncPolicy::Manual).expect("open graph");
+    worktree.write(
+        "src/client.py",
+        &format!(
+            "def connect(token=\"{token}\"):\n    return token\n\ndef label(name=\"service\"):\n    return name\n"
+        ),
+    );
+    graph.sync(SyncMode::Full).expect("sync python file");
+    drop(graph);
+
+    let conn = open_test_connection(worktree.path());
+    let symbols = symbol_rows(&conn, "symbols");
+    let fts = symbol_rows(&conn, "symbols_fts");
+    drop(conn);
+    assert_signature_redacted(&symbols, "connect", token);
+    assert_signature_redacted(&fts, "connect", token);
+    assert_benign_signature(&symbols, "label");
+    assert_benign_signature(&fts, "label");
+
+    let db_path = graph_db_path(worktree.path());
+    let bytes = durable_database_bytes(&db_path);
+    assert!(
+        !contains_slice(&bytes, token.as_bytes()),
+        "graph database bytes contain the raw token"
+    );
+    assert!(
+        contains_slice(&bytes, b"[REDACTED_SECRET]"),
+        "graph database bytes should record the redaction marker"
+    );
+}
+
+fn symbol_rows(conn: &Connection, table: &str) -> Vec<(String, String, Option<String>)> {
+    let sql = format!("SELECT name, qualified, signature FROM {table} ORDER BY name");
+    let mut statement = conn.prepare(&sql).expect("prepare symbol rows");
+    statement
+        .query_map([], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)))
+        .expect("query symbol rows")
+        .collect::<Result<Vec<_>, _>>()
+        .expect("read symbol rows")
+}
+
+fn assert_signature_redacted(rows: &[(String, String, Option<String>)], name: &str, token: &str) {
+    let row = rows
+        .iter()
+        .find(|row| row.0 == name)
+        .unwrap_or_else(|| panic!("missing symbol {name} in {rows:?}"));
+    assert_eq!(row.0, name);
+    assert_eq!(row.1, name, "qualified identifier must stay usable");
+    let signature = row.2.as_deref().unwrap_or("");
+    assert!(
+        signature.contains("[REDACTED_SECRET]"),
+        "{name} signature {signature:?}"
+    );
+    assert!(!signature.contains(token), "{name} signature {signature:?}");
+    assert!(
+        signature.contains(&format!("def {name}(")),
+        "{name} signature {signature:?}"
+    );
+}
+
+fn assert_benign_signature(rows: &[(String, String, Option<String>)], name: &str) {
+    let row = rows
+        .iter()
+        .find(|row| row.0 == name)
+        .unwrap_or_else(|| panic!("missing symbol {name} in {rows:?}"));
+    assert_eq!(row.1, name);
+    let signature = row.2.as_deref().unwrap_or("");
+    assert!(
+        signature.contains("name=\"service\""),
+        "benign signature {signature:?}"
+    );
+    assert!(
+        !signature.contains("[REDACTED_SECRET]"),
+        "benign signature {signature:?}"
+    );
+}
+
+fn durable_database_bytes(path: &Path) -> Vec<u8> {
+    let mut bytes = fs::read(path).unwrap_or_default();
+    for suffix in ["-wal", "-shm"] {
+        let mut sidecar = path.as_os_str().to_os_string();
+        sidecar.push(suffix);
+        if let Ok(extra) = fs::read(PathBuf::from(sidecar)) {
+            bytes.extend(extra);
+        }
+    }
+    bytes
+}
+
+fn contains_slice(haystack: &[u8], needle: &[u8]) -> bool {
+    !needle.is_empty()
+        && haystack
+            .windows(needle.len())
+            .any(|window| window == needle)
+}
+
 fn insert_file_with_three_symbols(conn: &Connection, rel: &str) {
     conn.execute(
         "INSERT INTO files (path, content_hash, mtime_ns, lang, byte_len, extracted_at)

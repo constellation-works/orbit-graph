@@ -61,12 +61,12 @@ graph_binary=$(cd "$(dirname "$graph_binary")" && pwd -P)/$(basename "$graph_bin
 # binary at install time instead of registering it for every future request.
 probe=$(printf '%s\n' '{"tool":"orbit.graph.version","input":{}}' |
     ORBIT_TOOL_NAME=orbit.graph.version "$graph_binary" 2>/dev/null) || {
-        echo "incompatible orbit-graph binary: $graph_binary (expected v2 envelope, plugin_schema_version=1, extractor_version=21)" >&2
+        echo "incompatible orbit-graph binary: $graph_binary (expected v2 envelope, plugin_schema_version=1, extractor_version=22)" >&2
         exit 1
     }
 case "$probe" in
-    *'"ok":true'*'"extractor_version":21'*'"plugin_schema_version":1'*) ;;
-    *) echo "incompatible orbit-graph binary: $graph_binary (expected v2 envelope, plugin_schema_version=1, extractor_version=21)" >&2; exit 1 ;;
+    *'"ok":true'*'"extractor_version":22'*'"plugin_schema_version":1'*) ;;
+    *) echo "incompatible orbit-graph binary: $graph_binary (expected v2 envelope, plugin_schema_version=1, extractor_version=22)" >&2; exit 1 ;;
 esac
 # The same binding rule as the plugin launcher, read from plugin/plugin.yaml
 # `spec.backend.args`: a recorded --backend-sha256 must match, and the

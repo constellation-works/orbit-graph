@@ -453,8 +453,10 @@ entry. The entry records its format, extractor version and tree, and a
 mismatch, parse failure or unreadable file is treated as a miss and
 re-extracted. It is published atomically (owner-only temp file, then rename),
 and a warm hit refreshes the entry's modification time to record its last use.
-Because the entry is exactly the extractor output for those Git
-objects, cached and uncached requests return identical results. The graph
+Free-text signatures in that table pass through the shared redactor before
+the entry is written or used, so a credential-shaped default argument is not
+stored. Names and qualified names are left unchanged. Cached and uncached
+requests therefore return identical results. The graph
 index is deliberately not used as a symbol source: it reflects the worktree,
 including uncommitted and ignored files, rather than the target tree.
 
