@@ -601,7 +601,11 @@ fn named_detached_like_branch_cannot_read_detached_head_index() {
         plan.would_delete.is_empty(),
         "reachable detached index is retained"
     );
-    assert!(plan.kept.iter().any(|item| item.path == detached_path));
+    // Cleanup reports physical paths; macOS temp dirs sit behind /var -> /private/var.
+    let detached_physical = detached_path
+        .canonicalize()
+        .expect("resolve detached index");
+    assert!(plan.kept.iter().any(|item| item.path == detached_physical));
 }
 
 #[cfg(unix)]
