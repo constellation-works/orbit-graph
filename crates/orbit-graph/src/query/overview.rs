@@ -48,7 +48,7 @@ struct ScopeFilter {
 enum ScopeKind {
     All,
     FileEq(String),
-    DirLike(String),
+    DirPrefix(String),
 }
 
 impl ScopeFilter {
@@ -63,7 +63,7 @@ impl ScopeFilter {
                 echo: Some(path.clone()),
             }),
             Some(Selector::Dir { path }) => Ok(Self {
-                kind: ScopeKind::DirLike(format!("{}/%", path.trim_end_matches('/'))),
+                kind: ScopeKind::DirPrefix(format!("{}/", path.trim_end_matches('/'))),
                 echo: Some(path.clone()),
             }),
             Some(_) => Err(GraphError::invalid_input(
@@ -79,9 +79,10 @@ impl ScopeFilter {
         match &self.kind {
             ScopeKind::All => (String::new(), None),
             ScopeKind::FileEq(path) => (format!(" WHERE {column} = ?1"), Some(path.as_str())),
-            ScopeKind::DirLike(pattern) => {
-                (format!(" WHERE {column} LIKE ?1"), Some(pattern.as_str()))
-            }
+            ScopeKind::DirPrefix(prefix) => (
+                format!(" WHERE substr({column}, 1, length(?1)) COLLATE BINARY = ?1"),
+                Some(prefix.as_str()),
+            ),
         }
     }
 }

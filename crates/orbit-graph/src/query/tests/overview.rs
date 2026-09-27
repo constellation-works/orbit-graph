@@ -103,6 +103,57 @@ fn overview_full_scoped_to_dir_lists_symbols() {
 }
 
 #[test]
+fn overview_directory_scope_matches_literal_case_sensitive_prefixes() {
+    let worktree = TestWorktree::new("overview-literal-dir");
+    let graph = open_graph(&worktree, SyncPolicy::Manual);
+    let conn = open_connection(&worktree);
+    for path in [
+        "a_b/one.rs",
+        "aXb/two.rs",
+        "a_b_extra/three.rs",
+        "percent%dir/four.rs",
+        "percentZdir/five.rs",
+        "Foo/upper.rs",
+        "foo/lower.rs",
+        "src/main.rs",
+    ] {
+        insert_file(&conn, path, "rust", "");
+    }
+
+    for (directory, expected) in [
+        ("a_b", "a_b/one.rs"),
+        ("percent%dir", "percent%dir/four.rs"),
+        ("Foo", "Foo/upper.rs"),
+        ("foo", "foo/lower.rs"),
+        ("src", "src/main.rs"),
+    ] {
+        let result = graph
+            .overview(
+                Some(&Selector::Dir {
+                    path: directory.to_string(),
+                }),
+                OverviewFormat::Full,
+            )
+            .expect("scoped overview query");
+        let paths: Vec<&str> = result.files.iter().map(|file| file.path.as_str()).collect();
+
+        assert_eq!(result.total_files, 1, "directory {directory}");
+        assert_eq!(paths, vec![expected], "directory {directory}");
+    }
+
+    let file_result = graph
+        .overview(
+            Some(&Selector::File {
+                path: "src/main.rs".to_string(),
+            }),
+            OverviewFormat::Full,
+        )
+        .expect("file-scoped overview query");
+    assert_eq!(file_result.total_files, 1);
+    assert_eq!(file_result.files[0].path, "src/main.rs");
+}
+
+#[test]
 fn overview_rejects_symbol_selector_scope() {
     let (_worktree, graph) = seeded_graph("overview-reject");
 

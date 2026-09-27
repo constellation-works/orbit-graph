@@ -47,18 +47,20 @@ fn trailing_segment(name: &str) -> String {
 }
 
 fn query_implementors(conn: &Connection, name: &str) -> Result<Vec<Implementor>, GraphError> {
-    let trailing = format!("%::{name}");
     let mut stmt = conn
         .prepare_cached(
             "SELECT from_qualified, to_qualified, kind, def_file
              FROM relations
              WHERE kind IN ('impl', 'implements')
-               AND (to_qualified = ?1 OR to_qualified LIKE ?2)
+               AND (
+                   to_qualified COLLATE BINARY = ?1
+                   OR substr(to_qualified, -length(?1) - 2) COLLATE BINARY = ('::' || ?1)
+               )
              ORDER BY def_file, from_qualified, id",
         )
         .map_err(|source| GraphError::sqlite("prepare implementors lookup", source))?;
     let rows = stmt
-        .query_map(params![name, trailing], |row| {
+        .query_map(params![name], |row| {
             Ok(StoredImplRow {
                 from_qualified: row.get(0)?,
                 to_qualified: row.get(1)?,
