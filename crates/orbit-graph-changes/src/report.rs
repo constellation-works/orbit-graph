@@ -52,6 +52,7 @@ use crate::evidence::{
     EvidencePath, EvidenceQuery, QueryOptions,
 };
 use crate::filters::{FilterSet, FilteredOut};
+use crate::selection::ResolvedSelection;
 use crate::snapshot::{
     Comparison, ComparisonMode, ExclusionReason, Snapshot, SnapshotSide, WorkingTreeChange,
     WorkingTreeState,
@@ -952,26 +953,36 @@ pub fn build_report_bounded(
     options: &ReportOptions,
     limits: &ReportLimits,
 ) -> Result<BoundedReport, ReportError> {
+    let selection = ResolvedSelection::resolve(comparison, &options.selection)?;
+    build_report_with_selection(comparison, options, limits, &selection)
+}
+
+pub(crate) fn build_report_with_selection(
+    comparison: &Comparison,
+    options: &ReportOptions,
+    limits: &ReportLimits,
+    selection: &ResolvedSelection,
+) -> Result<BoundedReport, ReportError> {
     let mode = options.excerpts;
     let generated_at = options.generated_at.clone().unwrap_or_else(now_rfc3339);
 
     let changed = ChangedSymbols::compute(comparison)?;
     let (changed_for_report, filtered_out) = changed.filtered(&options.filters);
 
-    let selection: BTreeSet<&str> = options.selection.iter().map(String::as_str).collect();
     let selected: Vec<&ChangedSymbol> = changed_for_report
         .symbols
         .iter()
         .filter(|symbol| {
-            selection.is_empty()
-                || symbol
+            selection.selects(
+                symbol
                     .base
                     .as_ref()
-                    .is_some_and(|reference| selection.contains(reference.selector.as_str()))
-                || symbol
+                    .map(|reference| reference.selector.as_str()),
+                symbol
                     .head
                     .as_ref()
-                    .is_some_and(|reference| selection.contains(reference.selector.as_str()))
+                    .map(|reference| reference.selector.as_str()),
+            )
         })
         .collect();
 

@@ -233,7 +233,13 @@ both, and the two sets are presented separately rather than merged.
 Symbols are paired across base and head by **canonical selector**
 (`symbol:<path>#<qualified-name>:<kind>`). Qualified names distinguish methods
 and nested functions that share a short name in one file; a genuinely duplicated
-qualified name and kind remains ambiguous. The pairing ladder, strongest first:
+qualified name and kind remains ambiguous. A caller may still select a symbol
+by its short name: selection resolves that name independently in each snapshot
+with the graph's qualified-name precedence and deterministic row tie-break.
+Reports retain the caller's original selection strings; a request that matches
+no changed symbol remains unmatched rather than selecting every change.
+
+The pairing ladder, strongest first:
 
 1. **Same selector.** Identical path, qualified symbol name, and kind in both snapshots:
    one symbol, possibly with a changed body or signature.
