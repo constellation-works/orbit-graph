@@ -36,6 +36,61 @@ mod common;
 use common::corpus::{self, CorpusCase};
 
 #[test]
+fn same_named_methods_keep_their_qualified_identity() {
+    let root = tempfile::tempdir().expect("temporary repository");
+    let repo = git2::Repository::init(root.path()).expect("Git discovery boundary");
+    let source = "class A:\n    def run(self):\n        return 1\n\nclass B:\n    def run(self):\n        return 2\n";
+    let base = commit_all(&repo, root.path(), &[("classes.py", source)], "base", 0);
+    let head = commit_all(
+        &repo,
+        root.path(),
+        &[("classes.py", &source.replacen("return 1", "return 3", 1))],
+        "change only A.run",
+        1,
+    );
+    drop(repo);
+    let comparison = Comparison::open(root.path(), &base, &head).expect("open comparison");
+    let changed = ChangedSymbols::compute(&comparison).expect("changed symbols");
+    let methods = changed.entries_for("symbol:classes.py#A.run:method");
+    assert_eq!(methods.len(), 1, "{:?}", changed.symbols);
+    assert_eq!(methods[0].status, ChangeStatus::Modified);
+    assert!(
+        changed
+            .entries_for("symbol:classes.py#B.run:method")
+            .is_empty()
+    );
+    assert!(
+        changed
+            .entries_for("symbol:classes.py#run:method")
+            .is_empty()
+    );
+}
+
+#[test]
+fn genuinely_duplicate_qualified_methods_remain_uncertain() {
+    let root = tempfile::tempdir().expect("temporary repository");
+    let repo = git2::Repository::init(root.path()).expect("Git discovery boundary");
+    let source =
+        "class A:\n    def run(self):\n        return 1\n    def run(self):\n        return 2\n";
+    let base = commit_all(&repo, root.path(), &[("classes.py", source)], "base", 0);
+    let head = commit_all(
+        &repo,
+        root.path(),
+        &[("classes.py", &source.replacen("return 1", "return 3", 1))],
+        "change a duplicate method",
+        1,
+    );
+    drop(repo);
+    let comparison = Comparison::open(root.path(), &base, &head).expect("open comparison");
+    let changed = ChangedSymbols::compute(&comparison).expect("changed symbols");
+    let methods = changed.entries_for("symbol:classes.py#A.run:method");
+    assert_eq!(methods.len(), 1, "{:?}", changed.symbols);
+    assert_eq!(methods[0].status, ChangeStatus::Uncertain);
+    assert_eq!(methods[0].pairing_evidence, PairingEvidence::None);
+    assert_eq!(methods[0].uncertain_candidates.len(), 2);
+}
+
+#[test]
 fn direct_call_reports_only_the_changed_body() {
     let case = Case::open("direct-call");
     case.assert_manifest_presence();
@@ -586,20 +641,19 @@ fn nested_function_rename_is_paired_by_body_hash() {
     let case = Case::open("nested-function-rename");
     case.assert_manifest_presence();
 
-    let renamed = case
-        .changed
-        .symbols
-        .iter()
-        .find(|row| {
-            row.base
-                .as_ref()
-                .is_some_and(|symbol| symbol.selector == "symbol:sample.py#snapshot:function")
-                && row
+    let renamed =
+        case.changed
+            .symbols
+            .iter()
+            .find(|row| {
+                row.base.as_ref().is_some_and(|symbol| {
+                    symbol.selector == "symbol:sample.py#outer.snapshot:function"
+                }) && row
                     .head
                     .as_ref()
-                    .is_some_and(|symbol| symbol.selector == "symbol:sample.py#snap:function")
-        })
-        .expect("paired nested-function rename");
+                    .is_some_and(|symbol| symbol.selector == "symbol:sample.py#outer.snap:function")
+            })
+            .expect("paired nested-function rename");
     assert_eq!(renamed.status, ChangeStatus::Renamed);
     assert_eq!(renamed.pairing_evidence, PairingEvidence::BodyHash);
 }

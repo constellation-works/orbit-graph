@@ -486,7 +486,15 @@ impl SideInventory {
         for file in overview.files {
             indexed_files.insert(file.path.clone());
             for symbol in file.symbols {
-                let selector = format!("symbol:{}#{}:{}", file.path, symbol.name, symbol.kind);
+                // A short name can identify several methods or nested
+                // functions in this file. The qualified identity is what
+                // selector resolution and graph traversal already use.
+                let selector = Selector::Symbol {
+                    path: file.path.clone(),
+                    symbol: symbol.qualified.clone(),
+                    kind: symbol.kind.clone(),
+                }
+                .to_string();
                 let entry = IndexedSymbol {
                     path: file.path.clone(),
                     name: symbol.name,
