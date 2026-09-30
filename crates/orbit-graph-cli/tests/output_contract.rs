@@ -124,7 +124,10 @@ fn empty_query_diagnostics_reach_stderr_in_every_output_mode() {
                     serde_json::from_str::<Value>(record).expect("complete NDJSON record");
                 }
             } else {
-                assert!(output.stdout.is_empty(), "an empty human view has no table header");
+                assert!(
+                    output.stdout.is_empty(),
+                    "an empty human view has no table header"
+                );
             }
         }
     }

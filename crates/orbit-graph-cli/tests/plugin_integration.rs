@@ -654,7 +654,10 @@ fn launcher_failures_escape_paths_and_manifest_arguments_as_json() {
     assert_eq!(response["ok"], false, "{response}");
     assert_eq!(response["error"]["code"], "incompatible_binary");
     assert_eq!(response["error"]["retryable"], false);
-    assert_eq!(response["error"]["detail"]["expected_sha256"], invalid_digest);
+    assert_eq!(
+        response["error"]["detail"]["expected_sha256"],
+        invalid_digest
+    );
 }
 
 #[cfg(unix)]
