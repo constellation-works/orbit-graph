@@ -131,7 +131,7 @@ jobs:
         shell: bash
         env:
           ORBIT_GRAPH_TEST_ORBIT_BIN: ${{ runner.temp }}/orbit
-        run: cargo test -p orbit-graph-cli --test plugin_integration --locked -- --ignored
+        run: cargo test -p orbit-graph-cli --test plugin_integration --test plugin_v2 --locked -- --ignored
 
   portability:
     name: Test (${{ matrix.os }})

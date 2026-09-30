@@ -127,7 +127,7 @@ spec:
       cli:
         positional: [selector]
     - name: changes
-      description: "Changed symbols between two revisions or in the working tree, with labelled callers, entry points, and candidate tests. Call after implementing, before review, and to pick tests. Indexes both sides itself (about 12 s cold, cached under plugin state) within budget_ms."
+      description: "Changed symbols between two revisions or in the working tree, with labelled callers, entry points, and candidate tests. Call after implementing, before review, and to pick tests. Indexes both sides itself and caches committed snapshots under plugin state, within budget_ms."
       execution_kind: read_only
       mcp_scope: workspace
       input_schema: {$ref: schemas/changes.request.json}

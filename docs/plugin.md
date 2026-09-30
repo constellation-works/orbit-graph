@@ -20,6 +20,12 @@ claim from any other source (a local directory, an archive, a fork); such a
 copy must drop `origin: orbit` and then registers bare `graph.*` names. The
 executable accepts both spellings.
 
+For a local source export, Orbit 0.25 recognizes `.orbit-plugin/` when the
+source argument names the export's root directory. With Orbit 0.24, name the
+export's `.orbit-plugin/` directory explicitly instead. Local installs must
+still drop the `origin` claim as above, and the export must be outside a Git
+checkout: Orbit refuses to install a plugin tree from inside a repository.
+
 The launcher `.orbit-plugin/bin/orbit-graph` selects the executable in this order and probes
 it with a v2 version envelope before forwarding the request:
 
