@@ -56,14 +56,15 @@ those paths resolve and that the plugin tree contains no symlinks. The legacy
 `orbit tool add` sidecars remain under `scripts/legacy-plugin/` for the
 deprecated installer; they are not part of the installed plugin.
 
-Two tests register the plugin with a real Orbit and are `#[ignore]`d in the
+Three tests register the plugin with a real Orbit and are `#[ignore]`d in the
 normal run; CI's `plugin-conformance` job runs them against the pinned Orbit
-release. Run them locally, with an isolated Orbit root they create themselves,
-as
+release. These cover the legacy sidecars and the canonical v2 plugin's complete
+CLI and MCP surfaces. Each creates an isolated Orbit root; the v2 test also
+uses a private HOME. Run them locally as
 
 ```sh
 ORBIT_GRAPH_TEST_ORBIT_BIN=/absolute/path/to/orbit \
-  cargo test -p orbit-graph-cli --test plugin_integration --locked -- --ignored
+  cargo test -p orbit-graph-cli --test plugin_integration --test plugin_v2 --locked -- --ignored
 ```
 
 With `--ignored` and no `ORBIT_GRAPH_TEST_ORBIT_BIN` they fail rather than
