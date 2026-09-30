@@ -38,4 +38,5 @@ pub mod changes;
 pub mod evidence;
 pub mod filters;
 pub mod report;
+mod selection;
 pub mod snapshot;

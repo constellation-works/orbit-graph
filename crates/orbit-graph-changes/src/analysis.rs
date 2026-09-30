@@ -36,8 +36,9 @@ use crate::filters::{FilterSet, FilteredOut};
 use crate::report::{
     ComparisonView, ExcerptMode, ReportChangedSymbol, ReportDeadline, ReportError,
     ReportEvidencePath, ReportLimits, ReportOptions, TruncationFlag, UnanalysedReason,
-    UnresolvedArea, build_report_bounded,
+    UnresolvedArea, build_report_with_selection,
 };
+use crate::selection::ResolvedSelection;
 use crate::snapshot::{
     BuildStatus, Comparison, ComparisonOptions, ComparisonOutcome, ComparisonProgress, DefaultBase,
     SnapshotError, SnapshotSide, default_base,
@@ -793,10 +794,12 @@ pub fn analyse(request: &ChangesRequest) -> Result<ChangesDocument, AnalysisErro
             budget_ms: request.bounds.budget_ms.unwrap_or_default(),
         }),
     };
-    let built = build_report_bounded(&comparison, &options, &limits)?;
+    let selection =
+        ResolvedSelection::resolve(&comparison, &request.selection).map_err(ReportError::from)?;
+    let built = build_report_with_selection(&comparison, &options, &limits, &selection)?;
     let finished = Instant::now();
 
-    let mut document = regroup(built.report, built.unanalysed, &request.selection, query);
+    let mut document = regroup(built.report, built.unanalysed, &selection, query);
     document.default_base = default_base;
     document.timings = ChangesTimings {
         prepare_ms: duration_ms(prepared.duration_since(started)),
@@ -880,7 +883,7 @@ fn merge_snapshot(snapshots: &mut Vec<String>, snapshot: &str) {
 pub(crate) fn regroup(
     report: crate::report::ExportedReport,
     unanalysed: Vec<(String, UnanalysedReason)>,
-    selection: &[String],
+    selection: &ResolvedSelection,
     query: ChangesQuery,
 ) -> ChangesDocument {
     let bounds = query.bounds;
@@ -890,28 +893,28 @@ pub(crate) fn regroup(
         .map(|(selector, reason)| (selector.as_str(), *reason))
         .collect();
 
-    let all_selectors: Vec<&str> = report
-        .changed_symbols
-        .symbols
-        .iter()
-        .flat_map(|symbol| {
-            [symbol.base.as_ref(), symbol.head.as_ref()]
-                .into_iter()
-                .flatten()
-                .map(|occurrence| occurrence.symbol.selector.as_str())
+    let all_selectors = report.changed_symbols.symbols.iter().flat_map(|symbol| {
+        [
+            (SnapshotSide::Base, symbol.base.as_ref()),
+            (SnapshotSide::Head, symbol.head.as_ref()),
+        ]
+        .into_iter()
+        .filter_map(|(side, occurrence)| {
+            occurrence.map(|occurrence| (side, occurrence.symbol.selector.as_str()))
         })
-        .collect();
-    let unmatched_selection: Vec<String> = selection
-        .iter()
-        .filter(|selector| !all_selectors.contains(&selector.as_str()))
-        .cloned()
-        .collect();
+    });
+    let unmatched_selection = selection.unmatched(all_selectors);
     let selected = |symbol: &ReportChangedSymbol| {
-        selection.is_empty()
-            || [symbol.base.as_ref(), symbol.head.as_ref()]
-                .into_iter()
-                .flatten()
-                .any(|occurrence| selection.contains(&occurrence.symbol.selector))
+        selection.selects(
+            symbol
+                .base
+                .as_ref()
+                .map(|occurrence| occurrence.symbol.selector.as_str()),
+            symbol
+                .head
+                .as_ref()
+                .map(|occurrence| occurrence.symbol.selector.as_str()),
+        )
     };
 
     let mut symbols = Vec::new();
