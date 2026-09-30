@@ -153,9 +153,12 @@ impl Scanner {
             }
 
             let existing = rows.remove(&disk_file.path);
+            // Copy and archive tools can preserve a modification timestamp.
+            // A changed size still proves the indexed contents are stale.
             if let Some(existing) = existing.as_ref()
                 && mode == SyncMode::Auto
                 && existing.mtime_ns == disk_file.mtime_ns
+                && existing.byte_len == disk_file.byte_len
             {
                 seen.insert(disk_file.path.clone());
                 diff.unchanged.push(disk_file.path);
@@ -282,6 +285,7 @@ impl ContentHasher for Blake3Hasher {
 struct FileRow {
     content_hash: Vec<u8>,
     mtime_ns: i64,
+    byte_len: u64,
 }
 
 #[derive(Debug)]
@@ -382,15 +386,19 @@ fn add_default_orbitignore_patterns(builder: &mut GitignoreBuilder) -> Result<()
 
 fn load_file_rows(conn: &Connection) -> Result<BTreeMap<PathBuf, FileRow>, GraphError> {
     let mut stmt = conn
-        .prepare("SELECT path, content_hash, mtime_ns FROM files")
+        .prepare("SELECT path, content_hash, mtime_ns, byte_len FROM files")
         .map_err(|source| GraphError::sqlite("prepare files scan query", source))?;
     let rows = stmt
         .query_map([], |row| {
+            let stored_len: i64 = row.get(3)?;
+            let byte_len = u64::try_from(stored_len)
+                .map_err(|_| rusqlite::Error::IntegralValueOutOfRange(3, stored_len))?;
             Ok((
                 PathBuf::from(row.get::<_, String>(0)?),
                 FileRow {
                     content_hash: row.get(1)?,
                     mtime_ns: row.get(2)?,
+                    byte_len,
                 },
             ))
         })
