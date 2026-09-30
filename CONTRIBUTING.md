@@ -27,8 +27,8 @@ git diff --check
 
 `make ci` runs the same sequence. `cargo deny` needs cargo-deny 0.19.9
 (`cargo install cargo-deny --version 0.19.9 --locked`); CI installs that
-release from a SHA-256-pinned download. Tests run under cargo-nextest 0.9.136
-(`cargo install cargo-nextest --version 0.9.136 --locked`), which CI also
+release from a SHA-256-pinned download. Tests run under cargo-nextest 0.9.146
+(`cargo install cargo-nextest --version 0.9.146 --locked`), which CI also
 installs from a SHA-256-pinned download; `.config/nextest.toml` terminates a
 test that hangs, fails one whose child processes outlive it, and configures no
 retries, so fix a flaky test instead of rerunning it. Fixture `git` commands go

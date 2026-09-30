@@ -32,9 +32,9 @@ jobs:
         shell: bash
         run: |
           curl --fail --location --retry 3 --output "$RUNNER_TEMP/cargo-nextest.tar.gz" \
-            https://github.com/nextest-rs/nextest/releases/download/cargo-nextest-0.9.136/cargo-nextest-0.9.136-x86_64-unknown-linux-gnu.tar.gz
+            https://github.com/nextest-rs/nextest/releases/download/cargo-nextest-0.9.146/cargo-nextest-0.9.146-x86_64-unknown-linux-gnu.tar.gz
           printf '%s  %s\n' \
-            'a098eed56f2dd88c7fdca1e554a6b99fa1ffbd2a7a1c41b865700112981f6f52' \
+            '682c21b777c333e96fd532e114d3a5a894e0729ab88d94c0a9f20f8419695428' \
             "$RUNNER_TEMP/cargo-nextest.tar.gz" | sha256sum --check -
           tar -xzf "$RUNNER_TEMP/cargo-nextest.tar.gz" -C "$RUNNER_TEMP" cargo-nextest
           install -m 755 "$RUNNER_TEMP/cargo-nextest" "$HOME/.cargo/bin/cargo-nextest"
@@ -158,13 +158,13 @@ jobs:
         run: |
           if [ "$RUNNER_OS" = macOS ]; then
             target=universal-apple-darwin
-            sha256=905fa8b5150caa012b182f6e1b9234c62aed8290883f848e7416f974faada4ce
+            sha256=39785160b3c2f6ed9a765049cf4fa79f3b39aa02eb7598a5a0e2a1a0b9ffb9a8
           else
             target=x86_64-unknown-linux-gnu
-            sha256=a098eed56f2dd88c7fdca1e554a6b99fa1ffbd2a7a1c41b865700112981f6f52
+            sha256=682c21b777c333e96fd532e114d3a5a894e0729ab88d94c0a9f20f8419695428
           fi
           curl --fail --location --retry 3 --output "$RUNNER_TEMP/cargo-nextest.tar.gz" \
-            "https://github.com/nextest-rs/nextest/releases/download/cargo-nextest-0.9.136/cargo-nextest-0.9.136-$target.tar.gz"
+            "https://github.com/nextest-rs/nextest/releases/download/cargo-nextest-0.9.146/cargo-nextest-0.9.146-$target.tar.gz"
           printf '%s  %s\n' "$sha256" "$RUNNER_TEMP/cargo-nextest.tar.gz" | shasum -a 256 --check -
           tar -xzf "$RUNNER_TEMP/cargo-nextest.tar.gz" -C "$RUNNER_TEMP" cargo-nextest
           install -m 755 "$RUNNER_TEMP/cargo-nextest" "$HOME/.cargo/bin/cargo-nextest"

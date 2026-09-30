@@ -7,6 +7,10 @@
 # §R21). `retries` stays unset: a flaky test is fixed at its root cause, not
 # rerun (STD-04 §R9).
 
+# Older nextest can falsely report leaked handles when concurrent spawns
+# inherit sibling capture pipes on macOS (upstream fix in 0.9.145).
+nextest-version = { required = "0.9.146" }
+
 [profile.default]
 slow-timeout = { period = "60s", terminate-after = 5 }
 leak-timeout = { period = "500ms", result = "fail" }
