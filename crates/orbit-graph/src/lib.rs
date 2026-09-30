@@ -74,7 +74,7 @@ pub use orbit_graph_extract::history::{
 pub use orbit_graph_extract::{Selector, SelectorParseError};
 pub use store::history::{
     HISTORY_INDEX_SCHEMA_VERSION, HistoryImportReport, HistoryIndex, HistoryRebuildReport,
-    HistoryStatus, HistorySyncReport,
+    HistoryStatus, HistorySyncReport, validate_history_limit,
 };
 
 pub use evaluation::{

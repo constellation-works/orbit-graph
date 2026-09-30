@@ -46,6 +46,23 @@ const CONTRACT_VERSIONS: [(&str, u32); 2] = [
     ("import_schema_version", DELIVERY_IMPORT_SCHEMA_VERSION),
 ];
 
+/// Validate a first-parent history traversal bound and resolve its default.
+///
+/// Surface callers can run this before opening writable state. Both sync and
+/// rebuild enforce the same rule again at their operation boundary. `None`
+/// uses [`DEFAULT_HISTORY_SYNC_LIMIT`]; zero is rejected as invalid input.
+pub fn validate_history_limit(limit: Option<usize>) -> Result<usize, GraphError> {
+    let limit = limit.unwrap_or(DEFAULT_HISTORY_SYNC_LIMIT);
+    if limit == 0 {
+        return Err(GraphError::invalid_input(
+            "validate history traversal",
+            "limit",
+            "limit must be greater than zero",
+        ));
+    }
+    Ok(limit)
+}
+
 /// Handle to the repository-local, rebuildable delivery-history index.
 #[derive(Debug, Clone)]
 pub struct HistoryIndex {
@@ -825,7 +842,7 @@ impl HistoryIndex {
     /// Incrementally index first-parent commits, bounded by `limit`.
     pub fn sync(&self, limit: Option<usize>) -> Result<HistorySyncReport, GraphError> {
         self.refuse_read_only("sync history")?;
-        self.sync_impl(limit.unwrap_or(DEFAULT_HISTORY_SYNC_LIMIT))
+        self.sync_impl(validate_history_limit(limit)?)
     }
 
     /// Atomically re-extract Git-only history while retaining verified imports.
@@ -850,14 +867,7 @@ impl HistoryIndex {
         if confirm {
             self.refuse_read_only("rebuild history")?;
         }
-        let limit = limit.unwrap_or(DEFAULT_HISTORY_SYNC_LIMIT);
-        if limit == 0 {
-            return Err(GraphError::invalid_input(
-                "rebuild history",
-                "limit",
-                "limit must be greater than zero",
-            ));
-        }
+        let limit = validate_history_limit(limit)?;
         let repo = Repository::open(self.repo_root.as_path())
             .map_err(|error| GraphError::git("open repository for history rebuild", error))?;
         let tip = branch_tip(&repo, self.landing_branch.as_str())?;
@@ -1179,13 +1189,6 @@ impl HistoryIndex {
     }
 
     fn sync_impl(&self, limit: usize) -> Result<HistorySyncReport, GraphError> {
-        if limit == 0 {
-            return Err(GraphError::invalid_input(
-                "sync history",
-                "limit",
-                "limit must be greater than zero",
-            ));
-        }
         let repo = Repository::open(self.repo_root.as_path())
             .map_err(|error| GraphError::git("open repository for history sync", error))?;
         let conn = self.open_connection()?;

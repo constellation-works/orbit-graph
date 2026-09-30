@@ -5,7 +5,7 @@ use std::path::PathBuf;
 use clap::{Args, Subcommand};
 use serde_json::Value;
 
-use orbit_graph::{DeliveryImport, GraphError, HistoryIndex};
+use orbit_graph::{DeliveryImport, GraphError, HistoryIndex, validate_history_limit};
 
 use super::{CliError, CommandContext, display_value, json_value};
 use crate::output::{Column, CommandOutput, TableView, View, ViewBlock};
@@ -181,13 +181,15 @@ struct HistorySyncCommand {
     /// Landing branch to follow by its first-parent chain.
     #[arg(long)]
     branch: String,
-    /// Maximum commits to traverse in this atomic operation.
+    /// Maximum commits to traverse in this atomic operation (at least 1;
+    /// default: 1000).
     #[arg(long)]
     limit: Option<usize>,
 }
 
 impl HistorySyncCommand {
     fn run(&self, context: &CommandContext) -> Result<serde_json::Value, CliError> {
+        validate_history_limit(self.limit)?;
         let index = HistoryIndex::open(context.worktree_root(), self.branch.as_str())?;
         scoped_json(&index, index.sync(self.limit)?)
     }
@@ -213,7 +215,8 @@ struct HistoryRebuildCommand {
     /// Landing branch scope to rebuild.
     #[arg(long)]
     branch: String,
-    /// Maximum commits to traverse in this atomic operation.
+    /// Maximum commits to traverse in this atomic operation (at least 1;
+    /// default: 1000).
     #[arg(long)]
     limit: Option<usize>,
     /// Apply the rebuild; without this flag the command only reports its scope.
@@ -226,6 +229,7 @@ struct HistoryRebuildCommand {
 
 impl HistoryRebuildCommand {
     fn run(&self, context: &CommandContext) -> Result<serde_json::Value, CliError> {
+        validate_history_limit(self.limit)?;
         let index = HistoryIndex::open_for_rebuild(
             context.worktree_root(),
             self.branch.as_str(),
