@@ -313,12 +313,25 @@ pub fn execute_external_tool(
 
 /// Decode a tool's input. Every string the request schemas declare has
 /// `minLength: 1`, so an empty string, top-level or in a top-level array, is
-/// refused here, named, before any field is interpreted.
+/// refused here, named, before any field is interpreted. Every top-level
+/// property has a non-null type: omission selects defaults, but explicit
+/// null must not silently discard a supplied field (STD-01 §R29).
 fn decode_input<T: serde::de::DeserializeOwned>(input: &[u8]) -> Result<T, ToolError> {
     let value: Value = serde_json::from_slice(input).map_err(|error| {
         ToolError::invalid_request("decode plugin tool input", error.to_string())
     })?;
     if let Some(fields) = value.as_object() {
+        let nulls = fields
+            .iter()
+            .filter(|(_, value)| value.is_null())
+            .map(|(field, _)| field.as_str())
+            .collect::<Vec<_>>();
+        if !nulls.is_empty() {
+            return Err(ToolError::invalid_request(
+                "decode plugin tool input",
+                format!("null in {}; omit a field instead", nulls.join(", ")),
+            ));
+        }
         let empty = fields
             .iter()
             .filter(|(_, value)| match value {

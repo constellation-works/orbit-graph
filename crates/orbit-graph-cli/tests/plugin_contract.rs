@@ -538,6 +538,13 @@ fn request_schemas_equal_the_serde_structs_and_runtime_validation() {
         );
 
         for (field, property) in properties {
+            // A field can be omitted, but every advertised property has a
+            // non-null type. `Option<T>` must not silently reinterpret null
+            // as omission, including fields an operation does not use.
+            let mut input = base(field);
+            input[field] = Value::Null;
+            refused(&call(input), field, &format!("null {field}"));
+
             // Enums: exactly the variants the executable accepts.
             if let Some(values) = property["enum"].as_array() {
                 let mut input = base(field);

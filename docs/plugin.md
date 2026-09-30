@@ -276,7 +276,9 @@ separate `caller_supplied` rows and never replace run-observed task text.
 
 `recommend` likewise refuses `hybrid_limit` without `hybrid: true`, and every
 tool refuses an empty string as a field's value (or an item of a list field)
-rather than reading it as absent; omit the field instead.
+rather than reading it as absent; omit the field instead. Explicit `null` is
+also refused for every top-level request field; defaults apply only when the
+field is omitted.
 `result.failed` and `result.skipped` have the same shape as the CLI `sync`
 output: a `count` and one entry per path the build could not read or extract,
 or deliberately left out (see [usage](usage.md#index-lifecycle-and-location)).
