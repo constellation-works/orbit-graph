@@ -396,10 +396,9 @@ impl RefConfidence {
             CONFIDENCE_IMPORT_RESOLVED => Ok(Self::ImportResolved),
             CONFIDENCE_SAME_MODULE => Ok(Self::SameModule),
             CONFIDENCE_FUZZY_NAME => Ok(Self::FuzzyName),
-            other => Err(GraphError::invalid_input(
-                "parse graph ref confidence",
-                "confidence",
-                format!("unknown confidence `{other}`"),
+            other => Err(GraphError::invalid_data(
+                "decode stored graph ref confidence",
+                format!("unknown stored confidence `{other}`"),
             )),
         }
     }
@@ -428,10 +427,9 @@ impl RefKind {
             "impl" => Ok(Self::Impl),
             "extends" => Ok(Self::Extends),
             "implements" => Ok(Self::Implements),
-            other => Err(GraphError::invalid_input(
-                "parse graph ref kind",
-                "kind",
-                format!("unknown ref kind `{other}`"),
+            other => Err(GraphError::invalid_data(
+                "decode stored graph ref kind",
+                format!("unknown stored ref kind `{other}`"),
             )),
         }
     }
