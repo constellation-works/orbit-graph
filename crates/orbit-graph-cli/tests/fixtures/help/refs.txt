@@ -1,0 +1,36 @@
+List references to a symbol
+
+Usage: orbit-graph refs [OPTIONS] <SYMBOL>
+
+Arguments:
+  <SYMBOL>
+          Symbol selector whose inbound references and relations to list
+
+Options:
+      --confidence <CONFIDENCE>
+          Minimum resolution confidence floor (default: same_module).
+          
+          The default keeps precise results. If the precise floor finds no references, the result auto-includes lower-confidence `fuzzy_name` (name-only) matches under a `fallback` field — so cross-crate callers routed through `pub use` re-exports are not silently hidden. Pass `--confidence fuzzy` to query those matches directly in `refs`.
+          
+          [default: same_module]
+          [possible values: exact, import, same_module, fuzzy]
+
+      --kind <KIND>
+          Filter by reference or relation kind (default: all kinds)
+          
+          [possible values: call, type, use, trait_bound, impl, extends, implements]
+
+      --format <MODE>
+          Output mode: auto, table, json, or ndjson (default: auto). auto prints a headed table on a terminal but headerless tab-separated rows when piped; use table for a header or json/ndjson for named fields
+
+          Possible values:
+          - auto:   Use a table on a terminal and complete plain output otherwise
+          - table:  Render the command's human view with headers and terminal adaptation
+          - json:   Emit one JSON document
+          - ndjson: Emit one complete JSON record per line
+
+      --json
+          Shorthand for --format json; combining it with a different --format is an error
+
+  -h, --help
+          Print help (see a summary with '-h')

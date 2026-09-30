@@ -49,7 +49,7 @@ Explore code:
 
 Follow relationships:
   refs          List references to a symbol
-  callees       List outbound calls from a function or command
+  callees       List outbound calls from a symbol
   implementors  Find implementations of a trait
   deps          List source-level imports for a file or directory
   trace         Trace outbound calls from a discovered CLI command handler
@@ -197,7 +197,7 @@ pub enum Command {
     Show(show::ShowCommand),
     /// List references to a symbol.
     Refs(refs::RefsCommand),
-    /// List outbound calls from a function or command.
+    /// List outbound calls from a symbol.
     Callees(callees::CalleesCommand),
     /// Traverse the bounded graph around a selector.
     Impact(impact::ImpactCommand),

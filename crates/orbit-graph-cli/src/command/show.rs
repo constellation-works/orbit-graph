@@ -8,7 +8,9 @@ use crate::output::{Column, CommandOutput, TableView, View, ViewBlock};
 
 #[derive(Debug, Args)]
 pub struct ShowCommand {
+    /// Graph selector to inspect, such as file:src/lib.rs or symbol:src/lib.rs#run:function.
     selector: String,
+    /// Maximum source bytes to return; 0 returns metadata only.
     #[arg(long, default_value_t = DEFAULT_SHOW_MAX_BYTES)]
     max_bytes: usize,
 }

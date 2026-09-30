@@ -7,7 +7,9 @@ use crate::output::{Column, CommandOutput, TableView, View, ViewBlock};
 
 #[derive(Debug, Args)]
 pub struct TraceCommand {
+    /// Discovered CLI command name, with or without the command: prefix.
     command_name: String,
+    /// Maximum outbound call hops (0 uses the default depth).
     #[arg(long, default_value_t = DEFAULT_TRACE_DEPTH)]
     depth: u8,
     /// Minimum resolution confidence floor (default: same_module).

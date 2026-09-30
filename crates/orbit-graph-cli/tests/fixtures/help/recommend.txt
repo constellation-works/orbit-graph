@@ -1,0 +1,57 @@
+Recommend current change destinations from historical evidence
+
+Usage: orbit-graph recommend [OPTIONS] <--query <QUERY>|--task-id <TASK_ID>>
+
+Options:
+      --query <QUERY>
+          Free-text task/change query (mutually exclusive with --task-id)
+
+      --task-id <TASK_ID>
+          Target task ID (mutually exclusive with --query); its own delivery is excluded
+
+      --level <LEVEL>
+          Destination granularity
+          
+          [default: file]
+          [possible values: file, symbol]
+
+      --variant <VARIANT>
+          Ranking strategy (primarily useful for evaluation and diagnosis)
+          
+          [default: combined]
+          [possible values: combined, task_search_only, graph_only, frequency]
+
+      --limit <LIMIT>
+          Maximum recommendations (1..=100)
+
+      --branch <BRANCH>
+          Landing branch whose history index should be used
+          
+          [default: main]
+
+      --revision <REVISION>
+          Git revision expression; defaults to the current checkout commit
+
+      --cutoff <CUTOFF>
+          Chronological evidence cutoff (RFC 3339 or unix:seconds)
+
+      --task-snapshot <TASK_SNAPSHOT>
+          JSON file containing the target task's authoritative pre-execution snapshot
+
+      --hybrid-hits <HYBRID_HITS>
+          JSON file containing an array of externally ranked hybrid task hits
+
+      --format <MODE>
+          Output mode: auto, table, json, or ndjson (default: auto). auto prints a headed table on a terminal but headerless tab-separated rows when piped; use table for a header or json/ndjson for named fields
+
+          Possible values:
+          - auto:   Use a table on a terminal and complete plain output otherwise
+          - table:  Render the command's human view with headers and terminal adaptation
+          - json:   Emit one JSON document
+          - ndjson: Emit one complete JSON record per line
+
+      --json
+          Shorthand for --format json; combining it with a different --format is an error
+
+  -h, --help
+          Print help (see a summary with '-h')

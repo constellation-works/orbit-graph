@@ -10,6 +10,7 @@ use crate::output::{Column, CommandOutput, TableView, View, ViewBlock};
 
 #[derive(Debug, Args)]
 pub struct SyncCommand {
+    /// Re-index every supported file instead of updating only changed files.
     #[arg(long)]
     full: bool,
 }
