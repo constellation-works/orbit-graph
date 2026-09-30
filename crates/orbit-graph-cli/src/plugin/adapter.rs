@@ -242,7 +242,6 @@ impl<'a> OrbitAdapter<'a> {
                 "workspace": workspace,
                 "query": query,
                 "kind": "task",
-                "hybrid": true,
                 "limit": limit,
                 "model": "codex",
             }),
@@ -250,13 +249,44 @@ impl<'a> OrbitAdapter<'a> {
         let results = value
             .get("results")
             .and_then(Value::as_array)
-            .map_or(&[][..], Vec::as_slice);
+            .ok_or_else(|| {
+                GraphError::invalid_data("decode orbit.search results", "expected a results array")
+            })?;
+        let lexical = value.get("mode").and_then(Value::as_str) == Some("lexical");
         let hits = results
             .iter()
-            .filter_map(|item| {
+            .enumerate()
+            .filter_map(|(position, item)| {
+                let task_id = item.get("id")?.as_str()?;
+                if task_id.trim().is_empty()
+                    || item
+                        .get("kind")
+                        .is_some_and(|kind| kind.as_str() != Some("task"))
+                {
+                    return None;
+                }
+                let score = match item.get("score") {
+                    Some(score) => {
+                        let score = score.as_f64()?;
+                        if !score.is_finite() || score < 0.0 {
+                            return None;
+                        }
+                        score
+                    }
+                    None if lexical
+                        && item.get("kind").and_then(Value::as_str) == Some("task")
+                        && item.get("source").and_then(Value::as_str) == Some("lexical") =>
+                    {
+                        // Public lexical task hits omit scores. Preserve their
+                        // original order as reciprocal-rank relevance weights,
+                        // not semantic confidence. Dropped hits keep their ranks.
+                        1.0 / (position + 1) as f64
+                    }
+                    None => return None,
+                };
                 Some(HybridTaskHit {
-                    task_id: item.get("id")?.as_str()?.to_string(),
-                    score: item.get("score")?.as_f64()?,
+                    task_id: task_id.to_string(),
+                    score,
                 })
             })
             .collect::<Vec<_>>();

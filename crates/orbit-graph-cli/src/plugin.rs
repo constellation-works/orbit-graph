@@ -422,7 +422,7 @@ struct AdapterEvidence {
     workspace: Option<String>,
     task_text: String,
     hybrid_search: String,
-    /// Results of the authoritative hybrid search dropped as malformed;
+    /// Results of the authoritative task search dropped as malformed;
     /// `None` when no hybrid search ran.
     #[serde(skip_serializing_if = "Option::is_none")]
     hybrid_hits_dropped: Option<usize>,
@@ -522,8 +522,8 @@ fn recommend(call: &ToolCall<'_>, input: RecommendToolInput) -> Result<Value, To
             Ok(search) => {
                 if search.dropped > 0 {
                     warnings.push(format!(
-                        "dropped {} malformed orbit.search result(s) without a string id and a \
-                         numeric score",
+                        "dropped {} malformed orbit.search result(s) with invalid task IDs, \
+                         scores, or lexical task metadata",
                         search.dropped
                     ));
                 }
@@ -531,11 +531,11 @@ fn recommend(call: &ToolCall<'_>, input: RecommendToolInput) -> Result<Value, To
                 let mut hits = search.hits;
                 hits.append(&mut hybrid_hits);
                 hybrid_hits = hits;
-                "orbit.search_hybrid".to_string()
+                "orbit.search_lexical_rank".to_string()
             }
             Err(error) => {
                 warnings.push(format!(
-                    "authoritative hybrid search unavailable; deterministic local lexical fallback used: {error}"
+                    "authoritative Orbit task search unavailable; deterministic local lexical fallback used: {error}"
                 ));
                 "local_lexical_fallback".to_string()
             }
