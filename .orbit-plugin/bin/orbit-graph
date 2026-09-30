@@ -22,12 +22,27 @@ else
 fi
 
 json_escape() {
-    printf '%s' "$1" | sed 's/\\/\\\\/g; s/"/\\"/g'
+    # Append one record separator so awk can distinguish an original trailing
+    # newline from the newline used to deliver the final record. C locale
+    # preserves UTF-8 bytes while every JSON control character is escaped.
+    printf '%s\n' "$1" | LC_ALL=C awk '
+        BEGIN {
+            for (i = 1; i < 32; i++) escaped[sprintf("%c", i)] = sprintf("\\u%04x", i)
+            escaped["\\"] = "\\\\"
+            escaped["\""] = "\\\""
+        }
+        NR > 1 { printf "\\n" }
+        {
+            for (i = 1; i <= length($0); i++) {
+                c = substr($0, i, 1)
+                printf "%s", (c in escaped ? escaped[c] : c)
+            }
+        }'
 }
 
 incompatible() {
     path=$(json_escape "$graph_binary")
-    printf '{"ok":false,"error":{"code":"incompatible_binary","message":"orbit-graph at %s must support the v2 envelope (plugin_schema_version=1, extractor_version=24)","path":"%s"}}\n' "$path" "$path"
+    printf '{"ok":false,"error":{"code":"incompatible_binary","message":"orbit-graph at %s must support the v2 envelope (plugin_schema_version=1, extractor_version=24)","retryable":false,"path":"%s"}}\n' "$path" "$path"
     exit 0
 }
 
@@ -35,8 +50,10 @@ incompatible() {
 unbound() {
     path=$(json_escape "$graph_binary")
     reason=$(json_escape "$1")
-    printf '{"ok":false,"error":{"code":"incompatible_binary","message":"orbit-graph at %s is not the executable this plugin was approved to run: %s","path":"%s","detail":{"path":"%s","expected_sha256":"%s","actual_sha256":"%s"}}}\n' \
-        "$path" "$reason" "$path" "$path" "$expected_sha256" "${actual_sha256:-}"
+    expected=$(json_escape "$expected_sha256")
+    actual=$(json_escape "${actual_sha256:-}")
+    printf '{"ok":false,"error":{"code":"incompatible_binary","message":"orbit-graph at %s is not the executable this plugin was approved to run: %s","retryable":false,"path":"%s","detail":{"path":"%s","expected_sha256":"%s","actual_sha256":"%s"}}}\n' \
+        "$path" "$reason" "$path" "$path" "$expected" "$actual"
     exit 0
 }
 
