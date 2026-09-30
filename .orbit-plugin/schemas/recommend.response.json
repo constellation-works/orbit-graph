@@ -44,11 +44,11 @@
           "type": "string"
         },
         "hybrid_search": {
-          "description": "Source of task-similarity hits, such as local_lexical or orbit.search_hybrid.",
+          "description": "Source of task-similarity hits, such as local_lexical or orbit.search_lexical_rank. Ordered scoreless public lexical task hits receive reciprocal-rank weights.",
           "type": "string"
         },
         "hybrid_hits_dropped": {
-          "description": "When orbit.search ran: how many of its results were dropped as malformed (no string id or no numeric score). Absent when no authoritative hybrid search ran.",
+          "description": "When orbit.search ran: how many malformed results were dropped. Accepted hits have a nonblank string task ID and a finite nonnegative explicit score, or are scoreless public lexical task hits whose weight derives from rank. Absent when no authoritative search ran.",
           "type": "integer",
           "minimum": 0
         },
