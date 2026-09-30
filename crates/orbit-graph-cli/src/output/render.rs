@@ -28,6 +28,17 @@ pub fn emit(
     stderr: &mut dyn Write,
 ) -> Result<(), CliError> {
     emit_records(output, sink, stdout, stderr)?;
+    // Empty-result diagnostics are part of the command contract in every
+    // mode, even when its human tables are not rendered (STD-01 §R16).
+    let View::Blocks(blocks) = &output.view;
+    for table in blocks.iter().filter_map(|block| match block {
+        ViewBlock::Table(table) => Some(table),
+        ViewBlock::Text(_) => None,
+    }) {
+        if let Some(message) = table.empty_message() {
+            writeln!(stderr, "{message}").map_err(CliError::Stderr)?;
+        }
+    }
     // Notices go to stderr in every mode, JSON included (STD-01 §R12, §R33).
     for notice in &output.notices {
         writeln!(stderr, "{notice}").map_err(CliError::Stderr)?;

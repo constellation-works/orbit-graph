@@ -120,6 +120,14 @@ impl TableView {
         self.empty_message = Some(message.into());
         self
     }
+
+    /// The diagnostic for an empty result, independent of rendering mode.
+    pub(crate) fn empty_message(&self) -> Option<&str> {
+        self.rows
+            .is_empty()
+            .then_some(self.empty_message.as_deref())
+            .flatten()
+    }
 }
 
 /// Render one table into the sink's human form, routing diagnostics to stderr.
@@ -130,10 +138,6 @@ pub(crate) fn emit_table(
     stderr: &mut dyn Write,
 ) -> Result<(), CliError> {
     if table.rows.is_empty() {
-        if let Some(message) = &table.empty_message {
-            writeln!(stderr, "{message}").map_err(CliError::Stderr)?;
-            stderr.flush().map_err(CliError::Stderr)?;
-        }
         return Ok(());
     }
     if sink.mode() == OutputMode::Plain {

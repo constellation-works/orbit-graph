@@ -88,6 +88,49 @@ fn library_rejected_cli_arguments_are_usage_errors() {
 }
 
 #[test]
+fn empty_query_diagnostics_reach_stderr_in_every_output_mode() {
+    let fixture = fixture_repository();
+    write(fixture.path(), "src/leaf.rs", "pub fn isolated() {}\n");
+    commit(fixture.path());
+    json(fixture.path(), &["sync", "--full"]);
+    let selector = "symbol:src/leaf.rs#isolated:function";
+    for command in [
+        vec!["search", "definitely_absent_query"],
+        vec!["refs", selector],
+        vec!["callees", selector],
+        vec!["impact", selector],
+        vec!["implementors", "symbol:src/lib.rs#Missing:trait"],
+        vec!["deps", "dir:missing_directory"],
+        vec!["trace", "missing_command_handler"],
+    ] {
+        let plain = run(fixture.path(), command.as_slice());
+        assert!(plain.status.success(), "{command:?}");
+        assert!(plain.stdout.is_empty(), "{command:?}");
+        assert!(!plain.stderr.is_empty(), "{command:?}");
+        for mode in ["table", "json", "ndjson"] {
+            let output = run(
+                fixture.path(),
+                &[&["--format", mode], command.as_slice()].concat(),
+            );
+            assert!(output.status.success(), "{command:?}, mode {mode}");
+            assert_eq!(
+                output.stderr, plain.stderr,
+                "{command:?}, mode {mode} must retain the empty-result diagnostic"
+            );
+            if mode == "json" {
+                serde_json::from_slice::<Value>(&output.stdout).expect("complete JSON document");
+            } else if mode == "ndjson" {
+                for record in String::from_utf8_lossy(&output.stdout).lines() {
+                    serde_json::from_str::<Value>(record).expect("complete NDJSON record");
+                }
+            } else {
+                assert!(output.stdout.is_empty(), "an empty human view has no table header");
+            }
+        }
+    }
+}
+
+#[test]
 fn markdown_credentials_are_redacted_before_search_and_database_write() {
     let fixture = fixture_repository();
     let token = "ghp_12345678901234567890";
