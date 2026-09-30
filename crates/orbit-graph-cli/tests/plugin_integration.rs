@@ -3304,6 +3304,190 @@ fn hybrid_warnings(response: &Value) -> String {
         .join("\n")
 }
 
+#[cfg(unix)]
+fn public_search_recommend(fixture: &TempDir, search: &Value) -> Value {
+    let repository = fixture
+        .path()
+        .join("repo")
+        .canonicalize()
+        .expect("repository");
+    let callback_path = executable_path_with(fixture.path());
+    let response_path = fixture.path().join("search-response.json");
+    fs::write(&response_path, search.to_string()).expect("write public search response");
+    plugin_success(&plugin_output_with_env(
+        &repository,
+        RECOMMEND_TOOL_NAME,
+        json!({
+            "repository": repository,
+            "branch": "main",
+            "workspace": "ws-test",
+            "query": "unrelated quasar",
+            "hybrid": true,
+            "level": "file"
+        }),
+        &[
+            ("PATH", callback_path.as_os_str()),
+            ("GRAPH_TEST_SEARCH", std::ffi::OsStr::new("public_lexical")),
+            ("GRAPH_TEST_SEARCH_RESULT", response_path.as_os_str()),
+        ],
+    ))
+}
+
+#[cfg(unix)]
+fn sync_public_search_history(fixture: &TempDir) {
+    let repository = fixture
+        .path()
+        .join("repo")
+        .canonicalize()
+        .expect("repository");
+    let callback_path = executable_path_with(fixture.path());
+    let response = plugin_success(&plugin_output_with_env(
+        &repository,
+        MAINTAIN_TOOL_NAME,
+        json!({
+            "operation": "orbit_sync",
+            "repository": repository,
+            "branch": "main",
+            "workspace": "ws-test",
+            "run_ids": ["RUN-1"]
+        }),
+        &[("PATH", callback_path.as_os_str())],
+    ));
+    assert_eq!(response["outcomes"][0]["status"], "inserted", "{response}");
+}
+
+#[cfg(unix)]
+#[test]
+fn public_adapter_uses_scoreless_ordered_lexical_task_hits() {
+    let fixture = adapter_fixture();
+    sync_public_search_history(&fixture);
+    let search = |ids: [&str; 2]| {
+        json!({
+            "mode": "lexical", "kind": "task", "notes": [],
+            "results": ids.map(|id| json!({"id": id, "kind": "task", "source": "lexical"}))
+        })
+    };
+    let first = public_search_recommend(&fixture, &search(["TASK-PRIOR", "TASK-OTHER"]));
+    assert_eq!(
+        first["adapter"]["hybrid_search"], "orbit.search_lexical_rank",
+        "{first}"
+    );
+    assert_eq!(first["adapter"]["hybrid_hits_dropped"], 0, "{first}");
+    assert!(hybrid_warnings(&first).is_empty(), "{first}");
+    assert_eq!(
+        first["result"]["recommendations"][0]["selector"], "file:parser.rs",
+        "{first}"
+    );
+    assert_eq!(
+        first["result"]["recommendations"][0]["supporting_task_ids"],
+        json!(["TASK-PRIOR"]),
+        "{first}"
+    );
+    assert_eq!(
+        first["result"]["recommendations"][0]["reasons"][0]["kind"],
+        "historical_change"
+    );
+    let first_score = first["result"]["recommendations"][0]["reasons"][0]["contribution"]
+        .as_f64()
+        .expect("first score");
+    assert!(first_score > 0.0, "{first}");
+    let second = public_search_recommend(&fixture, &search(["TASK-OTHER", "TASK-PRIOR"]));
+    let second_score = second["result"]["recommendations"][0]["reasons"][0]["contribution"]
+        .as_f64()
+        .expect("second score");
+    assert!(
+        (second_score / first_score - 0.5).abs() < 1e-9,
+        "rank weights: {first} / {second}"
+    );
+    let invocations =
+        fs::read_to_string(fixture.path().join("orbit-invocations.log")).expect("invocation log");
+    let search_call = invocations
+        .lines()
+        .find(|line| line.contains("tool run orbit.search"))
+        .expect("public search call");
+    assert!(!search_call.contains("\"hybrid\""), "{search_call}");
+}
+
+#[cfg(unix)]
+#[test]
+fn public_adapter_validates_search_envelopes_and_preserves_explicit_scores() {
+    let fixture = adapter_fixture();
+    sync_public_search_history(&fixture);
+    let explicit = public_search_recommend(
+        &fixture,
+        &json!({
+            "mode": "lexical", "kind": "task", "results": [
+                {"id": "TASK-OTHER", "score": 1.0},
+                {"id": "TASK-PRIOR", "score": 0.25},
+                {"id": "TASK-ZERO", "score": 0.0}
+            ]
+        }),
+    );
+    assert_eq!(explicit["adapter"]["hybrid_hits_dropped"], 0, "{explicit}");
+    let explicit_score = explicit["result"]["recommendations"][0]["reasons"][0]["contribution"]
+        .as_f64()
+        .expect("explicit score");
+    assert!(explicit_score > 0.0, "{explicit}");
+    let malformed = public_search_recommend(
+        &fixture,
+        &json!({
+            "mode": "lexical", "kind": "task", "results": [
+                {"id": "TASK-OTHER", "kind": "task", "source": "lexical"},
+                {"id": "", "score": 1.0},
+                {"id": "  ", "score": 1.0},
+                {"id": 4, "score": 1.0},
+                {"id": "TASK-PRIOR", "score": -1.0},
+                {"id": "TASK-PRIOR", "score": "1.0"},
+                {"id": "TASK-PRIOR", "score": null},
+                {"id": "TASK-PRIOR", "kind": "friction", "source": "lexical"},
+                {"id": "TASK-PRIOR", "kind": "task", "source": "lexical"}
+            ]
+        }),
+    );
+    assert_eq!(
+        malformed["adapter"]["hybrid_hits_dropped"], 7,
+        "{malformed}"
+    );
+    assert!(
+        hybrid_warnings(&malformed).contains("dropped 7 malformed"),
+        "{malformed}"
+    );
+    let rank_score = malformed["result"]["recommendations"][0]["reasons"][0]["contribution"]
+        .as_f64()
+        .expect("rank score");
+    // Invalid hits retain their places in the public result ordering. The
+    // surviving task is ninth, with weight 1/9, versus the explicit 1/4.
+    assert!(
+        (rank_score / explicit_score - 4.0 / 9.0).abs() < 1e-9,
+        "{explicit} / {malformed}"
+    );
+    for search in [json!({}), json!({"results": null}), json!({"results": {}})] {
+        let response = public_search_recommend(&fixture, &search);
+        assert_eq!(
+            response["adapter"]["hybrid_search"], "local_lexical_fallback",
+            "{response}"
+        );
+        assert!(
+            hybrid_warnings(&response).contains("expected a results array"),
+            "{response}"
+        );
+        assert!(
+            response["result"]["recommendations"]
+                .as_array()
+                .expect("recommendations")
+                .is_empty(),
+            "{response}"
+        );
+    }
+    let empty = public_search_recommend(&fixture, &json!({"mode": "lexical", "results": []}));
+    assert_eq!(
+        empty["adapter"]["hybrid_search"], "orbit.search_lexical_rank",
+        "{empty}"
+    );
+    assert_eq!(empty["adapter"]["hybrid_hits_dropped"], 0, "{empty}");
+    assert!(hybrid_warnings(&empty).is_empty(), "{empty}");
+}
+
 #[cfg(target_os = "linux")]
 #[test]
 fn public_adapter_stops_a_grandchild_that_holds_orbit_stdout() {
@@ -3317,7 +3501,7 @@ fn public_adapter_stops_a_grandchild_that_holds_orbit_stdout() {
         adapter_latency_ceiling()
     );
     assert_eq!(
-        response["adapter"]["hybrid_search"], "orbit.search_hybrid",
+        response["adapter"]["hybrid_search"], "orbit.search_lexical_rank",
         "{response}"
     );
     let pid = fs::read_to_string(fixture.path().join("grandchild.pid")).expect("grandchild pid");
@@ -4249,6 +4433,14 @@ case "$*" in
     esac ;;
   *"tool run orbit.search"*)
     case "$GRAPH_TEST_SEARCH" in
+      public_lexical)
+        case "$*" in
+          *'"hybrid":'*)
+            printf '%s\n' '{{"code":"invalid_input","error":"unknown parameter hybrid; search supports lexical queries only"}}' >&2
+            exit 1 ;;
+        esac
+        cat "$GRAPH_TEST_SEARCH_RESULT"
+        exit 0 ;;
       fork)
         sleep {stuck} &
         printf '%s' "$!" > "{grandchild}" ;;
