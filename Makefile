@@ -69,7 +69,7 @@ check:
 # .config/nextest.toml (STD-03 R21/R22); nextest does not run doctests, so
 # cargo test runs those. A missing cargo-nextest fails here rather than
 # falling back to cargo test.
-CARGO_NEXTEST_VERSION := 0.9.136
+CARGO_NEXTEST_VERSION := 0.9.146
 test:
 	@if ! $(CARGO) nextest --version >/dev/null 2>&1; then \
 		echo "error: cargo-nextest is not installed; make test needs it." >&2; \
