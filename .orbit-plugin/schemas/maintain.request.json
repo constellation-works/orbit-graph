@@ -40,7 +40,7 @@
       "type": "object"
     },
     "workspace": {
-      "description": "Owning Orbit workspace (ws_* id or name); required for orbit_sync and refused for every other operation.",
+      "description": "Owning Orbit workspace (ws_* id, registered name or absolute registered checkout path); required for orbit_sync and refused for every other operation.",
       "type": "string",
       "minLength": 1
     },

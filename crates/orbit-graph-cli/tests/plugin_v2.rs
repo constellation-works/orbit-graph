@@ -47,13 +47,29 @@ fn installed_v2_plugin_serves_every_tool_over_cli_and_mcp() {
         "{refused:?}"
     );
     for (verb, input) in &requests {
-        // A fully cleared environment carries no caller identity in Orbit
-        // 0.24. Exercise the CLI's explicit, audited operator path rather
+        // A fully cleared environment carries no caller identity. Exercise
+        // the CLI's explicit, audited operator path rather
         // than inventing a worker credential or depending on the test host.
         let output = fixture.cli_tool(verb, input, true);
         let value = json_output(output, verb);
         assert_tool_result(verb, input, &value);
     }
+    let task_request = fixture.task_recommendation();
+    let recommendation = json_output(
+        fixture.cli_tool("recommend", &task_request, true),
+        "authoritative task recommendation",
+    );
+    assert_tool_result("recommend", &task_request, &recommendation);
+    assert_eq!(
+        recommendation["adapter"]["task_text"], "orbit.task.show_public_observation",
+        "the recommendation observes the task through the live host callback"
+    );
+    let task_sync = json!({"operation":"orbit_sync", "workspace":"graph-v2-test", "task_ids":[task_request["task_id"]]});
+    let sync = json_output(
+        fixture.cli_tool("maintain", &task_sync, true),
+        "authoritative task sync",
+    );
+    assert_task_sync(&sync);
 
     let mut agent = Mcp::start(&fixture, false);
     let version = agent.call("version", json!({}));
@@ -83,6 +99,20 @@ fn installed_v2_plugin_serves_every_tool_over_cli_and_mcp() {
         assert_ne!(result["isError"], true, "{verb}: {result}");
         assert_tool_result(verb, &input, &result["structuredContent"]);
     }
+    let recommendation = mcp.call("recommend", task_request.clone());
+    assert_ne!(recommendation["isError"], true, "{recommendation}");
+    assert_tool_result(
+        "recommend",
+        &task_request,
+        &recommendation["structuredContent"],
+    );
+    assert_eq!(
+        recommendation["structuredContent"]["adapter"]["task_text"],
+        "orbit.task.show_public_observation"
+    );
+    let sync = mcp.call("maintain", task_sync);
+    assert_ne!(sync["isError"], true, "{sync}");
+    assert_task_sync(&sync["structuredContent"]);
     let malformed = mcp.call("search", json!({"query": "parse", "unknown_field": true}));
     assert_eq!(malformed["isError"], true, "{malformed}");
     assert!(
@@ -91,6 +121,14 @@ fn installed_v2_plugin_serves_every_tool_over_cli_and_mcp() {
             .contains("unknown_field"),
         "the malformed-field error names its input: {malformed}"
     );
+}
+
+fn assert_task_sync(value: &Value) {
+    assert_eq!(value["coverage"]["task_ids_examined"], 1, "{value}");
+    assert_eq!(value["coverage"]["failed"], 0, "{value}");
+    assert_eq!(value["coverage"]["discovered_unique_runs"], 0, "{value}");
+    assert_eq!(value["outcomes"], json!([]), "{value}");
+    assert_eq!(value["status"]["verified_deliveries"], 0, "{value}");
 }
 
 fn requests() -> Vec<(&'static str, Value)> {
@@ -219,6 +257,12 @@ impl Fixture {
             manifest,
         };
         fixture.git(&["init", "-b", "main"]);
+        fixture.git(&[
+            "remote",
+            "add",
+            "origin",
+            "https://example.invalid/graph-plugin-fixture.git",
+        ]);
         fs::create_dir(fixture.repository.join("src")).expect("fixture source directory");
         fixture.write_parser(false);
         fs::write(fixture.repository.join("src/lib.rs"),
@@ -254,6 +298,15 @@ impl Fixture {
             .env("HOME", &self.home)
             .env("XDG_CONFIG_HOME", &self.home)
             .env("TMPDIR", &self.root)
+            .env("GIT_CONFIG_NOSYSTEM", "1")
+            .env(
+                "GIT_CONFIG_GLOBAL",
+                if cfg!(windows) { "NUL" } else { "/dev/null" },
+            )
+            .env("GIT_AUTHOR_NAME", "Orbit Graph Test")
+            .env("GIT_AUTHOR_EMAIL", "orbit-graph-test@example.invalid")
+            .env("GIT_COMMITTER_NAME", "Orbit Graph Test")
+            .env("GIT_COMMITTER_EMAIL", "orbit-graph-test@example.invalid")
             .env("PATH", self.executable_path());
         command
     }
@@ -324,6 +377,30 @@ impl Fixture {
             ])
             .output()
             .expect("invoke installed plugin tool")
+    }
+
+    fn task_recommendation(&self) -> Value {
+        let task = json_output(
+            self.command()
+                .env("ORBIT_OPERATOR", "1")
+                .args([
+                    "task",
+                    "add",
+                    "--title",
+                    "Improve parser parse",
+                    "--description",
+                    "Improve parser parsing in src/parser.rs",
+                    "--acceptance-criteria",
+                    "Parser parsing remains correct",
+                    "--complexity",
+                    "low",
+                    "--json",
+                ])
+                .output()
+                .expect("create private recommendation task"),
+            "fixture task",
+        );
+        json!({"task_id":task["id"].as_str().expect("created task id"), "workspace":"graph-v2-test"})
     }
 }
 

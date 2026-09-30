@@ -17,7 +17,7 @@
       "minLength": 1
     },
     "workspace": {
-      "description": "Owning Orbit workspace (ws_* id or name). Required for task_id lookup and hybrid search.",
+      "description": "Owning Orbit workspace (ws_* id, registered name or absolute registered checkout path). Required for task_id lookup and hybrid search.",
       "type": "string",
       "minLength": 1
     },

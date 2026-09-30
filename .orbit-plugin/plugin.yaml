@@ -9,7 +9,7 @@ metadata:
   homepage: https://github.com/constellation-works/orbit-graph
 spec:
   requires:
-    orbit: ">=0.23.0 <1.0.0"
+    orbit: ">=0.25.0 <1.0.0"
     host_api: 1
     platforms: [linux, macos]
     programs: [git, orbit]
