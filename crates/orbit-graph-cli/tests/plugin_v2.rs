@@ -64,6 +64,13 @@ fn installed_v2_plugin_serves_every_tool_over_cli_and_mcp() {
         recommendation["adapter"]["task_text"], "orbit.task.show_public_observation",
         "the recommendation observes the task through the live host callback"
     );
+    fixture.assert_public_search_hit(&task_request["task_id"]);
+    let hybrid_request = json!({"query":"parser", "hybrid":true, "workspace":"graph-v2-test"});
+    let hybrid = json_output(
+        fixture.cli_tool("recommend", &hybrid_request, true),
+        "public task search recommendation",
+    );
+    assert_hybrid_search(&hybrid);
     let task_sync = json!({"operation":"orbit_sync", "workspace":"graph-v2-test", "task_ids":[task_request["task_id"]]});
     let sync = json_output(
         fixture.cli_tool("maintain", &task_sync, true),
@@ -110,6 +117,9 @@ fn installed_v2_plugin_serves_every_tool_over_cli_and_mcp() {
         recommendation["structuredContent"]["adapter"]["task_text"],
         "orbit.task.show_public_observation"
     );
+    let hybrid = mcp.call("recommend", hybrid_request);
+    assert_ne!(hybrid["isError"], true, "{hybrid}");
+    assert_hybrid_search(&hybrid["structuredContent"]);
     let sync = mcp.call("maintain", task_sync);
     assert_ne!(sync["isError"], true, "{sync}");
     assert_task_sync(&sync["structuredContent"]);
@@ -121,6 +131,15 @@ fn installed_v2_plugin_serves_every_tool_over_cli_and_mcp() {
             .contains("unknown_field"),
         "the malformed-field error names its input: {malformed}"
     );
+}
+
+fn assert_hybrid_search(value: &Value) {
+    assert_eq!(
+        value["adapter"]["hybrid_search"], "orbit.search_lexical_rank",
+        "available public search must avoid fallback: {value}"
+    );
+    assert_eq!(value["adapter"]["hybrid_hits_dropped"], 0, "{value}");
+    assert_eq!(value["adapter"]["warnings"], json!([]), "{value}");
 }
 
 fn assert_task_sync(value: &Value) {
@@ -401,6 +420,27 @@ impl Fixture {
             "fixture task",
         );
         json!({"task_id":task["id"].as_str().expect("created task id"), "workspace":"graph-v2-test"})
+    }
+
+    fn assert_public_search_hit(&self, task_id: &Value) {
+        let search = json_output(
+            self.command()
+                .env("ORBIT_OPERATOR", "1")
+                .args(["tool", "run", "orbit.search", "--input"])
+                .arg(json!({"query":"parser", "kind":"task", "workspace":"graph-v2-test", "limit":20, "model":"codex"}).to_string())
+                .arg("--full")
+                .output()
+                .expect("search the private task corpus"),
+            "public lexical task search",
+        );
+        assert!(
+            search["results"]
+                .as_array()
+                .expect("public search results")
+                .iter()
+                .any(|hit| hit["id"] == *task_id),
+            "the hybrid request has an actual public task hit: {search}"
+        );
     }
 }
 

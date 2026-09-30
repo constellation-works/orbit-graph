@@ -47,7 +47,7 @@ parameters:
   param_type: string
   required: false
 - name: hybrid
-  description: Use authoritative orbit.search hybrid task hits; workspace is then required.
+  description: Combine local history with authoritative Orbit lexical task hits; scoreless hits use reciprocal-rank weights and workspace is required.
   param_type: boolean
   required: false
 - name: hybrid_limit

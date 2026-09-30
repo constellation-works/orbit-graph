@@ -25,14 +25,37 @@ controls for human output while retaining the original source in JSON/NDJSON.
 HOME and Orbit root, bundles the actual graph binary, and exercises all 13 tools
 through both installed CLI and stdio MCP. It checks nonempty query evidence,
 a real discovered command handler, unknown fields, and mutation authority.
+It also creates a disposable Orbit task, recommends by task ID, and reads that
+undelivered task through `orbit_sync`, over both CLI and MCP.
 The two legacy installed-tool tests remain covered separately.
 
-The installed v2 test passed against both Orbit 0.24.0 and 0.25.0. Orbit 0.24
-requires the direct `.orbit-plugin/` source path; Orbit 0.25 also discovers it
-from a local export root. The pinned CI Orbit version remains 0.24.0.
-A fresh `7ff9730` export additionally passed all 42 canonical conformance goldens
-against Orbit 0.25.0. No live plugin or credential installation was inspected or
-modified.
+The earlier query-based v2 fixture passed against Orbit 0.24.0 and 0.25.0.
+Adding task-based callbacks exposed a macOS sandbox metadata denial in Orbit
+0.24.0; the official 0.25.0 release fixes it. The canonical manifest and pinned
+CI host now require 0.25.0. An incompatible 0.24.0 host can install the bundle,
+but leaves it inactive and refuses execution before reaching the backend.
+
+Orbit resolves logical workspace selectors into registered checkout paths
+before invoking the plugin. The adapter now accepts that explicit path only
+when it matches the requested repository, and verifies the host's returned task
+ID, public workspace ID/name, active status and repository remote before using
+task text or importing a completed run. Shared remotes never determine the
+owner. Positive completed-run fixtures retain the public workspace ID in
+provenance; missing or conflicting owner evidence is refused.
+
+All three expanded installed tests passed against the checksum-verified macOS
+Orbit 0.25.0 release at `a0ed840`. The canonical local export is discovered
+from its root. No live plugin or credential installation was inspected or modified.
+
+A further real-host check exposed Graph's retired `hybrid` parameter in the
+public `orbit.search` callback. Orbit 0.25 refuses that field and returns ordered
+lexical task hits without numeric scores. The adapter now sends the current
+request shape and assigns scoreless lexical hits reciprocal-rank weights,
+retaining valid explicit scores and reporting malformed responses. These
+weights preserve public result order; they are not semantic confidence.
+Executable regressions verify actual historical-task contributions and their
+rank ratios. The expanded native CLI/MCP fixture passed with the real task hit,
+`orbit.search_lexical_rank`, zero dropped hits and no fallback warnings.
 
 Schema/runtime parity checks reject explicit null across every advertised tool
 field. Executable request tests accept exactly 1 MiB and refuse larger input
@@ -63,7 +86,7 @@ CI and local instructions now pin checksum-verified nextest 0.9.146; the config
 refuses older runners. Leak detection and all timeouts remain enabled, with no
 retries configured. The same complete change-analysis suite then passed 113/113.
 
-The final native Mac `make ci` passed at `eb4077e`: 677 tests passed with the
+The native Mac `make ci` passed at `a0ed840`: 681 tests passed with the
 three installed-Orbit tests skipped by default, and all 14 doctests passed.
 Formatting, all-target workspace Clippy, supply-chain checks, the 52 seeded
 repository-guard cases, documentation with warnings denied, the locked build,

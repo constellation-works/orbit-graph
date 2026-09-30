@@ -218,9 +218,14 @@ commit messages: those contributions use the reason kind
 `historical_change_commit_text`, are labelled post-execution, are down-weighted
 against task text, and add the `git_commit_text_used` fallback; strict replay
 and task-ID requests never use them.
-`hybrid: true`
-uses public `orbit.search`; failure is surfaced and local lexical fallback is
-named in `adapter.warnings`.
+`hybrid: true` combines local history with task hits from Orbit's public
+lexical `orbit.search`. The adapter retains valid explicit scores and gives
+scoreless hits reciprocal-rank weights: `1 / (position + 1)` using their
+original zero-based response position. These are ranking weights derived
+from result order. The source is named `orbit.search_lexical_rank` in
+`adapter.hybrid_search`. Malformed hits are counted and warned about; a refused
+call or invalid results array uses local lexical fallback with the cause in
+`adapter.warnings`.
 The calling activity must allow `orbit.workspace.list`, `orbit.task.show`,
 `orbit.search`, and `orbit.workflow.run.show` for the callback operations it
 uses; the adapter does not bypass Orbit policy. `orbit.workspace.list` is served

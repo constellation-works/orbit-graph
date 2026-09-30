@@ -61,7 +61,7 @@
       "minLength": 1
     },
     "hybrid": {
-      "description": "Also rank similar tasks through the public orbit.search tool; failures fall back to local lexical ranking and are named in adapter.warnings.",
+      "description": "Combine local history with task hits from public Orbit lexical search. Scoreless hits use reciprocal-rank weights; failures fall back to local lexical ranking and are named in adapter.warnings.",
       "type": "boolean",
       "default": false
     },
