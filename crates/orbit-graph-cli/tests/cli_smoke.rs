@@ -1198,7 +1198,7 @@ fn real_binary_help_succeeds() {
         ),
         ("show", "Show source and metadata for a graph selector"),
         ("refs", "List references to a symbol"),
-        ("callees", "List outbound calls from a function or command"),
+        ("callees", "List outbound calls from a symbol"),
         ("implementors", "Find implementations of a trait"),
         ("deps", "List source-level imports for a file or directory"),
         (
