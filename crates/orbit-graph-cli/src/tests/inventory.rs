@@ -7,6 +7,32 @@ use clap::CommandFactory;
 use crate::command::Cli;
 
 #[test]
+fn every_public_argument_has_help() {
+    fn check(command: &clap::Command, path: &str) {
+        for argument in command
+            .get_arguments()
+            .filter(|argument| !argument.is_hide_set())
+        {
+            assert!(
+                argument
+                    .get_help()
+                    .or_else(|| argument.get_long_help())
+                    .is_some_and(|help| !help.to_string().trim().is_empty()),
+                "STD-01 §R22: {path} argument {} has no description",
+                argument.get_id()
+            );
+        }
+        for child in command.get_subcommands() {
+            check(child, &format!("{path} {}", child.get_name()));
+        }
+    }
+    check(
+        &crate::output::install_format_argument(Cli::command()),
+        "orbit-graph",
+    );
+}
+
+#[test]
 fn every_registered_command_appears_in_the_top_level_help() {
     let help = Cli::command().render_help().to_string();
     for command in Cli::command()

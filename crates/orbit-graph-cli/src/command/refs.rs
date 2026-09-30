@@ -8,6 +8,7 @@ use crate::output::{Column, CommandOutput, TableView, View, ViewBlock};
 
 #[derive(Debug, Args)]
 pub struct RefsCommand {
+    /// Symbol selector whose inbound references and relations to list.
     symbol: String,
     /// Minimum resolution confidence floor (default: same_module).
     ///
@@ -18,6 +19,7 @@ pub struct RefsCommand {
     /// `--confidence fuzzy` to query those matches directly in `refs`.
     #[arg(long, value_enum, default_value_t = ConfidenceArg::SameModule)]
     confidence: ConfidenceArg,
+    /// Filter by reference or relation kind (default: all kinds).
     #[arg(long, value_enum)]
     kind: Option<RefKindArg>,
 }

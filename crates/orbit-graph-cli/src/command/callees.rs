@@ -8,6 +8,7 @@ use crate::output::{Column, CommandOutput, TableView, View, ViewBlock};
 
 #[derive(Debug, Args)]
 pub struct CalleesCommand {
+    /// Symbol selector whose outbound calls to list.
     symbol: String,
     /// Also list unresolved calls whose name has no indexed definition.
     ///

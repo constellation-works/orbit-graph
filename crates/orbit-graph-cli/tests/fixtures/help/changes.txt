@@ -1,0 +1,105 @@
+Changed symbols between two revisions, or in the working tree, with their callers, entry points and labelled candidate tests
+
+Usage: orbit-graph changes [OPTIONS] [RANGE]
+
+Arguments:
+  [RANGE]
+          Revisions to compare: <base>..<head>, or <base> to compare the working tree against it (default: the working tree against the merge base with the upstream, origin/HEAD, main or master)
+
+Options:
+      --symbol <SELECTOR>
+          Analyse only this changed symbol (symbol:<path>#<name>:<kind>); repeatable. A selector that matches no changed symbol is listed under unmatched_selection
+
+      --confidence <CONFIDENCE>
+          Minimum resolution confidence of every hop (default: same_module). Pass fuzzy to include name-only matches
+          
+          [default: same_module]
+          [possible values: exact, import, same_module, fuzzy]
+
+      --depth <DEPTH>
+          Maximum hops from a changed symbol to a caller or entry point (1..=10)
+          
+          [default: 3]
+
+      --node-cap <NODE_CAP>
+          Maximum nodes, and paths, one traversal may return (1..=2000)
+          
+          [default: 200]
+
+      --query-budget-ms <QUERY_BUDGET_MS>
+          Wall-clock budget of one traversal, in milliseconds (100..=60000)
+          
+          [default: 5000]
+
+      --max-symbols <MAX_SYMBOLS>
+          Maximum changed symbols analysed, in changed-symbol order (1..=1000); the rest are listed under not_analysed
+          
+          [default: 50]
+
+      --max-callers <MAX_CALLERS>
+          Maximum callers kept per changed symbol, strongest first (1..=500)
+          
+          [default: 10]
+
+      --max-entry-points <MAX_ENTRY_POINTS>
+          Maximum entry points kept per changed symbol, nearest first (1..=100)
+          
+          [default: 5]
+
+      --max-tests <MAX_TESTS>
+          Maximum candidate tests kept per changed symbol, strongest first (1..=500)
+          
+          [default: 10]
+
+      --budget-ms <MS>
+          Wall-clock budget for the whole run, indexing included, in milliseconds (1000..=3600000; default: none). When it runs out the result is returned with complete: false
+
+      --language <LANGUAGE>
+          Keep only changed symbols whose file is in this language
+
+      --scope <PREFIX>
+          Keep only changed symbols whose path starts with this prefix
+
+      --cache-dir <DIR>
+          Snapshot cache directory (default: <repository>/.orbit-graph/explorer/snapshots)
+
+      --no-cache
+          Build snapshots in temporary directories and cache nothing
+
+      --format <MODE>
+          Output mode: auto, table, json, or ndjson (default: auto). auto prints a headed table on a terminal but headerless tab-separated rows when piped; use table for a header or json/ndjson for named fields
+
+          Possible values:
+          - auto:   Use a table on a terminal and complete plain output otherwise
+          - table:  Render the command's human view with headers and terminal adaptation
+          - json:   Emit one JSON document
+          - ndjson: Emit one complete JSON record per line
+
+      --json
+          Shorthand for --format json; combining it with a different --format is an error
+
+  -h, --help
+          Print help (see a summary with '-h')
+
+RANGE is <base>..<head> to compare two revisions, or <base> alone to compare
+the working tree (staged, unstaged and untracked files; not ignored ones)
+against <base>. Without RANGE the working tree is compared against the merge
+base of HEAD and the branch it will land on: its upstream, else origin/HEAD,
+else main, else master. Nothing is fetched.
+
+Every caller, entry point and candidate test is labelled with its source
+(call_path, import_relationship, reference_path, changed_symbol,
+naming_heuristic, runtime_invocation), its evidence category and its
+confidence. Candidate tests are what the evidence points at, not proof of
+coverage.
+
+Committed snapshots are cached under .orbit-graph/explorer/snapshots in the
+repository (graph scratch state), so a second run over the same commits skips
+indexing; pass --no-cache to write nothing there. The working tree is never
+cached.
+
+Examples:
+  orbit-graph changes --json
+  orbit-graph changes main..HEAD --json
+  orbit-graph changes origin/main --max-tests 20
+  orbit-graph changes v1.2.0..v1.3.0 --symbol 'symbol:src/lib.rs#run:function'

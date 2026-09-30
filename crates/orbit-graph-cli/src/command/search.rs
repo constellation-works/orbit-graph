@@ -10,8 +10,10 @@ pub struct SearchCommand {
     /// Text to search for; must not be empty.
     #[arg(value_parser = parse_query)]
     query: String,
+    /// Filter by result kind (default: all kinds).
     #[arg(long, value_enum)]
     kind: Option<SearchKindArg>,
+    /// Filter by indexed language token, such as rust or python (default: all languages).
     #[arg(long)]
     lang: Option<String>,
     /// Maximum matches, at least 1 (default: 20).

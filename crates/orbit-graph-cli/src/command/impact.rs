@@ -8,7 +8,9 @@ use crate::output::{Column, CommandOutput, TableView, View, ViewBlock};
 
 #[derive(Debug, Args)]
 pub struct ImpactCommand {
+    /// Symbol, module or command selector at the center of the traversal.
     selector: String,
+    /// Maximum relationship hops (0 uses the default depth).
     #[arg(long, default_value_t = DEFAULT_IMPACT_DEPTH)]
     depth: u8,
     /// Minimum resolution confidence floor (default: same_module).

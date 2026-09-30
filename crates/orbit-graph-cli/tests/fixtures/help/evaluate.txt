@@ -1,0 +1,41 @@
+Run chronological or live leakage-safe recommendation evaluation
+
+Usage: orbit-graph evaluate [OPTIONS]
+
+Options:
+      --input <INPUT>
+          Versioned chronological evaluation corpus JSON.
+          
+          Required unless `--live` is set.
+
+      --live
+          Hold out first-parent commits and score Git-only commit-text relevance.
+          
+          Queries each commit's subject at that commit's first parent, with no cutoff, and checks that the commit and later indexed deliveries contribute no evidence. Requires a history index from `history sync`.
+
+      --branch <BRANCH>
+          Landing branch whose history index `--live` reads. Defaults to `main`
+
+      --limit <LIMIT>
+          Maximum held-out commits, newest first. Defaults to 300
+
+      --revision <REVISION>
+          Revision that starts the first-parent walk. Defaults to the branch tip
+
+      --k <K>
+          Precision, recall, and MRR cutoff. Defaults to 10
+
+      --format <MODE>
+          Output mode: auto, table, json, or ndjson (default: auto). auto prints a headed table on a terminal but headerless tab-separated rows when piped; use table for a header or json/ndjson for named fields
+
+          Possible values:
+          - auto:   Use a table on a terminal and complete plain output otherwise
+          - table:  Render the command's human view with headers and terminal adaptation
+          - json:   Emit one JSON document
+          - ndjson: Emit one complete JSON record per line
+
+      --json
+          Shorthand for --format json; combining it with a different --format is an error
+
+  -h, --help
+          Print help (see a summary with '-h')
