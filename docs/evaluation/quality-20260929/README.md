@@ -56,6 +56,9 @@ weights preserve public result order; they are not semantic confidence.
 Executable regressions verify actual historical-task contributions and their
 rank ratios. The expanded native CLI/MCP fixture passed with the real task hit,
 `orbit.search_lexical_rank`, zero dropped hits and no fallback warnings.
+A clean `6ce29ce` export passed all 42 conformance cases on the official macOS
+Orbit 0.25 release. All five GitHub checks passed at that revision, including
+the installed-plugin job.
 
 Schema/runtime parity checks reject explicit null across every advertised tool
 field. Executable request tests accept exactly 1 MiB and refuse larger input
@@ -86,13 +89,14 @@ CI and local instructions now pin checksum-verified nextest 0.9.146; the config
 refuses older runners. Leak detection and all timeouts remain enabled, with no
 retries configured. The same complete change-analysis suite then passed 113/113.
 
-The native Mac `make ci` passed at `a0ed840`: 681 tests passed with the
+The final native Mac `make ci` passed at `6ce29ce`: 683 tests passed with the
 three installed-Orbit tests skipped by default, and all 14 doctests passed.
 Formatting, all-target workspace Clippy, supply-chain checks, the 52 seeded
 repository-guard cases, documentation with warnings denied, the locked build,
 and whitespace checks passed. The signal fixture passed in this complete run.
-An explicit final-source run against Orbit 0.25.0 then passed all three installed
-tests (two legacy and one canonical v2), with none ignored.
+All three installed tests (two legacy and one canonical v2) passed explicitly
+against Orbit 0.25.0 during this audit; the final canonical fixture includes
+live task and lexical-search callbacks.
 
 ## Reproducible inbound benchmark
 
