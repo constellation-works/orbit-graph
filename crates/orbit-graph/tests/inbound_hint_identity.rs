@@ -6,7 +6,9 @@
     reason = "fixtures use fs::write, which the production lint forbids"
 )]
 
-use orbit_graph::{Graph, ImpactDirection, RefConfidence, RefKind, RefOpts, Selector, SyncPolicy};
+use orbit_graph::{
+    Graph, GraphError, ImpactDirection, RefConfidence, RefKind, RefOpts, Selector, SyncPolicy,
+};
 use rusqlite::{Connection, params};
 
 struct Fixture {
@@ -148,5 +150,80 @@ fn inbound_queries_accept_matching_and_absent_target_hints() {
         let fixture = Fixture::new();
         fixture.insert_ref(hinted.then_some(fixture.target));
         fixture.assert_inbound("target.rs", "Target", 1);
+    }
+}
+
+#[test]
+fn corrupt_stored_reference_confidence_is_invalid_data_across_queries() {
+    let fixture = Fixture::new();
+    fixture.insert_ref(Some(fixture.target));
+    fixture
+        .conn
+        .execute("UPDATE refs SET confidence = 'corrupt-confidence'", [])
+        .expect("corrupt stored confidence");
+    fixture
+        .conn
+        .execute(
+            "INSERT INTO commands SELECT 'caller', file_path, span_start, id
+         FROM symbols WHERE qualified = 'crate::caller'",
+            [],
+        )
+        .expect("insert command handler");
+    let target = Selector::Symbol {
+        path: "target.rs".to_string(),
+        symbol: "Target".to_string(),
+        kind: "function".to_string(),
+    };
+    let caller = Selector::Symbol {
+        path: "caller.rs".to_string(),
+        symbol: "caller".to_string(),
+        kind: "function".to_string(),
+    };
+    for error in [
+        fixture
+            .graph
+            .refs(&target, &RefOpts::default())
+            .expect_err("reject confidence in refs"),
+        fixture
+            .graph
+            .impact_with_direction(&target, 1, RefConfidence::Exact, ImpactDirection::Inbound)
+            .expect_err("reject confidence in impact"),
+        fixture
+            .graph
+            .callees(&caller)
+            .expect_err("reject confidence in callees"),
+        fixture
+            .graph
+            .trace("caller", 1, RefConfidence::Exact)
+            .expect_err("reject confidence in trace"),
+    ] {
+        assert!(matches!(error, GraphError::InvalidData { .. }), "{error:?}");
+    }
+}
+
+#[test]
+fn corrupt_stored_reference_kind_is_invalid_data_in_inbound_queries() {
+    let fixture = Fixture::new();
+    fixture.insert_ref(Some(fixture.target));
+    fixture
+        .conn
+        .execute("UPDATE refs SET kind = 'corrupt-kind'", [])
+        .expect("corrupt stored kind");
+    let target = Selector::Symbol {
+        path: "target.rs".to_string(),
+        symbol: "Target".to_string(),
+        kind: "function".to_string(),
+    };
+    for error in [
+        fixture
+            .graph
+            .refs(&target, &RefOpts::default())
+            .expect_err("reject kind in refs"),
+        fixture
+            .graph
+            .impact_with_direction(&target, 1, RefConfidence::Exact, ImpactDirection::Inbound)
+            .expect_err("reject kind in impact"),
+    ] {
+        assert!(matches!(error, GraphError::InvalidData { .. }), "{error:?}");
     }
 }
