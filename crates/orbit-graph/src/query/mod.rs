@@ -20,6 +20,20 @@ pub(crate) mod types;
 pub use search::{DEFAULT_SEARCH_LIMIT, Match, SearchKind, SearchQuery, SearchResult};
 pub use show::{DEFAULT_SHOW_MAX_BYTES, NodeMetadata, NodeView, SourceSpan};
 
+/// Match inbound refs (`r`) to a symbol ID (`?1`) and qualified name (`?2`).
+///
+/// The qualified name is authoritative; a hint only distinguishes duplicate
+/// definitions while it still points to a row with that identity. Missing or
+/// reused hint rows fall back to the qualified name, as outbound queries do.
+/// Keeping the qualified match outermost also lets SQLite use its target index
+/// instead of scanning every ref for the unindexed hint column.
+const INBOUND_TARGET_MATCH: &str = "(r.target_qualified = ?2 AND (
+    r.target_symbol_hint = ?1 OR NOT EXISTS (
+        SELECT 1 FROM symbols hinted
+        WHERE hinted.id = r.target_symbol_hint AND hinted.qualified = r.target_qualified
+    )
+))";
+
 /// Format the `symbol:` selector that addresses one stored symbol row.
 ///
 /// The symbol part is the row's qualified name: selector resolution prefers

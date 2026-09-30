@@ -298,12 +298,12 @@ fn inbound_ref_neighbors(
                AND s.span_end >= r.from_span_end
              ORDER BY (s.span_end - s.span_start), s.id LIMIT 1) AS source_symbol_id";
     let include_fuzzy_name = min_confidence == RefConfidence::FuzzyName;
+    let target_match = super::INBOUND_TARGET_MATCH;
     let rows = if include_fuzzy_name {
         let sql = format!(
             "SELECT {SOURCE_QUALIFIED}, r.kind, r.confidence, r.from_span_start
              FROM refs r
-             WHERE r.target_symbol_hint = ?1
-                OR (r.target_symbol_hint IS NULL AND r.target_qualified = ?2)
+             WHERE {target_match}
                 OR (r.confidence = 'fuzzy_name' AND r.target_name = ?3
                     AND r.kind <> 'runtime_invocation')
              ORDER BY r.from_file, r.from_span_start, r.id"
@@ -318,8 +318,7 @@ fn inbound_ref_neighbors(
         let sql = format!(
             "SELECT {SOURCE_QUALIFIED}, r.kind, r.confidence, r.from_span_start
              FROM refs r
-             WHERE r.target_symbol_hint = ?1
-                OR (r.target_symbol_hint IS NULL AND r.target_qualified = ?2)
+             WHERE {target_match}
              ORDER BY r.from_file, r.from_span_start, r.id"
         );
         let mut stmt = conn

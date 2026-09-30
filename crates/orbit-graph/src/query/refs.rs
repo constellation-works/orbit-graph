@@ -214,42 +214,49 @@ fn query_refs(
     skipped_low_confidence: &mut usize,
 ) -> Result<Vec<RefEntry>, GraphError> {
     let include_fuzzy_name = opts.confidence == RefConfidence::FuzzyName;
+    let target_match = super::INBOUND_TARGET_MATCH;
     let sql = match (opts.kind, include_fuzzy_name) {
         (Some(_), true) => {
-            "SELECT from_file, from_span_start, from_span_end, kind, confidence
-             FROM refs
+            format!(
+                "SELECT from_file, from_span_start, from_span_end, kind, confidence
+             FROM refs r
              WHERE kind = ?3
                AND (
-                   target_symbol_hint = ?1
-                   OR (target_symbol_hint IS NULL AND target_qualified = ?2)
+                   {target_match}
                    OR (confidence = 'fuzzy_name' AND target_name = ?4)
                )
              ORDER BY from_file, from_span_start, id"
+            )
         }
         (Some(_), false) => {
-            "SELECT from_file, from_span_start, from_span_end, kind, confidence
-             FROM refs
-             WHERE (target_symbol_hint = ?1 OR (target_symbol_hint IS NULL AND target_qualified = ?2)) AND kind = ?3
+            format!(
+                "SELECT from_file, from_span_start, from_span_end, kind, confidence
+             FROM refs r
+             WHERE {target_match} AND kind = ?3
              ORDER BY from_file, from_span_start, id"
+            )
         }
         (None, true) => {
-            "SELECT from_file, from_span_start, from_span_end, kind, confidence
-             FROM refs
-             WHERE target_symbol_hint = ?1
-                OR (target_symbol_hint IS NULL AND target_qualified = ?2)
+            format!(
+                "SELECT from_file, from_span_start, from_span_end, kind, confidence
+             FROM refs r
+             WHERE {target_match}
                 OR (confidence = 'fuzzy_name' AND target_name = ?3
                     AND kind <> 'runtime_invocation')
              ORDER BY from_file, from_span_start, id"
+            )
         }
         (None, false) => {
-            "SELECT from_file, from_span_start, from_span_end, kind, confidence
-             FROM refs
-             WHERE target_symbol_hint = ?1 OR (target_symbol_hint IS NULL AND target_qualified = ?2)
+            format!(
+                "SELECT from_file, from_span_start, from_span_end, kind, confidence
+             FROM refs r
+             WHERE {target_match}
              ORDER BY from_file, from_span_start, id"
+            )
         }
     };
     let mut stmt = conn
-        .prepare_cached(sql)
+        .prepare_cached(&sql)
         .map_err(|source| GraphError::sqlite("prepare refs lookup", source))?;
     let rows = match (opts.kind, include_fuzzy_name) {
         (Some(kind), true) => stmt
