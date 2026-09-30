@@ -346,12 +346,22 @@ fn truncate_middle(value: &str, width: usize) -> String {
 }
 
 fn escape_cell(value: &str) -> String {
+    escape(value, false)
+}
+
+/// Keep prose and source layout while making terminal controls visible.
+pub(crate) fn escape_text(value: &str) -> String {
+    escape(value, true)
+}
+
+fn escape(value: &str, preserve_layout: bool) -> String {
     let mut escaped = String::with_capacity(value.len());
     for character in value.chars() {
         match character {
-            '\\' => escaped.push_str("\\\\"),
-            '\t' => escaped.push_str("\\t"),
-            '\n' => escaped.push_str("\\n"),
+            '\\' if !preserve_layout => escaped.push_str("\\\\"),
+            '\t' if !preserve_layout => escaped.push_str("\\t"),
+            '\n' if !preserve_layout => escaped.push_str("\\n"),
+            '\t' | '\n' => escaped.push(character),
             '\r' => escaped.push_str("\\r"),
             character if character.is_control() && u32::from(character) <= 0xff => {
                 use std::fmt::Write as _;

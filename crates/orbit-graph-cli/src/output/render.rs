@@ -11,7 +11,7 @@ use crate::command::CliError;
 use crate::output::json::{ErrorPayload, write_json};
 use crate::output::payload::{CommandOutput, View, ViewBlock};
 use crate::output::sink::{OutputMode, OutputSink};
-use crate::output::table::emit_table;
+use crate::output::table::{emit_table, escape_text};
 
 /// Render a command output to the process's stdout and stderr.
 pub fn emit_to_process(output: &CommandOutput, sink: OutputSink) -> Result<(), CliError> {
@@ -80,6 +80,7 @@ fn emit_blocks(
     for block in blocks {
         match block {
             ViewBlock::Text(text) => {
+                let text = escape_text(text);
                 stdout
                     .write_all(text.as_bytes())
                     .map_err(CliError::Stdout)?;
