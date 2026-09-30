@@ -622,6 +622,43 @@ fn launchers_reject_a_stale_path_binary_and_ignore_the_environment() {
 
 #[cfg(unix)]
 #[test]
+fn launcher_failures_escape_paths_and_manifest_arguments_as_json() {
+    let fixture = TempDir::new().expect("launcher fixture");
+    let controls = (1_u8..32).map(char::from).collect::<String>();
+    let stale_dir = fixture.path().join(format!("stale-{controls}-\\\"-κ"));
+    fs::create_dir(&stale_dir).expect("stale directory");
+    let stale = stale_dir.join("orbit-graph");
+    executable(&stale, "#!/bin/sh\nexit 1\n".to_string());
+    let path = format!("{}:/usr/bin:/bin", stale_dir.display());
+    let launcher = repository_root().join(".orbit-plugin/bin/orbit-graph");
+
+    let rejected = launcher_version(&launcher, &[UNBOUND], &path, None);
+    assert_eq!(rejected.status.code(), Some(0), "{rejected:?}");
+    let response: Value = serde_json::from_slice(&rejected.stdout)
+        .expect("a stale executable path containing control characters remains valid JSON");
+    assert_eq!(response["ok"], false, "{response}");
+    assert_eq!(response["error"]["code"], "incompatible_binary");
+    assert_eq!(response["error"]["retryable"], false);
+    assert_eq!(response["error"]["path"], stale.to_str().expect("path"));
+
+    let invalid_digest = format!("invalid-{controls}-\\\"-κ\n\n");
+    let rejected = launcher_version(
+        &launcher,
+        &["--backend-sha256", &invalid_digest],
+        &path,
+        None,
+    );
+    assert_eq!(rejected.status.code(), Some(0), "{rejected:?}");
+    let response: Value = serde_json::from_slice(&rejected.stdout)
+        .expect("a malformed manifest digest remains valid JSON");
+    assert_eq!(response["ok"], false, "{response}");
+    assert_eq!(response["error"]["code"], "incompatible_binary");
+    assert_eq!(response["error"]["retryable"], false);
+    assert_eq!(response["error"]["detail"]["expected_sha256"], invalid_digest);
+}
+
+#[cfg(unix)]
+#[test]
 fn bundled_binary_precedes_path() {
     let fixture = TempDir::new().expect("bundled launcher fixture");
     let launcher_dir = fixture.path().join("bin");
