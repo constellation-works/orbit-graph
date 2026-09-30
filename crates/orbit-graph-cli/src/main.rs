@@ -48,6 +48,11 @@ const LOCK_TIMEOUT_ENV: &str = "ORBIT_GRAPH_LOCK_TIMEOUT_MS";
 /// the process.
 const FAULT_INJECT_ENV: &str = "ORBIT_GRAPH_FAULT_INJECT";
 
+/// Bound the complete plugin request before JSON decoding, including its
+/// context and config. Tool inputs contain selectors and query parameters,
+/// never source files or graph data (STD-03 §R22).
+const MAX_PLUGIN_REQUEST_BYTES: u64 = 1024 * 1024;
+
 fn main() -> ExitCode {
     init_logging();
 
@@ -229,8 +234,23 @@ fn run_external_tool(environment_tool: &str, runtime: Result<RuntimeConfig, CliE
         Err(error) => return report_plugin_error(&error, backend_override.as_deref()),
     };
     let mut input = Vec::new();
-    if let Err(source) = io::stdin().read_to_end(&mut input) {
+    if let Err(source) = io::stdin()
+        .lock()
+        .take(MAX_PLUGIN_REQUEST_BYTES + 1)
+        .read_to_end(&mut input)
+    {
         return report_plugin_error(&CliError::Stdin(source), backend_override.as_deref());
+    }
+    if input.len() as u64 > MAX_PLUGIN_REQUEST_BYTES {
+        return report_plugin_error(
+            &invalid_request(
+                "read Orbit plugin request",
+                format!(
+                    "request exceeds {MAX_PLUGIN_REQUEST_BYTES} bytes; reduce the input or context"
+                ),
+            ),
+            backend_override.as_deref(),
+        );
     }
     match decode_external_tool_request(environment_tool, input.as_slice())
         .and_then(|(tool_name, input, config)| {
