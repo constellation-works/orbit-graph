@@ -21,8 +21,7 @@ copy must drop `origin: orbit` and then registers bare `graph.*` names. The
 executable accepts both spellings.
 
 For a local source export, Orbit 0.25 recognizes `.orbit-plugin/` when the
-source argument names the export's root directory. With Orbit 0.24, name the
-export's `.orbit-plugin/` directory explicitly instead. Local installs must
+source argument names the export's root directory. Local installs must
 still drop the `origin` claim as above, and the export must be outside a Git
 checkout: Orbit refuses to install a plugin tree from inside a repository.
 
@@ -88,6 +87,18 @@ bundle step after each. Without a bundled executable the plugin falls back to
 calls the plugin. The `fs` and `orbit_tools` grants are required for the
 requested workspace/index access and bounded callbacks; the plugin requests no
 network access.
+
+The plugin requires Orbit 0.25.0 or newer. Orbit 0.24.0's macOS sandbox denies
+the directory metadata access its callback resolver needs, so authoritative
+task recommendations fail even when local query recommendations work. Orbit
+0.25.0 includes the
+[ancestor metadata grant fix](https://github.com/constellation-works/orbit/commit/73beabbc1bfc6091ffdcbea719d234a8a062b825).
+The manifest has one Linux/macOS version range. On Orbit 0.24.0, validation
+warns about the host requirement and installation is permitted, but enablement
+leaves the plugin inactive and tool execution is refused. CI uses a
+checksum-verified Orbit 0.25.0 release and exercises live task-ID
+recommendations and `orbit_sync` reads of an undelivered fixture task
+through both CLI and MCP alongside the thirteen-tool surface.
 
 For a checkout, `make plugin-check` builds the executable and runs
 `orbit plugin validate --first-party .orbit-plugin` and
@@ -165,7 +176,8 @@ backend itself does not read is named on its stderr and otherwise ignored.
 
 Every plugin request takes an explicit absolute `repository` (defaulting to
 the envelope's workspace root). `schema_version` is optional and must be 1
-when present. Task-ID and hybrid queries also require the owning `workspace`;
+when present. Task-ID and hybrid queries also require the owning `workspace`
+(a registered name, `ws_*` ID or absolute registered checkout path);
 the adapter never infers authority from cwd or `ORBIT_TOOL_WORKSPACE_ROOT`.
 
 ```sh
@@ -218,6 +230,12 @@ workspace by matching the repository's `origin` to the published `git_remote`.
 This URL match is an accident guard against routing to the wrong workspace;
 the checkout owner can rewrite `origin`. Orbit's per-call tool authorization is
 the security boundary (STD-05 §R5).
+Orbit normalizes workspace names and IDs into registered checkout paths before
+calling a plugin. For that explicit path, the adapter verifies it matches the
+requested repository and reads the requested task with the same workspace
+filter. The host's public task-owner ID and name then select the discovery row,
+which must still pass the repository remote check. Multiple workspaces can
+share a remote; the task-owner identity determines the selected workspace.
 With narrower grants, pass an earlier public snapshot and use lexical/offline
 hits.
 

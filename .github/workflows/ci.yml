@@ -103,9 +103,9 @@ jobs:
         shell: bash
         run: |
           curl --fail --location --retry 3 --output "$RUNNER_TEMP/orbit.tar.gz" \
-            https://github.com/constellation-works/orbit/releases/download/v0.24.0/orbit-x86_64-unknown-linux-gnu.tar.gz
+            https://github.com/constellation-works/orbit/releases/download/v0.25.0/orbit-x86_64-unknown-linux-gnu.tar.gz
           printf '%s  %s\n' \
-            '78a8ecf2dd19e61c61b7ec97ebd60206a46b7e93035b85310d152cc7cbeabace' \
+            '20fb33831213e4785d29172ea4944f19c76332764806e8928164a3bbf20d593a' \
             "$RUNNER_TEMP/orbit.tar.gz" | sha256sum --check -
           tar -xzf "$RUNNER_TEMP/orbit.tar.gz" -C "$RUNNER_TEMP" orbit
           "$RUNNER_TEMP/orbit" --version
