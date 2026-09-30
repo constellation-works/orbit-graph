@@ -407,7 +407,8 @@ impl CliError {
     pub fn exit_code(&self) -> i32 {
         match self {
             Self::Clap(error) => error.exit_code(),
-            Self::Usage(_) => 2,
+            Self::Usage(_) | Self::Selector(_) => 2,
+            Self::Graph(error) if error.class() == GraphErrorClass::InvalidInput => 2,
             Self::Changes(error) if changes::is_usage_error(error) => 2,
             Self::Changes(_)
             | Self::NotFound(_)
@@ -416,7 +417,6 @@ impl CliError {
             | Self::Stdin(_)
             | Self::Graph(_)
             | Self::Tool(_)
-            | Self::Selector(_)
             | Self::Json(_)
             | Self::Stdout(_)
             | Self::Stderr(_) => 1,
