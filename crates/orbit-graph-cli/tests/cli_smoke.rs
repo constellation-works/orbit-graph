@@ -1034,7 +1034,7 @@ fn real_binary_impact_direction_distinguishes_callers_from_callees() {
 fn real_binary_rejects_malformed_selectors_with_json_error() {
     let fixture = fixture_repository();
     let human = run(fixture.path(), ["show", "not-a-selector"]);
-    assert_eq!(human.status.code(), Some(1));
+    assert_eq!(human.status.code(), Some(2));
     assert!(human.stdout.is_empty());
     assert!(String::from_utf8_lossy(&human.stderr).contains("selectors must start with"));
 

@@ -31,6 +31,63 @@ use orbit_graph::{
 const HELPER: &str = "symbol:src/lib.rs#helper:function";
 
 #[test]
+fn malformed_selectors_are_usage_errors_before_index_access() {
+    let fixture = fixture_repository();
+    for command in [
+        vec!["show", "not-a-selector"],
+        vec!["refs", "not-a-selector"],
+        vec!["callees", "not-a-selector"],
+        vec!["impact", "not-a-selector"],
+        vec!["implementors", "not-a-selector"],
+        vec!["deps", "not-a-selector"],
+        vec!["overview", "not-a-selector"],
+    ] {
+        for mode in ["auto", "json", "ndjson"] {
+            let output = run(
+                fixture.path(),
+                &[&["--format", mode], command.as_slice()].concat(),
+            );
+            assert_eq!(
+                output.status.code(),
+                Some(2),
+                "invalid argument in {command:?}, mode {mode}: {}",
+                String::from_utf8_lossy(&output.stderr)
+            );
+            assert!(output.stdout.is_empty());
+            if mode == "auto" {
+                assert!(String::from_utf8_lossy(&output.stderr).starts_with("error:"));
+            } else {
+                assert_eq!(flat_error(&output.stderr)["code"], "selector_parse_error");
+            }
+            assert!(
+                !fixture.path().join(".orbit-graph").exists(),
+                "invalid arguments must not initialize the index"
+            );
+        }
+    }
+}
+
+#[test]
+fn library_rejected_cli_arguments_are_usage_errors() {
+    let fixture = synced_fixture();
+    for command in [
+        vec!["deps", HELPER],
+        vec!["overview", "command:ship"],
+        vec!["recommend", "--query", "helper", "--limit", "0"],
+    ] {
+        let output = run(fixture.path(), &[&["--json"], command.as_slice()].concat());
+        assert_eq!(
+            output.status.code(),
+            Some(2),
+            "invalid argument in {command:?}: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        assert!(output.stdout.is_empty());
+        assert_eq!(flat_error(&output.stderr)["code"], "invalid_input");
+    }
+}
+
+#[test]
 fn markdown_credentials_are_redacted_before_search_and_database_write() {
     let fixture = fixture_repository();
     let token = "ghp_12345678901234567890";
