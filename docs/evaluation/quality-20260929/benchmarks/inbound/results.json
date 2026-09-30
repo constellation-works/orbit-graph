@@ -1,0 +1,77 @@
+{
+  "benchmark": "inbound_public_api",
+  "platform": "macOS arm64",
+  "rustc": "1.95.0 (59807616e 2026-04-14)",
+  "profile": "release",
+  "base_revision": "e361af50",
+  "change_revision": "7f7b1c1",
+  "change": "qualified-name-first inbound predicate with checked target hints",
+  "fixture": {
+    "references": 300000,
+    "matching_references": 1,
+    "files": 2,
+    "symbols": 2,
+    "warmups_per_query": 1,
+    "samples_per_query": 30,
+    "statistic": "upper median (sorted sample at index 15 of 30)",
+    "unit": "microseconds",
+    "database": "fresh SQLite database on disk per process",
+    "checks": "every iteration asserts exactly one reference or impacted caller"
+  },
+  "timings": {
+    "refs_exact": {
+      "before": 26156.084,
+      "after": 136.083
+    },
+    "impact_exact": {
+      "before": 17359.584,
+      "after": 122.083
+    },
+    "refs_fuzzy_name": {
+      "before": 32010.292,
+      "after": 42.583
+    },
+    "impact_fuzzy_name": {
+      "before": 22995.333,
+      "after": 52.625
+    }
+  },
+  "sql_only": {
+    "sqlite_version": "3.51.0",
+    "database": "in memory",
+    "samples": 20,
+    "statistic": "median",
+    "unit": "milliseconds",
+    "before": 5.994,
+    "after": 0.001,
+    "before_plan": "SCAN refs",
+    "after_plan": "SEARCH refs USING INDEX refs_target_qualified (target_qualified=?), then checked hint row lookup by INTEGER PRIMARY KEY"
+  },
+  "interpretation": "Synthetic selective queries benefit from avoiding scans of unrelated references. These are local measurements, not a throughput guarantee for all repositories. Source-file reads and reference materialization are included in public API timings; SQL-only timings are separate.",
+  "sqlite_version": "3.53.2",
+  "replication": {
+    "harness": "run.py --offline; fresh temporary locked release build for each revision",
+    "unit": "microseconds",
+    "base_revision": "e361af50",
+    "change_revision": "96fe41e",
+    "timings": {
+      "refs_exact": {
+        "before": 18669.458,
+        "after": 47.25
+      },
+      "impact_exact": {
+        "before": 22273.25,
+        "after": 60.541
+      },
+      "refs_fuzzy_name": {
+        "before": 32238.333,
+        "after": 47.625
+      },
+      "impact_fuzzy_name": {
+        "before": 24412.875,
+        "after": 61.042
+      }
+    },
+    "statistic": "upper median (sorted sample at index 15 of 30)"
+  }
+}
