@@ -231,9 +231,11 @@ both, and the two sets are presented separately rather than merged.
 ## Changed-symbol identity
 
 Symbols are paired across base and head by **canonical selector**
-(`symbol:<path>#<name>:<kind>`). The pairing ladder, strongest first:
+(`symbol:<path>#<qualified-name>:<kind>`). Qualified names distinguish methods
+and nested functions that share a short name in one file; a genuinely duplicated
+qualified name and kind remains ambiguous. The pairing ladder, strongest first:
 
-1. **Same selector.** Identical path, symbol name, and kind in both snapshots:
+1. **Same selector.** Identical path, qualified symbol name, and kind in both snapshots:
    one symbol, possibly with a changed body or signature.
 2. **Same path and kind, changed signature.** The symbol is paired and labelled
    `signature_changed`; its evidence is recomputed on both sides because callers
@@ -250,7 +252,7 @@ Symbols are paired across base and head by **canonical selector**
    whitespace. The row is labelled `renamed` with `body_hash` provenance. A
    simultaneous body edit does not pair.
 6. **Uncertain correspondence.** Anything weaker — several plausible partners, a
-   name that occurs multiple times in a file, or a move plus rename together —
+   qualified name that occurs multiple times in a file, or a move plus rename together —
    is recorded as `uncertain` with every candidate listed and none chosen.
 
 Rules that later milestones may not relax:

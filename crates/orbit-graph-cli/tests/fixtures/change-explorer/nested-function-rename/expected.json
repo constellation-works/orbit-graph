@@ -5,13 +5,13 @@
   "topology": "linear",
   "changed_symbols": [
     {
-      "selector": "symbol:sample.py#snapshot:function",
+      "selector": "symbol:sample.py#outer.snapshot:function",
       "change": "removed",
       "present_in": ["base"],
       "absent_in": ["head"]
     },
     {
-      "selector": "symbol:sample.py#snap:function",
+      "selector": "symbol:sample.py#outer.snap:function",
       "change": "added",
       "present_in": ["head"],
       "absent_in": ["base"]
