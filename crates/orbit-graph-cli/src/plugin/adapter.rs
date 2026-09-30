@@ -93,6 +93,14 @@ impl<'a> OrbitAdapter<'a> {
     /// Orbit records from the checkout's `origin`.
     fn require_authority(&self) -> Result<AuthorityRoute, GraphError> {
         let workspace = self.require_workspace()?;
+        self.authority_for_workspace(workspace, None)
+    }
+
+    fn authority_for_workspace(
+        &self,
+        workspace: &str,
+        expected_name: Option<&str>,
+    ) -> Result<AuthorityRoute, GraphError> {
         let value = self.mcp_tool_call("orbit.workspace.list", json!({}))?;
         let selected = value
             .get("workspaces")
@@ -106,7 +114,7 @@ impl<'a> OrbitAdapter<'a> {
             .iter()
             .find(|item| {
                 string_field(item, "id") == Some(workspace)
-                    || string_field(item, "name") == Some(workspace)
+                    || (expected_name.is_none() && string_field(item, "name") == Some(workspace))
             })
             .ok_or_else(|| {
                 GraphError::invalid_input(
@@ -116,7 +124,16 @@ impl<'a> OrbitAdapter<'a> {
                 )
             })?;
         let actual_id = required_string(selected, "id")?;
-        if string_field(selected, "status").is_some_and(|status| status != "active") {
+        if expected_name.is_some_and(|name| string_field(selected, "name") != Some(name)) {
+            return Err(GraphError::invalid_data(
+                "verify Orbit task workspace owner",
+                "task owner name does not match the selected public workspace",
+            ));
+        }
+        let status = string_field(selected, "status");
+        if (expected_name.is_some() && status != Some("active"))
+            || status.is_some_and(|status| status != "active")
+        {
             return Err(GraphError::invalid_input(
                 "validate Orbit workspace authority",
                 "workspace",
@@ -139,8 +156,47 @@ impl<'a> OrbitAdapter<'a> {
     }
 
     pub(super) fn task_show(&self, task_id: &str) -> Result<Value, GraphError> {
+        self.task_observation(task_id).map(|(task, _)| task)
+    }
+
+    fn task_observation(&self, task_id: &str) -> Result<(Value, AuthorityRoute), GraphError> {
+        let workspace = self.require_workspace()?;
+        if Path::new(workspace).is_absolute() {
+            self.verify_explicit_checkout(workspace)?;
+            // Orbit resolves an explicit path against its own registry. Its
+            // unprojected task read publishes the owning logical workspace;
+            // projecting fields would omit that proof. A remote alone cannot
+            // identify a workspace: multiple registered checkouts may share it.
+            let task = self.tool_run(
+                "orbit.task.show",
+                json!({"id": task_id, "workspace": workspace, "model": "codex"}),
+            )?;
+            if required_string(&task, "id")? != task_id {
+                return Err(GraphError::invalid_data(
+                    "verify Orbit task workspace owner",
+                    "selected workspace returned a different task ID",
+                ));
+            }
+            let owner = task.get("workspace").ok_or_else(|| {
+                GraphError::invalid_data(
+                    "verify Orbit task workspace owner",
+                    "task read omitted its public workspace owner",
+                )
+            })?;
+            let owner_id = required_string(owner, "id")?;
+            let owner_name = required_string(owner, "name")?;
+            let route = self.authority_for_workspace(owner_id, Some(owner_name))?;
+            if route.workspace_id != owner_id {
+                return Err(GraphError::invalid_data(
+                    "verify Orbit task workspace owner",
+                    "task owner is not the selected public workspace ID",
+                ));
+            }
+            return Ok((task, route));
+        }
+
         let route = self.require_authority()?;
-        self.tool_run(
+        let task = self.tool_run(
             "orbit.task.show",
             json!({
                 "id": task_id,
@@ -148,11 +204,30 @@ impl<'a> OrbitAdapter<'a> {
                 "fields": ["id", "title", "description", "acceptance_criteria", "status", "created_at", "history", "job_run_id"],
                 "model": "codex",
             }),
-        )
+        )?;
+        Ok((task, route))
+    }
+
+    fn verify_explicit_checkout(&self, workspace: &str) -> Result<(), GraphError> {
+        let selector = Path::new(workspace).canonicalize().map_err(|source| {
+            GraphError::io("resolve explicit Orbit workspace path", workspace, source)
+        })?;
+        let repository = self.repository.canonicalize().map_err(|source| {
+            GraphError::io("resolve routed Git repository", self.repository, source)
+        })?;
+        if selector != repository {
+            return Err(GraphError::invalid_input(
+                "validate Orbit workspace repository",
+                "workspace",
+                "explicit workspace checkout path does not match the requested repository",
+            ));
+        }
+        Ok(())
     }
 
     pub(super) fn task_snapshot(&self, task_id: &str) -> Result<TaskAssociation, GraphError> {
-        task_snapshot_from_value(&self.task_show(task_id)?, self.require_workspace()?)
+        let (task, route) = self.task_observation(task_id)?;
+        task_snapshot_from_value(&task, &route.workspace_id)
     }
 
     pub(super) fn hybrid_search(
@@ -198,7 +273,13 @@ impl<'a> OrbitAdapter<'a> {
         supplied_snapshots: &BTreeMap<String, TaskAssociation>,
         repository_identity: &str,
     ) -> Result<RunVerdict, GraphError> {
-        let route = self.require_authority()?;
+        let workspace = self.require_workspace()?;
+        let route = if Path::new(workspace).is_absolute() {
+            self.verify_explicit_checkout(workspace)?;
+            None
+        } else {
+            Some(self.require_authority()?)
+        };
         let run = self.tool_run("orbit.workflow.run.show", json!({"id": run_id}))?;
         let state = run
             .pointer("/run/state")
@@ -227,13 +308,24 @@ impl<'a> OrbitAdapter<'a> {
         let task_id = required_string(commit, "task_id")?;
         let before = required_string(commit, "base_sha")?;
         let after = required_string(commit, "commit_sha")?;
+        // A host-rewritten checkout selector needs the committed task's
+        // public owner proof before any delivery can be imported.
+        let observation = if route.is_none() {
+            Some(self.task_observation(task_id)?)
+        } else {
+            None
+        };
         if let Some(reason) = verify_git_delivery(self.repository, branch, before, after)? {
             return Ok(RunVerdict::Excluded(reason));
         }
         if let Some(reason) = verify_run_workspace(&run, self.repository)? {
             return Ok(RunVerdict::Excluded(reason));
         }
-        let current_task = self.task_show(task_id)?;
+        let (current_task, observed_route) = match observation {
+            Some(observation) => observation,
+            None => self.task_observation(task_id)?,
+        };
+        let route = route.unwrap_or(observed_route);
         if required_string(&current_task, "id")? != task_id {
             return Ok(RunVerdict::Excluded(
                 "selected workspace returned a different task ID".to_string(),

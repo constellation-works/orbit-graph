@@ -2911,6 +2911,180 @@ fn public_adapter_discovers_workspaces_over_mcp_and_syncs_requested_tasks() {
 }
 
 #[test]
+fn public_adapter_resolves_an_explicit_checkout_path_for_task_recommendations() {
+    let fixture = adapter_fixture();
+    let repository = fixture
+        .path()
+        .join("repo")
+        .canonicalize()
+        .expect("repository");
+    let callback_path = executable_path_with(fixture.path());
+    let environment = [("PATH", callback_path.as_os_str())];
+    let imported = plugin_success(&plugin_output_with_env(
+        &repository,
+        MAINTAIN_TOOL_NAME,
+        json!({
+            "operation": "orbit_sync", "repository": repository,
+            "branch": "main", "workspace": "ws-test", "run_ids": ["RUN-1"]
+        }),
+        &environment,
+    ));
+    assert_eq!(imported["outcomes"][0]["status"], "inserted", "{imported}");
+
+    // Distinct registered workspaces may share a remote. The public owner
+    // projection resolves the explicit path without inferring from that URL.
+    for discovery in ["granted", "shared_remote"] {
+        let recommendation = plugin_success(&plugin_output_with_env(
+            &repository,
+            RECOMMEND_TOOL_NAME,
+            json!({
+                "repository": repository, "workspace": repository,
+                "task_id": "TASK-TARGET", "branch": "main"
+            }),
+            &[
+                ("PATH", callback_path.as_os_str()),
+                ("GRAPH_TEST_DISCOVERY", std::ffi::OsStr::new(discovery)),
+            ],
+        ));
+        assert_eq!(
+            recommendation["adapter"]["task_text"], "orbit.task.show_public_observation",
+            "{recommendation}"
+        );
+        assert_eq!(recommendation["result"]["input"]["task_id"], "TASK-TARGET");
+        assert!(
+            recommendation["result"]["recommendations"]
+                .as_array()
+                .is_some_and(|items| !items.is_empty()),
+            "the host-rewritten checkout selector yields actual recommendations: {recommendation}"
+        );
+    }
+}
+
+#[test]
+fn public_adapter_imports_a_completed_run_with_a_host_resolved_checkout_owner() {
+    let fixture = adapter_fixture();
+    let repository = fixture
+        .path()
+        .join("repo")
+        .canonicalize()
+        .expect("repository");
+    let callback_path = executable_path_with(fixture.path());
+    let sync = plugin_success(&plugin_output_with_env(
+        &repository,
+        MAINTAIN_TOOL_NAME,
+        json!({
+            "operation": "orbit_sync", "repository": repository,
+            "branch": "main", "workspace": repository, "run_ids": ["RUN-1"]
+        }),
+        &[
+            ("PATH", callback_path.as_os_str()),
+            (
+                "GRAPH_TEST_DISCOVERY",
+                std::ffi::OsStr::new("shared_remote"),
+            ),
+        ],
+    ));
+    assert_eq!(sync["outcomes"][0]["status"], "inserted", "{sync}");
+    let index = orbit_graph::HistoryIndex::open_read_only(&repository, "main")
+        .expect("read verified delivery");
+    let delivery = index
+        .delivery("orbit-run:RUN-1:TASK-PRIOR")
+        .expect("read delivery")
+        .expect("stored delivery");
+    let observation = &delivery.delivery.tasks[0];
+    assert_eq!(observation.task_id, "TASK-PRIOR");
+    assert_eq!(observation.source.system, "orbit.task.show");
+    assert!(
+        observation
+            .source
+            .record_id
+            .as_deref()
+            .is_some_and(|id| id.starts_with("ws-test:TASK-PRIOR@")),
+        "observations retain the verified public workspace ID: {observation:?}"
+    );
+}
+
+#[test]
+fn public_adapter_requires_the_hosts_task_and_workspace_owner_for_checkout_paths() {
+    let fixture = adapter_fixture();
+    let repository = fixture
+        .path()
+        .join("repo")
+        .canonicalize()
+        .expect("repository");
+    let callback_path = executable_path_with(fixture.path());
+    for (mode, code, message) in [
+        ("missing", "graph_error", "public workspace owner"),
+        ("wrong_task", "graph_error", "different task ID"),
+        ("unknown", "invalid_request", "not registered"),
+        ("wrong_name", "graph_error", "owner name"),
+        ("unregistered", "orbit_refused", "unregistered checkout"),
+        ("inactive", "invalid_request", "not active"),
+        ("missing_status", "invalid_request", "not active"),
+    ] {
+        let response = assert_plugin_error(
+            &plugin_output_with_env(
+                &repository,
+                RECOMMEND_TOOL_NAME,
+                json!({
+                    "repository": repository, "workspace": repository,
+                    "task_id": "TASK-TARGET"
+                }),
+                &[
+                    ("PATH", callback_path.as_os_str()),
+                    ("GRAPH_TEST_TASK_OWNER", std::ffi::OsStr::new(mode)),
+                ],
+            ),
+            "an unverified task owner",
+        );
+        assert_eq!(response["error"]["code"], code, "{mode}: {response}");
+        assert!(
+            response["error"]["message"]
+                .as_str()
+                .is_some_and(|detail| detail.contains(message)),
+            "{mode}: {response}"
+        );
+    }
+}
+
+#[test]
+fn public_adapter_refuses_unknown_names_and_other_checkout_paths() {
+    let fixture = adapter_fixture();
+    let repository = fixture
+        .path()
+        .join("repo")
+        .canonicalize()
+        .expect("repository");
+    let callback_path = executable_path_with(fixture.path());
+    let log = fixture.path().join("orbit-invocations.log");
+    for selector in [
+        json!("unknown-workspace"),
+        json!(fixture.path()),
+        Value::Null,
+    ] {
+        fs::write(&log, "").expect("reset callback log");
+        let response = assert_plugin_error(
+            &plugin_output_with_env(
+                &repository,
+                RECOMMEND_TOOL_NAME,
+                json!({
+                    "repository": repository, "workspace": selector,
+                    "task_id": "TASK-TARGET"
+                }),
+                &[("PATH", callback_path.as_os_str())],
+            ),
+            "an unknown or mismatched authority selector",
+        );
+        assert_eq!(response["error"]["code"], "invalid_request", "{response}");
+        let invocations = fs::read_to_string(&log).expect("read callback log");
+        assert!(
+            !invocations.contains("orbit.task.show"),
+            "a refused selector never reads task text: {invocations}"
+        );
+    }
+}
+
+#[test]
 fn public_adapter_enforces_callback_denials() {
     let fixture = adapter_fixture();
     let repository = fixture
@@ -3721,6 +3895,11 @@ fn orbit_command(program: impl AsRef<std::ffi::OsStr>) -> Command {
         }
     }
     command
+        .env("GIT_AUTHOR_NAME", "Orbit Graph Test")
+        .env("GIT_AUTHOR_EMAIL", "orbit-graph-test@example.invalid")
+        .env("GIT_COMMITTER_NAME", "Orbit Graph Test")
+        .env("GIT_COMMITTER_EMAIL", "orbit-graph-test@example.invalid");
+    command
 }
 
 fn isolated_tool_run(
@@ -3927,6 +4106,31 @@ fn adapter_fixture() -> TempDir {
         "structuredContent": discovery,
         "isError": false
     }});
+    let mut shared_remote_discovery = discovery.clone();
+    let mut other_workspace = discovery["workspaces"][0].clone();
+    other_workspace["id"] = json!("ws-other");
+    other_workspace["name"] = json!("other");
+    shared_remote_discovery["workspaces"]
+        .as_array_mut()
+        .expect("fixture workspaces")
+        .push(other_workspace);
+    let shared_remote = json!({"jsonrpc": "2.0", "id": 2, "result": {
+        "content": [{"type": "text", "text": shared_remote_discovery.to_string()}],
+        "structuredContent": shared_remote_discovery, "isError": false
+    }});
+    let mut inactive_discovery = discovery.clone();
+    inactive_discovery["workspaces"][0]["status"] = json!("inactive");
+    let inactive = json!({"jsonrpc": "2.0", "id": 2, "result": {
+        "structuredContent": inactive_discovery, "isError": false
+    }});
+    let mut incomplete_discovery = discovery.clone();
+    incomplete_discovery["workspaces"][0]
+        .as_object_mut()
+        .expect("fixture workspace")
+        .remove("status");
+    let missing_status = json!({"jsonrpc": "2.0", "id": 2, "result": {
+        "structuredContent": incomplete_discovery, "isError": false
+    }});
     let refusal = json!({
         "code": "policy_denied",
         "message": "plugin graph may not call orbit.workspace.list: not in permissions.orbit_tools"
@@ -3950,7 +4154,20 @@ fn adapter_fixture() -> TempDir {
     });
     let mut prior = public_task("TASK-PRIOR", "done", "parser validation");
     prior["job_run_id"] = json!("RUN-1");
+    let mut prior_owned = prior.clone();
+    prior_owned["workspace"] = json!({"id": "ws-test", "name": "test"});
     let target = public_task("TASK-TARGET", "in-progress", "parser validation");
+    let mut target_owned = target.clone();
+    target_owned["workspace"] = json!({"id": "ws-test", "name": "test"});
+    let mut target_wrong_task = target_owned.clone();
+    target_wrong_task["id"] = json!("TASK-OTHER");
+    let mut target_unknown_owner = target_owned.clone();
+    target_unknown_owner["workspace"]["id"] = json!("ws-unknown");
+    let mut target_wrong_name = target_owned.clone();
+    target_wrong_name["workspace"]["name"] = json!("other");
+    let unregistered = json!({
+        "code": "policy_denied", "error": "unregistered checkout selector"
+    });
     let search = json!({"results": [{"id": "TASK-PRIOR", "score": 1.0}]});
     let log = fixture.path().join("orbit-invocations.log");
     let linger = fixture.path().join("linger.pid");
@@ -3987,6 +4204,12 @@ case "$*" in
           printf '%s\n' '{notification}'
           if [ "$GRAPH_TEST_DISCOVERY" = denied ]; then
             printf '%s\n' '{denied}'
+          elif [ "$GRAPH_TEST_DISCOVERY" = shared_remote ]; then
+            printf '%s\n' '{shared_remote}'
+          elif [ "$GRAPH_TEST_TASK_OWNER" = inactive ]; then
+            printf '%s\n' '{inactive}'
+          elif [ "$GRAPH_TEST_TASK_OWNER" = missing_status ]; then
+            printf '%s\n' '{missing_status}'
           else
             printf '%s\n' '{discovered}'
           fi ;;
@@ -4006,8 +4229,24 @@ case "$*" in
   *"tool run orbit.task.show"*"TASK-MISSING"*)
     printf '%s\n' '{task_missing}' >&2
     exit 1 ;;
-  *"tool run orbit.task.show"*"TASK-PRIOR"*) printf '%s\n' '{prior}' ;;
-  *"tool run orbit.task.show"*"TASK-TARGET"*) printf '%s\n' '{target}' ;;
+  *"tool run orbit.task.show"*"TASK-PRIOR"*)
+    case "$*" in
+      *'"fields":'*) printf '%s\n' '{prior}' ;;
+      *) printf '%s\n' '{prior_owned}' ;;
+    esac ;;
+  *"tool run orbit.task.show"*"TASK-TARGET"*)
+    case "$*" in
+      *'"fields":'*) printf '%s\n' '{target}' ;;
+      *)
+        case "$GRAPH_TEST_TASK_OWNER" in
+          missing) printf '%s\n' '{target}' ;;
+          wrong_task) printf '%s\n' '{target_wrong_task}' ;;
+          unknown) printf '%s\n' '{target_unknown_owner}' ;;
+          wrong_name) printf '%s\n' '{target_wrong_name}' ;;
+          unregistered) printf '%s\n' '{unregistered}' >&2; exit 1 ;;
+          *) printf '%s\n' '{target_owned}' ;;
+        esac ;;
+    esac ;;
   *"tool run orbit.search"*)
     case "$GRAPH_TEST_SEARCH" in
       fork)
