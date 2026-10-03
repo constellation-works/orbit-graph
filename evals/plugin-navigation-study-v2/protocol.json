@@ -1,0 +1,111 @@
+{
+  "broker_version": "4",
+  "failures": "Keep failed/invalid/timeout in all denominators. No reruns/replacements; integrity refusal blocks scoring rather than dropping episodes.",
+  "follow_up": "Only consider a separately authorized fresh cohort if delivered strict replay verifies containment for all twelve genuine episodes in both arms and both splits, graph held-out correctness >= baseline, at least one held-out improvement and no held-out graph unsupported identities. Any non-ok outcome (including a baseline harness failure) or unverified/incomplete replay cannot qualify; all outcomes and costs remain scored. An ok baseline answer with a reviewed semantic error may support an improvement. Test-only fixtures never qualify. No automatic authorization or superiority claim.",
+  "harness_modules": [
+    "eval_runner.py",
+    "eval_broker.py",
+    "plugin_profile.py",
+    "reply_provenance.py"
+  ],
+  "limitations": [
+    "Six purposive questions are descriptive, not powered for superiority/p-values/generalization.",
+    "Graph development repositories and Orbit/pulsar held-out repositories are disjoint within this study, but all three were inspected in prior work; no unseen-repository generalization.",
+    "Different installed plugin plus shipped skill treatment, not a successful extension/relabel of old 24+16 episodes.",
+    "Questions chosen from source, never graph results. Semantic and additional-symbol judgments are attributed reviewer/operator review (agent or human), not automated truth. Name actual reviewers/operators and preserve honest custody. Blind arms where possible; record any unblinding.",
+    "Offline source export, private installation inspection, exact provider/tool/runner/backend/inventory/skill pinning and concrete request-plan preparation are authorized before source-transfer approval. A plainly pending approval_reference is valid for offline runtime freeze and grants no provider/source-transfer authority. The operator obtains explicit approval only after the concrete plan is reviewable; approval and qualified-runtime evidence gate live execution and remain external custody records bound to the freeze hash.",
+    "Hash seals establish local integrity, not authentication or capture origin; require operator custody and external pre-run freeze.",
+    "Historical source pins stay unchanged; repaired runtime binary qualification (including ORB-13783) gates later live execution.",
+    "Installed v1 was unscorable: all twelve attempts retained failed/broker_failed; none are reused, rescored or replaced here.",
+    "safe-tool-text-v1 preserves original file/blob identity while masking credential-shaped/host-value text before observation. Required excerpts are checked unchanged under shape masking. No transformed quotation receives automatic source credit; host-specific masking of a required excerpt is a pre-execution admission blocker, not a truth waiver.",
+    "Only offline protocol and corpus are frozen here. Runtime model/settings, executables, four harness hashes, installed inventory/skill and source view must be observed and frozen by the operator before output."
+  ],
+  "limits": {
+    "answer_items": 32,
+    "call_bytes": 65536,
+    "output_bytes": 1048576,
+    "tool_calls": 60,
+    "wall_ms": 300000
+  },
+  "metrics": [
+    "per-case required identity recall and citation coverage, independently reviewed semantic pass and combined correctness",
+    "all accuracy denominator 6 per arm; held-out 4 per arm; development 2 per arm",
+    "status and error counts; graph adoption among all 6 and among successful graph episodes, with attempted/successful call counts",
+    "cold plugin install, source/setup, provider, graph_sync and total wall; calls, returned output bytes and separate setup bytes",
+    "nullable observed input/cached/output/total tokens and USD with observed/total counts; missing is not zero",
+    "paired speed deltas/ratios only on both-correct pairs"
+  ],
+  "order": [
+    {
+      "arm": "baseline",
+      "case_id": "graph-lexical-selector-paths",
+      "order": 0
+    },
+    {
+      "arm": "graph",
+      "case_id": "graph-lexical-selector-paths",
+      "order": 1
+    },
+    {
+      "arm": "graph",
+      "case_id": "graph-trace-expansion-budget",
+      "order": 2
+    },
+    {
+      "arm": "baseline",
+      "case_id": "graph-trace-expansion-budget",
+      "order": 3
+    },
+    {
+      "arm": "baseline",
+      "case_id": "orbit-interval-catchup-projection",
+      "order": 4
+    },
+    {
+      "arm": "graph",
+      "case_id": "orbit-interval-catchup-projection",
+      "order": 5
+    },
+    {
+      "arm": "graph",
+      "case_id": "orbit-indexed-overlap-candidates",
+      "order": 6
+    },
+    {
+      "arm": "baseline",
+      "case_id": "orbit-indexed-overlap-candidates",
+      "order": 7
+    },
+    {
+      "arm": "baseline",
+      "case_id": "pulsar-account-selection-uncertainty",
+      "order": 8
+    },
+    {
+      "arm": "graph",
+      "case_id": "pulsar-account-selection-uncertainty",
+      "order": 9
+    },
+    {
+      "arm": "graph",
+      "case_id": "pulsar-readonly-wal-fallback",
+      "order": 10
+    },
+    {
+      "arm": "baseline",
+      "case_id": "pulsar-readonly-wal-fallback",
+      "order": 11
+    }
+  ],
+  "profile": "installed-plugin-skill-v2",
+  "provider_environment": "No secret provider-env values admitted; use the reviewed auth-file binding. Capture policy must equal the deterministic empty host-value policy. Shape masking stays enabled.",
+  "reason_bytes": 4096,
+  "repetitions": 1,
+  "reply_contract": "safe-tool-text-v1",
+  "runner_version": "5",
+  "schema_version": 2,
+  "setup_limits": {
+    "output_bytes": 8388608,
+    "wall_ms": 60000
+  }
+}
