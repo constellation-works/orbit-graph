@@ -3498,44 +3498,77 @@ impl DeliveryFixture {
 /// `/tmp`, so each nested delivery read gets the repository's private plugin
 /// state directory as `TMPDIR` and can still run Git for the repository
 /// identity.
+///
+/// The state root is also reached through a symlink, as macOS temp dirs sit
+/// behind `/var -> /private/var`: the nested `TMPDIR` names the directory
+/// under the root as given, while the history database is reported at its
+/// physical path, so confinement is checked on resolved ancestry.
 #[cfg(unix)]
 #[test]
 fn orbit_sync_gives_nested_orbit_calls_a_private_tmpdir_under_plugin_state() {
-    let fixture = DeliveryFixture::new();
-    let state = TempDir::new().expect("plugin state");
-    let log = fixture.fixture.path().join("tmpdir.log");
-    let answer_path = fixture.fixture.path().join("delivery-answer.json");
-    fs::write(
-        &answer_path,
-        fixture_run_delivery(&fixture.before, &fixture.after).to_string(),
-    )
-    .expect("write delivery answer");
-    let sync = plugin_success(&plugin_output_with_env(
-        &fixture.repository,
-        MAINTAIN_TOOL_NAME,
-        json!({
-            "operation": "orbit_sync",
-            "repository": fixture.repository,
-            "branch": "main",
-            "workspace": "ws-test",
-            "task_runs": [{"task_id": "TASK-PRIOR", "run_id": "RUN-1"}],
-        }),
-        &[
-            ("PATH", fixture.path.as_os_str()),
-            ("GRAPH_TEST_DELIVERY_FILE", answer_path.as_os_str()),
-            ("GRAPH_TEST_TMPDIR_LOG", log.as_os_str()),
-            ("ORBIT_PLUGIN_STATE", state.path().as_os_str()),
-        ],
-    ));
-    assert_eq!(sync["outcomes"][0]["status"], "inserted", "{sync}");
-    let tmpdir = fs::read_to_string(&log).expect("nested TMPDIR log");
-    let tmpdir = Path::new(tmpdir.trim());
-    assert_eq!(tmpdir.parent(), Some(state.path()), "{}", tmpdir.display());
-    assert!(tmpdir.is_dir(), "{}", tmpdir.display());
-    let database = sync["status"]["database_path"]
-        .as_str()
-        .expect("database path");
-    assert!(Path::new(database).starts_with(tmpdir), "{database}");
+    let roots = TempDir::new().expect("plugin state roots");
+    let direct = roots.path().join("direct");
+    let physical = roots.path().join("physical");
+    let alias = roots.path().join("alias");
+    fs::create_dir(&physical).expect("physical state root");
+    std::os::unix::fs::symlink(&physical, &alias).expect("state root alias");
+    for (case, state) in [("direct", &direct), ("symlink alias", &alias)] {
+        let fixture = DeliveryFixture::new();
+        let log = fixture.fixture.path().join("tmpdir.log");
+        let answer_path = fixture.fixture.path().join("delivery-answer.json");
+        fs::write(
+            &answer_path,
+            fixture_run_delivery(&fixture.before, &fixture.after).to_string(),
+        )
+        .expect("write delivery answer");
+        let sync = plugin_success(&plugin_output_with_env(
+            &fixture.repository,
+            MAINTAIN_TOOL_NAME,
+            json!({
+                "operation": "orbit_sync",
+                "repository": fixture.repository,
+                "branch": "main",
+                "workspace": "ws-test",
+                "task_runs": [{"task_id": "TASK-PRIOR", "run_id": "RUN-1"}],
+            }),
+            &[
+                ("PATH", fixture.path.as_os_str()),
+                ("GRAPH_TEST_DELIVERY_FILE", answer_path.as_os_str()),
+                ("GRAPH_TEST_TMPDIR_LOG", log.as_os_str()),
+                ("ORBIT_PLUGIN_STATE", state.as_os_str()),
+            ],
+        ));
+        assert_eq!(sync["outcomes"][0]["status"], "inserted", "{case}: {sync}");
+        let tmpdir = fs::read_to_string(&log).expect("nested TMPDIR log");
+        let tmpdir = Path::new(tmpdir.trim());
+        assert_eq!(
+            tmpdir.parent(),
+            Some(state.as_path()),
+            "{case}: {}",
+            tmpdir.display()
+        );
+        assert!(tmpdir.is_dir(), "{case}: {}", tmpdir.display());
+        let resolved_state = state.canonicalize().expect("resolve state root");
+        let resolved_tmpdir = tmpdir.canonicalize().expect("resolve nested TMPDIR");
+        assert_eq!(
+            resolved_tmpdir.parent(),
+            Some(resolved_state.as_path()),
+            "{case}: {}",
+            resolved_tmpdir.display()
+        );
+        let database = Path::new(
+            sync["status"]["database_path"]
+                .as_str()
+                .expect("database path"),
+        );
+        let resolved_database = database.canonicalize().expect("resolve database");
+        assert!(
+            resolved_database.starts_with(&resolved_tmpdir),
+            "{case}: {} is not under {}",
+            resolved_database.display(),
+            resolved_tmpdir.display()
+        );
+    }
 }
 
 /// `answer` with each JSON pointer in `changes` replaced.
