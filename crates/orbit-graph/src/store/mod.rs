@@ -27,8 +27,8 @@ pub(crate) struct OpenedGraph {
 
 pub(crate) fn open(worktree_root: &Path) -> Result<OpenedGraph, GraphError> {
     let git = GitContext::for_worktree(worktree_root)?;
-    let db_path =
-        existing_legacy_db_path(worktree_root, &git)?.unwrap_or_else(|| git.db_path(worktree_root));
+    let db_path = existing_legacy_db_path(worktree_root, &git, true)?
+        .unwrap_or_else(|| git.db_path(worktree_root));
     open_at_path(
         worktree_root,
         db_path,
@@ -41,7 +41,8 @@ pub(crate) fn open(worktree_root: &Path) -> Result<OpenedGraph, GraphError> {
 /// A compatible legacy index is selected after a read-only identity check.
 pub(crate) fn resolve_worktree_db_path(worktree_root: &Path) -> Result<GraphDbPath, GraphError> {
     let git = GitContext::for_worktree(worktree_root)?;
-    Ok(existing_legacy_db_path(worktree_root, &git)?.unwrap_or_else(|| git.db_path(worktree_root)))
+    Ok(existing_legacy_db_path(worktree_root, &git, false)?
+        .unwrap_or_else(|| git.db_path(worktree_root)))
 }
 
 /// Reuse a pre-hash database only when its stored branch is exactly the
@@ -80,10 +81,27 @@ pub(crate) fn existing_legacy_db_path_for_branch(
 fn existing_legacy_db_path(
     worktree_root: &Path,
     git: &GitContext,
+    writer: bool,
 ) -> Result<Option<GraphDbPath>, GraphError> {
     if existing_physical_db(worktree_root, git.db_path(worktree_root).path())?.is_some() {
         return Ok(None);
     }
+    // Writer path selection also reads identity. Keep pure path/read queries
+    // observational, but protect a writer's legacy lookup from checkpoints.
+    let physical = existing_index_dir(worktree_root, git.db_path(worktree_root).path())?;
+    let _observation = if writer {
+        physical
+            .map(|dir| {
+                FileLockGuard::acquire_directory(
+                    &dir,
+                    lock::lock_timeout(),
+                    "lock graph identity observation",
+                )
+            })
+            .transpose()?
+    } else {
+        None
+    };
     existing_legacy_db_path_for_branch(worktree_root, &git.branch)
 }
 
@@ -214,21 +232,7 @@ fn open_at_path(
     // permissions. An incompatible index must be left exactly as found.
     let existing = existing_physical_db(worktree_root, db_path.path())?;
     let needs_initialization = if let Some(path) = existing.as_deref() {
-        let initialized =
-            match validate_nonempty_identity(path, db_path.path(), expected_branch, false) {
-                Ok(initialized) => initialized,
-                // SQLite's last-connection close unlinks `-shm` and then `-wal`
-                // inside `sqlite3_close`. Sampling those sidecars separately
-                // reports a torn pair that is not a schema refusal. The writer
-                // holds the short close lock until that close returns, so
-                // acquiring it happens after the close. Revalidate once.
-                Err(error) if torn_wal_sidecars(&error) => {
-                    let _close_lock = acquire_close_lock(path)?;
-                    validate_nonempty_identity(path, db_path.path(), expected_branch, true)?
-                }
-                Err(error) => return Err(error),
-            };
-        !initialized
+        !validate_nonempty_identity(path, db_path.path(), expected_branch)?
     } else {
         true
     };
@@ -247,14 +251,16 @@ fn open_at_path(
     } else {
         Some(DbLockGuard::acquire(physical_db.as_path())?)
     };
+    // Lock order is setup/sync -> observation -> close. Never wait for the
+    // setup lock while holding observation: a sync may close its connection.
+    let _observation = acquire_observation_lock(physical_db.as_path(), lock::lock_timeout())?;
     // Another first opener may have initialized the database while we waited
     // for the setup lock. Recheck its identity before any writable open.
     if setup_lock.is_some() {
-        validate_nonempty_identity(
+        validate_identity_under_observation_lock(
             physical_db.as_path(),
             db_path.path(),
             expected_branch,
-            false,
         )?;
     }
     // SQLite's default creation mode can expose indexed source text. Create
@@ -262,7 +268,8 @@ fn open_at_path(
     // existing one to 0600, and refuse a symlink in its name (STD-05 §R7-§R9);
     // SQLite gives the -wal and -shm sidecars the database's mode.
     drop(open_state_file(physical_db.as_path(), StateAccess::Write)?);
-    let mut conn = open_writer(physical_db.as_path(), "open graph database")?;
+    let mut conn =
+        open_writer_under_observation_lock(physical_db.as_path(), "open graph database")?;
     configure_connection(&conn)?;
 
     // The emptiness check is repeated inside the schema transaction, so
@@ -280,7 +287,7 @@ fn open_at_path(
     // A database whose stored schema identity differs is never written
     // (STD-03 §R10).
     schema::validate_identity(&conn, db_path.path(), expected_branch)?;
-    close_connection_under_lock(conn, physical_db.as_path())?;
+    close_under_observation_lock(conn, physical_db.as_path())?;
     drop(setup_lock);
 
     Ok(OpenedGraph {
@@ -292,14 +299,20 @@ fn open_at_path(
 /// Return whether an existing database has a complete, compatible schema.
 /// An empty SQLite database is left for initialization under the setup lock.
 ///
-/// `close_lock_held` is true when the caller already holds the close lock.
-/// A compatible WAL connection is closed under that lock: it may be the last
-/// connection, and SQLite then unlinks `-shm` before `-wal`.
+/// The observation guard covers currency selection, all reads, and close.
 fn validate_nonempty_identity(
     path: &Path,
     db_path: &Path,
     expected_branch: Option<&str>,
-    close_lock_held: bool,
+) -> Result<bool, GraphError> {
+    let _observation = acquire_observation_lock(path, lock::lock_timeout())?;
+    validate_identity_under_observation_lock(path, db_path, expected_branch)
+}
+
+fn validate_identity_under_observation_lock(
+    path: &Path,
+    db_path: &Path,
+    expected_branch: Option<&str>,
 ) -> Result<bool, GraphError> {
     let Some(file) = open_state_file(path, StateAccess::Read)? else {
         return Ok(false);
@@ -317,26 +330,34 @@ fn validate_nonempty_identity(
         return Ok(false);
     }
     schema::validate_identity(&conn, db_path, expected_branch)?;
-    if !close_lock_held && database_uses_wal(path, "read graph database header")? {
-        close_connection_under_lock(conn, path)?;
-    }
     Ok(true)
 }
 
-/// The read-only pre-check saw a `-wal`/`-shm` pair that cannot be opened
-/// without writing. That is the gap inside SQLite's last-connection close,
-/// not a decision about schema identity.
-fn torn_wal_sidecars(error: &GraphError) -> bool {
-    matches!(
-        error,
-        GraphError::InvalidData {
-            operation: "open index read-only",
-            ..
-        }
-    )
+/// Serialize graph identity observations with writer opens and closes. The
+/// existing physical parent directory is the lock object: unlike a sidecar,
+/// it can be locked before compatibility is known without any durable change.
+/// Do not lock an extra descriptor of the SQLite database itself: closing it
+/// would release SQLite's process-scoped POSIX locks on that inode.
+///
+/// This guard covers only short SQLite setup/read/close operations, never a
+/// scan. An open writer publishes WAL sidecars before releasing it and keeps
+/// a connection alive throughout sync; thus MainFileOnly cannot race either
+/// a first schema checkpoint or an active sync's auto-checkpoint. Pure reader
+/// entry points remain observational and do not take this guard.
+pub(crate) fn acquire_observation_lock(
+    db_path: &Path,
+    timeout: std::time::Duration,
+) -> Result<FileLockGuard, GraphError> {
+    let parent = db_path.parent().ok_or_else(|| {
+        GraphError::invalid_data(
+            "lock graph identity observation",
+            "database path has no parent",
+        )
+    })?;
+    FileLockGuard::acquire_directory(parent, timeout, "lock graph identity observation")
 }
 
-/// Acquire the short lock shared by writer closes and torn-sidecar retries.
+/// Acquire the close sidecar lock also honored by database cleanup.
 /// It is separate from the sync lock, which can be held throughout a scan.
 fn acquire_close_lock(db_path: &Path) -> Result<FileLockGuard, GraphError> {
     let mut name = db_path.as_os_str().to_os_string();
@@ -351,14 +372,25 @@ fn acquire_close_lock(db_path: &Path) -> Result<FileLockGuard, GraphError> {
 
 /// Close `conn` while holding the short close lock, then release it.
 ///
-/// SQLite unlinks the `-shm` wal-index and then the `-wal` file before
-/// `sqlite3_close` returns. Releasing the lock only after that return orders
-/// a concurrent opener's torn-sidecar retry after the gap. The caller must
-/// not already hold this lock: `flock` on a second descriptor blocks.
+/// SQLite checkpoints the main file and then removes WAL sidecars during
+/// its last close. Hold observation across the whole close, then take the
+/// close sidecar lock for compatibility with cleanup and older writers.
+/// The caller must not already hold either lock: a second descriptor blocks.
 pub(crate) fn close_connection_under_lock(
     conn: Connection,
     db_path: &Path,
 ) -> Result<(), GraphError> {
+    let observation = acquire_observation_lock(db_path, lock::lock_timeout());
+    match observation {
+        Ok(_observation) => close_under_observation_lock(conn, db_path),
+        Err(error) => {
+            drop(conn);
+            Err(error)
+        }
+    }
+}
+
+fn close_under_observation_lock(conn: Connection, db_path: &Path) -> Result<(), GraphError> {
     match acquire_close_lock(db_path) {
         Ok(lock) => {
             drop(conn);
@@ -388,6 +420,22 @@ pub(crate) fn close_writer_connection(conn: Connection, db_path: &Path) {
 /// Open the physical database `path` read-write with `SQLITE_OPEN_NOFOLLOW`,
 /// so SQLite refuses a symlink anywhere in the path it is given.
 pub(crate) fn open_writer(path: &Path, operation: &'static str) -> Result<Connection, GraphError> {
+    let _observation = acquire_observation_lock(path, lock::lock_timeout())?;
+    let conn = open_writer_under_observation_lock(path, operation)?;
+    // SQLite opens lazily. Materialize the WAL connection before releasing
+    // observation, so another precheck cannot select an immutable main file
+    // while this writer is about to publish WAL state and checkpoint it.
+    conn.query_row("SELECT count(*) FROM sqlite_master", [], |row| {
+        row.get::<_, i64>(0)
+    })
+    .map_err(|source| GraphError::sqlite(operation, source))?;
+    Ok(conn)
+}
+
+fn open_writer_under_observation_lock(
+    path: &Path,
+    operation: &'static str,
+) -> Result<Connection, GraphError> {
     Connection::open_with_flags(path, OpenFlags::default() | OpenFlags::SQLITE_OPEN_NOFOLLOW)
         .map_err(|source| GraphError::sqlite(operation, source))
 }
@@ -452,6 +500,14 @@ pub(crate) fn open_observational(
     operation: &'static str,
 ) -> Result<Connection, GraphError> {
     let currency = read_currency(path, operation)?;
+    #[cfg(test)]
+    if operation == "inspect graph database identity" && currency == ReadCurrency::MainFileOnly {
+        IDENTITY_READ_HOOK.with(|hook| {
+            if let Some(hook) = hook.borrow_mut().take() {
+                hook();
+            }
+        });
+    }
     let flags = OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_NO_MUTEX;
     let conn = match currency {
         ReadCurrency::Live => Connection::open_with_flags(path, flags),
@@ -898,3 +954,10 @@ impl GitContext {
 
 #[cfg(test)]
 mod tests;
+
+#[cfg(test)]
+thread_local! {
+    static IDENTITY_READ_HOOK: std::cell::RefCell<Option<Box<dyn FnOnce()>>> = const {
+        std::cell::RefCell::new(None)
+    };
+}

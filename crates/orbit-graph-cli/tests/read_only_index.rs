@@ -220,7 +220,7 @@ fn reads_on_a_never_synced_repository_report_index_missing_and_create_nothing() 
 /// Sixteen first syncs racing on a fresh repository all succeed: none sees
 /// the schema half-created by another ("table files already exists"), and
 /// none refuses the index because another writer's WAL close unlinked `-shm`
-/// before `-wal`.
+/// before `-wal`, or observes a partial first-schema checkpoint as malformed.
 #[test]
 fn sixteen_concurrent_first_syncs_all_succeed() {
     let repo = fixture_repository();
@@ -694,4 +694,37 @@ fn skip_as_root(test: &str) -> bool {
         "skipping {test}: read-only modes do not restrict root"
     );
     true
+}
+
+/// Deletion honors the observation guard without waiting, while pure query
+/// paths still run with that guard held by another process.
+#[test]
+fn observation_guard_keeps_cleanup_nonblocking_and_queries_observational() {
+    let repo = fixture_repository();
+    run_json(repo.path(), &["sync"]);
+    let index = repo.path().join(".orbit-graph");
+    let older = plant(&index, &format!("main.{}.db", EXTRACTOR_VERSION - 1));
+    let directory = fs::File::open(&index).expect("open index directory");
+    directory.lock().expect("hold observation guard");
+    let before = snapshot(&index);
+    let query = run_json(repo.path(), &["search", "helper"]);
+    assert!(query.is_object());
+    let plan = run_json(repo.path(), &["clean"]);
+    assert!(
+        plan["kept"].as_array().expect("kept").iter().any(|item| {
+            item["path"] == json!(older.display().to_string()) && item["reason"] == "locked"
+        }),
+        "{plan}"
+    );
+    assert_eq!(
+        snapshot(&index),
+        before,
+        "queries and cleanup plan changed state"
+    );
+    let clean = run_json(repo.path(), &["clean", "--confirm"]);
+    assert_eq!(clean["deleted"], json!([]), "{clean}");
+    assert!(older.exists());
+    drop(directory);
+    run_json(repo.path(), &["clean", "--confirm"]);
+    assert!(!older.exists());
 }

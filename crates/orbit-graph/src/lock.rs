@@ -1,7 +1,7 @@
 //! Deadline-bounded advisory file locks with a diagnostic holder record.
 //!
-//! Every exclusive lock the graph takes on shared on-disk state goes through
-//! [`FileLockGuard::acquire`] (`STD-03 §R6`, `§R7`):
+//! Exclusive locks on shared on-disk state use [`FileLockGuard`] (`STD-03
+//! §R6`, `§R7`). Sidecar locks use [`FileLockGuard::acquire`]:
 //!
 //! - the lock is a kernel advisory lock (`flock` on Unix) on a sidecar file
 //!   that std opens close-on-exec, so a crashed holder never wedges it;
@@ -15,6 +15,10 @@
 //!   may briefly read the previous holder's record or none, and nothing
 //!   decides ownership from it. A refusal with no readable record is still
 //!   contention, never a free lock.
+//!
+//! Identity prechecks use [`FileLockGuard::acquire_directory`] instead. They
+//! cannot create or repair state before compatibility is known, so the existing
+//! directory is locked without a holder record; a timeout reports it as unknown.
 
 use std::fmt::{Display, Formatter};
 use std::fs::{File, TryLockError};
@@ -91,6 +95,48 @@ impl FileLockGuard {
                 std::io::Error::from(std::io::ErrorKind::NotFound),
             ));
         };
+        Self::wait(&file, lock_path, timeout, operation, true)?;
+
+        if let Err(error) = write_holder(&file, &LockHolder::current(label)) {
+            // The record is diagnostic only; the kernel lock is the authority.
+            tracing::warn!(
+                path = %lock_path.display(),
+                error = %error,
+                "could not record lock holder"
+            );
+        }
+        Ok(Self { _file: file })
+    }
+
+    /// Lock an already validated physical directory without creating files,
+    /// repairing permissions, or writing a holder record. Used before graph
+    /// identity is known, when even changing a lock sidecar is forbidden.
+    pub(crate) fn acquire_directory(
+        path: &Path,
+        timeout: Duration,
+        operation: &'static str,
+    ) -> Result<Self, GraphError> {
+        let mut options = std::fs::OpenOptions::new();
+        options.read(true);
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::OpenOptionsExt;
+            options.custom_flags(libc::O_DIRECTORY | libc::O_NOFOLLOW);
+        }
+        let file = options
+            .open(path)
+            .map_err(|source| GraphError::io(operation, path, source))?;
+        Self::wait(&file, path, timeout, operation, false)?;
+        Ok(Self { _file: file })
+    }
+
+    fn wait(
+        file: &File,
+        lock_path: &Path,
+        timeout: Duration,
+        operation: &'static str,
+        holder_record: bool,
+    ) -> Result<(), GraphError> {
         let started = Instant::now();
         let mut interval = FIRST_POLL_INTERVAL;
         loop {
@@ -107,22 +153,17 @@ impl FileLockGuard {
                     operation,
                     lock_path,
                     timeout,
-                    read_holder(lock_path).as_ref(),
+                    holder_record
+                        .then(|| read_holder(lock_path))
+                        .flatten()
+                        .as_ref(),
                 ));
             };
             thread::sleep(interval.min(remaining));
             interval = (interval * 2).min(MAX_POLL_INTERVAL);
         }
 
-        if let Err(error) = write_holder(&file, &LockHolder::current(label)) {
-            // The record is diagnostic only; the kernel lock is the authority.
-            tracing::warn!(
-                path = %lock_path.display(),
-                error = %error,
-                "could not record lock holder"
-            );
-        }
-        Ok(Self { _file: file })
+        Ok(())
     }
 }
 

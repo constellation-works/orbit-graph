@@ -1001,3 +1001,294 @@ impl Drop for TestWorktree {
         let _ = fs::remove_dir_all(&self.path);
     }
 }
+
+/// Pause the real SQLite checkpoint after its first main-file page write.
+/// No synthetic corrupt bytes or global VFS overrides: only this connection's
+/// method table is wrapped, and every write still goes through SQLite's VFS.
+#[repr(C)]
+struct CheckpointPause {
+    methods: rusqlite::ffi::sqlite3_io_methods,
+    original: *const rusqlite::ffi::sqlite3_io_methods,
+    written: std::sync::mpsc::SyncSender<()>,
+    resume: std::sync::mpsc::Receiver<()>,
+}
+
+struct PausedCheckpoint<'a> {
+    file: *mut rusqlite::ffi::sqlite3_file,
+    pause: Box<CheckpointPause>,
+    _connection: &'a Connection,
+}
+
+impl<'a> PausedCheckpoint<'a> {
+    fn install(
+        connection: &'a Connection,
+        written: std::sync::mpsc::SyncSender<()>,
+        resume: std::sync::mpsc::Receiver<()>,
+    ) -> Self {
+        use rusqlite::ffi;
+        let mut file: *mut ffi::sqlite3_file = std::ptr::null_mut();
+        // SAFETY: the connection is live and borrowed for this guard's lifetime;
+        // FILE_POINTER writes a sqlite3_file pointer into the supplied slot.
+        let rc = unsafe {
+            ffi::sqlite3_file_control(
+                connection.handle(),
+                c"main".as_ptr(),
+                ffi::SQLITE_FCNTL_FILE_POINTER,
+                std::ptr::from_mut(&mut file).cast(),
+            )
+        };
+        assert_eq!(rc, ffi::SQLITE_OK);
+        assert!(!file.is_null());
+        // SAFETY: FILE_POINTER returned the live main file's method table.
+        let original = unsafe { (*file).pMethods };
+        let mut pause = Box::new(CheckpointPause {
+            // SAFETY: SQLite's method table is initialized and Copy.
+            methods: unsafe { *original },
+            original,
+            written,
+            resume,
+        });
+        pause.methods.xWrite = Some(checkpoint_write);
+        // SAFETY: the boxed table is stable until Drop restores the original,
+        // before the borrowed connection can be closed. Only this thread uses it.
+        unsafe { (*file).pMethods = &pause.methods };
+        Self {
+            file,
+            pause,
+            _connection: connection,
+        }
+    }
+}
+
+impl Drop for PausedCheckpoint<'_> {
+    fn drop(&mut self) {
+        // SAFETY: the connection outlives this guard, so its file is still live.
+        unsafe { (*self.file).pMethods = self.pause.original };
+    }
+}
+
+unsafe extern "C" fn checkpoint_write(
+    file: *mut rusqlite::ffi::sqlite3_file,
+    bytes: *const std::ffi::c_void,
+    amount: std::ffi::c_int,
+    offset: rusqlite::ffi::sqlite3_int64,
+) -> std::ffi::c_int {
+    use rusqlite::ffi;
+    // SAFETY: install places methods first in repr(C) CheckpointPause, and the
+    // guard keeps it alive for every callback. Forward the original arguments.
+    let pause = unsafe { &*((*file).pMethods.cast::<CheckpointPause>()) };
+    // SAFETY: the underlying VFS owns this file and supplied this xWrite method.
+    let rc =
+        unsafe { ((*pause.original).xWrite.expect("VFS xWrite"))(file, bytes, amount, offset) };
+    if rc == ffi::SQLITE_OK
+        && offset == 0
+        && (pause.written.send(()).is_err()
+            || pause
+                .resume
+                .recv_timeout(std::time::Duration::from_secs(10))
+                .is_err())
+    {
+        return ffi::SQLITE_IOERR_WRITE;
+    }
+    rc
+}
+
+#[test]
+fn identity_precheck_is_ordered_before_first_schema_checkpoint() {
+    use std::sync::mpsc::sync_channel;
+    use std::time::Duration;
+
+    let worktree = TestWorktree::new("identity-checkpoint", "main");
+    worktree.init_git_repo();
+    let db = resolve_db_path(worktree.path(), "main", EXTRACTOR_VERSION)
+        .path()
+        .to_path_buf();
+    fs::create_dir_all(db.parent().expect("database directory")).expect("create directory");
+    // The initial WAL header exists, but no schema has been checkpointed.
+    let conn = Connection::open(&db).expect("create empty database");
+    conn.pragma_update(None, "journal_mode", "WAL")
+        .expect("WAL mode");
+    drop(conn);
+
+    let (sampled_tx, sampled_rx) = sync_channel(1);
+    let (read_tx, read_rx) = sync_channel(1);
+    let root = worktree.path().to_path_buf();
+    let reader = std::thread::spawn(move || {
+        super::super::IDENTITY_READ_HOOK.with(|hook| {
+            *hook.borrow_mut() = Some(Box::new(move || {
+                sampled_tx.send(()).expect("signal main-file observation");
+                read_rx
+                    .recv_timeout(Duration::from_secs(10))
+                    .expect("release identity read");
+            }));
+        });
+        Graph::open(&root, SyncPolicy::Manual).map(drop)
+    });
+    sampled_rx
+        .recv_timeout(Duration::from_secs(10))
+        .expect("precheck sampled absent sidecars");
+
+    // A cooperating writer must acquire the same directory guard before
+    // publishing WAL state. On the unfixed code it can enter at this point.
+    let file =
+        fs::File::open(db.parent().expect("database directory")).expect("open observation guard");
+    match file.try_lock() {
+        Err(fs::TryLockError::WouldBlock) => {
+            read_tx.send(()).expect("release protected reader");
+            reader
+                .join()
+                .expect("reader thread")
+                .expect("protected first open");
+        }
+        Ok(()) => {
+            let (written_tx, written_rx) = sync_channel(1);
+            let (resume_tx, resume_rx) = sync_channel(1);
+            let writer_db = db.clone();
+            let writer = std::thread::spawn(move || {
+                let _guard = file;
+                let mut conn = Connection::open(&writer_db).expect("open concurrent initializer");
+                conn.pragma_update(None, "wal_autocheckpoint", 0)
+                    .expect("explicit checkpoint only");
+                super::super::schema::initialize_if_empty(
+                    &mut conn,
+                    &super::super::schema::InitialMeta {
+                        extractor_version: EXTRACTOR_VERSION,
+                        branch: "main",
+                        commit_sha: "checkpoint-fixture",
+                    },
+                )
+                .expect("initialize schema in WAL");
+                let _pause = PausedCheckpoint::install(&conn, written_tx, resume_rx);
+                conn.execute_batch("PRAGMA wal_checkpoint(TRUNCATE)")
+                    .expect("finish real checkpoint");
+            });
+            written_rx
+                .recv_timeout(Duration::from_secs(10))
+                .expect("checkpoint wrote page one");
+            read_tx.send(()).expect("read partial checkpoint");
+            let result = reader.join().expect("reader thread");
+            resume_tx.send(()).expect("finish checkpoint");
+            writer.join().expect("writer thread");
+            result.expect("identity precheck must not observe a partial checkpoint");
+        }
+        Err(error) => panic!("observation guard: {error}"),
+    }
+    let conn = Connection::open(&db).expect("inspect completed database");
+    let integrity: String = conn
+        .pragma_query_value(None, "integrity_check", |row| row.get(0))
+        .expect("integrity check");
+    assert_eq!(integrity, "ok");
+}
+
+#[cfg(unix)]
+#[test]
+fn identity_refusals_preserve_all_state_with_and_without_lock_sidecars() {
+    use std::os::unix::fs::PermissionsExt;
+
+    for mode in ["DELETE", "WAL"] {
+        for refusal in ["future", "older", "foreign", "corrupt"] {
+            for keep_locks in [false, true] {
+                let worktree = TestWorktree::new("identity-refusal", "main");
+                worktree.init_git_repo();
+                let graph =
+                    Graph::open(worktree.path(), SyncPolicy::Manual).expect("initialize graph");
+                let db = graph.db_path().path().to_path_buf();
+                drop(graph);
+                let conn = Connection::open(&db).expect("open fixture");
+                conn.pragma_update(None, "journal_mode", mode)
+                    .expect("journal mode");
+                match refusal {
+                    "future" => {
+                        conn.execute("UPDATE meta SET value='999' WHERE key='schema_version'", [])
+                            .expect("future schema");
+                    }
+                    "older" => {
+                        conn.execute("UPDATE meta SET value='0' WHERE key='schema_version'", [])
+                            .expect("older schema");
+                    }
+                    "foreign" => {
+                        conn.execute("UPDATE meta SET value='other' WHERE key='branch'", [])
+                            .expect("foreign identity");
+                    }
+                    "corrupt" => {}
+                    _ => unreachable!(),
+                }
+                drop(conn);
+                if refusal == "corrupt" {
+                    let mut bytes = fs::read(&db).expect("read fixture");
+                    bytes[100] = 0; // Invalid page-one btree type, retaining the SQLite/WAL header.
+                    fs::write(&db, bytes).expect("corrupt fixture");
+                }
+                for suffix in [".lock", ".close.lock"] {
+                    let path = PathBuf::from(format!("{}{suffix}", db.display()));
+                    if keep_locks {
+                        fs::write(&path, b"unchanged holder record").expect("set lock sentinel");
+                        fs::set_permissions(&path, fs::Permissions::from_mode(0o644))
+                            .expect("lock mode");
+                    } else {
+                        fs::remove_file(path).expect("remove fixture lock");
+                    }
+                }
+                let dir = db.parent().expect("directory");
+                fs::set_permissions(&db, fs::Permissions::from_mode(0o644)).expect("database mode");
+                fs::set_permissions(dir, fs::Permissions::from_mode(0o755))
+                    .expect("directory mode");
+                let snapshot = || {
+                    fs::read_dir(dir)
+                        .expect("entries")
+                        .map(|entry| {
+                            let path = entry.expect("entry").path();
+                            let mode = fs::metadata(&path).expect("metadata").permissions().mode();
+                            (path.clone(), (mode, fs::read(path).expect("contents")))
+                        })
+                        .collect::<BTreeMap<_, _>>()
+                };
+                let before = snapshot();
+                let error = Graph::open(worktree.path(), SyncPolicy::Manual)
+                    .err()
+                    .expect("refuse identity");
+                if refusal == "corrupt" {
+                    assert!(matches!(error, crate::GraphError::Sqlite { .. }), "{error}");
+                } else {
+                    assert!(
+                        matches!(error, crate::GraphError::IndexIncompatible { .. }),
+                        "{error}"
+                    );
+                }
+                assert_eq!(snapshot(), before, "{mode} {refusal} locks={keep_locks}");
+                assert_eq!(
+                    fs::metadata(dir)
+                        .expect("directory metadata")
+                        .permissions()
+                        .mode()
+                        & 0o777,
+                    0o755
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn observation_lock_is_bounded_and_does_not_create_a_holder_record() {
+    use std::time::{Duration, Instant};
+    let dir = TempDir::new().expect("fixture directory");
+    let db = dir.path().join("graph.db");
+    let held = super::super::acquire_observation_lock(&db, Duration::ZERO).expect("take guard");
+    let started = Instant::now();
+    let error = super::super::acquire_observation_lock(&db, Duration::from_millis(25))
+        .expect_err("held observation guard times out");
+    assert!(
+        matches!(error, crate::GraphError::Timeout { .. }),
+        "{error}"
+    );
+    assert!(started.elapsed() < Duration::from_secs(2));
+    assert!(error.to_string().contains("holder unknown"));
+    assert_eq!(fs::read_dir(dir.path()).expect("entries").count(), 0);
+    drop(held);
+    // The hermetic suite also runs in one process: another fixture's fork can
+    // briefly inherit this descriptor until exec closes it. Honor the same
+    // bounded acquisition as production rather than requiring an instant lock.
+    let _next = super::super::acquire_observation_lock(&db, Duration::from_secs(10))
+        .expect("guard released");
+}
