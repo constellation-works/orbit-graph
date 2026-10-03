@@ -19,6 +19,10 @@
 //! Identity prechecks use [`FileLockGuard::acquire_directory`] instead. They
 //! cannot create or repair state before compatibility is known, so the existing
 //! directory is locked without a holder record; a timeout reports it as unknown.
+//!
+//! Guard drop explicitly unlocks before closing: a descriptor duplicated by
+//! a concurrent fork can otherwise retain the same Unix open-file-description
+//! and its lock until exec, outliving the logical owner's critical section.
 
 use std::fmt::{Display, Formatter};
 use std::fs::{File, TryLockError};
@@ -78,6 +82,14 @@ pub(crate) struct FileLockGuard {
 }
 
 impl FileLockGuard {
+    /// Take ownership of an already acquired exclusive lock. Cleanup uses this
+    /// after its nonblocking probe, including read-only probes with no record.
+    /// The guard is the sole logical owner; duplicated descriptors do not own
+    /// a critical section and must not acquire or release locks themselves.
+    pub(crate) fn from_locked(file: File) -> Self {
+        Self { _file: file }
+    }
+
     /// Takes the exclusive lock on `lock_path`, waiting at most `timeout`.
     ///
     /// On timeout the error names the current holder from its record, or
@@ -96,8 +108,9 @@ impl FileLockGuard {
             ));
         };
         Self::wait(&file, lock_path, timeout, operation, true)?;
+        let guard = Self::from_locked(file);
 
-        if let Err(error) = write_holder(&file, &LockHolder::current(label)) {
+        if let Err(error) = write_holder(&guard._file, &LockHolder::current(label)) {
             // The record is diagnostic only; the kernel lock is the authority.
             tracing::warn!(
                 path = %lock_path.display(),
@@ -105,7 +118,7 @@ impl FileLockGuard {
                 "could not record lock holder"
             );
         }
-        Ok(Self { _file: file })
+        Ok(guard)
     }
 
     /// Lock an already validated physical directory without creating files,
@@ -127,7 +140,7 @@ impl FileLockGuard {
             .open(path)
             .map_err(|source| GraphError::io(operation, path, source))?;
         Self::wait(&file, path, timeout, operation, false)?;
-        Ok(Self { _file: file })
+        Ok(Self::from_locked(file))
     }
 
     fn wait(
@@ -164,6 +177,17 @@ impl FileLockGuard {
         }
 
         Ok(())
+    }
+}
+
+impl Drop for FileLockGuard {
+    fn drop(&mut self) {
+        // Unlock the shared open-file-description even if a forked child still
+        // has a duplicate. File drop remains the fallback (and crash behavior);
+        // a destructor must never panic if the explicit unlock fails.
+        if let Err(error) = self._file.unlock() {
+            tracing::warn!(%error, "could not explicitly release file lock");
+        }
     }
 }
 
