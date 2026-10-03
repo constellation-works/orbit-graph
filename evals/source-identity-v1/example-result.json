@@ -5,6 +5,12 @@
   },
   "diagnostics": [
     {
+      "file": "rust/lib.rs",
+      "line": 5,
+      "name": "Err",
+      "reason": "named binding is outside the scored declaration kinds"
+    },
+    {
       "file": "python/settings.py",
       "line": 5,
       "name": "DYNAMIC",
@@ -118,10 +124,13 @@
   ],
   "pins": {
     "contract": "source-identity-v1",
-    "contract_sha256": "841cad23ec677d083ba04fbf5103c82629fcbec762b06977c6e747b9ac0eb7d3",
+    "contract_sha256": "21fee7101c9bf93b5cad7b30982d48f992b864fb9a8c1179f91db63031e02779",
     "implementation_sha256": {
-      "rust_source.py": "c70df11aa679a83a05c7f4be342caa5a0ecff470d19ec516db520d13217851d1",
-      "source_identity.py": "87ea12188d0e43f8fdd23b306e68ddb1bd3301800f32b2afa88ad100439d80bf"
+      "rust_source.py": "d42926bce54478739e3a52841b2f003b32885f5cc7c602bd11ad904d7840e09a",
+      "source_identity.py": "8fadf0f18f1642f3d0b7e9185a937a76bfeda1daddba0adadf584dff9a9c52fa",
+      "syntax/Cargo.lock": "dd766e08c25fbe96b4f1da71430997de006aee962fbfc5cfb76167431b478d2e",
+      "syntax/Cargo.toml": "8c3ab6d15e99a3142d6dcafef97dc3f4e3a4b1170a076bac53ebeee07ed2f4b7",
+      "syntax/src/main.rs": "b346d262b6911858e82ecb78d50c7f94c214a137188f2222ae6abc4208fe88e9"
     },
     "manifest": {
       "python_files": [
@@ -130,6 +139,7 @@
       "rust_root": "rust/lib.rs"
     },
     "python_ast_version": "3.12",
+    "rust_syntax_runtime": "syn-2.0.119/proc-macro2-1.0.106; dependencies pinned by syntax/Cargo.lock",
     "source_sha256": {
       "python/settings.py": "9cfc03e06fa615f0fbef187c94426ea635d415be756fe9a063fa18e2358c322c",
       "rust/lib.rs": "e9d11e6094576e0011160f5696ec2afcc8e784c07bc6749f6e5ebbc7d540e398",

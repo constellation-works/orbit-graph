@@ -2,14 +2,30 @@
   "contract": "source-identity-v1",
   "schema_version": 1,
   "adoption": "prospective_explicit_only",
-  "identity": ["language", "file", "line", "column", "kind", "module", "owner", "trait", "leaf"],
+  "identity": [
+    "language",
+    "file",
+    "line",
+    "column",
+    "kind",
+    "module",
+    "owner",
+    "trait",
+    "leaf"
+  ],
   "rust_dot_spelling": "rejected_use_double_colon",
   "ambiguity": "resolve_spelling_over_complete_selected_index_before_location_filter",
   "citation": "exact_complete_lines_in_declaration_span_including_name_line_no_final_newline",
   "python_assignment": "single_module_name_with_literal_scalar_or_recursive_tuple_value",
-  "rust_support": "bounded_item_grammar_no_macro_expansion_no_cfg_no_compiler_type_check",
+  "rust_support": "syn_2.0.119_syntax_validated_bounded_declaration_index_no_expansion_or_typecheck",
   "semantic_review": "external_pending_never_inferred_from_identity_or_citation",
   "source_encoding": "utf8_lf_only",
-  "limits": {"source_bytes_per_file": 1048576, "rust_files": 128, "python_files": 128},
-  "dependencies": "python_3.10_or_newer_standard_library_only"
+  "limits": {
+    "source_bytes_per_file": 1048576,
+    "rust_files": 128,
+    "python_files": 128
+  },
+  "dependencies": "python_3.10_or_newer_and_offline_built_syntax_frontend_locked_in_syntax/Cargo.lock",
+  "rust_uncertainty": "named_unsupported_or_cfg_bindings_block_ties; unknown_binding_effects_or_syntax_errors_refuse_rust_index",
+  "rust_generic_identity": "written_declaration_with_erased_owner_and_trait_arguments; competing_specializations_remain_ambiguous"
 }

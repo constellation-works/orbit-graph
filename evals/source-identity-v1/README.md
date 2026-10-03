@@ -3,9 +3,10 @@
 A standalone, offline evaluator component for **future, explicitly opted-in
 cohorts**. It reads selected source bytes, resolves a declaration spelling, and
 checks exact citations. It does not use graph output, import evaluated Python
-modules, expand Rust macros, invoke providers, or run evaluated source. Its only
-dependency is the Python standard library (3.10+; the checked-in executable
-goldens and generic-Python fixture pin Python 3.12).
+modules, expand Rust macros, invoke providers, or run evaluated source. It uses
+Python 3.10+ and an isolated, pinned Rust syntax frontend (the executable
+snapshot and generic-Python fixture use Python 3.12). The frontend parses source
+with `syn`; it never passes evaluated bytes to a compiler.
 
 Nothing here changes historical v1/v2 evaluators, imports, corpus, protocols,
 locks, answers, reports or scores. These tests demonstrate contract behavior on
@@ -14,9 +15,26 @@ explicit limitation, not evidence that an answer is a hallucination.
 
 ## Run
 
-From the repository root, on Python 3.12:
+From the repository root, on Python 3.12, first build the evaluator frontend.
+Rust 1.89+ and the exact crates in `syntax/Cargo.lock` must already be cached;
+these commands do not install host software or access the network. Check disk
+usage before creating the build directory and stop at 80% or above:
 
 ```sh
+df --output=pcent .orbit/tmp | tail -1
+CARGO_TARGET_DIR="$PWD/.orbit/tmp/source-identity-syntax-target" \
+  cargo build --offline --locked --manifest-path evals/source-identity-v1/syntax/Cargo.toml
+```
+
+Then run the prospective gates (including the isolated frontend's format/lint
+checks, which are separate from the product workspace):
+
+```sh
+cargo fmt --manifest-path evals/source-identity-v1/syntax/Cargo.toml --check
+CARGO_TARGET_DIR="$PWD/.orbit/tmp/source-identity-syntax-target" \
+  cargo clippy --offline --locked --manifest-path evals/source-identity-v1/syntax/Cargo.toml -- -D warnings
+cargo deny --offline --locked --manifest-path evals/source-identity-v1/syntax/Cargo.toml \
+  check --config deny.toml --disable-fetch
 python3 -B -m unittest discover -s evals/source-identity-v1 -p 'test_*.py'
 python3 -B evals/source-identity-v1/example.py
 python3 -B evals/source-identity-v1/source_identity.py --help
@@ -28,6 +46,7 @@ alias, and **pending** semantic review. One answer uses an equivalent
 trait-qualified Rust spelling; another names the correct Python assignment but
 quotes the wrong value. `example-result.json` pins the exact output, contract
 bytes, implementation bytes, source bytes, manifest and Python AST version.
+The frontend runtime and its complete dependency lock are also pinned.
 The snapshot is a fixture, not a study result. Semantic review has no inferred
 pass, combined score, or agent-effectiveness interpretation.
 
@@ -113,34 +132,73 @@ supported. Trait-qualified names must match the verified trait binding. Rust
 
 ## Bounded source grammar
 
-`rust_source.py` lexes nested comments, quoted/raw strings, chars and lifetimes,
-and balances delimiters before walking items. It recognizes free/generic
-functions, simple structs/enums, simple local traits, inherent and trait impls
-for verified local nongeneric types, inline modules, and external modules with
-literal `#[path = "file.rs"]`. Explicit paths work at the crate root and within
-its inline modules; external files cannot themselves declare external modules.
-Reused/cyclic files and duplicate modules are refused. Associated type bindings
-inside trait impls are skipped, not scored.
+`syntax/` is a separate, unpublished Cargo workspace with no product dependency
+edges. It uses `syn` **2.0.119** (full syntax and AST visitor) and `proc-macro2`
+**1.0.106** (lexing and source spans), with JSON transport and typed errors.
+`syntax/Cargo.lock` pins every transitive version, registry origin and checksum.
+These crates came from the existing Cargo registry cache; their package manifests
+and license files are the upstream provenance, not recovered Orbit code. The
+parser and lexer are MIT/Apache-2.0 dual licensed. No vendored or downloaded
+parser binary is committed. Build the frontend from these sources and lockfile
+in the ignored path above. The scorer launches that fixed executable with an
+empty environment and a ten-second timeout; it never builds on demand.
 
-Simple `use path;` / `use path as Alias;` can reference indexed local types or
-`std::`/`core::` paths. The latter attest the **written trait path**, not the
-contents of a standard-library implementation; no dependency source is loaded.
-Import collisions/cycles, shadowed `std`/`core` roots, and unknown local owners/traits are refused. There is
-no extern-crate/prelude guessing. Traits with associated type declarations,
-generic impl owners, supertraits, type aliases, glob/group imports, cfg,
-procedural attributes, item macros, `include!`, ordinary external modules without
-`#[path]`, associated constants, and Rust const/static items are outside v1.
-Unsupported item/context syntax invalidates the whole Rust index: unknown
-bindings cannot silently make another spelling unique.
+The frontend parses the **entire file**, including function parameters, return
+types, bodies, literals, fields and unrelated declarations. Syntax errors and
+unrecognized `Verbatim` nodes refuse the Rust index. Validated source passes to
+the declaration resolver; delimiter balance alone cannot grant credit. The
+binary embeds its own source, manifest and lockfile, which Python compares with
+the current files before accepting a successful parse. Missing, stale, failing
+or timed-out frontends refuse Rust credit with a diagnostic. Returned pins hash
+these files alongside the Python implementation, contract and source snapshot.
+This detects accidental stale builds; it is not executable attestation or a
+security boundary against an evaluator who controls the helper binary.
 
-This is a declaration parser, **not a Rust compiler/type checker**. Balanced
-function bodies, parameter/type expressions, and struct/enum fields are opaque;
-it does not prove that expressions compile, trait impls satisfy their trait, or
-runtime behavior is correct. It rejects lexical and item-structural malformations
-but does not claim to reject every invalid Rust program. Prospective corpus
-preflight must independently establish source validity. The synthetic sources
-are declaration fixtures and intentionally include incomplete semantic bodies.
-Do not use this component as a compiler or security sandbox.
+Supported declarations include free/generic functions, structs/enums with
+parameters and fields, local traits with supertraits/associated items, and
+inherent/trait impl methods of verified local named types, including generic
+owners and where clauses. Owner/trait arguments are erased **only for spelling
+resolution of a written declaration**. Two specialized impls defining the same
+method stay ambiguous; this never infers instantiation, trait applicability or
+runtime dispatch. Blanket impls on generic parameters, qualified-self types and
+negative impls remain unsupported.
+
+Ordinary line/block docs, explicit `doc`, lint attributes, `repr`, `inline`,
+`cold`, `must_use`, `deprecated`, `non_exhaustive`, `no_mangle`, `export_name`,
+`link_section` and `track_caller` preserve written binding identity. Standard
+`derive` entries (`Clone`, `Copy`, `Debug`, `Default`, `Eq`, `PartialEq`, `Ord`,
+`PartialOrd`, `Hash`) are admitted; generated methods are never indexed. Custom
+attribute/derive macros and `cfg_attr` are refused because they can emit unknown
+bindings. This is an explicit attribute-effects policy, not an ignore-all rule
+or an allowlist of declaration names. Attribute argument semantics are not
+compiler-checked.
+
+A `cfg` declaration is recorded as uncertain, with all descendants/methods of
+conditional modules, owners, traits and impls also uncredited. It still competes
+in ambiguity checks; a line number cannot rescue it. Named const/static/type
+alias/associated bindings are unsupported candidates and blockers, so they do
+not erase independently verified unrelated declarations. Macro definitions (whose matcher grammar is not validated by `syn`),
+item macro invocations, foreign scopes,
+glob/group/conditional imports and other contexts with an unknown binding set
+still refuse the whole Rust index. Diagnostics explain the distinction.
+
+Inline modules and external modules with literal `#[path = "file.rs"]` retain
+the explicit closed source universe. Paths work at the crate root and within
+its inline modules; external files cannot declare further external modules.
+Reused/cyclic files, duplicate modules, ordinary external modules without a
+literal path, import collisions/cycles and shadowed `std`/`core` roots are
+refused. Simple `use path;` / `use path as Alias;` can reference verified local
+types or written `std::`/`core::` paths. Unknown owners/traits and type aliases
+used as impl owners are refused. No extern-crate/prelude guessing occurs.
+
+Syntax validity means acceptance by the pinned parser's Rust grammar, **not
+compilation, typechecking or behavioral correctness**. Macro token trees remain
+unexpanded (their tokens need not themselves be Rust expressions), and methods
+generated by macros/derives are not written declarations. Edition/feature
+availability, name/type resolution inside bodies, trait completeness, attribute
+semantics and runtime behavior require separate review. The synthetic sources
+include syntactically valid but semantically incomplete bodies. The helper is
+neither a compiler nor a security sandbox.
 
 Python uses `ast.parse`, never `import`, `eval`, `exec`, or `ast.literal_eval` on
 source. It supports free/async functions (including generic syntax supported by
@@ -197,4 +255,4 @@ wrong module/file/kind/line/quote, literal path mapping, imports, conditional
 alternatives, dynamic assignments, comments/string lookalikes, malformed source,
 symlink refusal, source snapshot hashing, unchanged denominators, and executable
 success/error/help behavior. They are deterministic and run without providers,
-network access, or installing parsers.
+network access, or host installation. Build the pinned frontend offline first.

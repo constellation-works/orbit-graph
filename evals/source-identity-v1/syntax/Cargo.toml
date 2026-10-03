@@ -1,0 +1,16 @@
+[package]
+name = "source-identity-syntax"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.89"
+license = "MIT OR Apache-2.0"
+publish = false
+
+# Isolated prospective evaluator, never a product workspace dependency.
+[workspace]
+
+[dependencies]
+syn = { version = "=2.0.119", features = ["full", "visit"] }
+proc-macro2 = { version = "=1.0.106", features = ["span-locations"] }
+serde_json = "=1.0.150"
+thiserror = "=2.0.18"
