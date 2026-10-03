@@ -1,0 +1,208 @@
+{
+  "schema_version": 1,
+  "label": "synthetic fixtures",
+  "frozen_at": "2026-10-03",
+  "limits": {
+    "wall_ms": 120000,
+    "tool_calls": 40,
+    "output_bytes": 131072,
+    "answer_items": 32,
+    "call_bytes": 16384
+  },
+  "fixtures": [
+    {
+      "id": "rust",
+      "language": "rust",
+      "head": {
+        "src/lib.rs": "fixtures/rust/src/lib.rs",
+        "Cargo.toml": "fixtures/rust/Cargo.toml"
+      },
+      "base": {
+        "src/lib.rs": "fixtures/rust/base/src/lib.rs",
+        "Cargo.toml": "fixtures/rust/Cargo.toml"
+      },
+      "head_revision": "5d1f0b44fbeb244f2d1c6e9cf82a5148fa13c23957798480516646466630a2b1",
+      "base_revision": "b3afd857cb1bb1ee7b618b88e0999a084cb5892dbc56528abb0c610cadec6945"
+    },
+    {
+      "id": "python",
+      "language": "python",
+      "head": {
+        "shop.py": "fixtures/python/shop.py"
+      },
+      "base": {
+        "shop.py": "fixtures/python/base/shop.py"
+      },
+      "head_revision": "f73b669d4fe4af608fda125c033e46b598c2e8246c73a337106447e30ddf7295",
+      "base_revision": "64b198d36aac2305c8895932b8509ca9a862f18f7adbcf76f63b935c9c062e71"
+    }
+  ],
+  "cases": [
+    {
+      "id": "rust-01",
+      "fixture": "rust",
+      "split": "development",
+      "kind": "discovery",
+      "target": "price",
+      "prompt": "Find the definition of the module-level function price that normalizes the input then multiplies it. Exclude the similarly named preview helper.",
+      "truth": {
+        "items": [
+          "symbol:src/lib.rs#price:function"
+        ],
+        "abstain": false
+      }
+    },
+    {
+      "id": "rust-02",
+      "fixture": "rust",
+      "split": "held-out",
+      "kind": "callers",
+      "target": "price",
+      "prompt": "List all direct module-local callers of price in HEAD. Include tests only if they directly call price; exclude transitive callers and name-only matches.",
+      "truth": {
+        "items": [
+          "symbol:src/lib.rs#invoice:function"
+        ],
+        "abstain": false
+      }
+    },
+    {
+      "id": "rust-03",
+      "fixture": "rust",
+      "split": "held-out",
+      "kind": "callees",
+      "target": "invoice",
+      "prompt": "List the direct module-local callees of invoice in HEAD. Exclude library built-ins and transitive calls.",
+      "truth": {
+        "items": [
+          "symbol:src/lib.rs#price:function"
+        ],
+        "abstain": false
+      }
+    },
+    {
+      "id": "rust-04",
+      "fixture": "rust",
+      "split": "development",
+      "kind": "impact_tests",
+      "target": "normalize",
+      "prompt": "List all test functions transitively affected by changing normalize, using direct module-local call paths in HEAD. Do not list non-test functions.",
+      "truth": {
+        "items": [
+          "symbol:src/lib.rs#test_invoice:test",
+          "symbol:src/lib.rs#test_preview:test"
+        ],
+        "abstain": false
+      }
+    },
+    {
+      "id": "rust-05",
+      "fixture": "rust",
+      "split": "held-out",
+      "kind": "change",
+      "target": "price",
+      "prompt": "Compare the committed base to HEAD and list functions whose body changed. Ignore unchanged callers and tests.",
+      "truth": {
+        "items": [
+          "symbol:src/lib.rs#price:function"
+        ],
+        "abstain": false
+      }
+    },
+    {
+      "id": "rust-06",
+      "fixture": "rust",
+      "split": "held-out",
+      "kind": "unsupported",
+      "target": "price",
+      "prompt": "List every external runtime consumer of price, including consumers outside this repository. No external source or deployment data is supplied.",
+      "truth": {
+        "items": [],
+        "abstain": true
+      }
+    },
+    {
+      "id": "python-01",
+      "fixture": "python",
+      "split": "development",
+      "kind": "discovery",
+      "target": "price",
+      "prompt": "Find the definition of the module-level function price that normalizes the input then multiplies it. Exclude the similarly named preview helper.",
+      "truth": {
+        "items": [
+          "symbol:shop.py#price:function"
+        ],
+        "abstain": false
+      }
+    },
+    {
+      "id": "python-02",
+      "fixture": "python",
+      "split": "held-out",
+      "kind": "callers",
+      "target": "price",
+      "prompt": "List all direct module-local callers of price in HEAD. Include tests only if they directly call price; exclude transitive callers and name-only matches.",
+      "truth": {
+        "items": [
+          "symbol:shop.py#invoice:function"
+        ],
+        "abstain": false
+      }
+    },
+    {
+      "id": "python-03",
+      "fixture": "python",
+      "split": "held-out",
+      "kind": "callees",
+      "target": "invoice",
+      "prompt": "List the direct module-local callees of invoice in HEAD. Exclude library built-ins and transitive calls.",
+      "truth": {
+        "items": [
+          "symbol:shop.py#price:function"
+        ],
+        "abstain": false
+      }
+    },
+    {
+      "id": "python-04",
+      "fixture": "python",
+      "split": "development",
+      "kind": "impact_tests",
+      "target": "normalize",
+      "prompt": "List all test functions transitively affected by changing normalize, using direct module-local call paths in HEAD. Do not list non-test functions.",
+      "truth": {
+        "items": [
+          "symbol:shop.py#test_invoice:function",
+          "symbol:shop.py#test_preview:function"
+        ],
+        "abstain": false
+      }
+    },
+    {
+      "id": "python-05",
+      "fixture": "python",
+      "split": "held-out",
+      "kind": "change",
+      "target": "price",
+      "prompt": "Compare the committed base to HEAD and list functions whose body changed. Ignore unchanged callers and tests.",
+      "truth": {
+        "items": [
+          "symbol:shop.py#price:function"
+        ],
+        "abstain": false
+      }
+    },
+    {
+      "id": "python-06",
+      "fixture": "python",
+      "split": "held-out",
+      "kind": "unsupported",
+      "target": "dispatch",
+      "prompt": "Determine the exact runtime target of callback in dispatch for all invocations. No caller configuration is supplied.",
+      "truth": {
+        "items": [],
+        "abstain": true
+      }
+    }
+  ]
+}
