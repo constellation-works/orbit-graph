@@ -14,7 +14,8 @@ honours only for a verified first-party source: installed with
 the tools register as `orbit.graph.version`, `orbit.graph.status`,
 `orbit.graph.recommend`, `orbit.graph.maintain`, and the query tools
 `orbit.graph.search`, `show`, `refs`, `callees`, `impact`, `trace`, `deps`, and
-`overview` (MCP `orbit_graph_*`) with the derived `orbit graph <verb>` command
+`overview`, plus `orbit.graph.changes` (MCP `orbit_graph_*`) with the derived
+`orbit graph <verb>` command
 group. Orbit refuses the `origin`
 claim from any other source (a local directory, an archive, a fork); such a
 copy must drop `origin: orbit` and then registers bare `graph.*` names. The
@@ -22,8 +23,8 @@ executable accepts both spellings.
 
 For a local source export, Orbit 0.25 recognizes `.orbit-plugin/` when the
 source argument names the export's root directory. Local installs must
-still drop the `origin` claim as above, and the export must be outside a Git
-checkout: Orbit refuses to install a plugin tree from inside a repository.
+still drop the `origin` claim as above. Use a clean commit export to identify
+the installed bytes; Orbit copies only its `.orbit-plugin/` directory.
 
 The launcher `.orbit-plugin/bin/orbit-graph` selects the executable in this order and probes
 it with a v2 version envelope before forwarding the request:
@@ -57,17 +58,61 @@ Anything else in `spec.backend.args` (neither, both, a malformed digest, an
 unknown argument) runs nothing and returns `incompatible_binary`. A release
 carries the override, because a release ships no executable to bind.
 
-The preferred release path bundles the executable, so every Orbit service on
-the host runs the binary built from the installed tag regardless of its `PATH`:
+Preparation, installation and permission consent are separate steps. The
+[Linux candidate report](plugin-readiness.md) gives the exact tested revision,
+digests, supported surfaces and remaining limitations. Preparing or checking an
+export is not permission to install it on the live host.
+
+For a local candidate, prepare a clean export, remove `metadata.origin`, and
+bundle the matching binary **before** installing. The default bundler records
+`--backend-sha256`, so the manifest digest already identifies the binary at
+consent time. Check the export with `orbit plugin validate <export>` and
+`orbit plugin test <export>`. After the operator authorizes installation:
 
 ```sh
-cargo install --git https://github.com/constellation-works/orbit-graph --tag <tag> --locked orbit-graph-cli
-orbit plugin add git+https://github.com/constellation-works/orbit-graph#<tag> --enable --grant fs,orbit_tools
+orbit plugin add /absolute/path/to/export
+# For an existing graph install, replace from the prepared source instead:
+# orbit plugin upgrade graph /absolute/path/to/export
+orbit plugin show graph --format json
+```
+
+Choose `add` for a new install or `upgrade` for an existing one. An upgrade
+with unchanged permission requests can retain earlier grants; widened requests
+disable the plugin and clear grants unless the operator supplies a new set.
+After reviewing the manifest, binary digest and requested roots, the separate
+host-consent command is:
+
+```sh
+orbit plugin enable graph --grant fs,orbit_tools
+```
+
+This records the complete grant set, replacing any earlier set. It does not
+grant ordinary callers permission to run mutating tools. Activity authority
+still applies to `maintain`, and the plugin has no operator run-read capability.
+
+For a tagged first-party release, build the matching executable first. Only
+after the operator authorizes host installation, install and bundle it so each
+service runs that binary regardless of its `PATH`:
+
+```sh
+# In a clean source checkout at the chosen tag; record its full commit first.
+cargo build --release --locked -p orbit-graph-cli
+orbit plugin add git+https://github.com/constellation-works/orbit-graph#<tag>
+# Upgrade an existing install using its explicit replacement source:
+# orbit plugin upgrade graph git+https://github.com/constellation-works/orbit-graph#<tag>
 # Copy (never link) that executable into the installed tree as bin/orbit-graph.bin.
-plugin_root=$(orbit plugin show graph | sed -n 's/^Install path: //p')
-sh scripts/bundle-plugin-binary.sh --unbound --binary "$HOME/.cargo/bin/orbit-graph" "$plugin_root"
-orbit plugin test "$plugin_root"   # certifies the installed digest
-orbit plugin show graph
+plugin_root=$(orbit plugin show graph --format json | python3 -c 'import json,sys; print(json.load(sys.stdin)["install_path"])')
+sh scripts/bundle-plugin-binary.sh --unbound --binary "$PWD/target/release/orbit-graph" "$plugin_root"
+# Orbit 0.25.1 tests a source holding .orbit-plugin/, not the installed
+# version directory, whose plugin.yaml sits at its top level.
+mkdir -p .orbit/tmp
+check_source=$(mktemp -d "$PWD/.orbit/tmp/graph-plugin-check.XXXXXX")
+cp -R "$plugin_root" "$check_source/.orbit-plugin"
+orbit plugin validate --first-party "$check_source"
+orbit plugin test --first-party "$check_source"
+orbit plugin show graph --format json
+# Separately, after reviewing the requested permissions:
+orbit plugin enable graph --grant fs,orbit_tools
 ```
 
 `scripts/bundle-plugin-binary.sh` probes the candidate against the launcher's
@@ -75,8 +120,10 @@ pinned `extractor_version` and `plugin_schema_version` and refuses an
 incompatible one. By default it also binds the tree: it records the copied
 executable's SHA-256 as `--backend-sha256` in that tree's `plugin.yaml`. That
 changes the manifest digest, so Orbit treats the tree as a new manifest until
-the operator approves it again with `orbit plugin add <tree> --force`; the
-bundler prints that step. A tree installed from `git+` cannot be re-added in
+the operator approves its prepared source again with
+`orbit plugin add <export> --force`. If bundling after installation, first copy
+the changed installed tree into that export's `.orbit-plugin/` directory;
+Orbit 0.25.1 does not accept the installed version directory as a source. A tree installed from `git+` cannot be re-added in
 place (its `origin: orbit` claim is honoured only for the `git+` source), so
 bundle a first-party install with `--unbound`, as above: the manifest keeps
 `--allow-unbound-backend` and every call reports the override. Bind a tree you
@@ -241,8 +288,9 @@ requested repository and reads the requested task with the same workspace
 filter. The host's public task-owner ID and name then select the discovery row,
 which must still pass the repository remote check. Multiple workspaces can
 share a remote; the task-owner identity determines the selected workspace.
-With narrower grants, pass an earlier public snapshot and use lexical/offline
-hits.
+For offline strict replay, pass an eligible earlier public snapshot with
+`cutoff` and use lexical hits. Live supplied snapshots still require public
+task/workspace verification and cannot bypass a refused callback.
 
 Maintenance is deliberately separate from querying:
 
@@ -499,9 +547,13 @@ whose incremental build fits the budget (see the timing note in the
 strict base ancestry, and landing-branch reachability in the explicitly routed
 Git repository. `orbit.workflow.run.show` requires Orbit's `operator`
 capability, which a plugin backend does not hold, so under the plugin each run
-is currently reported `failed` with Orbit's refusal (`error.code`
-`orbit_refused`, Orbit's own code under `error.orbit.code`) rather than
-imported. Each outcome is one of `inserted`, `already_indexed`, `excluded` (a
+is currently reported `failed` rather than imported. A standalone refusal JSON
+maps to `orbit_refused` with Orbit's code under `error.orbit.code`. The tested
+Orbit 0.25.1 host prefixes run-read refusals with a diagnostic line: Graph then
+returns `graph_error` and embeds `capability_denied` in the message. This
+classification gap is recorded in the [Linux readiness report](plugin-readiness.md);
+the callback is still refused. Each outcome is one of `inserted`,
+`already_indexed`, `excluded` (a
 verdict: the run was examined and is not an eligible delivery, with the check
 it failed as `reason`) or `failed` (infrastructure: the run or task could not be
 examined, with a structured `error`); one failed item never stops the batch,

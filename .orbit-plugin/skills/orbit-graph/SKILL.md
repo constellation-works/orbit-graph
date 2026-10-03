@@ -72,6 +72,11 @@ against the merge base with the upstream (else `origin/HEAD`, `main`,
 `graph_sync`, but a cold call can take tens of seconds on a large repository;
 repeat calls over the same commits reuse cached snapshots.
 
+`changes` needs writable plugin scratch/cache state, even though it does not
+change repository files or Git state. This is the documented cache exception
+to read-only execution; it is not a promise that a cold call works with plugin
+state made read-only.
+
 Trust labels, not list position. Every caller, entry point and test carries a
 `source` (`call_path`, `import_relationship`, `reference_path`,
 `changed_symbol`, `naming_heuristic`, `runtime_invocation`) and a
@@ -157,17 +162,28 @@ requires `--confirm` and explicitly removes them.
 The calling activity must allow the callback tools it uses:
 `orbit.workspace.list`, `orbit.task.show`, `orbit.search`, and
 `orbit.workflow.run.show`. Orbit's policy still applies to the adapter's nested
-public calls. When task or search tools are not granted, pass an earlier public
-`task_snapshot` and use lexical/offline hits.
+public calls. For offline strict replay, pass an eligible earlier public
+`task_snapshot` with `cutoff` and use lexical hits. A live supplied snapshot
+still requires task/workspace authority; it cannot bypass a refused callback.
 
 Workspace discovery is MCP-only: the adapter calls `orbit.workspace.list`
 through a short-lived `orbit mcp serve` stdio session (never `--operator`),
-under the same timeout and output bound as its `orbit tool run` calls. Discovery
-publishes no checkout path, so the requested `repository` is bound to the
-workspace by matching its `origin` remote to the workspace's `git_remote`; a
-workspace without `git_remote`, or a foreign `origin`, is refused.
+under the same timeout and output bound as its `orbit tool run` calls. Orbit
+normalizes registered workspace names and IDs to absolute checkout paths before
+calling a plugin. The adapter verifies that path matches `repository`, then
+reads the task with the same workspace filter. Its public owner ID and name
+select the discovery row; shared remotes never establish task ownership. The
+repository's `origin` must also match that row's `git_remote`. This remote
+match is an accident guard, since the checkout owner can rewrite it; Orbit's
+per-call authorization is the security boundary. A missing owner, inactive
+workspace, absent remote or conflicting repository is refused.
 `orbit.workflow.run.show` is an operator-only Orbit operation. A plugin backend
-does not hold `operator`, so `orbit_sync` reports each run `excluded` with
-Orbit's `capability_denied` reason instead of importing it; an empty or
-all-excluded sync is not evidence of a verified delivery. Until Orbit exposes a
-sanctioned non-operator run read, import verified envelopes with `import`.
+does not hold `operator`, so `orbit_sync` reports each unreadable run `failed`,
+counted in `coverage.failed`, instead of importing it. `excluded` means a run
+was examined and judged ineligible. Orbit 0.25.1 can emit a diagnostic before
+its refusal JSON; Graph then reports `graph_error` with the refusal in the
+message rather than structured `orbit_refused`. Read the per-item error, not
+just the outer successful batch response. An empty sync or an undelivered task
+read proves no delivered-run import. That coverage remains incomplete until a
+sanctioned run-read path is available. `import` stores supplied envelopes as
+caller-attested evidence; it does not establish host-verified delivery status.
