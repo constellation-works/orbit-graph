@@ -1,0 +1,14 @@
+exit: 0
+stdout:
+overview_summary	2	4	full	-
+overview_language	rust	2
+overview_symbol_kind	function	3
+overview_symbol_kind	test	1
+overview_file	src/lib.rs	rust	3
+overview_file	tests/test_lib.rs	rust	1
+overview_symbol	src/lib.rs	function	helper	helper
+overview_symbol	src/lib.rs	function	entry	entry
+overview_symbol	src/lib.rs	test	helper_test	helper_test
+overview_symbol	tests/test_lib.rs	function	test_helper	test_helper
+
+stderr:

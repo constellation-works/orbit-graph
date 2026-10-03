@@ -87,6 +87,7 @@ pub struct TableView {
     columns: Vec<Column>,
     rows: Vec<Vec<String>>,
     empty_message: Option<String>,
+    plain_record_type: Option<&'static str>,
 }
 
 impl TableView {
@@ -96,7 +97,15 @@ impl TableView {
             columns,
             rows: Vec::new(),
             empty_message: None,
+            plain_record_type: None,
         }
+    }
+
+    /// Prefix plain rows with a stable type when a command has several tables.
+    #[must_use]
+    pub fn with_plain_record_type(mut self, record_type: &'static str) -> Self {
+        self.plain_record_type = Some(record_type);
+        self
     }
 
     /// Add one row. The cell count must equal the column count.
@@ -143,6 +152,9 @@ pub(crate) fn emit_table(
     if sink.mode() == OutputMode::Plain {
         for row in &table.rows {
             let cells = row.iter().map(|cell| escape_cell(cell)).collect::<Vec<_>>();
+            if let Some(record_type) = table.plain_record_type {
+                write!(stdout, "{record_type}\t").map_err(CliError::Stdout)?;
+            }
             writeln!(stdout, "{}", cells.join("\t")).map_err(CliError::Stdout)?;
         }
         return Ok(());

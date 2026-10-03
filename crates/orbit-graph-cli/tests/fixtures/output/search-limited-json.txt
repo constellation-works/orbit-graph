@@ -1,0 +1,6 @@
+exit: 0
+stdout:
+{"matches":[{"kind":"symbol","line":1,"name":"helper","path":"src/lib.rs"}],"total":null,"truncated":true}
+
+stderr:
+showing 1 of more than 1 search matches; raise --limit to see more

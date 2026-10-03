@@ -1,0 +1,6 @@
+exit: 0
+stdout:
+{"matches":[],"total":0,"truncated":false}
+
+stderr:
+no search matches for "absent_query"

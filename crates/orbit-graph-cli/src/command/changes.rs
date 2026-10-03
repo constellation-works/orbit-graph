@@ -157,6 +157,11 @@ pub(crate) fn is_usage_error(error: &AnalysisError) -> bool {
 pub(crate) fn output(document: Value) -> CommandOutput {
     let symbols = document["symbols"].as_array().cloned().unwrap_or_default();
     let tests = document["tests"].as_array().cloned().unwrap_or_default();
+    let comparison = format!(
+        "{}..{}",
+        display_value(&document["comparison"]["base"]["requested_ref"]),
+        display_value(&document["comparison"]["head"]["requested_ref"])
+    );
 
     let mut symbol_table = TableView::new(vec![
         Column::fixed("status"),
@@ -237,9 +242,21 @@ pub(crate) fn output(document: Value) -> CommandOutput {
     let mut output = CommandOutput::with_view(
         document,
         View::Blocks(vec![
-            ViewBlock::table(symbol_table.with_empty_message("no changed symbols were analysed")),
+            ViewBlock::table(
+                symbol_table
+                    .with_plain_record_type("changed_symbol")
+                    .with_empty_message(format!(
+                        "no changed symbols were analysed for {comparison:?}"
+                    )),
+            ),
             ViewBlock::text(""),
-            ViewBlock::table(test_table.with_empty_message("no candidate tests were found")),
+            ViewBlock::table(
+                test_table
+                    .with_plain_record_type("candidate_test")
+                    .with_empty_message(format!(
+                        "no candidate tests were found for {comparison:?}"
+                    )),
+            ),
         ]),
     )
     .with_ndjson_records(records);

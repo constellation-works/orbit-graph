@@ -43,6 +43,8 @@ impl ViewBlock {
 pub struct CommandOutput {
     pub(crate) document: Value,
     pub(crate) view: View,
+    /// Optional source-only projection for plain output.
+    pub(crate) plain_source: Option<String>,
     pub(crate) ndjson_records: Option<Vec<Value>>,
     /// Diagnostics written to stderr after the records, in every mode.
     pub(crate) notices: Vec<String>,
@@ -54,9 +56,18 @@ impl CommandOutput {
         Self {
             document,
             view,
+            plain_source: None,
             ndjson_records: None,
             notices: Vec::new(),
         }
+    }
+
+    /// Use only this source text in plain mode, preserving its layout and
+    /// final newline while escaping terminal controls.
+    #[must_use]
+    pub fn with_plain_source(mut self, source: String) -> Self {
+        self.plain_source = Some(source);
+        self
     }
 
     /// Define the complete values that become NDJSON records.

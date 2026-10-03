@@ -52,6 +52,14 @@ fn emit_records(
     stdout: &mut dyn Write,
     stderr: &mut dyn Write,
 ) -> Result<(), CliError> {
+    if sink.mode() == OutputMode::Plain
+        && let Some(source) = &output.plain_source
+    {
+        stdout
+            .write_all(escape_text(source).as_bytes())
+            .map_err(CliError::Stdout)?;
+        return stdout.flush().map_err(CliError::Stdout);
+    }
     match sink.mode() {
         OutputMode::Json => write_json(stdout, &output.document, sink.is_tty()),
         OutputMode::Ndjson => {
@@ -80,6 +88,9 @@ fn emit_blocks(
     for block in blocks {
         match block {
             ViewBlock::Text(text) => {
+                if sink.mode() == OutputMode::Plain && text.is_empty() {
+                    continue;
+                }
                 let text = escape_text(text);
                 stdout
                     .write_all(text.as_bytes())

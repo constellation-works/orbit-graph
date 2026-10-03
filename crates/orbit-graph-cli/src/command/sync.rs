@@ -160,7 +160,9 @@ pub(crate) fn output(document: Value) -> CommandOutput {
         display_value(&document["branch"]),
         display_value(&document["database_path"]),
     ]);
-    let mut blocks = vec![ViewBlock::table(table)];
+    let mut blocks = vec![ViewBlock::table(
+        table.with_plain_record_type("sync_summary"),
+    )];
     let failed = entries(&document["failed"]);
     if !failed.is_empty() {
         let mut table = TableView::new(vec![
@@ -175,7 +177,9 @@ pub(crate) fn output(document: Value) -> CommandOutput {
                 display_value(&entry["error_kind"]),
             ]);
         }
-        blocks.push(ViewBlock::table(table));
+        blocks.push(ViewBlock::table(
+            table.with_plain_record_type("sync_failed"),
+        ));
     }
     let skipped = entries(&document["skipped"]);
     if !skipped.is_empty() {
@@ -186,7 +190,9 @@ pub(crate) fn output(document: Value) -> CommandOutput {
                 display_value(&entry["reason"]),
             ]);
         }
-        blocks.push(ViewBlock::table(table));
+        blocks.push(ViewBlock::table(
+            table.with_plain_record_type("sync_skipped"),
+        ));
     }
     let failed_count = failed.len();
     let skipped_count = skipped.len();

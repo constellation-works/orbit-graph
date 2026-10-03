@@ -1,0 +1,5 @@
+exit: 0
+stdout:
+{"metadata":{"file":"src/lib.rs","kind":"function","name":"entry","qualified":"entry","span":{"end":63,"start":29},"truncated":false},"source":"pub fn entry() -> i32 { helper() }","source_bytes":null,"source_encoding":"utf-8"}
+
+stderr:

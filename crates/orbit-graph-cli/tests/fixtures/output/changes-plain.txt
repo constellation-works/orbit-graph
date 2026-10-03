@@ -1,0 +1,9 @@
+exit: 0
+stdout:
+changed_symbol	signature_changed	3	4	2	symbol:src/lib.rs#helper:function
+candidate_test	call_path	same_module	1	tests/test_lib.rs#test_helper
+candidate_test	naming_heuristic	name_only	1	tests/test_lib.rs
+
+stderr:
+Working tree has 1 uncommitted change(s). Snapshots index committed revisions only; uncommitted files are excluded from all evidence.
+Snapshot caching was disabled for this launch.

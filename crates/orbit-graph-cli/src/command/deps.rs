@@ -12,7 +12,7 @@ pub struct DepsCommand {
     selector: String,
 }
 
-pub(crate) fn output(document: Value) -> CommandOutput {
+pub(crate) fn output(document: Value, query: &str) -> CommandOutput {
     let scope = super::display_value(&document["scope"]);
     let imports = document["imports"].as_array().cloned().unwrap_or_default();
     let mut table = TableView::new(vec![
@@ -40,13 +40,17 @@ pub(crate) fn output(document: Value) -> CommandOutput {
     CommandOutput::with_view(
         document,
         View::Blocks(vec![ViewBlock::table(table.with_empty_message(format!(
-            "no source imports found under {scope}"
+            "no source imports found under {query:?}"
         )))]),
     )
     .with_ndjson_records(records)
 }
 
 impl DepsCommand {
+    pub(crate) fn query(&self) -> &str {
+        &self.selector
+    }
+
     pub(crate) fn run(&self, context: &CommandContext) -> Result<serde_json::Value, CliError> {
         // Input is validated before the index is opened.
         let selector = self.selector.parse::<Selector>()?;

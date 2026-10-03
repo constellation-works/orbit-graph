@@ -1,0 +1,6 @@
+exit: 0
+stdout:
+symbol	helper	src/lib.rs	1
+
+stderr:
+showing 1 of more than 1 search matches; raise --limit to see more

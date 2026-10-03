@@ -213,6 +213,27 @@ fn real_binary_indexes_and_queries_a_fixture() {
 }
 
 #[test]
+fn redirected_show_emits_only_the_exact_source_slice() {
+    let fixture = fixture_repository();
+    run_json(fixture.path(), ["sync", "--full"]);
+    let selector = "symbol:src/lib.rs#entry:function";
+    let document = run_json(fixture.path(), ["show", selector]);
+    let output = run_with_env(fixture.path(), ["show", selector], &[]);
+    assert!(output.status.success());
+    assert!(output.stderr.is_empty());
+    assert_eq!(
+        output.stdout,
+        document["source"].as_str().expect("source").as_bytes()
+    );
+    let output = run_with_env(fixture.path(), ["show", selector, "--max-bytes", "0"], &[]);
+    assert!(output.status.success());
+    assert!(
+        output.stdout.is_empty(),
+        "metadata-only show has no plain source"
+    );
+}
+
+#[test]
 fn real_binary_scopes_overview_and_deps_to_literal_directory_paths() {
     let fixture = fixture_repository();
     for (path, contents) in [
@@ -1637,16 +1658,17 @@ fn real_binary_renders_recommendation_and_index_views_with_complete_record_bound
         .split('\t')
         .map(str::to_owned)
         .collect::<Vec<_>>();
-    // Counts and duration first, then the branch and database written.
-    assert_eq!(sync_fields.len(), 8, "{sync_fields:?}");
+    // The record type precedes counts, duration, branch and database.
+    assert_eq!(sync_fields.len(), 9, "{sync_fields:?}");
+    assert_eq!(sync_fields[0], "sync_summary");
     assert!(
-        sync_fields[..6]
+        sync_fields[1..7]
             .iter()
             .all(|field| field.parse::<u128>().is_ok()),
         "{sync_fields:?}"
     );
-    assert_eq!(sync_fields[6], "main");
-    assert!(sync_fields[7].ends_with(".db"), "{sync_fields:?}");
+    assert_eq!(sync_fields[7], "main");
+    assert!(sync_fields[8].ends_with(".db"), "{sync_fields:?}");
     let sync_ndjson = run(fixture.path(), ["sync", "--format", "ndjson"]);
     let sync_ndjson = parse_ndjson(&sync_ndjson.stdout);
     assert_eq!(sync_ndjson.len(), 1);
@@ -3962,7 +3984,16 @@ fn real_binary_live_evaluation_excludes_held_out_and_later_deliveries() {
         "{}",
         String::from_utf8_lossy(&human.stderr)
     );
-    assert!(String::from_utf8_lossy(&human.stdout).contains("squared_0.5"));
+    let human = String::from_utf8_lossy(&human.stdout);
+    assert!(human.contains("squared_0.5"));
+    for record_type in ["live_git_context", "live_git_metric", "live_git_case"] {
+        assert!(
+            human
+                .lines()
+                .any(|line| line.starts_with(&format!("{record_type}\t"))),
+            "missing plain record type {record_type}"
+        );
+    }
 }
 
 fn run_git<const N: usize>(cwd: &Path, args: [&str; N]) {
