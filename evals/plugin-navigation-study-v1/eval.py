@@ -17,7 +17,7 @@ import sys
 sys.dont_write_bytecode = True
 ROOT = Path(__file__).resolve().parent
 REPO = ROOT.parents[1]
-LOCK_SHA256 = "9b8ac285facf88fd15a88fbcf7cf049836338784e358fd91c92814496a025508"
+LOCK_SHA256 = "e2f13f906b1d71a98feb538d6181e06e30f69c47aa59726a39ed3086526f4ade"
 
 
 def module(name, path):
@@ -156,6 +156,8 @@ def freeze(data, protocol, lock, runtime, inspection, export_dir, destination):
                            'provider_binary_sha256', 'harness', 'baseline_tool_versions',
                            'resource_limits', 'binary_paths', 'approval_reference'], 'runtime')
     require(runtime['schema_version'] == 1 and runtime['study_kind'] in ('agent', 'test-only'), 'runtime kind')
+    # Offline preparation accepts an explicitly pending approval reference.
+    # Recording/fixing runtime pins never authorizes a provider or source transfer.
     for key in ('operator', 'frozen_at', 'approval_reference'):
         source.text(runtime[key], key)
     require(re.fullmatch(r'\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ', runtime['frozen_at']), 'freeze timestamp')
@@ -307,7 +309,7 @@ def answer_metrics(answer, case, files, support):
                 require(not prefix or prefix == module_parts or prefix == ['crate'] + module_parts, 'support module qualification differs from source file')
                 require(review['identity_evidence'] and any(e['file']==declaration['file'] and
                         e['line']<=declaration['line']<=e['end_line'] for e in review['identity_evidence']), 'support identity lacks source context')
-                # Owner/module identity and relevance are explicitly human-reviewed, not inferred by regex.
+                # Attributed agent or human reviewers judge owner/module identity and relevance.
                 if review['accepted']:
                     identity = dict(selector=item, **declaration)
         if identity:
@@ -354,13 +356,13 @@ def audited(audit, episode, case):
 def review_packets(bundle, data):
     cases = {c['id']:c for c in data['cases']}
     # No arm, tools, timings, status label, or ready-made pass judgments in review packets.
-    return dict(schema_version=1, instructions='Review answer and source; author judgments. Packet IDs are hashes, not arm labels. Tool references in prose can still unblind.',
+    return dict(schema_version=1, instructions='An attributed reviewer/operator (agent or human) reviews answer and source and authors judgments. Record identity, custody and blinding honestly. Packet IDs are hashes, not arm labels. Tool references in prose can still unblind.',
                 packets=[dict(packet_id=a['artifact_sha256'],case_id=a['request']['case_id'],
                               answer=a['answer'],truth=cases[a['request']['case_id']]['truth'])
                          for a in sorted(bundle['episodes'], key=lambda a:a['artifact_sha256']) if a['status']=='ok'])
 
 
-def summarize(rows, kind, protocol):
+def summarize(rows, kind, protocol, replay):
     groups = {}
     for split in ('all','development','held-out'):
         for arm in ('baseline','graph'):
@@ -393,7 +395,11 @@ def summarize(rows, kind, protocol):
                           wall_delta_ms=g['timing']['wall_ms']-b['timing']['wall_ms'] if both else None,
                           baseline_over_graph=b['timing']['wall_ms']/g['timing']['wall_ms'] if both and g['timing']['wall_ms'] else None))
     held_graph = [r for r in rows if r['arm']=='graph' and r['split']=='held-out']
-    eligible = (kind=='agent' and groups['held-out/graph']['correct']>=groups['held-out/baseline']['correct']
+    # The delivered strict replay verifies the whole cohort, including baseline/development.
+    # Failed cohorts remain scored above; their apparent gains cannot qualify a follow-up.
+    verified = (replay.get('containment_verified') is True
+                and replay.get('episodes') == len(protocol['order']) == len(rows))
+    eligible = (kind=='agent' and verified and groups['held-out/graph']['correct']>=groups['held-out/baseline']['correct']
                 and any(p['correct_delta']>0 and p['case_id'] in {r['case_id'] for r in held_graph} for p in pairs)
                 and all(r['status']=='ok' and not r['quality']['unsupported'] for r in held_graph))
     return dict(schema_version=1,study_kind=kind,effectiveness_evidence=kind=='agent',episodes=rows,
@@ -432,7 +438,7 @@ def score(data, protocol, trees, bundle, audits):
                          successful_graph_calls=sum(c['status']=='ok' for c in graph_calls),
                          timing=a['timing'],setup_output_bytes=a['setup_output_bytes'],
                          output_bytes=a['output_bytes'],usage=observed_usage(a)))
-    return summarize(rows,bundle['study_kind'],protocol)
+    return summarize(rows,bundle['study_kind'],protocol,bundle['replay'])
 
 
 def main():
