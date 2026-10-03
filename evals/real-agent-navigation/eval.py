@@ -314,23 +314,38 @@ RAW = ["schema_version", "kind", "runner_version", "run_id", "request", "request
        "started_at_unix", "model", "provider", "tool_versions", "inputs", "snapshot", "isolation",
        "timing", "status", "error", "answer", "final_output", "final_output_truncated", "final_source",
        "calls", "calls_dropped", "output_bytes", "usage", "usage_raw", "transcript", "broker",
-       "cleanup", "files", "limitations", "artifact_sha256"]
+       "cleanup", "files", "redactions", "limitations", "artifact_sha256"]
+# Read compatibility for the exact shape accepted by the original adapter.
+# A missing aggregate count remains absent in raw evidence; never infer zero.
+LEGACY_RAW = [field for field in RAW if field != "redactions"]
+CAPTURE_FILES = ["provider.jsonl", "provider-stderr.txt", "broker-calls.jsonl",
+                 "final-message.txt", "probe.json", "preflight.json"]
 
 
 def raw_record(directory):
     directory = Path(directory).resolve(strict=True)
     raw = load(directory / "episode.json")
-    shape(raw, RAW, "raw episode; runner contract adaptation must be explicit")
+    shape(raw, RAW if "redactions" in raw else LEGACY_RAW,
+          "raw episode; runner contract adaptation must be explicit")
     require(raw["schema_version"] == 1 and raw["kind"] == "agent-eval-raw-episode", "raw version/kind")
     check_seal(raw, "artifact_sha256")
     require(raw["request_digest"] == digest(raw["request"]), "raw request digest")
-    require(set(raw["files"]) == {"provider.jsonl", "provider-stderr.txt", "broker-calls.jsonl",
-                                  "final-message.txt", "probe.json", "preflight.json"}, "capture file set")
+    if "redactions" in raw:
+        # This counts replacements in episode.json, not in the six capture files.
+        integer(raw["redactions"], "raw redactions")
+    shape(raw["files"], CAPTURE_FILES, "capture file set")
     for name, info in raw["files"].items():
+        shape(info, ["bytes", "sha256", "redactions", "truncated"], "capture metadata " + name)
+        integer(info["bytes"], "capture bytes " + name, MAX_JSON)
+        integer(info["redactions"], "capture redactions " + name)
+        require(type(info["truncated"]) is bool, "capture truncated: expected boolean for " + name)
+        require(isinstance(info["sha256"], str) and re.fullmatch(r"[0-9a-f]{64}", info["sha256"]) is not None,
+                "capture sha256: expected lowercase SHA-256 for " + name)
         path = directory / name
         require(not path.is_symlink() and path.is_file() and path.stat().st_size <= MAX_JSON,
                 "unsafe/oversized captured artifact")
         require(hashlib.sha256(path.read_bytes()).hexdigest() == info["sha256"], "capture hash mismatch")
+        require(info["bytes"] == path.stat().st_size, "capture byte mismatch")
     shape(raw["inputs"], ["head", "base"], "raw inputs")
     for info in raw["inputs"].values():
         shape(info, ["content_revision", "files", "bytes"], "raw input tree")
@@ -342,9 +357,6 @@ def raw_record(directory):
                              "tools_listed", "refused_tool_names", "inventory", "unbrokered", "graph_state_after"], "raw isolation")
     shape(raw["snapshot"], ["base_commit", "head_commit", "base_tree", "head_tree", "commit_count", "commit_epoch", "work_tree_revision"], "raw snapshot")
     shape(raw["provider"], ["binary_sha256", "argv", "env_names", "exit", "thread_id"], "raw provider")
-    for name, info in raw["files"].items():
-        shape(info, ["bytes", "sha256", "redactions", "truncated"], "capture metadata")
-        require(info["bytes"] == (directory / name).stat().st_size, "capture byte mismatch")
     record = {k: raw[k] for k in PUBLIC if k not in {"isolation", "wall_ms", "record_sha256"}}
     record["isolation"] = {k: raw["isolation"][k] for k in
                            ("repository_id", "cache_id", "truth_inaccessible", "cold_start")}

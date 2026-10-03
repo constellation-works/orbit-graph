@@ -149,7 +149,31 @@ Repeat `--raw` for **all sixteen** actual directories. That two-directory exampl
 only demonstrates adapter syntax; scoring it is refused. Failed, invalid and
 timeout records are retained, with null answers and the real error code/message.
 Do not edit or replace runner failures. The raw runner schema is checked strictly;
-new fields need a reviewed adapter change, not silent dropping. Captured content
+new fields need a reviewed adapter change, not silent dropping. The supported
+schema-1 confined-runner shape includes top-level `redactions`: the number of
+string replacements inside `episode.json` before sealing. Each of the six capture
+files independently reports exactly `bytes`, `sha256`, `redactions`, and
+`truncated`. Its redaction count describes replacements in that file, not in the
+episode object; the top-level count is **not their sum**. Counts must be integers
+from 0 through 10^12 (booleans, nulls, strings and floats are refused). File bytes
+must be an integer from 0 through 64 MiB matching the captured file, hashes must
+be lowercase SHA-256 matching its bytes, and truncation flags must be booleans.
+These checks precede neutral-record adaptation and run again during scoring.
+
+For read compatibility, the exact older adapter shape without top-level
+`redactions` is also supported. That absence stays absent in the sealed raw
+evidence; no zero or inferred aggregate is inserted. Per-file metadata is still
+mandatory and validated in both shapes. Unknown fields and partial metadata are
+refused, and seals and file hashes are always checked. Redaction metadata stays
+in the original raw evidence, bound by each evidence reference's
+`artifact_sha256`; the neutral public record schema is unchanged. Adaptation
+never rewrites, normalizes or reseals the captures. A later evaluator correction
+must use a fresh output named for its evaluator revision/hash, retain the original
+failed attempt, and leave corpus, lock, requests and source views unchanged.
+Semantic reviews must be independently authored against pinned source and bound
+to the resulting exact record hashes before a new score is produced.
+
+Captured content
 hashes bind raw files to records but cannot distinguish fabricated data from an
 honest operator's captures. Audit provenance and operator custody are required.
 `--study-kind test-only` is mandatory for fake fixtures; they can exercise scoring
