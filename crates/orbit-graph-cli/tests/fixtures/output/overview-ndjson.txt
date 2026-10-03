@@ -1,0 +1,7 @@
+exit: 0
+stdout:
+{"context":{"format":"full","languages":{"rust":2},"scope":null,"symbol_kinds":{"function":3,"test":1},"total_files":2,"total_symbols":4},"record_type":"overview_context"}
+{"file":{"lang":"rust","path":"src/lib.rs","symbol_count":3,"symbols":[{"kind":"function","name":"helper","qualified":"helper"},{"kind":"function","name":"entry","qualified":"entry"},{"kind":"test","name":"helper_test","qualified":"helper_test"}]},"record_type":"overview_file"}
+{"file":{"lang":"rust","path":"tests/test_lib.rs","symbol_count":1,"symbols":[{"kind":"function","name":"test_helper","qualified":"test_helper"}]},"record_type":"overview_file"}
+
+stderr:

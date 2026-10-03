@@ -1,0 +1,5 @@
+exit: 0
+stdout:
+{"matches":[{"kind":"symbol","line":1,"name":"helper","path":"src/lib.rs"},{"kind":"symbol","line":4,"name":"helper_test","path":"src/lib.rs"},{"kind":"symbol","line":1,"name":"test_helper","path":"tests/test_lib.rs"}],"total":3,"truncated":false}
+
+stderr:

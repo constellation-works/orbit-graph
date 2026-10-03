@@ -107,6 +107,11 @@ fn empty_query_diagnostics_reach_stderr_in_every_output_mode() {
         assert!(plain.status.success(), "{command:?}");
         assert!(plain.stdout.is_empty(), "{command:?}");
         assert!(!plain.stderr.is_empty(), "{command:?}");
+        assert!(
+            String::from_utf8_lossy(&plain.stderr).contains(command[1]),
+            "empty diagnostic must name the query: {command:?}: {}",
+            String::from_utf8_lossy(&plain.stderr)
+        );
         for mode in ["table", "json", "ndjson"] {
             let output = run(
                 fixture.path(),
@@ -678,7 +683,14 @@ fn absent_values_are_null_rather_than_omitted() {
     assert!(bytes["source_bytes"].is_array(), "{bytes}");
     let human = run(fixture.path(), &["show", "file:src/blob.rs"]);
     assert!(human.status.success());
-    assert!(String::from_utf8_lossy(&human.stdout).contains("Source is not UTF-8"));
+    assert!(human.stdout.is_empty(), "plain show emits source only");
+    assert!(String::from_utf8_lossy(&human.stderr).contains("source_bytes"));
+    let table = run(
+        fixture.path(),
+        &["show", "file:src/blob.rs", "--format", "table"],
+    );
+    assert!(table.status.success());
+    assert!(String::from_utf8_lossy(&table.stdout).contains("Source is not UTF-8"));
 }
 
 #[test]

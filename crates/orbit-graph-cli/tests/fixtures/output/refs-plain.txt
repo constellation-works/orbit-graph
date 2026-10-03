@@ -1,0 +1,7 @@
+exit: 0
+stdout:
+reference	symbol:src/lib.rs#entry:function	src/lib.rs	2	call	exact	helper	pub fn entry() -> i32 { helper() }
+reference	symbol:src/lib.rs#helper_test:test	src/lib.rs	4	call	exact	helper	fn helper_test() { let value = helper(); assert_eq!(value, 1); }
+reference	symbol:tests/test_lib.rs#test_helper:function	tests/test_lib.rs	1	call	same_module	helper	fn test_helper() { helper(); }
+
+stderr:

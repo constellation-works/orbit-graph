@@ -12,7 +12,7 @@ pub struct ImplementorsCommand {
     selector: String,
 }
 
-pub(crate) fn output(document: Value) -> CommandOutput {
+pub(crate) fn output(document: Value, query: &str) -> CommandOutput {
     let trait_name = super::display_value(&document["trait_name"]);
     let implementors = document["implementors"]
         .as_array()
@@ -44,14 +44,18 @@ pub(crate) fn output(document: Value) -> CommandOutput {
     .collect();
     CommandOutput::with_view(
         document,
-        View::Blocks(vec![ViewBlock::table(table.with_empty_message(format!(
-            "no implementors found for {trait_name}"
-        )))]),
+        View::Blocks(vec![ViewBlock::table(
+            table.with_empty_message(format!("no implementors found for {query:?}")),
+        )]),
     )
     .with_ndjson_records(records)
 }
 
 impl ImplementorsCommand {
+    pub(crate) fn query(&self) -> &str {
+        &self.selector
+    }
+
     pub(crate) fn run(&self, context: &CommandContext) -> Result<serde_json::Value, CliError> {
         // Input is validated before the index is opened.
         let selector = self.selector.parse::<Selector>()?;

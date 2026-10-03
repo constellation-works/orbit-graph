@@ -1,0 +1,8 @@
+exit: 0
+stdout:
+{"context":{"fallback_used":false,"skipped_low_confidence":0,"target":{"name":"helper","qualified":"helper"}},"record_type":"refs_context"}
+{"record_type":"reference","reference":{"confidence":"exact","file":"src/lib.rs","from_selector":"symbol:src/lib.rs#entry:function","kind":"call","line":2,"snippet":"pub fn entry() -> i32 { helper() }"}}
+{"record_type":"reference","reference":{"confidence":"exact","file":"src/lib.rs","from_selector":"symbol:src/lib.rs#helper_test:test","kind":"call","line":4,"snippet":"fn helper_test() { let value = helper(); assert_eq!(value, 1); }"}}
+{"record_type":"reference","reference":{"confidence":"same_module","file":"tests/test_lib.rs","from_selector":"symbol:tests/test_lib.rs#test_helper:function","kind":"call","line":1,"snippet":"fn test_helper() { helper(); }"}}
+
+stderr:

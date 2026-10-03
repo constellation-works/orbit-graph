@@ -1,0 +1,6 @@
+exit: 0
+stdout:
+{"applied":false,"deleted":[],"graph_dir":"<ROOT>/.orbit-graph","kept":[],"would_delete":[{"detail":null,"path":"<ROOT>/.orbit-graph/main.1.db","reason":"older_extractor_version"}]}
+
+stderr:
+dry run: nothing was deleted; pass `--confirm` to delete the 1 listed file(s)

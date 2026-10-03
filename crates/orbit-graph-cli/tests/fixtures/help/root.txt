@@ -5,9 +5,9 @@ Index and query a source-code graph
 Usage: orbit-graph [OPTIONS] <COMMAND>
 
 Explore code:
-  overview    Summarize indexed files and symbols
-  search      Search indexed symbols, strings, and configuration keys
-  show        Show source and metadata for a graph selector
+  overview  Summarize indexed files and symbols
+  search    Search indexed symbols, strings, and configuration keys
+  show      Show source and metadata for a graph selector
 
 Follow relationships:
   refs          List references to a symbol
@@ -18,7 +18,7 @@ Follow relationships:
   impact        Traverse the bounded graph around a selector
 
 Review changes:
-  changes  Changed symbols, their callers and entry points, and candidate tests
+  changes  Changed symbols between two revisions, or in the working tree, with their callers, entry points and labelled candidate tests
 
 Recommendations and history:
   recommend  Recommend current change destinations from historical evidence
@@ -32,7 +32,7 @@ Index and utilities:
   version  Print crate, extractor, and store schema versions
 
 Other:
-  help     Print this message or the help of the given subcommand(s)
+  help  Print this message or the help of the given subcommand(s)
 
 Options:
       --format <MODE>
@@ -55,7 +55,8 @@ Run `orbit-graph <COMMAND> --help` for command-specific options.
 Output:
   On a terminal, results are a headed table. When stdout is piped or
   redirected they are headerless tab-separated rows, one per record, in the
-  table's column order. Pass `--format table` for a header, or `--format json`
+  table's column order, with a record type first for multi-table commands.
+  Plain show emits source only. Pass `--format table` for a header, or `--format json`
   or `--format ndjson` for named fields (the stable machine contract).
 
 Examples:

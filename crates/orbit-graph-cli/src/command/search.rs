@@ -38,7 +38,7 @@ fn parse_limit(raw: &str) -> Result<usize, String> {
     }
 }
 
-pub(crate) fn output(document: Value) -> CommandOutput {
+pub(crate) fn output(document: Value, query: &str) -> CommandOutput {
     let matches = document["matches"].as_array().cloned().unwrap_or_default();
     let mut table = TableView::new(vec![
         Column::fixed("kind"),
@@ -65,7 +65,7 @@ pub(crate) fn output(document: Value) -> CommandOutput {
     let mut output = CommandOutput::with_view(
         document,
         View::Blocks(vec![ViewBlock::table(
-            table.with_empty_message("no search matches"),
+            table.with_empty_message(format!("no search matches for {query:?}")),
         )]),
     )
     .with_ndjson_records(matches);
@@ -76,6 +76,10 @@ pub(crate) fn output(document: Value) -> CommandOutput {
 }
 
 impl SearchCommand {
+    pub(crate) fn query(&self) -> &str {
+        &self.query
+    }
+
     pub(crate) fn run(&self, context: &CommandContext) -> Result<serde_json::Value, CliError> {
         let graph = context.open_graph()?;
         let query = SearchQuery {

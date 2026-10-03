@@ -1,5 +1,5 @@
 .DEFAULT_GOAL := help
-.PHONY: help build release run dev check test fmt fmt-check clippy doc tree ci ci-fast ci-lint standards-check structure agent-evaluation-check deny install uninstall clean watch plugin-bundle plugin-check
+.PHONY: help build release run dev check test fmt fmt-check clippy doc tree ci ci-fast ci-lint standards-check structure deny install uninstall clean watch plugin-bundle plugin-check goldens
 
 CARGO ?= cargo
 BINARY := orbit-graph
@@ -32,6 +32,7 @@ help:
 	@echo "  make dev ARGS=... Build and run binary directly"
 	@echo "  make check        Type-check workspace"
 	@echo "  make test         Run all tests (requires cargo-nextest)"
+	@echo "  make goldens      Check real-executable help and output goldens"
 	@echo "  make fmt          Format code"
 	@echo "  make fmt-check    Check formatting"
 	@echo "  make clippy       Lint all targets (deny warnings)"
@@ -78,6 +79,10 @@ test:
 	fi
 	$(CARGO) nextest run --workspace --locked --no-tests=fail
 	$(CARGO) test --workspace --doc --locked
+
+# Explicit updates use UPDATE_GOLDENS=1; normal CI already includes this suite.
+goldens:
+	$(CARGO) nextest run -p $(BINARY_PACKAGE) --test help_goldens --locked --no-tests=fail
 
 fmt:
 	$(CARGO) fmt --all

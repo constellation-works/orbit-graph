@@ -110,8 +110,12 @@ pub(crate) fn output(document: Value) -> CommandOutput {
         ]);
     }
     let view = View::Blocks(vec![
-        ViewBlock::table(summary),
-        ViewBlock::table(paths.with_empty_message("no graph databases besides the active one")),
+        ViewBlock::table(summary.with_plain_record_type("clean_summary")),
+        ViewBlock::table(
+            paths
+                .with_plain_record_type("clean_database")
+                .with_empty_message("no graph databases besides the active one"),
+        ),
     ]);
     let mut records = vec![json!({
         "record_type": "clean_context",

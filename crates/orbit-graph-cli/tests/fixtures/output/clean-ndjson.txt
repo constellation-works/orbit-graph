@@ -1,0 +1,7 @@
+exit: 0
+stdout:
+{"context":{"applied":false,"graph_dir":"<ROOT>/.orbit-graph"},"record_type":"clean_context"}
+{"path":"<ROOT>/.orbit-graph/main.1.db","reason":"older_extractor_version","record_type":"would_delete_database"}
+
+stderr:
+dry run: nothing was deleted; pass `--confirm` to delete the 1 listed file(s)

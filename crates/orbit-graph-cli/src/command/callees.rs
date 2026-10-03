@@ -19,7 +19,7 @@ pub struct CalleesCommand {
     include_unresolved: bool,
 }
 
-pub(crate) fn output(document: Value) -> CommandOutput {
+pub(crate) fn output(document: Value, symbol: &str) -> CommandOutput {
     let callees = document["callees"].as_array().cloned().unwrap_or_default();
     let mut table = TableView::new(vec![
         Column::text("target"),
@@ -42,9 +42,9 @@ pub(crate) fn output(document: Value) -> CommandOutput {
     }
     let hidden = document["hidden_unresolved"].as_u64().unwrap_or(0);
     let empty_message = if hidden == 0 {
-        "symbol has no outbound calls".to_owned()
+        format!("symbol {symbol:?} has no outbound calls")
     } else {
-        "symbol has no outbound calls with an indexed definition".to_owned()
+        format!("symbol {symbol:?} has no outbound calls with an indexed definition")
     };
     let output = CommandOutput::with_view(
         document,
@@ -64,6 +64,10 @@ pub(crate) fn output(document: Value) -> CommandOutput {
 }
 
 impl CalleesCommand {
+    pub(crate) fn symbol(&self) -> &str {
+        &self.symbol
+    }
+
     pub(crate) fn run(&self, context: &CommandContext) -> Result<serde_json::Value, CliError> {
         // Input is validated before the index is opened.
         let selector = self.symbol.parse::<Selector>()?;

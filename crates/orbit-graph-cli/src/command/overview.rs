@@ -18,6 +18,7 @@ pub struct OverviewCommand {
 }
 
 pub(crate) fn output(document: Value) -> CommandOutput {
+    let scope = document["scope"].as_str().unwrap_or("whole worktree");
     let mut summary = TableView::new(vec![
         Column::number("files"),
         Column::number("symbols"),
@@ -74,14 +75,28 @@ pub(crate) fn output(document: Value) -> CommandOutput {
         }
     }
     let mut blocks = vec![
-        ViewBlock::table(summary),
-        ViewBlock::table(languages.with_empty_message("no indexed languages in scope")),
-        ViewBlock::table(kinds.with_empty_message("no indexed symbol kinds in scope")),
-        ViewBlock::table(file_table.with_empty_message("no indexed files in scope")),
+        ViewBlock::table(summary.with_plain_record_type("overview_summary")),
+        ViewBlock::table(
+            languages
+                .with_plain_record_type("overview_language")
+                .with_empty_message(format!("no indexed languages in scope {scope:?}")),
+        ),
+        ViewBlock::table(
+            kinds
+                .with_plain_record_type("overview_symbol_kind")
+                .with_empty_message(format!("no indexed symbol kinds in scope {scope:?}")),
+        ),
+        ViewBlock::table(
+            file_table
+                .with_plain_record_type("overview_file")
+                .with_empty_message(format!("no indexed files in scope {scope:?}")),
+        ),
     ];
     if document["format"] == "full" {
         blocks.push(ViewBlock::table(
-            symbol_table.with_empty_message("no indexed symbols in scope"),
+            symbol_table
+                .with_plain_record_type("overview_symbol")
+                .with_empty_message(format!("no indexed symbols in scope {scope:?}")),
         ));
     }
 

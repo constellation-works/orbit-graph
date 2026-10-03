@@ -1,0 +1,5 @@
+exit: 0
+stdout:
+{"metadata":{"file":"src/lib.rs","kind":"file","name":"src/lib.rs","qualified":null,"span":{"end":137,"start":0},"truncated":true},"source":"","source_bytes":null,"source_encoding":"utf-8"}
+
+stderr:

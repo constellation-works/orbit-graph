@@ -25,7 +25,7 @@ pub struct ImpactCommand {
     direction: Option<DirectionArg>,
 }
 
-pub(crate) fn output(document: Value) -> CommandOutput {
+pub(crate) fn output(document: Value, selector: &str) -> CommandOutput {
     let touched = document["touched"].as_array().cloned().unwrap_or_default();
     let fallback_touched = document["fallback"]["touched"]
         .as_array()
@@ -76,9 +76,9 @@ pub(crate) fn output(document: Value) -> CommandOutput {
     );
     let mut output = CommandOutput::with_view(
         document,
-        View::Blocks(vec![ViewBlock::table(table.with_empty_message(
-            "selector has no related nodes at this confidence",
-        ))]),
+        View::Blocks(vec![ViewBlock::table(table.with_empty_message(format!(
+            "selector {selector:?} has no related nodes at this confidence"
+        )))]),
     )
     .with_ndjson_records(records);
     if let Some(notice) = notice {
@@ -108,6 +108,10 @@ fn location(entry: &Value) -> String {
 }
 
 impl ImpactCommand {
+    pub(crate) fn selector(&self) -> &str {
+        &self.selector
+    }
+
     pub(crate) fn run(&self, context: &CommandContext) -> Result<serde_json::Value, CliError> {
         // Input is validated before the index is opened.
         let selector = self.selector.parse::<Selector>()?;

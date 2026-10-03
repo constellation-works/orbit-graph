@@ -21,7 +21,7 @@ pub struct TraceCommand {
     confidence: ConfidenceArg,
 }
 
-pub(crate) fn output(document: Value) -> CommandOutput {
+pub(crate) fn output(document: Value, command_name: &str) -> CommandOutput {
     let mut table = TableView::new(vec![
         Column::number("depth"),
         Column::text("name"),
@@ -48,9 +48,9 @@ pub(crate) fn output(document: Value) -> CommandOutput {
     }
     let mut output = CommandOutput::with_view(
         document,
-        View::Blocks(vec![ViewBlock::table(
-            table.with_empty_message("command handler was not found in the graph"),
-        )]),
+        View::Blocks(vec![ViewBlock::table(table.with_empty_message(format!(
+            "command handler {command_name:?} was not found in the graph"
+        )))]),
     )
     .with_ndjson_records(records);
     if let Some(notice) = notice {
@@ -78,6 +78,10 @@ fn append_trace_rows(table: &mut TableView, node: &Value, depth: usize, ancestor
 }
 
 impl TraceCommand {
+    pub(crate) fn command_name(&self) -> &str {
+        &self.command_name
+    }
+
     pub(crate) fn run(&self, context: &CommandContext) -> Result<serde_json::Value, CliError> {
         let graph = context.open_graph()?;
         json_value(graph.trace(

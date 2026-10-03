@@ -151,9 +151,17 @@ pub(crate) fn output(document: Value) -> CommandOutput {
     }
 
     let view = View::Blocks(vec![
-        ViewBlock::table(coverage_table),
-        ViewBlock::table(metrics_table.with_empty_message("no evaluation metrics")),
-        ViewBlock::table(cases_table.with_empty_message("no evaluation cases")),
+        ViewBlock::table(coverage_table.with_plain_record_type("evaluation_coverage")),
+        ViewBlock::table(
+            metrics_table
+                .with_plain_record_type("evaluation_metric")
+                .with_empty_message("no evaluation metrics"),
+        ),
+        ViewBlock::table(
+            cases_table
+                .with_plain_record_type("evaluation_case")
+                .with_empty_message("no evaluation cases"),
+        ),
     ]);
     let mut context = document.clone();
     let (metrics, cases) = context.as_object_mut().map_or_else(
@@ -262,9 +270,17 @@ fn live_output(document: Value) -> CommandOutput {
     }
 
     let view = View::Blocks(vec![
-        ViewBlock::table(context_table),
-        ViewBlock::table(metrics_table.with_empty_message("no live evaluation metrics")),
-        ViewBlock::table(cases_table.with_empty_message("no held-out commits")),
+        ViewBlock::table(context_table.with_plain_record_type("live_git_context")),
+        ViewBlock::table(
+            metrics_table
+                .with_plain_record_type("live_git_metric")
+                .with_empty_message("no live evaluation metrics"),
+        ),
+        ViewBlock::table(
+            cases_table
+                .with_plain_record_type("live_git_case")
+                .with_empty_message("no held-out commits"),
+        ),
     ]);
     let mut context = document.clone();
     let (cohorts, cases) = context.as_object_mut().map_or_else(

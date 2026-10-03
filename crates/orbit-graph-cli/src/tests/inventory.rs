@@ -26,15 +26,12 @@ fn every_public_argument_has_help() {
             check(child, &format!("{path} {}", child.get_name()));
         }
     }
-    check(
-        &crate::output::install_format_argument(Cli::command()),
-        "orbit-graph",
-    );
+    check(&Cli::parser(), "orbit-graph");
 }
 
 #[test]
 fn every_registered_command_appears_in_the_top_level_help() {
-    let help = Cli::command().render_help().to_string();
+    let help = Cli::parser().render_help().to_string();
     for command in Cli::command()
         .get_subcommands()
         .map(|command| command.get_name())
@@ -97,4 +94,24 @@ fn registered_command_inventory_matches_the_compatibility_matrix() {
         matrix, registered,
         "update the executable compatibility matrix"
     );
+}
+
+#[test]
+fn composed_parser_validates_the_complete_grammar() {
+    Cli::parser().debug_assert();
+}
+
+#[test]
+fn grouped_help_uses_changed_parser_descriptions_and_keeps_new_commands_visible() {
+    let parser = crate::output::install_format_argument(Cli::command())
+        .mut_subcommand("sync", |command| {
+            command.about("A changed parser description")
+        })
+        .subcommand(clap::Command::new("new-command").about("A new command description"));
+    let help = crate::command::grouped_help(parser)
+        .render_help()
+        .to_string();
+    assert!(help.contains("A changed parser description"));
+    assert!(!help.contains("Update or rebuild the source graph index"));
+    assert!(help.contains("new-command  A new command description"));
 }

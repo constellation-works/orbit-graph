@@ -1,0 +1,6 @@
+exit: 0
+stdout:
+{"branch":"main","database_path":"<ROOT>/.orbit-graph/branch~main-e726318bbc3fd75ac8733a7e030cc35b6f44d7ee11a8a845413d4cbf0e06a729.24.db","duration_ms":0,"failed":{"count":0,"entries":[]},"files_changed":2,"files_indexed":2,"files_removed":0,"skipped":{"count":1,"entries":[{"path":"oversize.rs","reason":"oversize"}]}}
+
+stderr:
+note: 1 file(s) larger than the 4 MiB byte cap were skipped; see `skipped` in --format json

@@ -43,9 +43,17 @@ pub(crate) fn output(document: Value) -> CommandOutput {
                  (source_bytes)."
             .to_owned(),
     };
+    let plain_source = document["source"].as_str().unwrap_or_default().to_owned();
     let blocks = vec![ViewBlock::table(metadata), ViewBlock::text(source)];
-    CommandOutput::with_view(document.clone(), View::Blocks(blocks))
-        .with_ndjson_records(vec![document])
+    let unavailable = document["source"].is_null();
+    let output = CommandOutput::with_view(document.clone(), View::Blocks(blocks))
+        .with_plain_source(plain_source)
+        .with_ndjson_records(vec![document]);
+    if unavailable {
+        output.with_notice("source is not UTF-8; use --format json for source_bytes")
+    } else {
+        output
+    }
 }
 
 impl ShowCommand {

@@ -23,7 +23,8 @@ orbit-graph --format json callees 'symbol:src/lib.rs#entry:function'
 ```
 
 The default is deliberately human-oriented: a terminal receives a headed table
-and a redirected command receives lossless, tab-separated plain rows. Scripts
+and a redirected command receives complete, tab-separated plain rows. Multi-table
+commands prefix each row with a record type; plain `show` emits source only. Scripts
 must select the stable machine contract explicitly with `--json` (the same as
 `--format json`, byte for byte); use `--format ndjson` for one complete JSON
 record per line. `--help` remains conventional text help, and a bare
@@ -34,6 +35,34 @@ record per line. `--help` remains conventional text help, and a bare
 - **Modes.** `--format` means the output mode everywhere: `auto` (default),
   `table`, `json`, `ndjson`. `--json` may appear before or after the
   command; combining it with a different `--format` is a usage error (exit 2).
+- **Plain rows.** Redirected output (`auto` off a terminal) has no headers,
+  styling or width truncation. Single-table commands keep their column order.
+  Multi-table commands put a `record_type` value in the first tab-separated
+  field, even when only one table has records:
+
+  | Command | Plain row types |
+  | --- | --- |
+  | `sync` | `sync_summary`, `sync_failed`, `sync_skipped` |
+  | `clean` | `clean_summary`, `clean_database` (action is the next field) |
+  | `overview` | `overview_summary`, `overview_language`, `overview_symbol_kind`, `overview_file`, `overview_symbol` (full detail) |
+  | `changes` | `changed_symbol`, `candidate_test` |
+  | `evaluate` | `evaluation_coverage`, `evaluation_metric`, `evaluation_case` |
+  | `evaluate --live` | `live_git_context`, `live_git_metric`, `live_git_case` |
+
+  Cells escape backslashes, tabs, newlines and terminal controls; each record
+  occupies one line. These prefixes deliberately change the earlier ambiguous
+  multi-table plain layout. Use JSON/NDJSON for the stable named-field contract;
+  their field names, shapes and record types, and plugin responses, are unchanged.
+- **Plain source.** Redirected `show` writes only the returned UTF-8 source
+  slice, with its existing tabs/newlines and no added final newline, metadata
+  row or `Source:` heading. Terminal controls remain escaped. `--max-bytes 0`
+  writes no source. A non-UTF-8 slice requires JSON's `source_bytes`; a diagnostic
+  names that fallback and plain stdout stays empty. `--format table` retains
+  metadata and the source heading.
+- **Empty queries.** A query with no matches succeeds and names the searched
+  value on stderr in every mode. Its plain/table stdout is empty; JSON retains
+  the command's empty list/envelope, and NDJSON retains its existing record
+  contract (including context records where that command defines them).
 - **Absent values are `null`.** A JSON field that has no value (a file's
   `qualified` name, an unused `fallback`, the `scope` of a whole-repository
   overview) is present as `null`, never omitted. `impact` always reports its

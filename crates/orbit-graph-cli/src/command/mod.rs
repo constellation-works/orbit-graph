@@ -8,7 +8,7 @@
 use std::env;
 use std::path::PathBuf;
 
-use clap::{Parser, Subcommand};
+use clap::{CommandFactory, Parser, Subcommand};
 use orbit_graph::{Graph, GraphError, GraphErrorClass, SelectorParseError, SyncPolicy};
 use serde::Serialize;
 use serde_json::Value;
@@ -42,36 +42,7 @@ const TOP_LEVEL_HELP_TEMPLATE: &str = "\
 
 {usage-heading} {usage}
 
-Explore code:
-  overview    Summarize indexed files and symbols
-  search      Search indexed symbols, strings, and configuration keys
-  show        Show source and metadata for a graph selector
-
-Follow relationships:
-  refs          List references to a symbol
-  callees       List outbound calls from a symbol
-  implementors  Find implementations of a trait
-  deps          List source-level imports for a file or directory
-  trace         Trace outbound calls from a discovered CLI command handler
-  impact        Traverse the bounded graph around a selector
-
-Review changes:
-  changes  Changed symbols, their callers and entry points, and candidate tests
-
-Recommendations and history:
-  recommend  Recommend current change destinations from historical evidence
-  history    Inspect and maintain historical delivery evidence
-  evaluate   Run chronological or live leakage-safe recommendation evaluation
-
-Index and utilities:
-  sync     Update or rebuild the source graph index
-  db-path  Print the current graph database path
-  clean    Report obsolete graph databases; delete them with --confirm
-  version  Print crate, extractor, and store schema versions
-
-Other:
-  help     Print this message or the help of the given subcommand(s)
-
+{command-groups}
 Options:
 {options}
 
@@ -80,7 +51,8 @@ Run `orbit-graph <COMMAND> --help` for command-specific options.
 Output:
   On a terminal, results are a headed table. When stdout is piped or
   redirected they are headerless tab-separated rows, one per record, in the
-  table's column order. Pass `--format table` for a header, or `--format json`
+  table's column order, with a record type first for multi-table commands.
+  Plain show emits source only. Pass `--format table` for a header, or `--format json`
   or `--format ndjson` for named fields (the stable machine contract).
 
 Examples:
@@ -91,17 +63,85 @@ Examples:
 ";
 
 #[derive(Debug, Parser)]
-#[command(
-    name = "orbit-graph",
-    about = "Index and query a source-code graph",
-    help_template = TOP_LEVEL_HELP_TEMPLATE
-)]
+#[command(name = "orbit-graph", about = "Index and query a source-code graph")]
 pub struct Cli {
     #[command(subcommand)]
     pub(crate) command: Command,
 }
 
+/// Group membership is presentation metadata; names and descriptions come
+/// from the assembled parser (STD-01 §R25). New ungrouped commands remain visible.
+pub(crate) fn grouped_help(mut command: clap::Command) -> clap::Command {
+    const GROUPS: &[(&str, &[&str])] = &[
+        ("Explore code", &["overview", "search", "show"]),
+        (
+            "Follow relationships",
+            &["refs", "callees", "implementors", "deps", "trace", "impact"],
+        ),
+        ("Review changes", &["changes"]),
+        (
+            "Recommendations and history",
+            &["recommend", "history", "evaluate"],
+        ),
+        (
+            "Index and utilities",
+            &["sync", "db-path", "clean", "version"],
+        ),
+    ];
+    command.build();
+    let mut groups = String::new();
+    for (heading, names) in GROUPS
+        .iter()
+        .copied()
+        .chain(std::iter::once(("Other", &[][..])))
+    {
+        let children = if heading == "Other" {
+            command
+                .get_subcommands()
+                .filter(|child| {
+                    !GROUPS
+                        .iter()
+                        .any(|(_, names)| names.contains(&child.get_name()))
+                })
+                .collect::<Vec<_>>()
+        } else {
+            names
+                .iter()
+                .filter_map(|name| command.find_subcommand(name))
+                .collect()
+        };
+        let children = children
+            .into_iter()
+            .filter(|child| !child.is_hide_set())
+            .collect::<Vec<_>>();
+        if children.is_empty() {
+            continue;
+        }
+        groups.push_str(&format!("{heading}:\n"));
+        let width = children
+            .iter()
+            .map(|child| child.get_name().len())
+            .max()
+            .unwrap_or(0);
+        for child in children {
+            let about = child
+                .get_about()
+                .map(|about| about.to_string())
+                .unwrap_or_default();
+            groups.push_str(&format!("  {:width$}  {about}\n", child.get_name()));
+        }
+        groups.push('\n');
+    }
+    command.help_template(TOP_LEVEL_HELP_TEMPLATE.replace("{command-groups}\n", &groups))
+}
+
 impl Cli {
+    /// The complete parser used by the executable, including output arguments
+    /// and grouped help derived from the command declarations.
+    pub(crate) fn parser() -> clap::Command {
+        grouped_help(crate::output::install_format_argument(Self::command()))
+    }
+
     /// Run the parsed subcommand and pair its JSON payload with the renderer
     /// the output layer uses for it.
     pub fn run(&self) -> Result<CommandOutput, CliError> {
@@ -142,14 +182,14 @@ impl Command {
     fn output(&self, document: Value) -> CommandOutput {
         match self {
             Self::Overview(_) => overview::output(document),
-            Self::Search(_) => search::output(document),
+            Self::Search(command) => search::output(document, command.query()),
             Self::Show(_) => show::output(document),
-            Self::Refs(_) => refs::output(document),
-            Self::Callees(_) => callees::output(document),
-            Self::Implementors(_) => implementors::output(document),
-            Self::Deps(_) => deps::output(document),
-            Self::Trace(_) => trace::output(document),
-            Self::Impact(_) => impact::output(document),
+            Self::Refs(command) => refs::output(document, command.query()),
+            Self::Callees(command) => callees::output(document, command.symbol()),
+            Self::Implementors(command) => implementors::output(document, command.query()),
+            Self::Deps(command) => deps::output(document, command.query()),
+            Self::Trace(command) => trace::output(document, command.command_name()),
+            Self::Impact(command) => impact::output(document, command.selector()),
             Self::Changes(_) => changes::output(document),
             Self::Recommend(_) => recommend::output(document),
             Self::History(command) => command.output(document),

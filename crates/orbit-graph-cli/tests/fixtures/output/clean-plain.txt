@@ -1,0 +1,7 @@
+exit: 0
+stdout:
+clean_summary	<ROOT>/.orbit-graph	false	0	1
+clean_database	would_delete	older_extractor_version	<ROOT>/.orbit-graph/main.1.db
+
+stderr:
+dry run: nothing was deleted; pass `--confirm` to delete the 1 listed file(s)

@@ -1,0 +1,5 @@
+exit: 2
+stdout:
+
+stderr:
+error: invalid selector `not-a-selector`: selectors must start with `dir:`, `file:`, `symbol:`, `module:`, or `command:`

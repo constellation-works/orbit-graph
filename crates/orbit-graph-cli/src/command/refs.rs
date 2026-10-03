@@ -24,7 +24,7 @@ pub struct RefsCommand {
     kind: Option<RefKindArg>,
 }
 
-pub(crate) fn output(document: Value) -> CommandOutput {
+pub(crate) fn output(document: Value, query: &str) -> CommandOutput {
     let target = document["target"]
         .get("qualified")
         .filter(|value| !value.is_null())
@@ -110,7 +110,7 @@ pub(crate) fn output(document: Value) -> CommandOutput {
     CommandOutput::with_view(
         document,
         View::Blocks(vec![ViewBlock::table(table.with_empty_message(format!(
-            "no references or relations found for {target}"
+            "no references or relations found for {query:?}"
         )))]),
     )
     .with_ndjson_records(records)
@@ -130,6 +130,10 @@ fn push_ref_row(table: &mut TableView, record: &str, entry: &Value, from: &str, 
 }
 
 impl RefsCommand {
+    pub(crate) fn query(&self) -> &str {
+        &self.symbol
+    }
+
     pub(crate) fn run(&self, context: &CommandContext) -> Result<serde_json::Value, CliError> {
         // Input is validated before the index is opened.
         let selector = self.symbol.parse::<Selector>()?;

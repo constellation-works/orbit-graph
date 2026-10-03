@@ -1,0 +1,7 @@
+exit: 0
+stdout:
+symbol	helper	src/lib.rs	1
+symbol	helper_test	src/lib.rs	4
+symbol	test_helper	tests/test_lib.rs	1
+
+stderr:

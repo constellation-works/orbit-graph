@@ -14,7 +14,7 @@ use std::path::Path;
 use std::process::ExitCode;
 use std::time::Duration;
 
-use clap::{CommandFactory, FromArgMatches};
+use clap::FromArgMatches;
 use serde::Serialize;
 use serde_json::{Value, json};
 
@@ -22,7 +22,7 @@ use crate::command::{Cli, CliError};
 use crate::output::json::write_plugin_response;
 use crate::output::{
     OutputSink, emit_error, emit_help, emit_notice, emit_to_process, init_logging,
-    install_format_argument, requested_format_from_args, requested_output,
+    requested_format_from_args, requested_output,
 };
 use crate::plugin::{
     ORBIT_TIMEOUT_ENV, PLUGIN_STATE_ENV, PluginConfig, PluginEnvironment, ToolError,
@@ -99,7 +99,7 @@ fn main() -> ExitCode {
         args.push("--help".into());
     }
     let fallback_format = requested_format_from_args(&args);
-    let matches = match install_format_argument(Cli::command()).try_get_matches_from(args) {
+    let matches = match Cli::parser().try_get_matches_from(args) {
         Ok(matches) => matches,
         Err(error) if error.exit_code() == 0 => {
             emit_help(&error);

@@ -1,0 +1,8 @@
+exit: 0
+stdout:
+
+stderr:
+no changed symbols were analysed for "HEAD..HEAD"
+no candidate tests were found for "HEAD..HEAD"
+Working tree has 1 uncommitted change(s). Snapshots index committed revisions only; uncommitted files are excluded from all evidence.
+Snapshot caching was disabled for this launch.

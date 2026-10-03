@@ -46,6 +46,15 @@ outside an output layer needs a per-site allow-list entry in
 reason and the task that removes it; the change that removes the write
 removes the entry, or the guard fails.
 
+Public CLI help, version JSON and representative JSON/NDJSON/plain outputs
+are byte-exact fixtures captured through the built `orbit-graph` executable.
+Run `make goldens` to check them. An intended output change requires explicit
+regeneration with `UPDATE_GOLDENS=1 make goldens`, then review the fixture diff.
+The normal `make ci` nextest run already includes this suite. Output fixtures
+pin exit status and both streams; only temporary repository roots, sync duration,
+change-report generation time and its three wall-clock timings are normalized.
+Fixed Git trees, identities and timestamps keep commit IDs deterministic.
+
 The committed `direct-call` JSON sample under
 `docs/evaluation/change-explorer/samples/` is checked against the change
 analysis library. After an intended report output change (including an
