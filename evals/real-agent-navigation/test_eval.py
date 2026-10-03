@@ -74,7 +74,7 @@ class EvaluationTests(unittest.TestCase):
         with self.assertRaises(e.Invalid):
             e.capture(command, env, bound=e.MAX_JSON)
 
-    def cohort(self):
+    def cohort(self, raw_only=False):
         type(self).fixture_index += 1
         root = self.root / f"cohort-{self.fixture_index}"
         cases = {c["id"]: c for c in self.data["cases"]}
@@ -88,8 +88,9 @@ class EvaluationTests(unittest.TestCase):
                       "evidence": [{"item": "symbol:src/lib.py#target:function", "file": "src/lib.py", "line": 1, "quote": "def target():"}]}
             final = json.dumps(answer)
             call = {"tool": "read", "input": '{"path":"src/lib.py"}', "output": self.trees[next(iter(self.trees))]["src/lib.py"], "elapsed_ms": 2, "status": "ok"}
-            raw = {k: None for k in e.RAW if k != "artifact_sha256"}
-            raw.update(schema_version=1, kind="agent-eval-raw-episode", runner_version="1", run_id=run,
+            # Author the runner shape independently of the adapter's field list:
+            # deriving fixtures from e.RAW hid the missing aggregate redactions.
+            raw = dict(schema_version=1, kind="agent-eval-raw-episode", runner_version="1", run_id=run,
                        request=request, request_digest=e.digest(request), started_at_unix=1790994000 + request["order"],
                        model={"provider": "fake-test-provider", "name": "fake", "version": "test-only", "settings": {"reasoning": "fixed"}},
                        provider={"binary_sha256": "a" * 64, "argv": [], "env_names": [], "exit": 0, "thread_id": run},
@@ -110,20 +111,142 @@ class EvaluationTests(unittest.TestCase):
                        answer=answer, final_output=final, final_output_truncated=False, final_source="fixture",
                        calls=[call], calls_dropped=0, output_bytes=len(call["output"].encode()) + len(final.encode()), usage=None,
                        usage_raw=None, transcript={}, broker={}, cleanup={"terminated_by": None, "signals": [], "survivors": [], "pipes_closed": True, "brokers_swept": []},
-                       files={}, limitations=["FAKE deterministic test; no live effectiveness"])
+                       files={}, redactions=0, limitations=["FAKE deterministic test; no live effectiveness"])
             for name in ("provider.jsonl", "provider-stderr.txt", "broker-calls.jsonl", "final-message.txt", "probe.json", "preflight.json"):
                 payload = (final if name == "final-message.txt" else "fake test only\n").encode()
                 (directory / name).write_bytes(payload)
                 raw["files"][name] = {"bytes": len(payload), "sha256": hashlib.sha256(payload).hexdigest(), "redactions": 0, "truncated": False}
             e.write_new(directory / "episode.json", e.seal(raw, "artifact_sha256"))
+            directories.append(directory)
+            if raw_only:
+                continue
             record, _ = e.raw_record(directory)
             audits.append(e.seal({"run_id": run, "record_sha256": record["record_sha256"], "reviewer": "fixture reviewer (not human evidence)",
                                   "signed_at": "2026-10-03T02:20:00Z", "attestation": "FAKE test judgment only",
                                   "judgments": [{"claim_id": "behavior", "pass": True, "rationale": "fixture rubric",
                                                  "answer_quote": "target returns one", "source_evidence": cases[request["case_id"]]["truth"]["rubric"][0]["evidence"]}]}, "attestation_sha256"))
-            directories.append(directory)
+        if raw_only:
+            return directories
         bundle = e.adapt(directories, "test-only")
         return bundle, {"schema_version": 1, "audits": audits}, directories
+
+    def test_current_runner_redactions_shape_through_adapter_cli(self):
+        dirs = self.cohort(raw_only=True)
+        before = {str(p): p.read_bytes() for d in dirs for p in d.iterdir()}
+        path = dirs[0].parent / "current-runner-records.json"
+        result = self.cli("adapt", *[arg for d in dirs for arg in ("--raw", d)],
+                          "--study-kind", "test-only", "--output", path)
+        self.assertEqual(result["episodes"], 16)
+        bundle = e.load(path)
+        for record, evidence, directory in zip(bundle["episodes"], bundle["evidence"], dirs):
+            raw = e.load(directory / "episode.json")
+            self.assertEqual(raw["redactions"], 0)
+            for key in e.PUBLIC:
+                if key not in {"isolation", "wall_ms", "record_sha256"}:
+                    self.assertEqual(record[key], raw[key])
+            self.assertEqual(record["wall_ms"], raw["timing"]["wall_ms"])
+            self.assertEqual(record["isolation"], {k: raw["isolation"][k] for k in record["isolation"]})
+            e.check_seal(record, "record_sha256")
+            self.assertEqual(evidence["directory"], str(directory.resolve()))
+            self.assertEqual(evidence["artifact_sha256"], raw["artifact_sha256"])
+        self.assertEqual(before, {str(p): p.read_bytes() for d in dirs for p in d.iterdir()})
+
+    def test_nonzero_redactions_retained_as_independent_raw_evidence(self):
+        bundle, audits, dirs = self.cohort()
+        original = copy.deepcopy(bundle["episodes"][0])
+        def mutate(raw):
+            raw["redactions"] = 7
+            raw["files"]["provider.jsonl"]["redactions"] = 2
+            raw["files"]["broker-calls.jsonl"]["redactions"] = 3
+            raw["files"]["provider-stderr.txt"]["truncated"] = True
+        self.update_raw(bundle, dirs, 0, mutate)
+        record, raw = e.raw_record(dirs[0])
+        self.assertEqual(record, original)
+        self.assertEqual(raw, e.load(dirs[0] / "episode.json"))
+        self.assertEqual(raw["redactions"], 7)
+        self.assertEqual([raw["files"][name]["redactions"] for name in
+                          ("provider.jsonl", "broker-calls.jsonl")], [2, 3])
+        self.assertTrue(raw["files"]["provider-stderr.txt"]["truncated"])
+        self.assertEqual(bundle["evidence"][0]["artifact_sha256"], raw["artifact_sha256"])
+        self.assertTrue(self.score_cli(bundle, audits)["episodes"][0]["correct"])
+
+    def test_explicit_legacy_shape_never_infers_aggregate_redactions(self):
+        bundle, audits, dirs = self.cohort()
+        def mutate(raw):
+            raw.pop("redactions")
+            raw["files"]["provider.jsonl"]["redactions"] = 3
+        self.update_raw(bundle, dirs, 0, mutate)
+        record, raw = e.raw_record(dirs[0])
+        self.assertNotIn("redactions", raw)
+        self.assertEqual(raw["files"]["provider.jsonl"]["redactions"], 3)
+        self.assertEqual(record, bundle["episodes"][0])
+        self.assertTrue(self.score_cli(bundle, audits)["episodes"][0]["correct"])
+        path = dirs[0].parent / "legacy-records.json"
+        self.cli("adapt", "--raw", dirs[0], "--study-kind", "test-only", "--output", path)
+        self.assertEqual(e.load(path)["episodes"], [record])
+
+    def test_redaction_metadata_types_bounds_and_shapes_fail_closed(self):
+        dirs = self.cohort(raw_only=True)
+        original = e.load(dirs[0] / "episode.json")
+        mutations = []
+        for value in (-1, True, 1.5, "1", None, [], {}, 10**12 + 1):
+            mutations.append(("aggregate", value, lambda r, v=value: r.update(redactions=v)))
+            for name in original["files"]:
+                mutations.append((name, value, lambda r, n=name, v=value:
+                                  r["files"][n].update(redactions=v)))
+        for key, values in (("bytes", (-1, True, 1.5, "1", None, e.MAX_JSON + 1)),
+                            ("truncated", (0, 1, "false", None)),
+                            ("sha256", (None, "0" * 63, "A" * 64))):
+            for value in values:
+                mutations.append((key, value, lambda r, k=key, v=value:
+                                  r["files"]["provider.jsonl"].update({k: v})))
+        for key in ("bytes", "sha256", "redactions", "truncated"):
+            mutations.append(("missing", key, lambda r, k=key: r["files"]["provider.jsonl"].pop(k)))
+        mutations.extend([
+            ("unknown", "top-level", lambda r: r.update(unknown=0)),
+            ("unknown", "metadata", lambda r: r["files"]["provider.jsonl"].update(unknown=0)),
+            ("shape", "files", lambda r: r.update(files=list(r["files"]))),
+            ("shape", "metadata", lambda r: r["files"].update({"provider.jsonl": []})),
+            ("unknown", "capture", lambda r: r["files"].update({"extra.txt": {}})),
+            ("missing", "capture", lambda r: r["files"].pop("probe.json")),
+            ("bytes", "mismatch", lambda r: r["files"]["provider.jsonl"].update(bytes=0)),
+        ])
+        for label, value, mutation in mutations:
+            with self.subTest(label=label, value=value):
+                raw = copy.deepcopy(original)
+                mutation(raw)
+                e.seal(raw, "artifact_sha256")
+                (dirs[0] / "episode.json").write_text(json.dumps(raw))
+                with self.assertRaises(e.Invalid):
+                    e.raw_record(dirs[0])
+        self.cli("adapt", "--raw", dirs[0], "--study-kind", "test-only",
+                 "--output", dirs[0].parent / "invalid-records.json", ok=False)
+
+    def test_redactions_remain_sealed_and_unknown_legacy_fields_refused(self):
+        dirs = self.cohort(raw_only=True)
+        original = e.load(dirs[0] / "episode.json")
+        for legacy in (False, True):
+            raw = copy.deepcopy(original)
+            if legacy:
+                raw.pop("redactions")
+            raw["unknown"] = 0
+            e.seal(raw, "artifact_sha256")
+            (dirs[0] / "episode.json").write_text(json.dumps(raw))
+            with self.assertRaisesRegex(e.Invalid, "runner contract adaptation must be explicit"):
+                e.raw_record(dirs[0])
+        for metadata in (False, True):
+            raw = copy.deepcopy(original)
+            if metadata:
+                raw["files"]["provider.jsonl"]["redactions"] = 1
+            else:
+                raw["redactions"] = 1
+            (dirs[0] / "episode.json").write_text(json.dumps(raw))
+            with self.assertRaisesRegex(e.Invalid, "artifact_sha256: hash mismatch"):
+                e.raw_record(dirs[0])
+        (dirs[0] / "episode.json").write_text(json.dumps(original))
+        (dirs[0] / "provider.jsonl").write_text("tampered redacted capture\n")
+        with self.assertRaisesRegex(e.Invalid, "capture hash mismatch"):
+            e.raw_record(dirs[0])
 
     def score_cli(self, bundle, audits, ok=True):
         type(self).fixture_index += 1
