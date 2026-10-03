@@ -12,6 +12,7 @@ enabled_tools and default_tools_approval_mode.
 import ctypes
 import json
 import os
+import select
 import signal
 import subprocess
 import sys
@@ -107,6 +108,7 @@ def emit(event):
 
 class Client:
     def __init__(self, command, args):
+        self.config_path = args[args.index("--config") + 1]
         self.process = subprocess.Popen([command, *args], stdin=subprocess.PIPE,
                                         stdout=subprocess.PIPE)
         self.next_id = 0
@@ -129,7 +131,81 @@ class Client:
         self.send_request(method, params)
         return self.read()
 
-    def close(self):
+    def close(self, shutdown=None):
+        if shutdown in ("eof_then_sigterm", "eof_then_sigterm_stalled", "eof_with_pending_request"):
+            with open(self.config_path) as stream:
+                config = json.load(stream)
+            with open(config["log_path"]) as stream:
+                identity = next(json.loads(line)["identity"] for line in stream
+                                if json.loads(line).get("type") == "start")
+            worker = identity["pid"]
+            fd = os.pidfd_open(worker)
+            try:
+                signal.pidfd_send_signal(fd, signal.SIGSTOP)
+                deadline = time.monotonic() + 10
+                while True:
+                    with open(f"/proc/{worker}/stat") as stream:
+                        fields = stream.read().rsplit(")", 1)[1].split()
+                    if int(fields[19]) != identity["start_ticks"]:
+                        raise RuntimeError("worker identity changed")
+                    if fields[0] == "T":
+                        break
+                    if time.monotonic() >= deadline:
+                        raise TimeoutError("worker did not stop")
+                if shutdown == "eof_with_pending_request":
+                    self.send_request("ping", {})
+                self.process.stdin.close()
+                os.kill(self.process.pid, signal.SIGTERM)
+                # Acknowledge the supervisor's observation before the worker can
+                # consume EOF or exit. Old supervisors instead forward TERM; its
+                # pending kernel bit provides the baseline acknowledgement.
+                while True:
+                    with open(config["log_path"]) as stream:
+                        observed = any(json.loads(line).get("type") == "supervisor_signal"
+                                       for line in stream if line.endswith("\n"))
+                    with open(f"/proc/{worker}/status") as stream:
+                        pending = [int(line.split()[1], 16) for line in stream
+                                   if line.startswith(("SigPnd:", "ShdPnd:"))]
+                    if ((observed and shutdown != "eof_then_sigterm_stalled")
+                            or any(mask & (1 << (signal.SIGTERM - 1)) for mask in pending)):
+                        break
+                    if time.monotonic() >= deadline:
+                        raise TimeoutError("supervisor did not acknowledge TERM")
+            finally:
+                try:
+                    signal.pidfd_send_signal(fd, signal.SIGCONT)
+                finally:
+                    os.close(fd)
+            self.process.wait(timeout=30)
+            return
+        if shutdown in ("exited_then_sigterm", "exited_then_sigint"):
+            # Freeze only the supervisor, not the worker. Kernel acknowledgements
+            # establish EOF -> worker exit -> TERM -> supervisor resume without
+            # timing sleeps or changes to the broker under test. This models a
+            # possible client teardown ordering, not a claim about real Codex.
+            with open(self.config_path) as stream:
+                config = json.load(stream)
+            with open(config["log_path"]) as stream:
+                worker = next(json.loads(line)["identity"]["pid"] for line in stream
+                              if json.loads(line).get("type") == "start")
+            fd = os.pidfd_open(worker)
+            try:
+                os.kill(self.process.pid, signal.SIGSTOP)
+                deadline = time.monotonic() + 10
+                while os.waitid(os.P_PID, self.process.pid,
+                                os.WSTOPPED | os.WNOHANG | os.WNOWAIT) is None:
+                    if time.monotonic() >= deadline:
+                        raise TimeoutError("supervisor did not stop")
+                self.process.stdin.close()
+                if not select.select([fd], [], [], 10)[0]:
+                    raise TimeoutError("worker did not exit after EOF")
+                os.kill(self.process.pid, signal.SIGTERM if shutdown == "exited_then_sigterm"
+                        else signal.SIGINT)
+            finally:
+                os.close(fd)
+                os.kill(self.process.pid, signal.SIGCONT)
+            self.process.wait(timeout=30)
+            return
         self.process.stdin.close()
         self.process.wait(timeout=30)
 
@@ -270,7 +346,7 @@ def run_exec(options, script):
         emit(completed)
     if script.get("turn_failed"):
         emit({"type": "turn.failed", "error": {"message": script["turn_failed"]}})
-    client.close()
+    client.close(script.get("shutdown"))
     return script.get("exit_code", 0)
 
 

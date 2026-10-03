@@ -173,6 +173,151 @@ class EpisodeCase(unittest.TestCase):
 
 @unittest.skipUnless(support.RG, "ripgrep (rg) not on PATH; runner episodes need it")
 class RunnerTests(EpisodeCase):
+    def test_eof_before_worker_exit_sigterm_teardown(self):
+        code, _, stderr, out = self.episode(shutdown="eof_then_sigterm")
+        self.assertEqual(code, 0, stderr)
+        artifact = self.assert_outcome(out, "ok", None)
+        entry = artifact["broker"]["exits"][0]
+        self.assertEqual(entry["stopped"], "cancelled")
+        self.assertFalse(entry["lifecycle"]["signals"][0]["worker_exited_zero"])
+        self.assertEqual(entry["cleanup"], {"signals": [], "survivors": []})
+
+    def test_eof_drain_refuses_unread_requests_and_a_stalled_worker(self):
+        for shutdown in ("eof_with_pending_request", "eof_then_sigterm_stalled"):
+            with self.subTest(shutdown=shutdown):
+                code, _, stderr, out = self.episode(shutdown=shutdown)
+                self.assertEqual(code, 0, stderr)
+                artifact = self.assert_outcome(out, "failed", "broker_failed")
+                facts = artifact["broker"]["exits"][0]["lifecycle"]
+                if shutdown == "eof_with_pending_request":
+                    self.assertFalse(facts["signals"][0]["input_eof"])
+                else:
+                    self.assertTrue(facts["drain_expired"])
+                self.assertEqual(artifact["cleanup"]["survivors"], [])
+
+    def test_exited_worker_sigterm_teardown_is_prospective(self):
+        code, _, stderr, out = self.episode(shutdown="exited_then_sigterm")
+        self.assertEqual(code, 0, stderr)
+        artifact = self.assert_outcome(out, "ok", None)
+        self.assertEqual(artifact["broker"]["exits"][0]["stopped"], "cancelled")
+        self.assertEqual(artifact["cleanup"]["survivors"], [])
+        self.assertEqual(artifact["runner_version"], "4")
+        self.assertEqual(artifact["lifecycle_contract"], eval_runner.broker.LIFECYCLE_CONTRACT)
+        log, _ = eval_runner.read_broker_log(out / "broker-calls.jsonl")
+        self.assertTrue(eval_runner.complete_broker_lifecycle(log))
+
+    def test_teardown_does_not_admit_cancelled_or_incomplete_provider(self):
+        cases = [({"shutdown": "exited_then_sigint"}, "broker_failed"),
+                 ({"no_turn_completed": True}, "provider_incomplete"),
+                 ({"turn_failed": "cancelled"}, "provider_incomplete"),
+                 ({"steps": [*OK_STEPS, {"emit": {"type": "turn.started"}}]}, "provider_incomplete"),
+                 ({"exit_code": 7}, "provider_incomplete")]
+        for script, error in cases:
+            with self.subTest(script=script):
+                code, _, stderr, out = self.episode(**dict(
+                    {"shutdown": "exited_then_sigterm"}, **script))
+                self.assertEqual(code, 0, stderr)
+                self.assert_outcome(out, "failed", error)
+
+    def test_teardown_proof_is_required_and_historical_cancellation_stays_failed(self):
+        code, _, stderr, out = self.episode(shutdown="exited_then_sigterm")
+        self.assertEqual(code, 0, stderr)
+        artifact = self.assert_outcome(out, "ok", None)
+        log, _ = eval_runner.read_broker_log(out / "broker-calls.jsonl")
+        transcript = eval_runner.analyse_transcript((out / "provider.jsonl").read_bytes(),
+                                                     False, artifact["request"]["tools"])
+        supervision = dict(artifact["cleanup"], returncode=0, exit={"code": 0},
+                           stderr=b"", stdout_truncated=False)
+
+        def decide(changed_log=log, changed_supervision=supervision,
+                   contract=eval_runner.broker.LIFECYCLE_CONTRACT):
+            return eval_runner.decide(changed_supervision, transcript, changed_log,
+                {"text": artifact["final_output"], "truncated": False}, support.LIMITS, None,
+                artifact["output_bytes"], artifact["timing"]["wall_ms"], contract)[1]
+
+        self.assertIsNone(decide())
+        self.assertEqual(decide(contract=None), "broker_failed")
+        self.assertEqual(decide(contract="future-contract"), "lifecycle_contract_unknown")
+        for key, value in (("worker_exited_zero", False), ("group_empty", False),
+                           ("parent_alive", False), ("signal", "SIGINT")):
+            changed = copy.deepcopy(log)
+            changed["exits"][0]["lifecycle"]["signals"][0][key] = value
+            # Isolate the original exited-worker proof from the new EOF/idle proof.
+            changed["exits"][0]["lifecycle"]["signals"][0]["checkpoint"] = None
+            with self.subTest(signal_fact=key):
+                self.assertEqual(decide(changed), "broker_failed")
+        for key, value in (("lifecycle", None), ("exit_code", None), ("exit_code", -9),
+                           ("stderr_truncated", True), ("error_type", "OSError"),
+                           ("stopped", "parent_exit"), ("stopped", "timeout"),
+                           ("cleanup", {"signals": ["SIGKILL"], "survivors": []}),
+                           ("cleanup", {"signals": [], "survivors": [123]}),
+                           ("cleanup", {"signals": [], "survivors": None})):
+            changed = copy.deepcopy(log)
+            changed["exits"][0][key] = value
+            with self.subTest(exit_fact=(key, value)):
+                self.assertEqual(decide(changed), "broker_failed")
+        for key, value in (("parent_alive", False), ("stderr_eof", False),
+                           ("signals", []), ("signals", [{}, {}]), ("contract", None)):
+            changed = copy.deepcopy(log)
+            changed["exits"][0]["lifecycle"][key] = value
+            with self.subTest(lifecycle_fact=key):
+                self.assertEqual(decide(changed), "broker_failed")
+        eof_log = copy.deepcopy(log)
+        observation = eof_log["exits"][0]["lifecycle"]["signals"][0]
+        observation.update(worker_exited_zero=False, group_empty=False)
+        self.assertIsNone(decide(eof_log))
+        for key, value in (("input_eof", False), ("checkpoint", None),
+                           ("checkpoint", {"requests": True, "calls": 3})):
+            changed = copy.deepcopy(eof_log)
+            changed["exits"][0]["lifecycle"]["signals"][0][key] = value
+            self.assertEqual(decide(changed), "broker_failed", key)
+        for key in ("requests", "calls"):
+            changed = copy.deepcopy(eof_log)
+            changed["exits"][0]["lifecycle"]["signals"][0]["checkpoint"][key] -= 1
+            self.assertEqual(decide(changed), "broker_lifecycle_incomplete", key)
+        changed = copy.deepcopy(eof_log)
+        changed["exits"][0]["lifecycle"]["drain_expired"] = True
+        self.assertEqual(decide(changed), "broker_failed")
+        # The sealed failed actual-client v1 rehearsal must retain its old rule.
+        old = eval_runner.broker.EXITED_LIFECYCLE_CONTRACT
+        changed = copy.deepcopy(eof_log)
+        changed["lifecycle_contracts"] = [old]
+        changed["exits"][0]["lifecycle"]["contract"] = old
+        self.assertEqual(decide(changed, contract=old), "broker_failed")
+        for kind in ("request", "reply", "call_start", "call", "stop"):
+            changed = copy.deepcopy(log)
+            index = next(i for i, e in enumerate(changed["lifecycle_events"]) if e["type"] == kind)
+            changed["lifecycle_events"].pop(index)
+            with self.subTest(missing=kind):
+                self.assertEqual(decide(changed), "broker_lifecycle_incomplete")
+        for key, value in (("exits", []), ("supervisors", []), ("lifecycle_contracts", [None]),
+                           ("protocol_errors", 1)):
+            changed = copy.deepcopy(log)
+            changed[key] = value
+            with self.subTest(missing=key):
+                self.assertEqual(decide(changed), "broker_lifecycle_incomplete")
+        for key, value in (("terminated_by", "cancelled"), ("pipes_closed", False),
+                           ("survivors", None), ("signals", ["SIGKILL"]),
+                           ("brokers_swept", [{"pid": 123}])):
+            with self.subTest(cleanup=key):
+                self.assertEqual(decide(changed_supervision=dict(supervision, **{key: value})),
+                                 "process_cleanup_failed")
+
+    def test_teardown_keeps_zero_call_provider_failure_and_abstention_ineligible(self):
+        abstain = {"items": [], "abstain": True, "evidence": [], "reason": "no evidence"}
+        cases = [({"no_turn_completed": True, "turn_failed": "Selected model is at capacity",
+                   "exit_code": 1}, "failed", "provider_incomplete"),
+                 ({}, "invalid", "no_tool_calls")]
+        for script, status, error in cases:
+            with self.subTest(error=error):
+                code, _, stderr, out = self.episode([{"final": json.dumps(abstain)}],
+                    shutdown="exited_then_sigterm", **script)
+                self.assertEqual(code, 0, stderr)
+                artifact = self.assert_outcome(out, status, error)
+                self.assertEqual(artifact["calls"], [])
+                self.assertEqual(artifact["broker"]["exits"][0]["exit_code"], 0)
+                self.assertEqual(artifact["broker"]["exits"][0]["stopped"], "cancelled")
+
     # -- successful episodes and telemetry -------------------------------
     def test_baseline_episode_captures_bounded_hashed_telemetry(self):
         code, report, stderr, out = self.episode()

@@ -87,6 +87,11 @@ def load_episode(directory, diagnostic=False):
     artifact = runner.load_json(directory / "episode.json", 64 * 1024 * 1024)
     require(artifact.get("schema_version") == 2 and artifact.get("kind") == plugin.RAW_KIND
             and artifact.get("profile") == plugin.PROFILE, "not an installed-plugin schema-2 capture")
+    require((artifact.get("runner_version") == "2" and "lifecycle_contract" not in artifact)
+            or (artifact.get("runner_version") in runner.LIFECYCLE_CONTRACTS
+                and artifact.get("lifecycle_contract") ==
+                runner.LIFECYCLE_CONTRACTS[artifact["runner_version"]]),
+            "unsupported runner/lifecycle contract")
     require(artifact.get("artifact_sha256") == runner.digest(
         {k: v for k, v in artifact.items() if k != "artifact_sha256"}), "artifact seal differs")
     request = runner.validate_request(artifact["request"])
@@ -142,6 +147,8 @@ def load_episode(directory, diagnostic=False):
     require(output_bytes == artifact["output_bytes"], "tool/answer output costs differ")
     exit_state = artifact["provider"]["exit"]
     supervision = {"terminated_by": artifact["cleanup"]["terminated_by"],
+                   **{key: artifact["cleanup"].get(key) for key in
+                      ("pipes_closed", "survivors", "signals", "brokers_swept")},
                    "stdout_truncated": artifact["files"]["provider.jsonl"]["truncated"],
                    "stderr": (directory / "provider-stderr.txt").read_bytes(), "exit": exit_state,
                    "returncode": exit_state["code"] if "code" in exit_state else
@@ -149,7 +156,8 @@ def load_episode(directory, diagnostic=False):
     final = {"text": (directory / "final-message.txt").read_text(),
              "truncated": artifact["final_output_truncated"]}
     status, code, _ = runner.decide(supervision, transcript, log, final, request["limits"], None,
-                                     output_bytes, artifact["timing"]["wall_ms"])
+                                     output_bytes, artifact["timing"]["wall_ms"],
+                                     lifecycle_contract=artifact.get("lifecycle_contract"))
     require(status == artifact["status"] and code == (artifact["error"] or {}).get("code"),
             "replayed episode outcome differs")
     if status == "ok":

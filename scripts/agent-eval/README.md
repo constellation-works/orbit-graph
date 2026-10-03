@@ -469,3 +469,93 @@ requires pinned source commits and install provenance. Strict profile-2 runs als
 require observable finite cgroup-v2 memory and process ceilings. Historical
 `adapt` deliberately refuses profile-2 captures. No new effectiveness outcomes
 or corpus are provided by this profile.
+
+## Prospective orderly teardown contract
+
+Runner version **4**, broker version **3**, writes
+`lifecycle_contract: eof-idle-at-term-observation-v2` in both raw profiles.
+Request and raw schema numbers stay 1 (CLI proxy) and 2 (installed plugin).
+Harness hashes and the explicit contract pin prospective classification:
+
+- Historical runner version 2 without a lifecycle contract retains its original
+  cancellation rules. Exit-zero/cancelled captures remain `failed/broker_failed`.
+- The first prospective draft, runner version 3 with
+  `eof-exited-at-term-observation-v1`, required an already exited worker. Its
+  actual-Codex rehearsal failed in both arms: TERM was observed with the worker
+  still alive, although all replies and EOF were subsequently logged and the
+  worker exited zero. Replay preserves those failed v1 rehearsal outcomes.
+- Version 4 adds the proven EOF/idle drain described below. Unsupported
+  runner/contract combinations are refused by profile-2 replay.
+
+A single supervisor SIGTERM observation can qualify by either the original
+already-exited-zero/empty-group proof or this additional shutdown proof:
+
+1. Before cleanup, the supervisor reads a bounded, complete broker log whose last
+   exchange boundary is a **flushed reply** or completed EOF. It captures request
+   and call counts. A busy request/call, missing reply, partial/oversized log or
+   unknown counts cannot qualify.
+2. After that checkpoint, polling the inherited MCP stdin must show exactly
+   `POLLHUP`: an empty pipe with no writers. Open input, queued input, non-pipe
+   input and unknown state cannot qualify. The provider process pidfd must still
+   be alive. These facts justify waiting for shutdown, not continuing tool work.
+3. Only this EOF/idle case defers forwarding TERM. The existing event loop waits
+   at most `KILL_GRACE_S` (2 seconds), bounded also by the episode deadline, for
+   natural worker exit and diagnostic EOF. There is no retry or unconditional
+   grace sleep. A second signal, parent death, deadline or stalled drain fails;
+   normal TERM/KILL group cleanup still runs. An expired drain never qualifies,
+   even if the worker subsequently exits zero.
+4. Final validation requires exactly the checkpoint's request and call counts.
+   This fence rejects additional requests prefetched into Python's input buffer,
+   even if the kernel pipe was already empty. The complete serial ledger must
+   reconcile every request, completed call and flushed reply, then `stdin_eof`.
+   A completed tool log before a broken reply pipe is insufficient.
+
+Both paths still require worker exit zero, bounded diagnostic EOF without
+truncation or supervision errors, no surviving descendants or SIGKILL cleanup,
+and provider liveness at the final supervisor observation. Existing exact
+provider/broker reconciliation, provider exit zero, matched started/completed
+turns, final-answer checks, budgets and containment all remain required.
+Zero-call provider failures and abstentions remain ineligible. Provider
+cancellation, in-flight calls (even with stdin closed), lost replies, missing
+exit/EOF, cleanup intervention or the runner's last-resort sweep remain failures.
+
+`broker_exit.stopped` retains `cancelled` when the supervisor observed a signal,
+including a justified drain; cleanup signals remain the actual actions taken.
+`supervisor_signal` and `broker_exit.lifecycle` retain kernel exit/group/parent
+facts, input EOF, the idle checkpoint and drain expiration. Shared `run_child`
+stop meanings and private Orbit transport success checks remain strict. Only the
+versioned broker classifier interprets this additional evidence.
+
+The original offline `exited_then_sigterm` fixture reproduces the
+exit-zero/cancelled signature against unchanged baseline
+`a6cba7bfaa1bd4a7c117762db2a580642d7d3be5` (the broker/runner bytes match study
+`6540da961968d80a7fa2958cf6d862e5260dfe43`). It exposed a sufficient but narrower
+ordering than the actual client. The new `eof_then_sigterm` fixture stops an idle
+worker before it can consume EOF, closes client input, sends TERM, acknowledges
+the supervisor's observation, then releases the worker. It deterministically
+fails on the first draft and passes with the EOF/idle drain. Kernel state and
+logged acknowledgements replace scheduling guesses. Negative fixtures retain
+queued input, a stalled drain, in-flight work, missing replies, SIGINT, provider
+failure, changed checkpoint counts and descendant cleanup as failures.
+
+These observations describe handler-time state before supervisor cleanup, not
+signal sender identity or kernel signal-generation time. Python signals can be
+deferred. No old cohort or rehearsal is rewritten or reclassified. The first
+actual-client rehearsal and its failure remain evidence; the worker never runs
+a model or real-client rehearsal.
+
+Operator admission remains required before further measurements: run the full
+strict fake-provider suite with real private Orbit and exact final hashes, plus
+repository gates and host CI. Then run a new small synthetic actual-Codex normal
+shutdown rehearsal outside the cohort in both arms; inspect checkpoint counts,
+EOF/replies, exits, telemetry and cleanup. Any remaining failure blocks
+measurement and needs new diagnosis. Retain all 12 frozen cohort outcomes and
+the original scoring attempt, including strict provenance refusals. An accepted
+old score is not a prerequisite for reviewing prospective delivery.
+
+```sh
+AGENT_EVAL_REQUIRE_BWRAP=1 \
+AGENT_EVAL_ORBIT=/absolute/orbit \
+AGENT_EVAL_ORBIT_GRAPH="$PWD/target/debug/orbit-graph" \
+  python3 -B -m unittest discover -s scripts/agent-eval/tests -v
+```

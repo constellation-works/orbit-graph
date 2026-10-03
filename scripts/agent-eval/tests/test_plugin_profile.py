@@ -252,6 +252,40 @@ class InstalledPluginTests(EpisodeCase):
                 finally:
                     (out / "episode.json").write_bytes(original)
 
+    def test_teardown_replay_uses_prospective_contract_only(self):
+        evaluator = importlib.util.module_from_spec(SPEC)
+        SPEC.loader.exec_module(evaluator)
+        code, _, stderr, out = self.plugin_episode([
+            {"call": "graph_maintain", "arguments": {"operation": "graph_sync"}},
+            {"call": "graph_search", "arguments": {"query": "price"}},
+            {"final": json.dumps(support.ANSWER)}], shutdown="eof_then_sigterm")
+        self.assertEqual(code, 0, stderr)
+        artifact = self.assert_outcome(out, "ok", None)
+        self.assertEqual(evaluator.load_episode(out, diagnostic=True)["status"], "ok")
+        self.assertEqual(artifact["broker"]["exits"][0]["stopped"], "cancelled")
+        # Only this synthetic fixture is resealed. Historical contract selection
+        # must not award the new benefit even with complete new lifecycle facts.
+        historical = copy.deepcopy(artifact)
+        historical["runner_version"] = "2"
+        del historical["lifecycle_contract"]
+        historical.update(status="failed", answer=None,
+                          error={"code": "broker_failed", "message": "historical cancellation"})
+        runner.seal(historical, "artifact_sha256")
+        (out / "episode.json").write_text(json.dumps(historical))
+        self.assertEqual(evaluator.load_episode(out, diagnostic=True)["status"], "failed")
+        redacted = dict(historical, redactions=1)
+        runner.seal(redacted, "artifact_sha256")
+        (out / "episode.json").write_text(json.dumps(redacted))
+        with self.assertRaisesRegex(ValueError, "redacted treatment"):
+            evaluator.load_episode(out, diagnostic=True)
+        for altered in (dict(historical, status="ok", error=None),
+                        dict(artifact, lifecycle_contract=None),
+                        dict(artifact, runner_version="future")):
+            runner.seal(altered, "artifact_sha256")
+            (out / "episode.json").write_text(json.dumps(altered))
+            with self.assertRaises(ValueError):
+                evaluator.load_episode(out, diagnostic=True)
+
     def test_product_output_bound_stops_and_cleans_up(self):
         code, report, stderr, out = self.plugin_episode([
             {"call": "graph_search", "arguments": {"query": "price"}},
@@ -299,7 +333,8 @@ class InstalledPluginTests(EpisodeCase):
             {"call": "graph_maintain", "arguments": {"operation": "graph_sync"}},
             {"call": "graph_search", "arguments": {"query": "price"}},
             {"call": "read", "arguments": {"path": ".orbit"}},
-            {"final": json.dumps(support.ANSWER)}], containment="bwrap")
+            {"final": json.dumps(support.ANSWER)}], containment="bwrap",
+            shutdown="eof_then_sigterm")
         self.assertEqual(code, 0, (report, stderr))
         artifact = self.assert_outcome(out, "ok", None)
         self.assertTrue(artifact["isolation"]["contained"])
