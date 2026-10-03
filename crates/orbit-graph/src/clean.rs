@@ -4,6 +4,7 @@ use std::path::{Path, PathBuf};
 use git2::Repository;
 use serde::Serialize;
 
+use crate::lock::FileLockGuard;
 use crate::state_dir::{StateAccess, open_state_file};
 use crate::{EXTRACTOR_VERSION, GraphError, store};
 
@@ -151,7 +152,7 @@ fn existing_graph_db_family_files_if_unlocked(
         let lock_path = graph_db_sidecar(db_path, suffix);
         if let Some(lock) = open_state_file(&lock_path, StateAccess::Read)? {
             match lock.try_lock() {
-                Ok(()) => drop(lock),
+                Ok(()) => drop(FileLockGuard::from_locked(lock)),
                 Err(fs::TryLockError::WouldBlock) => return Ok(None),
                 Err(fs::TryLockError::Error(source)) => {
                     return Err(GraphError::io(
@@ -202,8 +203,8 @@ fn delete_graph_db_family_if_unlocked(db_path: &Path) -> Result<Option<Vec<PathB
     let Some(lock) = open_state_file(&lock_path, StateAccess::Write)? else {
         return Ok(None);
     };
-    match lock.try_lock() {
-        Ok(()) => {}
+    let lock = match lock.try_lock() {
+        Ok(()) => FileLockGuard::from_locked(lock),
         Err(fs::TryLockError::WouldBlock) => {
             tracing::info!(
                 path = %db_path.display(),
@@ -218,15 +219,15 @@ fn delete_graph_db_family_if_unlocked(db_path: &Path) -> Result<Option<Vec<PathB
                 source,
             ));
         }
-    }
+    };
     let Some(_observation) = try_observation_lock(db_path)? else {
         return Ok(None);
     };
     let Some(close_lock) = open_state_file(&close_lock_path, StateAccess::Write)? else {
         return Ok(None);
     };
-    match close_lock.try_lock() {
-        Ok(()) => {}
+    let close_lock = match close_lock.try_lock() {
+        Ok(()) => FileLockGuard::from_locked(close_lock),
         Err(fs::TryLockError::WouldBlock) => {
             tracing::info!(
                 path = %db_path.display(),
@@ -241,7 +242,7 @@ fn delete_graph_db_family_if_unlocked(db_path: &Path) -> Result<Option<Vec<PathB
                 source,
             ));
         }
-    }
+    };
     let mut deleted = Vec::new();
     for path in graph_db_family_files(db_path) {
         let report =
