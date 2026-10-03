@@ -4,6 +4,7 @@ use std::path::{Path, PathBuf};
 use git2::Repository;
 use serde::Serialize;
 
+use crate::lock::FileLockGuard;
 use crate::state_dir::{StateAccess, open_state_file};
 use crate::{EXTRACTOR_VERSION, GraphError, store};
 
@@ -24,8 +25,8 @@ pub fn plan_clean_old_databases(worktree_root: &Path) -> Result<CleanReport, Gra
 /// Removes databases from strictly older extractor versions, plus detached-HEAD
 /// databases whose commit is no longer reachable from any local ref, each with
 /// its `-wal`, `-shm`, `.db.lock` and `.db.close.lock` sidecars. A database is
-/// removed only while this call holds both locks, so one another process is
-/// syncing or closing is kept;
+/// removed only while this call holds both sidecar locks and the directory's
+/// observation guard, so a family being synced, opened or closed is kept;
 /// a newer extractor version's database is never removed (STD-03 §R10). A
 /// detached database is removed only when Git proves its commit is gone or
 /// unreachable; any other Git error keeps it and reports why (STD-03 §R29).
@@ -141,7 +142,8 @@ fn clean_old_databases_excluding(
 }
 
 /// The files of `db_path`'s family that exist, or `None` when another process
-/// holds its `.db.lock` or `.db.close.lock`. Nothing is created or removed: a
+/// holds its `.db.lock`, `.db.close.lock`, or directory observation guard.
+/// Nothing is created or removed: a
 /// lock file that does not exist is not held by anyone.
 fn existing_graph_db_family_files_if_unlocked(
     db_path: &Path,
@@ -150,7 +152,7 @@ fn existing_graph_db_family_files_if_unlocked(
         let lock_path = graph_db_sidecar(db_path, suffix);
         if let Some(lock) = open_state_file(&lock_path, StateAccess::Read)? {
             match lock.try_lock() {
-                Ok(()) => drop(lock),
+                Ok(()) => drop(FileLockGuard::from_locked(lock)),
                 Err(fs::TryLockError::WouldBlock) => return Ok(None),
                 Err(fs::TryLockError::Error(source)) => {
                     return Err(GraphError::io(
@@ -162,6 +164,9 @@ fn existing_graph_db_family_files_if_unlocked(
             }
         }
     }
+    let Some(_observation) = try_observation_lock(db_path)? else {
+        return Ok(None);
+    };
     let mut existing = Vec::new();
     for path in graph_db_family_files(db_path) {
         if crate::state_dir::check_state_file(&path)? {
@@ -181,8 +186,8 @@ fn graph_db_family_files(db_path: &Path) -> [PathBuf; 5] {
     ]
 }
 
-/// Removes `db_path` and its sidecars while holding both locks, and returns
-/// the paths removed. When another process holds either lock, nothing is
+/// Removes `db_path` and its sidecars under sync -> observation -> close
+/// guards. When another process holds any of those guards, nothing is
 /// removed and `None` is returned.
 fn delete_graph_db_family_if_unlocked(db_path: &Path) -> Result<Option<Vec<PathBuf>>, GraphError> {
     let lock_path = graph_db_sidecar(db_path, ".lock");
@@ -198,8 +203,8 @@ fn delete_graph_db_family_if_unlocked(db_path: &Path) -> Result<Option<Vec<PathB
     let Some(lock) = open_state_file(&lock_path, StateAccess::Write)? else {
         return Ok(None);
     };
-    match lock.try_lock() {
-        Ok(()) => {}
+    let lock = match lock.try_lock() {
+        Ok(()) => FileLockGuard::from_locked(lock),
         Err(fs::TryLockError::WouldBlock) => {
             tracing::info!(
                 path = %db_path.display(),
@@ -214,12 +219,15 @@ fn delete_graph_db_family_if_unlocked(db_path: &Path) -> Result<Option<Vec<PathB
                 source,
             ));
         }
-    }
+    };
+    let Some(_observation) = try_observation_lock(db_path)? else {
+        return Ok(None);
+    };
     let Some(close_lock) = open_state_file(&close_lock_path, StateAccess::Write)? else {
         return Ok(None);
     };
-    match close_lock.try_lock() {
-        Ok(()) => {}
+    let close_lock = match close_lock.try_lock() {
+        Ok(()) => FileLockGuard::from_locked(close_lock),
         Err(fs::TryLockError::WouldBlock) => {
             tracing::info!(
                 path = %db_path.display(),
@@ -234,7 +242,7 @@ fn delete_graph_db_family_if_unlocked(db_path: &Path) -> Result<Option<Vec<PathB
                 source,
             ));
         }
-    }
+    };
     let mut deleted = Vec::new();
     for path in graph_db_family_files(db_path) {
         let report =
@@ -255,6 +263,16 @@ fn delete_graph_db_family_if_unlocked(db_path: &Path) -> Result<Option<Vec<PathB
     drop(close_lock);
     drop(lock);
     Ok(Some(deleted))
+}
+
+/// Cleanup never waits for a reader/open/close in this directory. The delete
+/// path takes this after the sync lock and before the close sidecar lock.
+fn try_observation_lock(db_path: &Path) -> Result<Option<crate::lock::FileLockGuard>, GraphError> {
+    match crate::store::acquire_observation_lock(db_path, std::time::Duration::ZERO) {
+        Ok(guard) => Ok(Some(guard)),
+        Err(GraphError::Timeout { .. }) => Ok(None),
+        Err(error) => Err(error),
+    }
 }
 
 fn graph_db_sidecar(db_path: &Path, suffix: &str) -> PathBuf {
