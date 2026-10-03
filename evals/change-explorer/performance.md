@@ -465,10 +465,10 @@ overstated), the emptied `languages` list at `ready`, and the saturating
 
 ```sh
 cargo build --workspace --locked --release
-docs/evaluation/change-explorer/scripts/clone-corpora.sh
-docs/evaluation/change-explorer/scripts/corpus-sizes.sh
-for s in 1 2 3 4 5; do docs/evaluation/change-explorer/scripts/performance.sh "$s" 25; done
-docs/evaluation/change-explorer/scripts/progress-cancel.sh 2
+evals/change-explorer/scripts/clone-corpora.sh
+evals/change-explorer/scripts/corpus-sizes.sh
+for s in 1 2 3 4 5; do evals/change-explorer/scripts/performance.sh "$s" 25; done
+evals/change-explorer/scripts/progress-cancel.sh 2
 ```
 
 Latency varies with machine and filesystem. The stable comparisons are the shape —

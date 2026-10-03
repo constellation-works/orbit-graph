@@ -13,7 +13,7 @@ out. See [the changes-command decisions](../../docs/design/changes-command/4_dec
 
 See [the design contract](../../docs/design/change-explorer.md) for snapshot
 semantics, changed-symbol identity, evidence categories and JSON fields.
-The [evaluation](../../docs/evaluation/change-explorer/README.md) records
+The [evaluation](../../evals/change-explorer/README.md) records
 observed strengths and gaps. Historical service and UI decisions in those
 documents were retired on 2026-09-26 by ORB-13255.
 

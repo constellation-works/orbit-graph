@@ -5,7 +5,7 @@ agents as `orbit-graph changes` and the `orbit.graph.changes` plugin tool
 (v2 alias `graph.changes`). The user-facing contract is in
 [`docs/usage.md`](../../usage.md#change-analysis) and
 [`docs/plugin.md`](../../plugin.md#change-analysis); the measurements behind
-D1 are in [`docs/evaluation/changes-command/`](../../evaluation/changes-command/README.md).
+D1 are in [`evals/changes-command/`](../../../evals/changes-command/README.md).
 The evidence contract underneath (snapshots, pairing, evidence categories) is
 unchanged from [`change-explorer.md`](../change-explorer.md).
 
@@ -259,4 +259,4 @@ and the tool's manifest description. The tool is declared only in the root
 - **Citing the right line of a fuzzy dispatch.** When several arms of one
   dispatcher fuzzy-match the changed method, the caller is found but the
   evidence cites the first arm's line, not the matching arm's (study 2,
-  [comparison](../../evaluation/changes-command/README.md#study-2)).
+  [comparison](../../../evals/changes-command/README.md#study-2)).

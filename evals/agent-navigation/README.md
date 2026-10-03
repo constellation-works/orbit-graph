@@ -8,8 +8,8 @@ paired runs and any evidence-driven production follow-ups.
 Python 3.10+ and its standard library are sufficient. From the repository root:
 
 ```sh
-python3 -B docs/evaluation/agent-navigation/eval.py validate
-python3 -B docs/evaluation/agent-navigation/eval.py check
+python3 -B evals/agent-navigation/eval.py validate
+python3 -B evals/agent-navigation/eval.py check
 ```
 
 `check` validates independent truth, frozen corpus/split hashes, complete paired
@@ -80,9 +80,9 @@ null usage. These are not agent-effectiveness or graph-tool measurements.
 Regenerate only after an intended contract change, then review both artifacts:
 
 ```sh
-python3 -B docs/evaluation/agent-navigation/eval.py smoke > docs/evaluation/agent-navigation/smoke-episodes.json
-python3 -B docs/evaluation/agent-navigation/eval.py score --input docs/evaluation/agent-navigation/smoke-episodes.json > docs/evaluation/agent-navigation/smoke-result.json
-python3 -B docs/evaluation/agent-navigation/eval.py check
+python3 -B evals/agent-navigation/eval.py smoke > evals/agent-navigation/smoke-episodes.json
+python3 -B evals/agent-navigation/eval.py score --input evals/agent-navigation/smoke-episodes.json > evals/agent-navigation/smoke-result.json
+python3 -B evals/agent-navigation/eval.py check
 ```
 
 The raw schema is enforced by `score`, with no ignored fields. The smoke bundle
@@ -139,7 +139,7 @@ agents. An authorized supervising operator follows this protocol:
 
    ```sh
    df --output=pcent .
-   python3 -B docs/evaluation/agent-navigation/eval.py export --output .orbit/tmp/navigation-v1 --crew sol
+   python3 -B evals/agent-navigation/eval.py export --output .orbit/tmp/navigation-v1 --crew sol
    ```
 
 2. Export contains `plan.json` and 24 episode directories, each with only a
@@ -234,7 +234,7 @@ agents. An authorized supervising operator follows this protocol:
    and keep the original supervisor logs privately. Score a complete bundle:
 
    ```sh
-   python3 -B docs/evaluation/agent-navigation/eval.py score --input .orbit/tmp/real-episodes.json > .orbit/tmp/real-result.json
+   python3 -B evals/agent-navigation/eval.py score --input .orbit/tmp/real-episodes.json > .orbit/tmp/real-result.json
    ```
 
    If admission/start fails, include a failed episode with an explicit cause,

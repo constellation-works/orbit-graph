@@ -338,13 +338,13 @@ by an agent, not effort spent by a person.
 
 ```sh
 cargo build --workspace --locked --release
-docs/evaluation/change-explorer/scripts/clone-corpora.sh
-docs/evaluation/change-explorer/scripts/baseline.sh       1
-docs/evaluation/change-explorer/scripts/service-study.sh  1
-docs/evaluation/change-explorer/scripts/service-study.sh  1 --warm
-docs/evaluation/change-explorer/scripts/summarize-study.sh 1
-docs/evaluation/change-explorer/scripts/bounds-probe.sh   1
-docs/evaluation/change-explorer/scripts/closure-gap-probe.sh
-docs/evaluation/change-explorer/scripts/span-overlap.sh   1 src/query/refs.rs
-docs/evaluation/change-explorer/scripts/export-reports.sh 1
+evals/change-explorer/scripts/clone-corpora.sh
+evals/change-explorer/scripts/baseline.sh       1
+evals/change-explorer/scripts/service-study.sh  1
+evals/change-explorer/scripts/service-study.sh  1 --warm
+evals/change-explorer/scripts/summarize-study.sh 1
+evals/change-explorer/scripts/bounds-probe.sh   1
+evals/change-explorer/scripts/closure-gap-probe.sh
+evals/change-explorer/scripts/span-overlap.sh   1 src/query/refs.rs
+evals/change-explorer/scripts/export-reports.sh 1
 ```

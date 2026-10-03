@@ -85,7 +85,7 @@ proof that maliciously substituted tooling is trusted.
 From the orbit-graph checkout (replace the explicit paths as needed):
 
 ```sh
-EVAL=docs/evaluation/real-agent-navigation/eval.py
+EVAL=evals/real-agent-navigation/eval.py
 GRAPH_REPO=/home/daniel/workspace/constellation/codebases/orbit-graph
 ORBIT_REPO=/home/daniel/workspace/constellation/codebases/orbit
 PULSAR_REPO=/home/daniel/workspace/constellation/codebases/pulsar
@@ -95,7 +95,7 @@ mkdir -p .orbit/tmp/real-navigation
 python3 "$EVAL" export --repo "orbit-graph=$GRAPH_REPO" \
   --repo "Orbit=$ORBIT_REPO" --repo "pulsar=$PULSAR_REPO" \
   --destination "$PWD/.orbit/tmp/real-navigation/cohort-01"
-python3 -B -m unittest discover -s docs/evaluation/real-agent-navigation -p 'test_eval.py' -v
+python3 -B -m unittest discover -s evals/real-agent-navigation -p 'test_eval.py' -v
 ```
 
 ## Operator episodes and capture adapter
@@ -124,7 +124,7 @@ python3 "$RUNNER" run --request "$EPISODE/request.json" \
   --git /usr/bin/git --rg /absolute/path/to/rg \
   --orbit-graph /absolute/path/to/orbit-graph --python /usr/bin/python3 \
   --bwrap /absolute/path/to/bwrap --containment bwrap \
-  --truth-path "$PWD/docs/evaluation/real-agent-navigation" \
+  --truth-path "$PWD/evals/real-agent-navigation" \
   --truth-path "$PWD/.orbit/tmp/real-navigation/cohort-01"
 ```
 

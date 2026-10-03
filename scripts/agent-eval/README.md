@@ -40,13 +40,13 @@ never effectiveness evidence.
 
 Every episode directory is new. The runner never reuses or overwrites one. In
 the variables below, `ORB13710` is a checkout that contains
-`docs/evaluation/agent-navigation/eval.py`. The run directory must not be
+`evals/agent-navigation/eval.py`. The run directory must not be
 inside that checkout or inside the export.
 
 ```sh
 TOOL=scripts/agent-eval/eval_runner.py           # from this checkout
 ORB13710=/path/to/orb-13710-checkout
-EVAL="$ORB13710/docs/evaluation/agent-navigation"
+EVAL="$ORB13710/evals/agent-navigation"
 EXPORT=/path/to/new/export                       # must not exist yet
 RUNS=/path/to/new/runs
 MODEL=gpt-5-codex                                # one fixed model for the whole cohort

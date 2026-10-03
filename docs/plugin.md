@@ -501,7 +501,7 @@ the same commits skips indexing; the working tree is never cached. Without
 are built under `changes-scratch` beside the cache and removed when the call
 ends. On an Orbit clone a cold call took 25–43 s and a warm call 19–40 s:
 analysis, not indexing, dominates
-([evaluation](evaluation/changes-command/README.md#latency)).
+([evaluation](../evals/changes-command/README.md#latency)).
 
 `result` is the same document the CLI prints with `--json`
 (`schemas/changes.response.json`, `schema_version` 1):

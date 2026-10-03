@@ -414,7 +414,7 @@ The rules:
 - Relevance is `0.5 × similarity²`, where similarity is the same query-coverage
   token overlap used for task text. The weight and the exponent are the
   measured production setting from the live Git evaluation in
-  [`docs/evaluation/commit-text-live.md`](../evaluation/commit-text-live.md)
+  [`evals/commit-text-live.md`](../../evals/commit-text-live.md)
   (ORB-13229). That run holds out a first-parent commit, queries its subject
   at `target = commit^`, and checks that the held-out commit and later
   deliveries contribute no evidence. It compares no commit text, linear
@@ -551,6 +551,6 @@ change evidence; current-tree lexical plus bounded graph structure; and
 query-independent eligible delivery frequency. Reports contain separate file
 and symbol recall/precision@K, stale-result rate, mean/maximum latency,
 coverage/exclusions, exact revisions, source provenance, and a normalized input
-digest. The recorded real cohort in `docs/evaluation/` is intentionally small
+digest. The recorded real cohort in `evals/` is intentionally small
 and has no eligible historical training text, so it supports no superiority
 claim.

@@ -32,7 +32,7 @@ fn committed_direct_call_json_is_a_fresh_regeneration() {
     let report = build_report(&comparison, &options).expect("build report");
     let fresh = serde_json::to_string_pretty(&report).expect("serialize report");
     let committed_path = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../../docs/evaluation/change-explorer/samples/direct-call.json");
+        .join("../../evals/change-explorer/samples/direct-call.json");
     if std::env::var_os("UPDATE_GOLDENS").is_some_and(|value| value == "1") {
         fs::write(committed_path, fresh).expect("rewrite sample");
         return;
