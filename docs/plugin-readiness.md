@@ -1,286 +1,209 @@
-# Linux plugin readiness: integrated candidate da5009b
+# Linux plugin readiness: candidate 1523af8
 
-Measured on 2026-10-03 for ORB-13773, execution `jrun-20261003-0550-c2`.
-The clean integrated source, installed CLI/MCP tools, positive public-delivery
-fixtures and fresh exports pass the checks below on the exact measured Linux
-host. Actual historical executor deliveries are also supported by separately
-identified final-candidate backend evidence. The required advisory gate passed
-on the normal host in operator-supplied follow-up evidence for this same clean
-candidate. The original worker attempt and its clean-baseline reproduction still
-record the read-only host-cache denial; the supplied pass and its provenance are
-listed below. This is bounded readiness evidence, with no live upgrade or
-release. [Agent measurements](../evals/readiness-20261003/README.md) establish
-no agent benefit or superiority.
+As of 2026-10-03, candidate `1523af82c7a9055adb5fd474035ee9a05b505732`
+has bounded Linux runtime and export qualification. The completed installed-plugin
+study shows **no measured agent advantage**: frozen combined correctness is
+baseline **3/6**, graph **2/6**, with **1/4 each** on held-out questions. Two graph
+transport failures remain in those denominators. Later transport repairs and
+prospective scorer tests do not change that measurement.
 
-## Candidate identities
+The [current evidence report](../evals/readiness-20261003-v2/README.md) and
+[machine-readable summary](../evals/readiness-20261003-v2/results.json) retain all
+12 attempts, nullable costs, attributed reviews and exact artifact hashes.
+This ORB-13801 update changes documentation only. Daniel owns release and install
+timing; no live install, upgrade, grant, host upgrade or schedule was changed.
 
-All source/build/installed/export checks ran before the five report edits, at
-clean HEAD `da5009b7bf8f1a328aa3923252b3b049b1e8bd17`; starting
-`git status --short` was empty. Full machine-readable identities and outcomes
-are in [results.json](../evals/readiness-20261003/results.json).
+## Exact candidate and export
 
-| Input | Measured identity |
+| Identity | Value |
 | --- | --- |
-| Host | Linux x86_64, kernel `6.8.0-142-generic` |
-| Orbit path | `/home/daniel/.orbit/bin/orbit`, resolved from `/home/daniel/.cargo/bin/orbit` |
-| Orbit version / SHA-256 | `0.25.1` / `6481d488a87955a3f8c29bbee029b8ef1f07babc502c8d1000c37a0850df0972` |
-| Rust / Cargo | `rustc 1.96.0 (ac68faa20 2026-05-25)` / `cargo 1.96.0 (30a34c682 2026-05-25)` |
-| cargo-deny / nextest | `0.19.9` / run-local `0.9.146` |
-| nextest archive SHA-256 (CI pin) | `682c21b777c333e96fd532e114d3a5a894e0729ab88d94c0a9f20f8419695428` |
-| Worker graph binary SHA-256 | `22f0580ca89f7aab5930194dd24d5946a05ba3beda20ccf93e194a19cb147a8b` |
+| Candidate commit | `1523af82c7a9055adb5fd474035ee9a05b505732` |
+| Candidate tree | `97a6d17c348ecac5968f4be69cb6b738d94201b8` |
+| Qualified graph binary SHA-256 | `81ffdbdaa935faee1dbe311cf3494e5b24f2c268d132be24725dcf89593c0227` |
+| Graph binary source | `e5c8109296227eece9cda6184fef98372c77fb37`; preserved **debug** build |
+| Qualified Orbit version / SHA-256 | `0.25.1` / `3dfbde617f1bbe4ec4befbbd8a54d76fafc050d803cee387c5ad1eeba5048927` |
+| Export source commit | `cf4ea61274d7dfa6b031b573eb88c150888385ea` |
+| Bound export manifest SHA-256 | `7503b6e2f3b20b4bb22e5977c87a7fb650f0474a4bc6d53648c1ae465b7d40a0` |
+| Export provenance SHA-256 | `c99b34d82706b4924e6f7ab534c4d2d36c559da50d07a5307c9a111521282503` |
 | Graph contracts | crate `0.10.0`; extractor `24`; history schema `5`; plugin schema `1`; store schema `2` |
-| Pristine plugin manifest SHA-256 | `162b695ec204aca3bca996f47632874f31f6b3bb5c198d55e8a89a9b96bde6a7` |
-| Commit export tar SHA-256 | `6ddf2deda2efa37c1641d6b5dc89c9920d1276a7b49af6d9e9fb19c8fda54e2b` |
-| Bound local manifest SHA-256 | `59b41656899605763366433e078eac2bbb38a176ec50e8c9b40ce2fd16453f43` |
 
-**The host binary includes the public `orbit.workflow.run.delivery` read that
-landed after tagged Orbit 0.25.1.** Its semantic version alone cannot identify
-this capability. CI's pinned 0.25.0 and tagged 0.25.1 are not certified for
-positive delivered-run import by these measurements. Strict installed testing
-uses `ORBIT_GRAPH_TEST_REQUIRE_RUN_DELIVERY=1`, which fails on an absent read.
+The prepared export is
+`/home/daniel/workspace/constellation/codebases/orbit-graph/.orbit/tmp/ORB-13709-handoff-cf4ea61/source`.
+It contains 45 files, 159,792,175 bytes, including the exact graph binary above.
+Its original export identity remains `cf4ea61`; it is not a new build from
+`1523af8`. ORB-13709 artifacts `certification/handoff-cf4ea61-provenance.json`
+and `certification/handoff-cf4ea61-validation.json` record its file hashes,
+byte counts, modes, private-host validation and 44 passing conformance cases.
+That export-only check created **no installed certification record**.
 
-The debug build used a fresh target under `.orbit/tmp/certification/`,
-`CARGO_INCREMENTAL=0`, cleared Rust wrappers and scratch-local `TMPDIR`.
-Disk use was below 30% before all new build/export directories, below the 80%
-stop threshold. No new worktree or global tool installation was created.
-Binary digests identify these bytes; another build requires its own digest.
+Root's `certification/candidate-1523af8-correspondence.json` verifies 380
+qualified runtime files, 14 scorer files, all 45 export files, both executable
+digests and unchanged sealed study results. This report independently rechecked
+those files and the empty Rust/Cargo/plugin/bundler diff from the binary's source
+to the candidate. Correspondence extends the stated source scope of earlier
+checks; it is **not a fresh test or installed-host certification**. The candidate
+was clean before the report edits. Root merged the integrated scorer at
+14:27:02Z; root reports combined CI run `37129363533` with five passing jobs.
+This worker could not independently fetch that run because GitHub authentication
+was unavailable; the local gates below were executed here.
 
-Pristine and bound exports come from `git archive --format=tar <full commit>
-.orbit-plugin scripts/bundle-plugin-binary.sh`. The pristine source retains
-`origin: orbit` and the explicit unbound backend override and is checked with
-`--first-party` and the measured binary first on `PATH`. The bound copy removes
-only `metadata.origin` and bundles that binary with `--backend-sha256`; its
-manifest digest matches the installed private copy. Both export names include
-the full candidate commit and their certification context.
+## Runtime evidence and its boundaries
 
-## Surface evidence
-
-| Check | Outcome and provenance |
+| Evidence | Observed outcome and attribution |
 | --- | --- |
-| Normal workspace suite | 698 passed; three ignored installed tests explicitly run separately |
-| Doctests | 14 passed with scratch-local TMPDIR, including the four historically failing examples |
-| Installed tools | All 13 tools through real CLI and MCP; manifest/request/MCP inventory equality; nonempty query results |
-| Task recommendation / hybrid search | Real private task, `orbit.task.show_public_observation`, `orbit.search_lexical_rank`, no dropped hits or fallback warnings |
-| Maintenance | Code and Git-history sync pass; ordinary callers denied mutations on CLI and MCP |
-| Installed public delivery | Seeded private host checkpoint fixture: landed pair inserted, replay `already_indexed`, task ID follows current run |
-| Delivery negatives | Unlanded pair excluded; foreign task/run binding refused with typed `invalid_input`; bare `run_ids` rejected |
-| Request negative | Unknown search field rejected through MCP |
-| Pristine export | Validate passes; 44/44 conformance cases pass |
-| Bound export / installed matching source | Validate passes; 44/44 cases pass before and after private installation; certification recorded on private host |
-| Private install/enable/upgrade | Pass; unchanged grant set retained and bound manifest digest verified |
-| Actual executor-delivery evidence | Final-candidate operator backend: four inserted, two content exclusions, four idempotent replays; independent public-read/Git spot check |
-| macOS / dashboard / schedules / official `git+` install | Not run; no new certification for these environments |
+| Installed CLI/MCP | ORB-13790 `operator/runtime-draft-installed-and-strict.json`: three real private-install tests passed, including all 13 v2 tools, CLI/MCP inventory and public-delivery fixtures. The installed test built the preserved `81ff…` binary; its source correspondence is verified, rather than relabelling the draft as a fresh final-head run. |
+| Prepared export | ORB-13709 `certification/handoff-cf4ea61-validation.json`: fresh private-host validate and 44/44 conformance; export-only. |
+| Repaired evaluator | ORB-13802 `operator/strict116-qualified-v1.json`: 116 strict tests, zero skips, at `8a0484db6532fe064ae0e5cbbcd9edad7735c0b5`, root Linux host, local fake provider only. SHA-256 `7aaf3e04254146c98ecaf945ead973622e49b3d50d711330da52f353e0e7e7e8`. |
+| Actual Codex admission | ORB-13802 `operator/actual-admission-index.json` and `actual-admission-actual-v{1,2}.tar.gz`: baseline and graph smoke, masking/replay/cleanup checked. First graph rehearsal passed functionally at 2,188 ms but missed the >5 s criterion; retained. Final larger synthetic fixture passed at **9,841 ms**. |
+| Separate slow-call proof | ORB-13802 `validation/private-slow-proof.json`: worker private real-host call **23,562 ms**; distinct from root's actual Codex smoke. |
+| Prospective scorer | ORB-13804 `operator/final-admission.json`: 34 tests, 12 independent public CLI cases and normal-host helper policy pass; 14 exact files and stable helper binary. See the [contract and limits](../evals/source-identity-v1/README.md). |
 
-Tools are `version`, `status`, `recommend`, `maintain`, `search`, `show`, `refs`,
-`callees`, `impact`, `trace`, `deps`, `overview`, and `changes`. The installed
-canonical test uses `orbit tool run graph.<verb> --input ... --full` and MCP
-`graph_<verb>` through `orbit mcp serve`; it does not separately certify every
-derived human command rendering.
+The runtime includes the first-sync/checkpoint locking and guard-lifetime repairs.
+The evaluator repairs cover EOF teardown, safe reply provenance/redaction,
+bounded pagination and slow MCP replies. The frozen v2 cohort used the **earlier**
+harness: its two lost-reply outcomes are retained. Repaired runtime admission is
+functional evidence, not a replacement effectiveness cohort.
 
-Private HOME and Orbit roots have grants exactly `fs,orbit_tools`, no network,
-no `env_pass` and `unsandboxed: false`. Only fixture setup and outer mutating
-calls use the audited operator path. Plugin callbacks use ordinary public tools;
-they do not inherit operator authority. Public delivery binds one task/run pair
-in the workspace and Git verifies its landing. Listing a callback in the
-manifest is not a caller grant. No live plugin tree or live grants were changed.
+The 13 tools are `version`, `status`, `recommend`, `maintain`, `search`, `show`,
+`refs`, `callees`, `impact`, `trace`, `deps`, `overview` and `changes`.
+Private tests use isolated HOME/Orbit roots and `fs,orbit_tools` grants, with
+no network, `env_pass` or unsandboxed permission. Ordinary callers still cannot
+invoke mutation merely because a callback is listed in the manifest.
+Public-delivery fixtures prove seeded host-record handling; the
+[historical report](../evals/readiness-20261003/README.md) separately records
+actual historical executor deliveries and content exclusions on its named bytes.
+Neither is a new live executor-delivery certification of this export.
 
-The installed delivery fixture is **seeded host-record proof**, not a run
-produced by an executor. Separately, operator artifact
-`certification/actual-delivery-evidence.json` records the final candidate backend
-with SHA-256 `af2fe5682eaa4871b0c6aa5ef4572253076cecc9c43da59d2ccbe65e3579293b`,
-ordinary public callbacks, fresh private graph state and actual historical host
-checkpoints. It has no installed wrapper or seeded host records. ORB-13170,
-ORB-13159, ORB-13158 and ORB-13156 import; ORB-13157 and ORB-13229 remain excluded
-because their landed contents/modes differ from the checkpoint head. This worker
-read ORB-13170/run `jrun-20260926-1851-c3` through the granted public tool and
-verified its landing is reachable from the candidate and all 28 changed paths
-match the checkpoint postimages. Same source, distinct worker/operator builds:
-the authentic backend evidence does not certify the worker binary's installed
-path against a new live pipeline run. Import coverage stays explicitly bounded,
-not a complete historical scan.
+No broader macOS, dashboard, scheduler, official `git+` installation or optimized
+production-latency certification follows. Orbit's semantic version alone does
+not prove `orbit.workflow.run.delivery` capability. Import remains bounded to
+named task/run pairs with partial coverage. Cold `changes` calls write their
+snapshot/scratch cache under the existing
+[D6 deviation](design/changes-command/4_decisions.md#d6-where-snapshots-are-cached);
+an older read-only-state check must not be extended to that tool.
 
-## Required gates
+## Repository and report checks
 
-ORB-13773 task artifacts `certification/logs/` contain each exact command,
-run ID, tested HEAD, producer exit code and captured stdout/stderr.
+ORB-13801 artifacts `validation/gate-00.json` through `gate-13.json` record the
+complete [CONTRIBUTING sequence](../CONTRIBUTING.md), command, tested HEAD, exit
+code and captured output. At this candidate:
 
-| Required command | Outcome | Log |
-| --- | --- | --- |
-| `sh docs/standards/check.sh` | Passed | `gate-01.json` |
-| `scripts/check-dependency-direction.sh` | Passed, four crates | `gate-02.json` |
-| `scripts/check-terminal-guard.sh` | Passed | `gate-03.json` |
-| `scripts/check-orphan-modules.sh` | Passed | `gate-04.json` |
-| `scripts/test-repo-gates.sh` | Passed, 52 seeded cases | `gate-05.json` |
-| `python3 -B evals/agent-navigation/eval.py check` | Passed, 23 tests / 12 scripted cases; not agent effectiveness | `gate-06.json` |
-| `cargo deny --locked check` | Passed on normal host in operator follow-up; initial worker attempt and clean-baseline reproduction denied | `gate-07.json`, `baseline-deny.json`, supplied operator evidence below |
-| `cargo fmt --all --check` | Passed | `gate-08.json` |
-| `cargo clippy --workspace --all-targets --locked -- -D warnings` | Passed | `gate-09.json` |
-| `cargo nextest run --workspace --locked --no-tests=fail` | Passed, 698 tests; three ignored | `gate-10.json` |
-| `cargo test --workspace --doc --locked` | Passed, 14 doctests | `gate-11.json` |
-| `RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps --locked` | Passed | `gate-12.json` |
-| `cargo build --workspace --locked` | Passed | `gate-13.json` |
-| `git diff --check` | Passed; repeated after report edits | `gate-14.json`, `final-review.json` |
+| Commands | Outcome |
+| --- | --- |
+| Standards, dependency direction, terminal guard, orphan modules, repository gate self-tests | Passed; 52 seeded gate cases |
+| `python3 -B evals/agent-navigation/eval.py check` | Passed, 23 tests / 12 scripted cases; no effectiveness inference |
+| `cargo deny --locked check` | Default worker cache denied; reproduced once on the clean baseline. Same policy passed with only advisory `db-path` redirected to task scratch. |
+| `cargo fmt --all --check`; `cargo clippy --workspace --all-targets --locked -- -D warnings` | Passed |
+| `cargo nextest run --workspace --locked --no-tests=fail` | Passed, 705 tests; three intentional installed-test skips |
+| `cargo test --workspace --doc --locked` | Passed, 14 doctests |
+| `RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps --locked`; `cargo build --workspace --locked` | Passed |
+| `git diff --check`; JSON, local links, metric/provenance and historical-byte reconciliation | Passed; final evidence in `validation/report-checks.json` |
+| Real installed Orbit `plugin add/upgrade/show/test/enable/validate --help`, workspace/tool help | Passed; syntax checked without performing live actions |
 
-The original worker advisory denial is `failed to obtain lock file
-/home/daniel/.cargo/advisory-dbs/db.lock: attempted to take an exclusive lock on
-a read-only path`. It reproduced once before tracked edits at the same clean
-candidate. Separately supplied operator evidence records the unmodified command
-passing on the normal host at the same candidate commit; see the source artifact,
-identity and digest in the next section. A copy of `deny.toml` changing only
-advisory `db-path` into ignored scratch also passed:
+The default advisory error was `failed to obtain lock file
+'/home/daniel/.cargo/advisory-dbs/db.lock': attempted to take an exclusive lock
+on a read-only path`. `validation/baseline-deny.json` preserves the reproduction;
+`validation/deny-private.json` records `cargo deny --locked check --config
+<task-scratch>/deny.toml` passing. No advisory, license, ban or source rule was
+relaxed. The default command is not reported as a worker pass. Prior ORB-13804
+`repair/*` evidence retains the same cache denial and old-nextest mismatch,
+private equivalent-policy passes, 705 Rust tests, 14 doctests and three product
+goldens. This run uses the supplied private nextest **0.9.146**, SHA-256
+`aac21fea56e7ae3f45b5b7c606e02d62d4ec5b3578658fefe4a98a5f29c4bf1a`;
+there was no global installation or version bypass.
+
+## Optional installation handoff
+
+After Daniel authorizes installation, select the prepared source and the intended
+registered workspace. These commands are instructions, not actions performed by
+this report:
 
 ```sh
-cargo deny --locked check --config .orbit/tmp/certification/deny.toml
+source_root=/home/daniel/workspace/constellation/codebases/orbit-graph/.orbit/tmp/ORB-13709-handoff-cf4ea61/source
+workspace=/absolute/path/to/registered/workspace
+orbit plugin add "$source_root"
+# Existing graph installation instead of add:
+# orbit plugin upgrade graph "$source_root"
+orbit plugin show graph --format json
+orbit plugin test "$source_root"
+# Separate host consent: review manifest, binary, filesystem roots and callbacks first.
+orbit plugin enable graph --scope host --grant fs,orbit_tools --workspace "$workspace"
+# If the selected workspace has its own disabled toggle, enable it separately:
+orbit plugin enable graph --scope workspace --workspace "$workspace"
 ```
 
-No advisory, license, source or ban policy was relaxed. The original denial,
-clean-baseline denial, scratch-cache pass and normal-host pass remain distinct
-attempts in `results.json`; the required gate is resolved by the supplied normal
-host pass.
+Host consent replaces the full grant set; workspace enable cannot grant
+permissions and requires a host-enabled plugin. Host enable applies across the
+host, not just the workspace named for seeding. Upgrade retains unchanged grants;
+widened requests clear grants and disable the plugin until consent. The source
+must contain `.orbit-plugin/plugin.yaml`; test the matching source, not the
+installed version directory. Local sources remove `metadata.origin` and register
+`graph.*` / MCP `graph_*`. Verified first-party `git+` sources may retain
+`origin: orbit` and register `orbit.graph.*` / `orbit_graph_*`; see
+[installation requirements](plugin.md#install). `fs` covers requested workspace
+reads and plugin-state writes; `orbit_tools` covers bounded public callbacks.
+Neither enables ordinary mutation authority. Seeded routines remain disabled.
 
-Strict installed validation (3/3 passes, including two legacy tests):
-
-```sh
-ORBIT_GRAPH_TEST_ORBIT_BIN=/home/daniel/.orbit/bin/orbit \
-ORBIT_GRAPH_TEST_REQUIRE_RUN_DELIVERY=1 \
-  cargo test -p orbit-graph-cli --test plugin_integration --test plugin_v2 --locked -- --ignored
-```
-
-## Supplied normal-host gate and prepared export
-
-The follow-up evidence supplied for ORB-13773 records `cargo deny --locked
-check` exiting 0 on candidate `da5009b7bf8f1a328aa3923252b3b049b1e8bd17`, with
-stdout `advisories ok, bans ok, licenses ok, sources ok`. Its source is
-`/home/daniel/workspace/constellation/codebases/orbit-graph/.orbit/tmp/ORB-13709-integrated-deny-da5009b.json`
-(SHA-256 `b8135f457eefe2a765a6fde5d75c948aee83890b520bca242a5267728603f4f8`).
-The artifact identifies the command and tested commit; it is attributed to the
-operator follow-up, separately from the denied worker attempt recorded above.
-
-The prepared bound export is available at
-`/home/daniel/workspace/constellation/codebases/orbit-graph/.orbit/tmp/ORB-13709-handoff-da5009b/source`.
-It is a copy of the worker export for the same candidate, not a build from this
-report commit. Its `.orbit-plugin/bin/orbit-graph.bin` SHA-256 is
-`22f0580ca89f7aab5930194dd24d5946a05ba3beda20ccf93e194a19cb147a8b` and its
-`.orbit-plugin/plugin.yaml` SHA-256 is
-`59b41656899605763366433e078eac2bbb38a176ec50e8c9b40ce2fd16453f43`.
-The operator provenance record
-`/home/daniel/workspace/constellation/codebases/orbit-graph/.orbit/tmp/ORB-13709-handoff-da5009b/provenance.json`
-(SHA-256 `95abfe41158714206aa9f1537804a4cf065053c3ced6965d7dbb4f5b06aa6806`)
-records 45 files and 159,751,519 copied bytes. Each file's SHA-256, byte count
-and mode matched both the provenance inventory and the worker export in this
-reconciliation. The supplied host validation record
-`/home/daniel/workspace/constellation/codebases/orbit-graph/.orbit/tmp/ORB-13709-handoff-da5009b/host-graph-validation.json`
-(SHA-256 `fca7aef0bee72dc28a0da7acf5cd180e77318ea97a637fd33b46daca48ff4392`)
-identifies that stable binary path and records six passing tests across
-`RealGraphTests` and `LiveContainmentTests`.
-
-The fresh-export recipe below remains the recreation procedure. A separately
-running actual-plugin evaluation, `profile13776`, is still unfinished and is
-not certified or included in these results.
-
-## Historical findings and outstanding limits
-
-The [archived ORB-13712 report](https://github.com/constellation-works/orbit-graph/blob/da5009b7bf8f1a328aa3923252b3b049b1e8bd17/docs/plugin-readiness.md)
-measured source `ac6d5b91f973874325bac789e9c433a71c805766`, graph SHA-256
-`fdbfff46d20e3fcf367c81efd0d01143a43df50134ed8c87bc0e615e37bac6d1`, Orbit
-SHA-256 `f9bf822eab881ae8a9a81605929f026db79cd742231354420c888326d87891c9`,
-42/42 conformance cases, four failing doctests and incomplete delivered-run
-import. Those measurements are historical, not silently recast as passes.
-
-ORB-13737 (`9afc4c3`) repaired doctest Git isolation; ORB-13738 (`4f4521c`)
-repaired diagnostic-prefixed structured refusal preservation; ORB-13763
-(`da5009b`) integrated task-scoped public delivery. Evaluation harness and scorer
-repairs, including ORB-13769 broker supervision/diagnostics (`a3dafc0`) and
-ORB-13771 raw-redaction compatibility (`1c53261`), are mapped to full commits
-in the [measurement report](../evals/readiness-20261003/README.md).
-The supplied operator runner suite at this candidate passes 72 strict tests
-with zero skips. Historical failed provider episodes remain failed; no provider
-rerun proves their recovery or effectiveness.
-
-The existing [changes cache decision D6](design/changes-command/4_decisions.md#d6-where-snapshots-are-cached)
-records a deviation from `STD-01@2 §R31`: cold `changes` calls write plugin
-snapshot/scratch caches. The historical eleven-tool read-only-state check must
-not be extended to `changes`, and was not repeated as a new measurement here.
-The [older Mac study](../evals/quality-20260929/README.md) uses other commits and
-Orbit 0.25.0. Public import does not enumerate all retries; its two actual
-content exclusions and `coverage.complete=false` remain explicit. The two
-small navigation cohorts establish neither agent benefit nor a production
-latency/cost advantage.
-
-## Candidate install and upgrade handoff
-
-Daniel can prepare a **fresh bound export of the measured source**, without
-changing the live installation, from a clean checkout of this exact commit. The
-already prepared operator copy and its hashes are recorded above; rebuilding it
-creates a new binary whose digest must be recorded separately.
-Check disk usage before every new build/export directory; at 80% stop. These
-Linux commands use scratch under `.orbit/tmp/`; a rebuilt binary gets a new
-recorded hash. Use an Orbit host that actually serves the public delivery read,
-then run the complete `CONTRIBUTING.md` sequence and strict installed test above.
+For a **fresh export** of the current candidate, the following recipe preserves
+the qualified debug binary and checks source correspondence before bundling.
+Run from a clean checkout of the pinned commit. It creates only an export and a
+private validation workspace; it does not install a plugin. The newly exported
+source has its own provenance and must not be called the old `cf4ea61` export.
 
 ```sh
-candidate=da5009b7bf8f1a328aa3923252b3b049b1e8bd17
+set -eu
+candidate=1523af82c7a9055adb5fd474035ee9a05b505732
+binary_source=e5c8109296227eece9cda6184fef98372c77fb37
+binary=/home/daniel/workspace/constellation/codebases/orbit-graph/.orbit/tmp/ORB-13709-plugin-study-v1/runtime-13790/orbit-graph
 test "$(git rev-parse HEAD)" = "$candidate"
 test -z "$(git status --short)"
+git diff --exit-code "$binary_source" "$candidate" -- \
+  crates Cargo.toml Cargo.lock .orbit-plugin scripts/bundle-plugin-binary.sh
+printf '%s  %s\n' 81ffdbdaa935faee1dbe311cf3494e5b24f2c268d132be24725dcf89593c0227 "$binary" | sha256sum -c -
+orbit tool show orbit.workflow.run.delivery --format json
+# Stop at 80% before each new export, worktree or build directory.
 test "$(df --output=pcent . | tail -n 1 | tr -dc '0-9')" -lt 80
 mkdir -p .orbit/tmp
 export_root=$(mktemp -d "$PWD/.orbit/tmp/graph-$candidate.XXXXXX")
-export CARGO_TARGET_DIR="$export_root/target"
-export TMPDIR="$export_root/temp"
-mkdir -p "$TMPDIR"
-cargo build --workspace --locked
-binary="$CARGO_TARGET_DIR/debug/orbit-graph"
-sha256sum "$binary" "$(readlink -f "$(command -v orbit)")"
-orbit tool show orbit.workflow.run.delivery --format json
-test "$(df --output=pcent . | tail -n 1 | tr -dc '0-9')" -lt 80
-source_root="$export_root/source-$candidate"
+source_root="$export_root/source"
 mkdir "$source_root"
-git archive --format=tar "$candidate" .orbit-plugin scripts/bundle-plugin-binary.sh \
-  > "$export_root/source-$candidate.tar"
-sha256sum "$export_root/source-$candidate.tar"
-tar -xf "$export_root/source-$candidate.tar" -C "$source_root"
+git archive --format=tar "$candidate" .orbit-plugin scripts/bundle-plugin-binary.sh > "$export_root/source.tar"
+tar -xf "$export_root/source.tar" -C "$source_root"
 python3 - "$source_root/.orbit-plugin/plugin.yaml" <<'PY'
 from pathlib import Path
 import sys
 path = Path(sys.argv[1])
-path.write_text(path.read_text().replace('  origin: orbit\n', ''))
+text = path.read_text()
+assert text.count('  origin: orbit\n') == 1
+path.write_text(text.replace('  origin: orbit\n', ''))
 PY
 sh "$source_root/scripts/bundle-plugin-binary.sh" --binary "$binary" "$source_root"
-sha256sum "$source_root/.orbit-plugin/plugin.yaml"
-check_home="$export_root/check-home"
-check_repo="$export_root/check-repo"
-mkdir -p "$check_home" "$check_repo"
+sha256sum "$export_root/source.tar" "$source_root/.orbit-plugin/plugin.yaml" \
+  "$source_root/.orbit-plugin/bin/orbit-graph.bin" "$(readlink -f "$(command -v orbit)")"
+check_home="$export_root/home"
+check_repo="$export_root/repo"
+mkdir -p "$check_home" "$check_repo" "$export_root/temp"
 env -i HOME="$check_home" PATH="$PATH" GIT_CONFIG_NOSYSTEM=1 \
   GIT_CONFIG_GLOBAL=/dev/null git -C "$check_repo" init -b main
 (
   cd "$check_repo"
-  env -i HOME="$check_home" XDG_CONFIG_HOME="$check_home" TMPDIR="$TMPDIR" PATH="$PATH" \
+  export HOME="$check_home" XDG_CONFIG_HOME="$check_home" TMPDIR="$export_root/temp"
+  env -i HOME="$HOME" XDG_CONFIG_HOME="$XDG_CONFIG_HOME" TMPDIR="$TMPDIR" PATH="$PATH" \
     orbit workspace init --name graph-candidate-check --ship-mode local
-  env -i HOME="$check_home" XDG_CONFIG_HOME="$check_home" TMPDIR="$TMPDIR" PATH="$PATH" \
+  env -i HOME="$HOME" XDG_CONFIG_HOME="$XDG_CONFIG_HOME" TMPDIR="$TMPDIR" PATH="$PATH" \
     orbit plugin validate "$source_root"
-  env -i HOME="$check_home" XDG_CONFIG_HOME="$check_home" TMPDIR="$TMPDIR" PATH="$PATH" \
+  env -i HOME="$HOME" XDG_CONFIG_HOME="$XDG_CONFIG_HOME" TMPDIR="$TMPDIR" PATH="$PATH" \
     orbit plugin test "$source_root"
 )
 ```
 
-A build/export check does not authorize live installation. After Daniel's
-separate authorization and review of the recorded manifest, binary and roots,
-choose the applicable live command:
-
-```sh
-orbit plugin add "$source_root"
-# Existing graph installation instead:
-# orbit plugin upgrade graph "$source_root"
-orbit plugin show graph --format json
-orbit plugin test "$source_root"
-# Separate permission consent, only after reviewing requested roots:
-orbit plugin enable graph --grant fs,orbit_tools
-```
-
-Local namespaces are `graph.*` / `graph_*`. Upgrade can retain grants for
-unchanged requests; widened requests require fresh consent. Orbit 0.25.1 tests
-the matching source containing `.orbit-plugin/plugin.yaml`, not the installed
-version directory. Official first-party `git+` installs use the distinct
-[release procedure](plugin.md#install); maintainers own tags and publishing.
-No live installation, grant change, host upgrade, release or agent-review
-automation was performed by this certification.
+The existing prepared-export logs exercise this procedure's bundler, private
+workspace, validate and test operations on the identical plugin/bundler bytes;
+this report checked the current CLI help and source, without rerunning an
+unnecessary installation suite. Archive the new manifest, executable digests,
+file inventory and command logs with each fresh export. If rebuilding instead,
+check disk first, use a private target with `cargo build --workspace --locked`,
+and qualify the new binary separately through the complete repository sequence
+and strict private installed tests from CONTRIBUTING, including
+`ORBIT_GRAPH_TEST_REQUIRE_RUN_DELIVERY=1`. Never inherit a previous binary's hash
+or its latency claims. Maintainers own release versions, tags and publishing.

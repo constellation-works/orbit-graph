@@ -1,0 +1,2205 @@
+{
+  "schema_version": 1,
+  "task_id": "ORB-13801",
+  "run_id": "jrun-20261003-1446-c2",
+  "date": "2026-10-03",
+  "conclusion": {
+    "qualification": "bounded Linux runtime and export qualification by attributed prior tests and current source correspondence",
+    "agent_advantage_demonstrated": false,
+    "follow_up_consideration": false,
+    "live_installation_changed": false,
+    "new_provider_calls": 0
+  },
+  "candidate_correspondence": {
+    "at": "2026-10-03T14:28:47.555124+00:00",
+    "producer": "Codex root ORB-13709",
+    "candidate_commit": "1523af82c7a9055adb5fd474035ee9a05b505732",
+    "candidate_tree": "97a6d17c348ecac5968f4be69cb6b738d94201b8",
+    "clean": true,
+    "runtime_qualified_files": 380,
+    "scorer_qualified_files": 14,
+    "runtime_qualification_sha256": "7aaf3e04254146c98ecaf945ead973622e49b3d50d711330da52f353e0e7e7e8",
+    "scorer_qualification_sha256": "394cb786ad7a0bbbbcbb3a0c0153a832ae08a63e1387b0682ec45a66b0f2bfa0",
+    "runtime_backend_sha256": "81ffdbdaa935faee1dbe311cf3494e5b24f2c268d132be24725dcf89593c0227",
+    "orbit_sha256": "3dfbde617f1bbe4ec4befbbd8a54d76fafc050d803cee387c5ad1eeba5048927",
+    "export_source_commit": "cf4ea61274d7dfa6b031b573eb88c150888385ea",
+    "export_files_verified": 45,
+    "export_provenance_sha256": "c99b34d82706b4924e6f7ab534c4d2d36c559da50d07a5307c9a111521282503",
+    "runtime_changes_since_export": [],
+    "study_v2_sha256": {
+      "report.json": "68c2a0dc22e946091f315a9d7faca605b72dfb0e28daa3dd7ee02903f40eb7fb",
+      "audits.json": "caf973433a895a059eca9850b16163073194dcf7051af1b54e79ad0cd964aba2",
+      "review-limitations.json": "bb6ed598219582dafd0688f848f12c31f85fed6c9ad5942743ddc3d0dd0aeb26"
+    },
+    "fresh_tests": false,
+    "live_installation_changed": false,
+    "passed": true
+  },
+  "export": {
+    "producer": "Codex root ORB-13709",
+    "created_at": "2026-10-03T11:41:19.017902+00:00",
+    "source_commit": "cf4ea61274d7dfa6b031b573eb88c150888385ea",
+    "source_tree": "d8915f743521403942c704f11ef0e4a1c1d05559",
+    "backend_source_commit": "e5c8109296227eece9cda6184fef98372c77fb37",
+    "backend_sha256": "81ffdbdaa935faee1dbe311cf3494e5b24f2c268d132be24725dcf89593c0227",
+    "backend_build_profile": "debug; preserved qualified runtime, not a new optimized build",
+    "runtime_source_diff_empty": true,
+    "orbit_sha256": "3dfbde617f1bbe4ec4befbbd8a54d76fafc050d803cee387c5ad1eeba5048927",
+    "source_tar_sha256": "657ddede1c6f9403b5e4da7367aca97cdfa90e157f38f559f3aa3ab5d2dfe7d7",
+    "bound_manifest_sha256": "7503b6e2f3b20b4bb22e5977c87a7fb650f0474a4bc6d53648c1ae465b7d40a0",
+    "disk_percent_before": 27,
+    "live_installation_changed": false,
+    "passed": true
+  },
+  "export_file_count": 45,
+  "export_bytes": 159792175,
+  "study": {
+    "runtime": {
+      "schema_version": 1,
+      "study_kind": "agent",
+      "operator": "Codex root ORB-13709 on dk-server-1",
+      "frozen_at": "2026-10-03T12:23:07Z",
+      "approval_reference": "Continuing ORB-13709 evaluation mandate and explicit user approval for these same pinned source snapshots to configured Codex gpt-6.1-sol; concrete plan, qualification and execution decision archived separately before calls",
+      "model": {
+        "provider": "codex-cli",
+        "name": "gpt-6.1-sol",
+        "version": "codex-cli 0.160.0",
+        "settings": {
+          "model_reasoning_effort": "medium",
+          "code_mode_host": "enabled"
+        }
+      },
+      "provider_binary_sha256": "12eb3e81114588aca3b7998f4f19e8997b056aca08e57a7ca7c8a3ec8c652aad",
+      "harness": {
+        "eval_runner.py": "fb3f89212834b12f20b399ee4fcb69c237aa36b0bd338679615a8a77de9a7d3e",
+        "eval_broker.py": "50c1b8e05b1756d76ab890e5c21905012f8124d2395e858f29c0aead2d6de644",
+        "plugin_profile.py": "c2fc48cd5900dbbe46c50ccdbb1599f7e7a7327badc2ab4a87a433ef9225057e",
+        "reply_provenance.py": "9344d2cfc523c5631e22cbf2def1bd961cbc3d0f6d9cefd07e62c7ea1b3161c8"
+      },
+      "baseline_tool_versions": {
+        "read": "agent-eval-broker 4 sha256:50c1b8e05b1756d76ab890e5c21905012f8124d2395e858f29c0aead2d6de644",
+        "rg": "ripgrep 15.2.0 sha256:e62198eb19b136b88c330af83647b5a962cb99b6b1f066758568f12de1974849",
+        "git": "git version 2.43.0 sha256:2a8c18fbf43da9f692d75474c72bea9dfd796c260b0f3dfe456376abc3bbd668"
+      },
+      "resource_limits": {
+        "memory.max": 4294967296,
+        "pids.max": 256
+      },
+      "binary_paths": {
+        "provider": "/home/daniel/.codex/packages/standalone/releases/0.160.0-x86_64-unknown-linux-musl/bin/codex",
+        "orbit": "/home/daniel/.orbit/bin/orbit",
+        "backend": "/home/daniel/workspace/constellation/codebases/orbit-graph/.orbit/tmp/ORB-13709-plugin-study-v1/runtime-13790/orbit-graph",
+        "git": "/usr/bin/git",
+        "rg": "/home/daniel/.codex/packages/standalone/releases/0.160.0-x86_64-unknown-linux-musl/codex-path/rg",
+        "python": "/usr/bin/python3",
+        "bwrap": "/usr/bin/bwrap"
+      }
+    },
+    "freeze_sha256": "772bb58d54be8e2083403f9b217bcc947d676ac7bbf2f315da904237618ef915",
+    "bundle_sha256": "4b76d26d5c9342c536ffef8cc953f1a6f9ff3df110f3576f0d2fc5a26dc3b8d2",
+    "accepted_attempts": 12,
+    "retries": 0,
+    "report": {
+      "effectiveness_evidence": true,
+      "episodes": [
+        {
+          "arm": "baseline",
+          "artifact_sha256": "e8521df0b712632eb3dd89e08b5d809bcfdf41c843447b5442e498d0bf870dc7",
+          "calls": 3,
+          "case_id": "graph-lexical-selector-paths",
+          "correct": true,
+          "error": null,
+          "graph_calls": 0,
+          "output_bytes": 29965,
+          "quality": {
+            "citation_coverage": 1.0,
+            "citation_invalid": [],
+            "citation_total": 3,
+            "citation_valid": 3,
+            "cited_required": 3,
+            "identity_precision": 1.0,
+            "identity_recall": 1.0,
+            "objective_pass": true,
+            "required_found": 3,
+            "required_total": 3,
+            "returned_items": 3,
+            "supported_items": 3,
+            "supporting_accepted": 0,
+            "unsupported": []
+          },
+          "review_blinding": "unblinded",
+          "run_id": "aeval-e65fa0348c7b812b",
+          "semantic_pass": true,
+          "setup_output_bytes": 0,
+          "split": "development",
+          "status": "ok",
+          "successful_graph_calls": 0,
+          "timing": {
+            "graph_sync_ms": 0,
+            "plugin_install_ms": 0,
+            "preflight_ms": 231,
+            "provider_ms": 38774,
+            "setup_ms": 263,
+            "wall_limit_ms": 300000,
+            "wall_ms": 39037
+          },
+          "usage": {
+            "cached_input_tokens": 45312,
+            "cost_usd": null,
+            "input_tokens": 57730,
+            "output_tokens": 868,
+            "total_tokens": null
+          }
+        },
+        {
+          "arm": "graph",
+          "artifact_sha256": "6b96562b6e83f0cdba733d9d3f065c19f8382e08417e98f0721de64a40c55c2c",
+          "calls": 8,
+          "case_id": "graph-lexical-selector-paths",
+          "correct": false,
+          "error": null,
+          "graph_calls": 5,
+          "output_bytes": 43096,
+          "quality": {
+            "citation_coverage": 0.6666666666666666,
+            "citation_invalid": [
+              {
+                "file": "crates/orbit-graph-extract/src/selector.rs",
+                "item": "symbol:crates/orbit-graph-extract/src/selector.rs#<Selector as FromStr>::from_str:method",
+                "line": 92,
+                "quote": "fn from_str(selector: &str) -> Result<Self, Self::Err> {"
+              }
+            ],
+            "citation_total": 3,
+            "citation_valid": 2,
+            "cited_required": 2,
+            "identity_precision": 0.6666666666666666,
+            "identity_recall": 0.6666666666666666,
+            "objective_pass": false,
+            "required_found": 2,
+            "required_total": 3,
+            "returned_items": 3,
+            "supported_items": 2,
+            "supporting_accepted": 0,
+            "unsupported": [
+              "symbol:crates/orbit-graph-extract/src/selector.rs#<Selector as FromStr>::from_str:method"
+            ]
+          },
+          "review_blinding": "unblinded",
+          "run_id": "aeval-15dcfad6af3ebf40",
+          "semantic_pass": true,
+          "setup_output_bytes": 298327,
+          "split": "development",
+          "status": "ok",
+          "successful_graph_calls": 4,
+          "timing": {
+            "graph_sync_ms": 2019,
+            "plugin_install_ms": 1006,
+            "preflight_ms": 239,
+            "provider_ms": 65529,
+            "setup_ms": 1515,
+            "wall_limit_ms": 300000,
+            "wall_ms": 67044
+          },
+          "usage": {
+            "cached_input_tokens": 161664,
+            "cost_usd": null,
+            "input_tokens": 197345,
+            "output_tokens": 1121,
+            "total_tokens": null
+          }
+        },
+        {
+          "arm": "graph",
+          "artifact_sha256": "10051261b15f59dffbceb586559b53dd54bdb07ef67b674f80bdd8d6a9559bf8",
+          "calls": 15,
+          "case_id": "graph-trace-expansion-budget",
+          "correct": true,
+          "error": null,
+          "graph_calls": 4,
+          "output_bytes": 76425,
+          "quality": {
+            "citation_coverage": 1.0,
+            "citation_invalid": [],
+            "citation_total": 3,
+            "citation_valid": 3,
+            "cited_required": 3,
+            "identity_precision": 1.0,
+            "identity_recall": 1.0,
+            "objective_pass": true,
+            "required_found": 3,
+            "required_total": 3,
+            "returned_items": 3,
+            "supported_items": 3,
+            "supporting_accepted": 0,
+            "unsupported": []
+          },
+          "review_blinding": "unblinded",
+          "run_id": "aeval-0367bb8d18afd025",
+          "semantic_pass": true,
+          "setup_output_bytes": 298327,
+          "split": "development",
+          "status": "ok",
+          "successful_graph_calls": 3,
+          "timing": {
+            "graph_sync_ms": 2042,
+            "plugin_install_ms": 915,
+            "preflight_ms": 234,
+            "provider_ms": 80485,
+            "setup_ms": 1405,
+            "wall_limit_ms": 300000,
+            "wall_ms": 81890
+          },
+          "usage": {
+            "cached_input_tokens": 178816,
+            "cost_usd": null,
+            "input_tokens": 226151,
+            "output_tokens": 1678,
+            "total_tokens": null
+          }
+        },
+        {
+          "arm": "baseline",
+          "artifact_sha256": "4769af6dc852c0d1cf41b07bb3b605c3d9207c22e3ecfed69623fa40e247118f",
+          "calls": 8,
+          "case_id": "graph-trace-expansion-budget",
+          "correct": true,
+          "error": null,
+          "graph_calls": 0,
+          "output_bytes": 64889,
+          "quality": {
+            "citation_coverage": 1.0,
+            "citation_invalid": [],
+            "citation_total": 5,
+            "citation_valid": 5,
+            "cited_required": 3,
+            "identity_precision": 1.0,
+            "identity_recall": 1.0,
+            "objective_pass": true,
+            "required_found": 3,
+            "required_total": 3,
+            "returned_items": 5,
+            "supported_items": 5,
+            "supporting_accepted": 2,
+            "unsupported": []
+          },
+          "review_blinding": "unblinded",
+          "run_id": "aeval-da825b8488a19be6",
+          "semantic_pass": true,
+          "setup_output_bytes": 0,
+          "split": "development",
+          "status": "ok",
+          "successful_graph_calls": 0,
+          "timing": {
+            "graph_sync_ms": 0,
+            "plugin_install_ms": 0,
+            "preflight_ms": 236,
+            "provider_ms": 72175,
+            "setup_ms": 330,
+            "wall_limit_ms": 300000,
+            "wall_ms": 72505
+          },
+          "usage": {
+            "cached_input_tokens": 95488,
+            "cost_usd": null,
+            "input_tokens": 116825,
+            "output_tokens": 1640,
+            "total_tokens": null
+          }
+        },
+        {
+          "arm": "baseline",
+          "artifact_sha256": "59809834b81cf081f91558434ab79b199aa13328d1456b31b18a2c656fc7ff27",
+          "calls": 12,
+          "case_id": "orbit-interval-catchup-projection",
+          "correct": false,
+          "error": null,
+          "graph_calls": 0,
+          "output_bytes": 88488,
+          "quality": {
+            "citation_coverage": 0.7,
+            "citation_invalid": [
+              {
+                "file": "crates/orbit-core/src/application/auto_tasks/scheduler.rs",
+                "item": "symbol:crates/orbit-core/src/application/auto_tasks/scheduler.rs#OrbitRuntime.mint_task:method",
+                "line": 53,
+                "quote": "fn mint_task(&self, definition: &AutoTaskDefinition) -> Result<String, OrbitError> {"
+              },
+              {
+                "file": "crates/orbit-automation/src/auto_tasks/tests/scheduler.rs",
+                "item": "symbol:crates/orbit-automation/src/auto_tasks/tests/scheduler.rs#TestDispatch.mint_task:method",
+                "line": 112,
+                "quote": "fn mint_task(&self, definition: &AutoTaskDefinition) -> Result<String, OrbitError> {"
+              },
+              {
+                "file": "crates/orbit-core/src/application/auto_tasks/tests/mod.rs",
+                "item": "symbol:crates/orbit-core/src/application/auto_tasks/tests/mod.rs#PausedDispatch.mint_task:method",
+                "line": 102,
+                "quote": "fn mint_task(&self, definition: &AutoTaskDefinition) -> Result<String, OrbitError> {"
+              }
+            ],
+            "citation_total": 10,
+            "citation_valid": 7,
+            "cited_required": 5,
+            "identity_precision": 0.7,
+            "identity_recall": 1.0,
+            "objective_pass": false,
+            "required_found": 5,
+            "required_total": 5,
+            "returned_items": 10,
+            "supported_items": 7,
+            "supporting_accepted": 2,
+            "unsupported": [
+              "symbol:crates/orbit-core/src/application/auto_tasks/scheduler.rs#OrbitRuntime.mint_task:method",
+              "symbol:crates/orbit-automation/src/auto_tasks/tests/scheduler.rs#TestDispatch.mint_task:method",
+              "symbol:crates/orbit-core/src/application/auto_tasks/tests/mod.rs#PausedDispatch.mint_task:method"
+            ]
+          },
+          "review_blinding": "unblinded",
+          "run_id": "aeval-0c2b10028b4fead1",
+          "semantic_pass": true,
+          "setup_output_bytes": 0,
+          "split": "held-out",
+          "status": "ok",
+          "successful_graph_calls": 0,
+          "timing": {
+            "graph_sync_ms": 0,
+            "plugin_install_ms": 0,
+            "preflight_ms": 235,
+            "provider_ms": 83211,
+            "setup_ms": 2341,
+            "wall_limit_ms": 300000,
+            "wall_ms": 85552
+          },
+          "usage": {
+            "cached_input_tokens": 90112,
+            "cost_usd": null,
+            "input_tokens": 132497,
+            "output_tokens": 2227,
+            "total_tokens": null
+          }
+        },
+        {
+          "arm": "graph",
+          "artifact_sha256": "1ba650a47b0fc8f95550ab31599b2f56e8906df2f9fa14bfaa69933f0a80b1e8",
+          "calls": 8,
+          "case_id": "orbit-interval-catchup-projection",
+          "correct": false,
+          "error": {
+            "code": "tool_execution_failed",
+            "message": "installed plugin failed without a recoverable reply"
+          },
+          "graph_calls": 2,
+          "output_bytes": 56745,
+          "quality": null,
+          "review_blinding": null,
+          "run_id": "aeval-7b3d3b9e123fa36d",
+          "semantic_pass": false,
+          "setup_output_bytes": 298327,
+          "split": "held-out",
+          "status": "failed",
+          "successful_graph_calls": 0,
+          "timing": {
+            "graph_sync_ms": 14912,
+            "plugin_install_ms": 1120,
+            "preflight_ms": 232,
+            "provider_ms": 85743,
+            "setup_ms": 2956,
+            "wall_limit_ms": 300000,
+            "wall_ms": 88699
+          },
+          "usage": {
+            "cached_input_tokens": 156544,
+            "cost_usd": null,
+            "input_tokens": 183717,
+            "output_tokens": 1407,
+            "total_tokens": null
+          }
+        },
+        {
+          "arm": "graph",
+          "artifact_sha256": "a4345afef9b350d68a619bd64dfb017d69284a88963a07d1d7d7cfb5f4758230",
+          "calls": 9,
+          "case_id": "orbit-indexed-overlap-candidates",
+          "correct": false,
+          "error": {
+            "code": "tool_execution_failed",
+            "message": "installed plugin failed without a recoverable reply"
+          },
+          "graph_calls": 5,
+          "output_bytes": 61978,
+          "quality": null,
+          "review_blinding": null,
+          "run_id": "aeval-b397dc2378daaa5a",
+          "semantic_pass": false,
+          "setup_output_bytes": 298327,
+          "split": "held-out",
+          "status": "failed",
+          "successful_graph_calls": 3,
+          "timing": {
+            "graph_sync_ms": 15682,
+            "plugin_install_ms": 1083,
+            "preflight_ms": 303,
+            "provider_ms": 119456,
+            "setup_ms": 2971,
+            "wall_limit_ms": 300000,
+            "wall_ms": 122427
+          },
+          "usage": {
+            "cached_input_tokens": 152576,
+            "cost_usd": null,
+            "input_tokens": 192635,
+            "output_tokens": 2479,
+            "total_tokens": null
+          }
+        },
+        {
+          "arm": "baseline",
+          "artifact_sha256": "8c64f94073e9e5afcbafd32d633b05a1079d16469bc753f56e2944af28690663",
+          "calls": 8,
+          "case_id": "orbit-indexed-overlap-candidates",
+          "correct": false,
+          "error": null,
+          "graph_calls": 0,
+          "output_bytes": 87891,
+          "quality": {
+            "citation_coverage": 0.75,
+            "citation_invalid": [
+              {
+                "file": "crates/orbit-common/src/fs/selector.rs",
+                "item": "symbol:crates/orbit-common/src/fs/selector.rs#overlaps:function",
+                "line": 311,
+                "quote": "pub fn overlaps(a: &str, b: &str) -> bool {"
+              },
+              {
+                "file": "crates/orbit-common/src/fs/selector.rs",
+                "item": "symbol:crates/orbit-common/src/fs/selector.rs#ParsedScope::parse:method",
+                "line": 430,
+                "quote": "fn parse(input: &str) -> Result<Self, SelectorParseError> {"
+              },
+              {
+                "file": "crates/orbit-common/src/fs/selector.rs",
+                "item": "symbol:crates/orbit-common/src/fs/selector.rs#Selector::from_str:method",
+                "line": 128,
+                "quote": "fn from_str(selector: &str) -> Result<Self, Self::Err> {"
+              }
+            ],
+            "citation_total": 12,
+            "citation_valid": 9,
+            "cited_required": 4,
+            "identity_precision": 0.75,
+            "identity_recall": 1.0,
+            "objective_pass": false,
+            "required_found": 4,
+            "required_total": 4,
+            "returned_items": 12,
+            "supported_items": 9,
+            "supporting_accepted": 5,
+            "unsupported": [
+              "symbol:crates/orbit-common/src/fs/selector.rs#overlaps:function",
+              "symbol:crates/orbit-common/src/fs/selector.rs#ParsedScope::parse:method",
+              "symbol:crates/orbit-common/src/fs/selector.rs#Selector::from_str:method"
+            ]
+          },
+          "review_blinding": "unblinded",
+          "run_id": "aeval-37f5a31da520275e",
+          "semantic_pass": true,
+          "setup_output_bytes": 0,
+          "split": "held-out",
+          "status": "ok",
+          "successful_graph_calls": 0,
+          "timing": {
+            "graph_sync_ms": 0,
+            "plugin_install_ms": 0,
+            "preflight_ms": 244,
+            "provider_ms": 99206,
+            "setup_ms": 1594,
+            "wall_limit_ms": 300000,
+            "wall_ms": 100800
+          },
+          "usage": {
+            "cached_input_tokens": 88576,
+            "cost_usd": null,
+            "input_tokens": 140108,
+            "output_tokens": 2274,
+            "total_tokens": null
+          }
+        },
+        {
+          "arm": "baseline",
+          "artifact_sha256": "57dfe53ab074052d6e879ce3aa48f2968377852a37d0581a14480d8d3df31df1",
+          "calls": 4,
+          "case_id": "pulsar-account-selection-uncertainty",
+          "correct": true,
+          "error": null,
+          "graph_calls": 0,
+          "output_bytes": 67478,
+          "quality": {
+            "citation_coverage": 1.0,
+            "citation_invalid": [],
+            "citation_total": 3,
+            "citation_valid": 3,
+            "cited_required": 3,
+            "identity_precision": 1.0,
+            "identity_recall": 1.0,
+            "objective_pass": true,
+            "required_found": 3,
+            "required_total": 3,
+            "returned_items": 3,
+            "supported_items": 3,
+            "supporting_accepted": 0,
+            "unsupported": []
+          },
+          "review_blinding": "unblinded",
+          "run_id": "aeval-c0354d2b892ccd79",
+          "semantic_pass": true,
+          "setup_output_bytes": 0,
+          "split": "held-out",
+          "status": "ok",
+          "successful_graph_calls": 0,
+          "timing": {
+            "graph_sync_ms": 0,
+            "plugin_install_ms": 0,
+            "preflight_ms": 226,
+            "provider_ms": 53162,
+            "setup_ms": 138,
+            "wall_limit_ms": 300000,
+            "wall_ms": 53300
+          },
+          "usage": {
+            "cached_input_tokens": 64640,
+            "cost_usd": null,
+            "input_tokens": 88024,
+            "output_tokens": 1067,
+            "total_tokens": null
+          }
+        },
+        {
+          "arm": "graph",
+          "artifact_sha256": "e9f21e6c3f66814d1ce8d6883f69a8a94028164041900dfb004ad1fcb1172e87",
+          "calls": 12,
+          "case_id": "pulsar-account-selection-uncertainty",
+          "correct": true,
+          "error": null,
+          "graph_calls": 5,
+          "output_bytes": 65852,
+          "quality": {
+            "citation_coverage": 1.0,
+            "citation_invalid": [],
+            "citation_total": 3,
+            "citation_valid": 3,
+            "cited_required": 3,
+            "identity_precision": 1.0,
+            "identity_recall": 1.0,
+            "objective_pass": true,
+            "required_found": 3,
+            "required_total": 3,
+            "returned_items": 3,
+            "supported_items": 3,
+            "supporting_accepted": 0,
+            "unsupported": []
+          },
+          "review_blinding": "unblinded",
+          "run_id": "aeval-bdc5778b9e27fd47",
+          "semantic_pass": true,
+          "setup_output_bytes": 298327,
+          "split": "held-out",
+          "status": "ok",
+          "successful_graph_calls": 3,
+          "timing": {
+            "graph_sync_ms": 725,
+            "plugin_install_ms": 1039,
+            "preflight_ms": 252,
+            "provider_ms": 75039,
+            "setup_ms": 1415,
+            "wall_limit_ms": 300000,
+            "wall_ms": 76454
+          },
+          "usage": {
+            "cached_input_tokens": 210688,
+            "cost_usd": null,
+            "input_tokens": 253949,
+            "output_tokens": 1365,
+            "total_tokens": null
+          }
+        },
+        {
+          "arm": "graph",
+          "artifact_sha256": "d1f31b3d56549fc30579fa5bf34d76c02591c7c58795c8287c28f9ee02e95009",
+          "calls": 11,
+          "case_id": "pulsar-readonly-wal-fallback",
+          "correct": false,
+          "error": null,
+          "graph_calls": 11,
+          "output_bytes": 189991,
+          "quality": {
+            "citation_coverage": 0.8571428571428571,
+            "citation_invalid": [
+              {
+                "file": "src/pulsar/app/core/ledger/connection.py",
+                "item": "symbol:src/pulsar/app/core/ledger/connection.py#READ_ATTEMPTS:constant",
+                "line": 21,
+                "quote": "READ_ATTEMPTS = 3"
+              }
+            ],
+            "citation_total": 7,
+            "citation_valid": 6,
+            "cited_required": 3,
+            "identity_precision": 0.8571428571428571,
+            "identity_recall": 1.0,
+            "objective_pass": false,
+            "required_found": 3,
+            "required_total": 3,
+            "returned_items": 7,
+            "supported_items": 6,
+            "supporting_accepted": 3,
+            "unsupported": [
+              "symbol:src/pulsar/app/core/ledger/connection.py#READ_ATTEMPTS:constant"
+            ]
+          },
+          "review_blinding": "unblinded",
+          "run_id": "aeval-326c30a20b358f91",
+          "semantic_pass": true,
+          "setup_output_bytes": 298327,
+          "split": "held-out",
+          "status": "ok",
+          "successful_graph_calls": 10,
+          "timing": {
+            "graph_sync_ms": 1174,
+            "plugin_install_ms": 962,
+            "preflight_ms": 234,
+            "provider_ms": 94846,
+            "setup_ms": 1319,
+            "wall_limit_ms": 300000,
+            "wall_ms": 96165
+          },
+          "usage": {
+            "cached_input_tokens": 218112,
+            "cost_usd": null,
+            "input_tokens": 261724,
+            "output_tokens": 2246,
+            "total_tokens": null
+          }
+        },
+        {
+          "arm": "baseline",
+          "artifact_sha256": "4a15263f01f2aee0f505a8008c2a340b441083a46707c2196e173e3fad4b50dc",
+          "calls": 7,
+          "case_id": "pulsar-readonly-wal-fallback",
+          "correct": false,
+          "error": null,
+          "graph_calls": 0,
+          "output_bytes": 69387,
+          "quality": {
+            "citation_coverage": 0.8571428571428571,
+            "citation_invalid": [
+              {
+                "file": "src/pulsar/app/core/ledger/connection.py",
+                "item": "symbol:src/pulsar/app/core/ledger/connection.py#READ_ATTEMPTS:constant",
+                "line": 21,
+                "quote": "READ_ATTEMPTS = 3"
+              }
+            ],
+            "citation_total": 7,
+            "citation_valid": 6,
+            "cited_required": 3,
+            "identity_precision": 0.8571428571428571,
+            "identity_recall": 1.0,
+            "objective_pass": false,
+            "required_found": 3,
+            "required_total": 3,
+            "returned_items": 7,
+            "supported_items": 6,
+            "supporting_accepted": 3,
+            "unsupported": [
+              "symbol:src/pulsar/app/core/ledger/connection.py#READ_ATTEMPTS:constant"
+            ]
+          },
+          "review_blinding": "unblinded",
+          "run_id": "aeval-1ff45a0528390fd4",
+          "semantic_pass": true,
+          "setup_output_bytes": 0,
+          "split": "held-out",
+          "status": "ok",
+          "successful_graph_calls": 0,
+          "timing": {
+            "graph_sync_ms": 0,
+            "plugin_install_ms": 0,
+            "preflight_ms": 230,
+            "provider_ms": 70159,
+            "setup_ms": 130,
+            "wall_limit_ms": 300000,
+            "wall_ms": 70289
+          },
+          "usage": {
+            "cached_input_tokens": 54016,
+            "cost_usd": null,
+            "input_tokens": 85705,
+            "output_tokens": 1773,
+            "total_tokens": null
+          }
+        }
+      ],
+      "follow_up_consideration": false,
+      "groups": {
+        "all/baseline": {
+          "accuracy": 0.5,
+          "adoption": {
+            "among_ok": 0,
+            "attempted": 0,
+            "calls": 0,
+            "denominator": 6,
+            "ok_denominator": 6,
+            "successful": 0,
+            "successful_calls": 0
+          },
+          "correct": 3,
+          "error_codes": {},
+          "output_bytes": 408098,
+          "setup_output_bytes": 0,
+          "statuses": {
+            "ok": 6
+          },
+          "timing_totals": {
+            "graph_sync_ms": 0,
+            "plugin_install_ms": 0,
+            "preflight_ms": 1402,
+            "provider_ms": 416687,
+            "setup_ms": 4796,
+            "wall_limit_ms": 1800000,
+            "wall_ms": 421483
+          },
+          "tool_calls": 42,
+          "total": 6,
+          "usage": {
+            "cached_input_tokens": {
+              "observed": 6,
+              "observed_sum": 438144,
+              "sum": 438144,
+              "total": 6
+            },
+            "cost_usd": {
+              "observed": 0,
+              "observed_sum": null,
+              "sum": null,
+              "total": 6
+            },
+            "input_tokens": {
+              "observed": 6,
+              "observed_sum": 620889,
+              "sum": 620889,
+              "total": 6
+            },
+            "output_tokens": {
+              "observed": 6,
+              "observed_sum": 9849,
+              "sum": 9849,
+              "total": 6
+            },
+            "total_tokens": {
+              "observed": 0,
+              "observed_sum": null,
+              "sum": null,
+              "total": 6
+            }
+          }
+        },
+        "all/graph": {
+          "accuracy": 0.3333333333333333,
+          "adoption": {
+            "among_ok": 4,
+            "attempted": 6,
+            "calls": 32,
+            "denominator": 6,
+            "ok_denominator": 4,
+            "successful": 5,
+            "successful_calls": 23
+          },
+          "correct": 2,
+          "error_codes": {
+            "tool_execution_failed": 2
+          },
+          "output_bytes": 494087,
+          "setup_output_bytes": 1789962,
+          "statuses": {
+            "failed": 2,
+            "ok": 4
+          },
+          "timing_totals": {
+            "graph_sync_ms": 36554,
+            "plugin_install_ms": 6125,
+            "preflight_ms": 1494,
+            "provider_ms": 521098,
+            "setup_ms": 11581,
+            "wall_limit_ms": 1800000,
+            "wall_ms": 532679
+          },
+          "tool_calls": 63,
+          "total": 6,
+          "usage": {
+            "cached_input_tokens": {
+              "observed": 6,
+              "observed_sum": 1078400,
+              "sum": 1078400,
+              "total": 6
+            },
+            "cost_usd": {
+              "observed": 0,
+              "observed_sum": null,
+              "sum": null,
+              "total": 6
+            },
+            "input_tokens": {
+              "observed": 6,
+              "observed_sum": 1315521,
+              "sum": 1315521,
+              "total": 6
+            },
+            "output_tokens": {
+              "observed": 6,
+              "observed_sum": 10296,
+              "sum": 10296,
+              "total": 6
+            },
+            "total_tokens": {
+              "observed": 0,
+              "observed_sum": null,
+              "sum": null,
+              "total": 6
+            }
+          }
+        },
+        "development/baseline": {
+          "accuracy": 1.0,
+          "adoption": {
+            "among_ok": 0,
+            "attempted": 0,
+            "calls": 0,
+            "denominator": 2,
+            "ok_denominator": 2,
+            "successful": 0,
+            "successful_calls": 0
+          },
+          "correct": 2,
+          "error_codes": {},
+          "output_bytes": 94854,
+          "setup_output_bytes": 0,
+          "statuses": {
+            "ok": 2
+          },
+          "timing_totals": {
+            "graph_sync_ms": 0,
+            "plugin_install_ms": 0,
+            "preflight_ms": 467,
+            "provider_ms": 110949,
+            "setup_ms": 593,
+            "wall_limit_ms": 600000,
+            "wall_ms": 111542
+          },
+          "tool_calls": 11,
+          "total": 2,
+          "usage": {
+            "cached_input_tokens": {
+              "observed": 2,
+              "observed_sum": 140800,
+              "sum": 140800,
+              "total": 2
+            },
+            "cost_usd": {
+              "observed": 0,
+              "observed_sum": null,
+              "sum": null,
+              "total": 2
+            },
+            "input_tokens": {
+              "observed": 2,
+              "observed_sum": 174555,
+              "sum": 174555,
+              "total": 2
+            },
+            "output_tokens": {
+              "observed": 2,
+              "observed_sum": 2508,
+              "sum": 2508,
+              "total": 2
+            },
+            "total_tokens": {
+              "observed": 0,
+              "observed_sum": null,
+              "sum": null,
+              "total": 2
+            }
+          }
+        },
+        "development/graph": {
+          "accuracy": 0.5,
+          "adoption": {
+            "among_ok": 2,
+            "attempted": 2,
+            "calls": 9,
+            "denominator": 2,
+            "ok_denominator": 2,
+            "successful": 2,
+            "successful_calls": 7
+          },
+          "correct": 1,
+          "error_codes": {},
+          "output_bytes": 119521,
+          "setup_output_bytes": 596654,
+          "statuses": {
+            "ok": 2
+          },
+          "timing_totals": {
+            "graph_sync_ms": 4061,
+            "plugin_install_ms": 1921,
+            "preflight_ms": 473,
+            "provider_ms": 146014,
+            "setup_ms": 2920,
+            "wall_limit_ms": 600000,
+            "wall_ms": 148934
+          },
+          "tool_calls": 23,
+          "total": 2,
+          "usage": {
+            "cached_input_tokens": {
+              "observed": 2,
+              "observed_sum": 340480,
+              "sum": 340480,
+              "total": 2
+            },
+            "cost_usd": {
+              "observed": 0,
+              "observed_sum": null,
+              "sum": null,
+              "total": 2
+            },
+            "input_tokens": {
+              "observed": 2,
+              "observed_sum": 423496,
+              "sum": 423496,
+              "total": 2
+            },
+            "output_tokens": {
+              "observed": 2,
+              "observed_sum": 2799,
+              "sum": 2799,
+              "total": 2
+            },
+            "total_tokens": {
+              "observed": 0,
+              "observed_sum": null,
+              "sum": null,
+              "total": 2
+            }
+          }
+        },
+        "held-out/baseline": {
+          "accuracy": 0.25,
+          "adoption": {
+            "among_ok": 0,
+            "attempted": 0,
+            "calls": 0,
+            "denominator": 4,
+            "ok_denominator": 4,
+            "successful": 0,
+            "successful_calls": 0
+          },
+          "correct": 1,
+          "error_codes": {},
+          "output_bytes": 313244,
+          "setup_output_bytes": 0,
+          "statuses": {
+            "ok": 4
+          },
+          "timing_totals": {
+            "graph_sync_ms": 0,
+            "plugin_install_ms": 0,
+            "preflight_ms": 935,
+            "provider_ms": 305738,
+            "setup_ms": 4203,
+            "wall_limit_ms": 1200000,
+            "wall_ms": 309941
+          },
+          "tool_calls": 31,
+          "total": 4,
+          "usage": {
+            "cached_input_tokens": {
+              "observed": 4,
+              "observed_sum": 297344,
+              "sum": 297344,
+              "total": 4
+            },
+            "cost_usd": {
+              "observed": 0,
+              "observed_sum": null,
+              "sum": null,
+              "total": 4
+            },
+            "input_tokens": {
+              "observed": 4,
+              "observed_sum": 446334,
+              "sum": 446334,
+              "total": 4
+            },
+            "output_tokens": {
+              "observed": 4,
+              "observed_sum": 7341,
+              "sum": 7341,
+              "total": 4
+            },
+            "total_tokens": {
+              "observed": 0,
+              "observed_sum": null,
+              "sum": null,
+              "total": 4
+            }
+          }
+        },
+        "held-out/graph": {
+          "accuracy": 0.25,
+          "adoption": {
+            "among_ok": 2,
+            "attempted": 4,
+            "calls": 23,
+            "denominator": 4,
+            "ok_denominator": 2,
+            "successful": 3,
+            "successful_calls": 16
+          },
+          "correct": 1,
+          "error_codes": {
+            "tool_execution_failed": 2
+          },
+          "output_bytes": 374566,
+          "setup_output_bytes": 1193308,
+          "statuses": {
+            "failed": 2,
+            "ok": 2
+          },
+          "timing_totals": {
+            "graph_sync_ms": 32493,
+            "plugin_install_ms": 4204,
+            "preflight_ms": 1021,
+            "provider_ms": 375084,
+            "setup_ms": 8661,
+            "wall_limit_ms": 1200000,
+            "wall_ms": 383745
+          },
+          "tool_calls": 40,
+          "total": 4,
+          "usage": {
+            "cached_input_tokens": {
+              "observed": 4,
+              "observed_sum": 737920,
+              "sum": 737920,
+              "total": 4
+            },
+            "cost_usd": {
+              "observed": 0,
+              "observed_sum": null,
+              "sum": null,
+              "total": 4
+            },
+            "input_tokens": {
+              "observed": 4,
+              "observed_sum": 892025,
+              "sum": 892025,
+              "total": 4
+            },
+            "output_tokens": {
+              "observed": 4,
+              "observed_sum": 7497,
+              "sum": 7497,
+              "total": 4
+            },
+            "total_tokens": {
+              "observed": 0,
+              "observed_sum": null,
+              "sum": null,
+              "total": 4
+            }
+          }
+        }
+      },
+      "limitations": [
+        "Six purposive questions are descriptive, not powered for superiority/p-values/generalization.",
+        "Graph development repositories and Orbit/pulsar held-out repositories are disjoint within this study, but all three were inspected in prior work; no unseen-repository generalization.",
+        "Different installed plugin plus shipped skill treatment, not a successful extension/relabel of old 24+16 episodes.",
+        "Questions chosen from source, never graph results. Semantic and additional-symbol judgments are attributed reviewer/operator review (agent or human), not automated truth. Name actual reviewers/operators and preserve honest custody. Blind arms where possible; record any unblinding.",
+        "Offline source export, private installation inspection, exact provider/tool/runner/backend/inventory/skill pinning and concrete request-plan preparation are authorized before source-transfer approval. A plainly pending approval_reference is valid for offline runtime freeze and grants no provider/source-transfer authority. The operator obtains explicit approval only after the concrete plan is reviewable; approval and qualified-runtime evidence gate live execution and remain external custody records bound to the freeze hash.",
+        "Hash seals establish local integrity, not authentication or capture origin; require operator custody and external pre-run freeze.",
+        "Historical source pins stay unchanged; repaired runtime binary qualification (including ORB-13783) gates later live execution.",
+        "Installed v1 was unscorable: all twelve attempts retained failed/broker_failed; none are reused, rescored or replaced here.",
+        "safe-tool-text-v1 preserves original file/blob identity while masking credential-shaped/host-value text before observation. Required excerpts are checked unchanged under shape masking. No transformed quotation receives automatic source credit; host-specific masking of a required excerpt is a pre-execution admission blocker, not a truth waiver.",
+        "Only offline protocol and corpus are frozen here. Runtime model/settings, executables, four harness hashes, installed inventory/skill and source view must be observed and frozen by the operator before output."
+      ],
+      "pairs": [
+        {
+          "baseline_over_graph": null,
+          "both_correct": false,
+          "case_id": "graph-lexical-selector-paths",
+          "correct_delta": -1,
+          "wall_delta_ms": null
+        },
+        {
+          "baseline_over_graph": 0.8853950421296861,
+          "both_correct": true,
+          "case_id": "graph-trace-expansion-budget",
+          "correct_delta": 0,
+          "wall_delta_ms": 9385
+        },
+        {
+          "baseline_over_graph": null,
+          "both_correct": false,
+          "case_id": "orbit-interval-catchup-projection",
+          "correct_delta": 0,
+          "wall_delta_ms": null
+        },
+        {
+          "baseline_over_graph": null,
+          "both_correct": false,
+          "case_id": "orbit-indexed-overlap-candidates",
+          "correct_delta": 0,
+          "wall_delta_ms": null
+        },
+        {
+          "baseline_over_graph": 0.6971512281894996,
+          "both_correct": true,
+          "case_id": "pulsar-account-selection-uncertainty",
+          "correct_delta": 0,
+          "wall_delta_ms": 23154
+        },
+        {
+          "baseline_over_graph": null,
+          "both_correct": false,
+          "case_id": "pulsar-readonly-wal-fallback",
+          "correct_delta": 0,
+          "wall_delta_ms": null
+        }
+      ],
+      "reply_contract": "safe-tool-text-v1",
+      "schema_version": 2,
+      "study_kind": "agent"
+    },
+    "semantic_review": {
+      "reviewer": "Codex root ORB-13709",
+      "blinding": "unblinded",
+      "successful_episodes_reviewed": 10,
+      "semantic_pass": 10,
+      "all_attempt_denominators": {
+        "baseline": 6,
+        "graph": 6
+      },
+      "failed_episodes_not_reviewed": 2
+    },
+    "reviews": [
+      {
+        "run_id": "aeval-0367bb8d18afd025",
+        "artifact_sha256": "10051261b15f59dffbceb586559b53dd54bdb07ef67b674f80bdd8d6a9559bf8",
+        "reviewer": "Codex root ORB-13709",
+        "signed_at": "2026-10-03T12:53:50Z",
+        "blinding": "unblinded",
+        "attestation": "I reviewed this complete answer against the preregistered rubric and original source excerpts after collection. I also operated the cohort and saw arm/timing/artifact metadata, so this review is unblinded. The quoted complete reason supports the individually stated claim judgments; supporting declarations were separately inspected. No rubric, answer or historical capture was changed.",
+        "audit_sha256": "9f3a2b754e35a8db0818f83fb91b18a454cd78495df10ddffb3fbb271f2a378e",
+        "claim_judgments": [
+          {
+            "claim_id": "walk",
+            "pass": true,
+            "rationale": "It identifies FIFO expansion, depth-zero default, unresolved leaf retention and the strict child-depth queue condition; depth alone does not set truncation."
+          },
+          {
+            "claim_id": "bounds",
+            "pass": true,
+            "rationale": "It distinguishes occurrences from unique symbols, identifies the root-inclusive 200-node cap and pre-insertion check, and correctly states total=None only when truncated."
+          },
+          {
+            "claim_id": "materialization",
+            "pass": true,
+            "rationale": "It describes recursive child-index materialization and both regression assertions, and rejects runtime graph completeness or unique dispatch inference."
+          }
+        ],
+        "full_quotes_and_source_evidence": "audits.json"
+      },
+      {
+        "run_id": "aeval-da825b8488a19be6",
+        "artifact_sha256": "4769af6dc852c0d1cf41b07bb3b605c3d9207c22e3ecfed69623fa40e247118f",
+        "reviewer": "Codex root ORB-13709",
+        "signed_at": "2026-10-03T12:53:50Z",
+        "blinding": "unblinded",
+        "attestation": "I reviewed this complete answer against the preregistered rubric and original source excerpts after collection. I also operated the cohort and saw arm/timing/artifact metadata, so this review is unblinded. The quoted complete reason supports the individually stated claim judgments; supporting declarations were separately inspected. No rubric, answer or historical capture was changed.",
+        "audit_sha256": "db3a1a769a71707a9ebce3cbe09caf326c5df57049f31949543e1e6300b810ba",
+        "claim_judgments": [
+          {
+            "claim_id": "walk",
+            "pass": true,
+            "rationale": "It identifies FIFO expansion, depth-zero default, unresolved leaf retention and the strict child-depth queue condition; depth alone does not set truncation."
+          },
+          {
+            "claim_id": "bounds",
+            "pass": true,
+            "rationale": "It distinguishes occurrences from unique symbols, identifies the root-inclusive 200-node cap and pre-insertion check, and correctly states total=None only when truncated."
+          },
+          {
+            "claim_id": "materialization",
+            "pass": true,
+            "rationale": "It describes recursive child-index materialization and both regression assertions, and rejects runtime graph completeness or unique dispatch inference."
+          }
+        ],
+        "full_quotes_and_source_evidence": "audits.json"
+      },
+      {
+        "run_id": "aeval-1ff45a0528390fd4",
+        "artifact_sha256": "4a15263f01f2aee0f505a8008c2a340b441083a46707c2196e173e3fad4b50dc",
+        "reviewer": "Codex root ORB-13709",
+        "signed_at": "2026-10-03T12:53:50Z",
+        "blinding": "unblinded",
+        "attestation": "I reviewed this complete answer against the preregistered rubric and original source excerpts after collection. I also operated the cohort and saw arm/timing/artifact metadata, so this review is unblinded. The quoted complete reason supports the individually stated claim judgments; supporting declarations were separately inspected. No rubric, answer or historical capture was changed.",
+        "audit_sha256": "0ea84b2e06038f5845098e303c907e028bd89f335e96f144350dc83fc9e4fa51",
+        "claim_judgments": [
+          {
+            "claim_id": "entry",
+            "pass": true,
+            "rationale": "It gives missing-file behavior, normal read callback, exact eligible SQLite error-code families, propagation of unrelated errors and refusal to ignore an existing WAL."
+          },
+          {
+            "claim_id": "retry",
+            "pass": true,
+            "rationale": "It states immutable mode, changed-versus-unchanged DatabaseError behavior, both success stability conditions and three normal-first attempts followed by retryable INTERNAL."
+          },
+          {
+            "claim_id": "boundary",
+            "pass": true,
+            "rationale": "It identifies inode/size/mtime rather than content hashes and separates no application mutations from possible SQLite WAL/SHM sidecar effects."
+          }
+        ],
+        "full_quotes_and_source_evidence": "audits.json"
+      },
+      {
+        "run_id": "aeval-c0354d2b892ccd79",
+        "artifact_sha256": "57dfe53ab074052d6e879ce3aa48f2968377852a37d0581a14480d8d3df31df1",
+        "reviewer": "Codex root ORB-13709",
+        "signed_at": "2026-10-03T12:53:50Z",
+        "blinding": "unblinded",
+        "attestation": "I reviewed this complete answer against the preregistered rubric and original source excerpts after collection. I also operated the cohort and saw arm/timing/artifact metadata, so this review is unblinded. The quoted complete reason supports the individually stated claim judgments; supporting declarations were separately inspected. No rubric, answer or historical capture was changed.",
+        "audit_sha256": "1b41bf0412f353cd46684dccf6be6207cd5a64b901e4d412625204c6f06ed15c",
+        "claim_judgments": [
+          {
+            "claim_id": "precedence",
+            "pass": true,
+            "rationale": "It correctly gives explicit canonicalized alias precedence, unknown_account details and default-specific message, and explains that explicitly selected revoked rows are returned."
+          },
+          {
+            "claim_id": "fallback",
+            "pass": true,
+            "rationale": "It distinguishes one/many/no non-revoked candidates, includes reauth_required and the legacy-token migration-alias path without choosing credentials."
+          },
+          {
+            "claim_id": "uncertainty",
+            "pass": true,
+            "rationale": "It states binding and absent-field checks exactly and does not infer a runtime account or current credential validity from cached identity."
+          }
+        ],
+        "full_quotes_and_source_evidence": "audits.json"
+      },
+      {
+        "run_id": "aeval-0c2b10028b4fead1",
+        "artifact_sha256": "59809834b81cf081f91558434ab79b199aa13328d1456b31b18a2c656fc7ff27",
+        "reviewer": "Codex root ORB-13709",
+        "signed_at": "2026-10-03T12:53:50Z",
+        "blinding": "unblinded",
+        "attestation": "I reviewed this complete answer against the preregistered rubric and original source excerpts after collection. I also operated the cohort and saw arm/timing/artifact metadata, so this review is unblinded. The quoted complete reason supports the individually stated claim judgments; supporting declarations were separately inspected. No rubric, answer or historical capture was changed.",
+        "audit_sha256": "08009bcec24b5822304f6904a8869238861644165eaa7cb62a0d1b15e6a83d8c",
+        "claim_judgments": [
+          {
+            "claim_id": "due",
+            "pass": true,
+            "rationale": "It gives the exclusive last-slot/baseline floor, unchanged anchor, latest whole-period boundary and one catch-up decision, including before-baseline and consumed equality cases."
+          },
+          {
+            "claim_id": "projection",
+            "pass": true,
+            "rationale": "It distinguishes future projection from owed catch-up and correctly states baseline plus one period before baseline, and None without an interval anchor."
+          },
+          {
+            "claim_id": "limits",
+            "pass": true,
+            "rationale": "It contrasts delivery due error with projection None and explicitly separates schedule arithmetic from creation and eventual success."
+          }
+        ],
+        "full_quotes_and_source_evidence": "audits.json"
+      },
+      {
+        "run_id": "aeval-15dcfad6af3ebf40",
+        "artifact_sha256": "6b96562b6e83f0cdba733d9d3f065c19f8382e08417e98f0721de64a40c55c2c",
+        "reviewer": "Codex root ORB-13709",
+        "signed_at": "2026-10-03T12:53:50Z",
+        "blinding": "unblinded",
+        "attestation": "I reviewed this complete answer against the preregistered rubric and original source excerpts after collection. I also operated the cohort and saw arm/timing/artifact metadata, so this review is unblinded. The quoted complete reason supports the individually stated claim judgments; supporting declarations were separately inspected. No rubric, answer or historical capture was changed.",
+        "audit_sha256": "97614513d0e52cf7c434cd3a4333435f121f12c1232898a2d4babf72931e9edf",
+        "claim_judgments": [
+          {
+            "claim_id": "grammar",
+            "pass": true,
+            "rationale": "The answer states last-colon then first-hash parsing, preservation of qualified separators and rejection of empty path/symbol/kind, matching the parser branches."
+          },
+          {
+            "claim_id": "lexical",
+            "pass": true,
+            "rationale": "It explicitly derives ../b, /b and . and explains separator conversion, dot removal and different relative/absolute parent handling."
+          },
+          {
+            "claim_id": "boundary",
+            "pass": true,
+            "rationale": "It limits the result to lexical syntax and explicitly excludes existence, symlink resolution and repository containment guarantees."
+          }
+        ],
+        "full_quotes_and_source_evidence": "audits.json"
+      },
+      {
+        "run_id": "aeval-37f5a31da520275e",
+        "artifact_sha256": "8c64f94073e9e5afcbafd32d633b05a1079d16469bc753f56e2944af28690663",
+        "reviewer": "Codex root ORB-13709",
+        "signed_at": "2026-10-03T12:53:50Z",
+        "blinding": "unblinded",
+        "attestation": "I reviewed this complete answer against the preregistered rubric and original source excerpts after collection. I also operated the cohort and saw arm/timing/artifact metadata, so this review is unblinded. The quoted complete reason supports the individually stated claim judgments; supporting declarations were separately inspected. No rubric, answer or historical capture was changed.",
+        "audit_sha256": "df413e2f8344ca4ec567ff17fef34e08b8a7c0e08007f2bde64367447da233d0",
+        "claim_judgments": [
+          {
+            "claim_id": "storage",
+            "pass": true,
+            "rationale": "It states failed insertion/query behavior and distinguishes normalized anchored buckets from exact outer-trimmed anchorless text buckets."
+          },
+          {
+            "claim_id": "candidates",
+            "pass": true,
+            "rationale": "It explains root/ancestor/exact lookup, descendant prefix ranges and special / and . handling with the final recheck."
+          },
+          {
+            "claim_id": "semantics",
+            "pass": true,
+            "rationale": "It states every candidate is rechecked, same-file symbols overlap, anchored and anchorless scopes differ, and no symbol resolution/filesystem inspection occurs."
+          }
+        ],
+        "full_quotes_and_source_evidence": "audits.json"
+      },
+      {
+        "run_id": "aeval-326c30a20b358f91",
+        "artifact_sha256": "d1f31b3d56549fc30579fa5bf34d76c02591c7c58795c8287c28f9ee02e95009",
+        "reviewer": "Codex root ORB-13709",
+        "signed_at": "2026-10-03T12:53:50Z",
+        "blinding": "unblinded",
+        "attestation": "I reviewed this complete answer against the preregistered rubric and original source excerpts after collection. I also operated the cohort and saw arm/timing/artifact metadata, so this review is unblinded. The quoted complete reason supports the individually stated claim judgments; supporting declarations were separately inspected. No rubric, answer or historical capture was changed.",
+        "audit_sha256": "bba04f365adbbd630cae3202aa0f2ddb110a9a832d1da674aae5d031f7ea472f",
+        "claim_judgments": [
+          {
+            "claim_id": "entry",
+            "pass": true,
+            "rationale": "It gives missing-file behavior, normal read callback, exact eligible SQLite error-code families, propagation of unrelated errors and refusal to ignore an existing WAL."
+          },
+          {
+            "claim_id": "retry",
+            "pass": true,
+            "rationale": "It states immutable mode, changed-versus-unchanged DatabaseError behavior, both success stability conditions and three normal-first attempts followed by retryable INTERNAL."
+          },
+          {
+            "claim_id": "boundary",
+            "pass": true,
+            "rationale": "It identifies inode/size/mtime rather than content hashes and separates no application mutations from possible SQLite WAL/SHM sidecar effects."
+          }
+        ],
+        "full_quotes_and_source_evidence": "audits.json"
+      },
+      {
+        "run_id": "aeval-e65fa0348c7b812b",
+        "artifact_sha256": "e8521df0b712632eb3dd89e08b5d809bcfdf41c843447b5442e498d0bf870dc7",
+        "reviewer": "Codex root ORB-13709",
+        "signed_at": "2026-10-03T12:53:50Z",
+        "blinding": "unblinded",
+        "attestation": "I reviewed this complete answer against the preregistered rubric and original source excerpts after collection. I also operated the cohort and saw arm/timing/artifact metadata, so this review is unblinded. The quoted complete reason supports the individually stated claim judgments; supporting declarations were separately inspected. No rubric, answer or historical capture was changed.",
+        "audit_sha256": "491723875deb6938979559ba26a73710fb7196cbf6d98320abb0cd4171697859",
+        "claim_judgments": [
+          {
+            "claim_id": "grammar",
+            "pass": true,
+            "rationale": "The answer states last-colon then first-hash parsing, preservation of qualified separators and rejection of empty path/symbol/kind, matching the parser branches."
+          },
+          {
+            "claim_id": "lexical",
+            "pass": true,
+            "rationale": "It explicitly derives ../b, /b and . and explains separator conversion, dot removal and different relative/absolute parent handling."
+          },
+          {
+            "claim_id": "boundary",
+            "pass": true,
+            "rationale": "It limits the result to lexical syntax and explicitly excludes existence, symlink resolution and repository containment guarantees."
+          }
+        ],
+        "full_quotes_and_source_evidence": "audits.json"
+      },
+      {
+        "run_id": "aeval-bdc5778b9e27fd47",
+        "artifact_sha256": "e9f21e6c3f66814d1ce8d6883f69a8a94028164041900dfb004ad1fcb1172e87",
+        "reviewer": "Codex root ORB-13709",
+        "signed_at": "2026-10-03T12:53:50Z",
+        "blinding": "unblinded",
+        "attestation": "I reviewed this complete answer against the preregistered rubric and original source excerpts after collection. I also operated the cohort and saw arm/timing/artifact metadata, so this review is unblinded. The quoted complete reason supports the individually stated claim judgments; supporting declarations were separately inspected. No rubric, answer or historical capture was changed.",
+        "audit_sha256": "28e68804065ce0f9a5d56aa69d2df75055a8993457f102ee6d2f4855d1ffc560",
+        "claim_judgments": [
+          {
+            "claim_id": "precedence",
+            "pass": true,
+            "rationale": "It correctly gives explicit canonicalized alias precedence, unknown_account details and default-specific message, and explains that explicitly selected revoked rows are returned."
+          },
+          {
+            "claim_id": "fallback",
+            "pass": true,
+            "rationale": "It distinguishes one/many/no non-revoked candidates, includes reauth_required and the legacy-token migration-alias path without choosing credentials."
+          },
+          {
+            "claim_id": "uncertainty",
+            "pass": true,
+            "rationale": "It states binding and absent-field checks exactly and does not infer a runtime account or current credential validity from cached identity."
+          }
+        ],
+        "full_quotes_and_source_evidence": "audits.json"
+      }
+    ],
+    "review_limitations": {
+      "operator": "Codex root ORB-13709",
+      "at": "2026-10-03T12:53:50Z",
+      "unblinded": true,
+      "not_an_alternative_score": true,
+      "notes": [
+        {
+          "packet_id": "4a15263f01f2aee0f505a8008c2a340b441083a46707c2196e173e3fad4b50dc",
+          "item": "symbol:src/pulsar/app/core/ledger/connection.py#READ_ATTEMPTS:constant",
+          "declaration": {
+            "file": "src/pulsar/app/core/ledger/connection.py",
+            "line": 21,
+            "quote": "READ_ATTEMPTS = 3"
+          },
+          "source_quote_valid": true,
+          "disposition": "Not admitted by the frozen additional-identity contract; retained as unsupported, not silently normalized or rescored. Operator source inspection confirms the declaration exists; see detailed limitations."
+        },
+        {
+          "packet_id": "59809834b81cf081f91558434ab79b199aa13328d1456b31b18a2c656fc7ff27",
+          "item": "symbol:crates/orbit-core/src/application/auto_tasks/scheduler.rs#OrbitRuntime.mint_task:method",
+          "declaration": {
+            "file": "crates/orbit-core/src/application/auto_tasks/scheduler.rs",
+            "line": 53,
+            "quote": "fn mint_task(&self, definition: &AutoTaskDefinition) -> Result<String, OrbitError> {"
+          },
+          "source_quote_valid": true,
+          "disposition": "Not admitted by the frozen additional-identity contract; retained as unsupported, not silently normalized or rescored. Operator source inspection confirms the declaration exists; see detailed limitations."
+        },
+        {
+          "packet_id": "59809834b81cf081f91558434ab79b199aa13328d1456b31b18a2c656fc7ff27",
+          "item": "symbol:crates/orbit-automation/src/auto_tasks/tests/scheduler.rs#TestDispatch.mint_task:method",
+          "declaration": {
+            "file": "crates/orbit-automation/src/auto_tasks/tests/scheduler.rs",
+            "line": 112,
+            "quote": "fn mint_task(&self, definition: &AutoTaskDefinition) -> Result<String, OrbitError> {"
+          },
+          "source_quote_valid": true,
+          "disposition": "Not admitted by the frozen additional-identity contract; retained as unsupported, not silently normalized or rescored. Operator source inspection confirms the declaration exists; see detailed limitations."
+        },
+        {
+          "packet_id": "59809834b81cf081f91558434ab79b199aa13328d1456b31b18a2c656fc7ff27",
+          "item": "symbol:crates/orbit-core/src/application/auto_tasks/tests/mod.rs#PausedDispatch.mint_task:method",
+          "declaration": {
+            "file": "crates/orbit-core/src/application/auto_tasks/tests/mod.rs",
+            "line": 102,
+            "quote": "fn mint_task(&self, definition: &AutoTaskDefinition) -> Result<String, OrbitError> {"
+          },
+          "source_quote_valid": true,
+          "disposition": "Not admitted by the frozen additional-identity contract; retained as unsupported, not silently normalized or rescored. Operator source inspection confirms the declaration exists; see detailed limitations."
+        },
+        {
+          "packet_id": "6b96562b6e83f0cdba733d9d3f065c19f8382e08417e98f0721de64a40c55c2c",
+          "item": "symbol:crates/orbit-graph-extract/src/selector.rs#<Selector as FromStr>::from_str:method",
+          "declaration": {
+            "file": "crates/orbit-graph-extract/src/selector.rs",
+            "line": 92,
+            "quote": "fn from_str(selector: &str) -> Result<Self, Self::Err> {"
+          },
+          "source_quote_valid": true,
+          "disposition": "Not admitted by the frozen additional-identity contract; retained as unsupported, not silently normalized or rescored. Operator source inspection confirms the declaration exists; see detailed limitations."
+        },
+        {
+          "packet_id": "8c64f94073e9e5afcbafd32d633b05a1079d16469bc753f56e2944af28690663",
+          "item": "symbol:crates/orbit-common/src/fs/selector.rs#overlaps:function",
+          "declaration": {
+            "file": "crates/orbit-common/src/fs/selector.rs",
+            "line": 311,
+            "quote": "pub fn overlaps(a: &str, b: &str) -> bool {"
+          },
+          "source_quote_valid": true,
+          "disposition": "Not admitted by the frozen additional-identity contract; retained as unsupported, not silently normalized or rescored. Operator source inspection confirms the declaration exists; see detailed limitations."
+        },
+        {
+          "packet_id": "8c64f94073e9e5afcbafd32d633b05a1079d16469bc753f56e2944af28690663",
+          "item": "symbol:crates/orbit-common/src/fs/selector.rs#ParsedScope::parse:method",
+          "declaration": {
+            "file": "crates/orbit-common/src/fs/selector.rs",
+            "line": 430,
+            "quote": "fn parse(input: &str) -> Result<Self, SelectorParseError> {"
+          },
+          "source_quote_valid": true,
+          "disposition": "Not admitted by the frozen additional-identity contract; retained as unsupported, not silently normalized or rescored. Operator source inspection confirms the declaration exists; see detailed limitations."
+        },
+        {
+          "packet_id": "8c64f94073e9e5afcbafd32d633b05a1079d16469bc753f56e2944af28690663",
+          "item": "symbol:crates/orbit-common/src/fs/selector.rs#Selector::from_str:method",
+          "declaration": {
+            "file": "crates/orbit-common/src/fs/selector.rs",
+            "line": 128,
+            "quote": "fn from_str(selector: &str) -> Result<Self, Self::Err> {"
+          },
+          "source_quote_valid": true,
+          "disposition": "Not admitted by the frozen additional-identity contract; retained as unsupported, not silently normalized or rescored. Operator source inspection confirms the declaration exists; see detailed limitations."
+        },
+        {
+          "packet_id": "d1f31b3d56549fc30579fa5bf34d76c02591c7c58795c8287c28f9ee02e95009",
+          "item": "symbol:src/pulsar/app/core/ledger/connection.py#READ_ATTEMPTS:constant",
+          "declaration": {
+            "file": "src/pulsar/app/core/ledger/connection.py",
+            "line": 21,
+            "quote": "READ_ATTEMPTS = 3"
+          },
+          "source_quote_valid": true,
+          "disposition": "Not admitted by the frozen additional-identity contract; retained as unsupported, not silently normalized or rescored. Operator source inspection confirms the declaration exists; see detailed limitations."
+        }
+      ],
+      "limitations": [
+        "Trait-qualified <Selector as FromStr>::from_str is source-supported but absent from frozen aliases and additional identity recognition.",
+        "Python READ_ATTEMPTS assignment is a real constant but frozen declaration recognition requires fn/def/class/const/static/struct/enum.",
+        "The shared additional-symbol checker rejects duplicate leaf names even with distinct owner qualification; this affects overlaps and ParsedScope::parse.",
+        "Rust methods written with dot owner separators do not meet the frozen Rust :: name contract.",
+        "Trait impl owner recognition in shared support checking cannot admit Selector::from_str through impl FromStr for Selector.",
+        "These are limitations of the strict frozen identity score; semantic pass and exact required-identity/citation metrics remain separate. No unsupported entry is automatically a hallucination."
+      ]
+    }
+  },
+  "qualification": {
+    "runtime_strict_tests": 116,
+    "runtime_skips": 0,
+    "runtime_source_files": 380,
+    "scorer_source_files": 14,
+    "scorer_tests": 34,
+    "scorer_independent_cli_cases": 12,
+    "scorer_binary_sha256": "ee0bacd68ec15467bf10587cab7cb2b560f526241368c96626ddf0ab42795c7d",
+    "transport_smoke": {
+      "at": "2026-10-03T13:34:32.017788+00:00",
+      "producer": "Codex root ORB-13709",
+      "commit": "8a0484db6532fe064ae0e5cbbcd9edad7735c0b5",
+      "strict116_passed": true,
+      "rows": [
+        {
+          "version": 1,
+          "run": 0,
+          "artifact_sha256": "427865bfa0b78ac7a93874e8ed4d9e6456db15a16d4b0e56cbcacc618c4f0d90",
+          "status": "ok",
+          "graph_maintain_ms": []
+        },
+        {
+          "version": 1,
+          "run": 1,
+          "artifact_sha256": "fe50c1af997826273e0ceac80e514ec991dcec4a1d45e3bd2cd5b2e716019482",
+          "status": "ok",
+          "graph_maintain_ms": [
+            2188
+          ]
+        },
+        {
+          "version": 2,
+          "run": 0,
+          "artifact_sha256": "5f6bb0406d755b3d6b4a8c472af1f20c31a49c8154665473958c527d9ef19405",
+          "status": "ok",
+          "graph_maintain_ms": [
+            9841
+          ]
+        }
+      ],
+      "admission_passed": true,
+      "qualification": "v1 baseline passed; v1 graph passed functionally but missed >5s criterion (2188ms), preserved unchanged. v2 graph-only larger fixture passed including 9841ms graph_maintain. Functional admission only; no effectiveness inference.",
+      "archives": {
+        "qualified-source.tar.gz": {
+          "sha256": "e19e0c3e1b1cc4f75241d892cceb0eaf0e47c0a9cda894cf2d93956002f0ed2c",
+          "bytes": 932895
+        },
+        "actual-v2.tar.gz": {
+          "sha256": "2e5cdb83fec341bdcb0e7e8441e49948c3109c853207aa03b91da75c216598ba",
+          "bytes": 228799
+        },
+        "actual-v1.tar.gz": {
+          "sha256": "0b5a622e6d08946443811c0eeb0868cfaaaec730cac853ae0df2c0c205b8e1ff",
+          "bytes": 270435
+        }
+      }
+    },
+    "prior_repository_gates": {
+      "task_id": "ORB-13804",
+      "run_id": "jrun-20261003-1356-c2",
+      "validation": [
+        {
+          "command": "cargo deny --offline --locked check",
+          "exit_code": 1,
+          "artifact": "repair/baseline-00.json"
+        },
+        {
+          "command": "cargo nextest run --workspace --locked --no-tests=fail",
+          "exit_code": 92,
+          "artifact": "repair/baseline-01.json"
+        },
+        {
+          "command": "make goldens",
+          "exit_code": 2,
+          "artifact": "repair/baseline-02.json"
+        },
+        {
+          "command": [
+            "cargo",
+            "deny",
+            "--offline",
+            "--locked",
+            "--manifest-path",
+            "Cargo.toml",
+            "check",
+            "--config",
+            "/home/daniel/workspace/constellation/codebases/orbit-graph/.orbit/state/worktrees/orbit-jrun-20261003-1356-c2/.orbit/tmp/deny-offline.toml",
+            "--disable-fetch"
+          ],
+          "exit_code": 0,
+          "artifact": "repair/deny-private-product.json"
+        },
+        {
+          "command": [
+            "cargo",
+            "deny",
+            "--offline",
+            "--locked",
+            "--manifest-path",
+            "evals/source-identity-v1/syntax/Cargo.toml",
+            "check",
+            "--config",
+            "/home/daniel/workspace/constellation/codebases/orbit-graph/.orbit/state/worktrees/orbit-jrun-20261003-1356-c2/.orbit/tmp/deny-offline.toml",
+            "--disable-fetch"
+          ],
+          "exit_code": 0,
+          "artifact": "repair/deny-private-syntax.json"
+        },
+        {
+          "command": "sh docs/standards/check.sh",
+          "exit_code": 0,
+          "artifact": "repair/gate-00.json"
+        },
+        {
+          "command": "scripts/check-dependency-direction.sh",
+          "exit_code": 0,
+          "artifact": "repair/gate-01.json"
+        },
+        {
+          "command": "scripts/check-terminal-guard.sh",
+          "exit_code": 0,
+          "artifact": "repair/gate-02.json"
+        },
+        {
+          "command": "scripts/check-orphan-modules.sh",
+          "exit_code": 0,
+          "artifact": "repair/gate-03.json"
+        },
+        {
+          "command": "scripts/test-repo-gates.sh",
+          "exit_code": 0,
+          "artifact": "repair/gate-04.json"
+        },
+        {
+          "command": "python3 -B evals/agent-navigation/eval.py check",
+          "exit_code": 0,
+          "artifact": "repair/gate-05.json"
+        },
+        {
+          "command": "cargo deny --offline --locked check",
+          "exit_code": 1,
+          "artifact": "repair/gate-06.json"
+        },
+        {
+          "command": "cargo fmt --all --check",
+          "exit_code": 0,
+          "artifact": "repair/gate-07.json"
+        },
+        {
+          "command": "cargo clippy --workspace --all-targets --locked -- -D warnings",
+          "exit_code": 0,
+          "artifact": "repair/gate-08.json"
+        },
+        {
+          "command": "cargo nextest run --workspace --locked --no-tests=fail",
+          "exit_code": 92,
+          "artifact": "repair/gate-09.json"
+        },
+        {
+          "command": "cargo test --workspace --doc --locked",
+          "exit_code": 0,
+          "artifact": "repair/gate-10.json"
+        },
+        {
+          "command": "RUSTDOCFLAGS=\"-D warnings\" cargo doc --workspace --no-deps --locked",
+          "exit_code": 0,
+          "artifact": "repair/gate-11.json"
+        },
+        {
+          "command": "cargo build --workspace --locked",
+          "exit_code": 0,
+          "artifact": "repair/gate-12.json"
+        },
+        {
+          "command": "git diff --check",
+          "exit_code": 0,
+          "artifact": "repair/gate-13.json"
+        },
+        {
+          "command": "make goldens",
+          "exit_code": 2,
+          "artifact": "repair/gate-14.json"
+        },
+        {
+          "command": "cargo fmt --manifest-path evals/source-identity-v1/syntax/Cargo.toml --check",
+          "exit_code": 0,
+          "artifact": "repair/gate-15.json"
+        },
+        {
+          "command": "CARGO_TARGET_DIR=\"$PWD/.orbit/tmp/source-identity-syntax-target\" cargo clippy --offline --locked --manifest-path evals/source-identity-v1/syntax/Cargo.toml -- -D warnings",
+          "exit_code": 0,
+          "artifact": "repair/gate-16.json"
+        },
+        {
+          "command": "python3 -B -m unittest discover -s evals/source-identity-v1 -p \"test_*.py\"",
+          "exit_code": 0,
+          "artifact": "repair/gate-17.json"
+        },
+        {
+          "command": "python3 -B evals/source-identity-v1/example.py",
+          "exit_code": 0,
+          "artifact": "repair/gate-18.json"
+        },
+        {
+          "command": "python3 -B evals/source-identity-v1/source_identity.py --help",
+          "exit_code": 0,
+          "artifact": "repair/gate-19.json"
+        },
+        {
+          "command": "make goldens",
+          "exit_code": 0,
+          "artifact": "repair/goldens-pinned.json"
+        },
+        {
+          "command": "cargo nextest run --workspace --locked --no-tests=fail",
+          "exit_code": 0,
+          "artifact": "repair/nextest-pinned.json"
+        }
+      ],
+      "resolution": "Default advisory/nextest/goldens failures reproduced on baseline; private cached advisory DB and checksum-verified nextest 0.9.146 passed full checks. No policy relaxation, fetching, host installation or version override.",
+      "criteria_evidence": {
+        "syntax": "34 prospective tests plus 15-case real CLI parent/repair comparison",
+        "representative_context": "docs/derive/generic/owner/trait positives; wrong context, duplicate/cfg/macro negatives",
+        "independence_pins": "isolated syn workspace, locked cached dependencies and embedded-source stale-build refusal; unchanged example scores/semantic review/source hashes",
+        "scope_validation": "705 nextest tests and 3 real product goldens pass; all changes confined to nine declared evaluator paths"
+      }
+    }
+  },
+  "sources": {
+    "candidate": {
+      "task_id": "ORB-13709",
+      "artifact": "certification/candidate-1523af8-correspondence.json",
+      "sha256": "c1f668e85c70f89a07327ff81bab0282ff978d8d09a0d4850c43b27c197d492f",
+      "bytes": 1300
+    },
+    "report.json": {
+      "task_id": "ORB-13709",
+      "artifact": "evals/plugin-study-v2-report.json",
+      "sha256": "68c2a0dc22e946091f315a9d7faca605b72dfb0e28daa3dd7ee02903f40eb7fb",
+      "bytes": 32158
+    },
+    "audits.json": {
+      "task_id": "ORB-13709",
+      "artifact": "evals/plugin-study-v2-audits.json",
+      "sha256": "caf973433a895a059eca9850b16163073194dcf7051af1b54e79ad0cd964aba2",
+      "bytes": 131339
+    },
+    "review-limitations.json": {
+      "task_id": "ORB-13709",
+      "artifact": "evals/plugin-study-v2-review-limitations.json",
+      "sha256": "bb6ed598219582dafd0688f848f12c31f85fed6c9ad5942743ddc3d0dd0aeb26",
+      "bytes": 6917
+    },
+    "score-command.json": {
+      "task_id": "ORB-13709",
+      "artifact": "evals/plugin-study-v2-score-command.json",
+      "sha256": "53262a6e77996a919b7667a226988a4d6e986bf771087b63ac8f207296ccc2bf",
+      "bytes": 901
+    },
+    "score-provenance.json": {
+      "task_id": "ORB-13709",
+      "artifact": "evals/plugin-study-v2-score-provenance.json",
+      "sha256": "61a13dd06e690599f2e67d5d2de3d8ded4d05da97f1fee32dc9e07825fa69398",
+      "bytes": 1444
+    },
+    "runtime.json": {
+      "task_id": "ORB-13709",
+      "artifact": "evals/plugin-study-v2-runtime.json",
+      "sha256": "a7e1a3eeecd038872fb08058690cd670a22bcf3df1217700f07ac89574aca2a9",
+      "bytes": 2035
+    },
+    "runtime-observation.json": {
+      "task_id": "ORB-13709",
+      "artifact": "evals/plugin-study-v2-runtime-observation.json",
+      "sha256": "ec858ab4fbb07d4ee56ab933c43b75625b223d53e6f7aa792adbb369c099f165",
+      "bytes": 2544
+    },
+    "raw-index.json": {
+      "task_id": "ORB-13709",
+      "artifact": "evals/plugin-study-v2-raw-index.json",
+      "sha256": "f4a74090438d8c7611459a4b3cf74b7bbfc972a12cb977954d54342307cd989d",
+      "bytes": 17581
+    },
+    "replay-parts.json": {
+      "task_id": "ORB-13709",
+      "artifact": "evals/plugin-study-v2-replay-parts.json",
+      "sha256": "cfa80254f8fe8662a37d0cb44e2b1b763f1a00478eae58ac0caad930fe603d61",
+      "bytes": 430
+    },
+    "bundle-parts.json": {
+      "task_id": "ORB-13709",
+      "artifact": "evals/plugin-study-v2-bundle-parts.json",
+      "sha256": "7ad82dc29073a3668508ccfe60d0521373b9bf15d77449b0c16ad79968186697",
+      "bytes": 576
+    },
+    "custody.json": {
+      "task_id": "ORB-13709",
+      "artifact": "evals/plugin-study-v2-custody.json",
+      "sha256": "7464f336063b89624e3a80f1b605ef335e1b925242cfeb16ffcc495a9f8f606c",
+      "bytes": 1692
+    },
+    "live-complete.json": {
+      "task_id": "ORB-13709",
+      "artifact": "evals/plugin-study-v2-live-complete.json",
+      "sha256": "c92c1338e02b54f60352e39e46a6fdd0392077e7fa6ec8e5f11c345bb8e819a7",
+      "bytes": 3396
+    },
+    "freeze": {
+      "task_id": "ORB-13709",
+      "artifact": "evals/plugin-study-v2-frozen-freeze.json",
+      "sha256": "71f86480bcef6af643d4cd7799b64847d00ee3aff953f0c439a36116c52bd38e",
+      "bytes": 651614
+    },
+    "runtime": {
+      "task_id": "ORB-13802",
+      "artifact": "operator/strict116-qualified-v1.json",
+      "sha256": "7aaf3e04254146c98ecaf945ead973622e49b3d50d711330da52f353e0e7e7e8",
+      "bytes": 115548
+    },
+    "installed": {
+      "task_id": "ORB-13790",
+      "artifact": "operator/runtime-draft-installed-and-strict.json",
+      "sha256": "9b002471a18a470989216c8ae59410c975bcd178f3b63097dc18a130ccbe17af",
+      "bytes": 112121
+    },
+    "export": {
+      "task_id": "ORB-13709",
+      "artifact": "certification/handoff-cf4ea61-provenance.json",
+      "sha256": "c99b34d82706b4924e6f7ab534c4d2d36c559da50d07a5307c9a111521282503",
+      "bytes": 10015
+    },
+    "export_validation": {
+      "task_id": "ORB-13709",
+      "artifact": "certification/handoff-cf4ea61-validation.json",
+      "sha256": "2559313bfc70edf26ecf483389d3c14051fb8c2922c9d8cb671c1c664e453015",
+      "bytes": 11840
+    },
+    "scorer": {
+      "task_id": "ORB-13804",
+      "artifact": "operator/final-admission.json",
+      "sha256": "394cb786ad7a0bbbbcbb3a0c0153a832ae08a63e1387b0682ec45a66b0f2bfa0",
+      "bytes": 31432
+    },
+    "scorer_merge": {
+      "task_id": "ORB-13803",
+      "artifact": "operator/integrated-source-correspondence.json",
+      "sha256": "9cb1cf43323fe39e59f06f3e7ae36a94e7bb15ee8181f3874c83c9872f3844b9",
+      "bytes": 668
+    },
+    "transport_smoke": {
+      "task_id": "ORB-13802",
+      "artifact": "operator/actual-admission-index.json",
+      "sha256": "155908cf0f780332e2e4d24d6568cdb3f1323b9a1028eb81704ce96a4d3bd5ce",
+      "bytes": 1530
+    },
+    "prior_gates": {
+      "task_id": "ORB-13804",
+      "artifact": "repair/summary.json",
+      "sha256": "2b1df0cab6b699f6b1eba14626ff9961be36f1e04483697edbe573122463bde4",
+      "bytes": 5370
+    },
+    "pre_report_files": {
+      "task_id": "ORB-13709",
+      "artifact": "certification/pre-report-files.json",
+      "sha256": "7434fc647bce90cbcfe9580ad88bdb04f98d53c406f4036570a19abe32553433",
+      "bytes": 60077
+    },
+    "operator_metrics": {
+      "task_id": "ORB-13709",
+      "artifact": "certification/final-metric-audit.json",
+      "sha256": "79313a65cc89189244611b210a2be0cd8d59faceea87136ff0f098b1d05f2643",
+      "bytes": 1672
+    }
+  },
+  "report_validation": {
+    "tested_head": "1523af82c7a9055adb5fd474035ee9a05b505732",
+    "commands": [
+      {
+        "command": "sh docs/standards/check.sh",
+        "outcome": "passed",
+        "exit_code": 0,
+        "role": "local_report_validation",
+        "task_id": "ORB-13801",
+        "log_artifact": "validation/gate-00.json",
+        "log_sha256": "cd0858a631377e9d6b9309f2daa7ee2e528907eac0720f916b07d2a0e7eeac80"
+      },
+      {
+        "command": "scripts/check-dependency-direction.sh",
+        "outcome": "passed",
+        "exit_code": 0,
+        "role": "local_report_validation",
+        "task_id": "ORB-13801",
+        "log_artifact": "validation/gate-01.json",
+        "log_sha256": "cf8a26e331f6fb0e56e049f09449ecf02af658083a5941b5aeb9a1614536225d"
+      },
+      {
+        "command": "scripts/check-terminal-guard.sh",
+        "outcome": "passed",
+        "exit_code": 0,
+        "role": "local_report_validation",
+        "task_id": "ORB-13801",
+        "log_artifact": "validation/gate-02.json",
+        "log_sha256": "ef9064ed50e6d6f9dc431070020f2f7ea821bf898f328330eaf68f8602722da0"
+      },
+      {
+        "command": "scripts/check-orphan-modules.sh",
+        "outcome": "passed",
+        "exit_code": 0,
+        "role": "local_report_validation",
+        "task_id": "ORB-13801",
+        "log_artifact": "validation/gate-03.json",
+        "log_sha256": "a3009b7fbb514e741cc99de9f2eb5bb942f1ff2ab655b21ef83c69476798e704"
+      },
+      {
+        "command": "scripts/test-repo-gates.sh",
+        "outcome": "passed",
+        "exit_code": 0,
+        "role": "local_report_validation",
+        "task_id": "ORB-13801",
+        "log_artifact": "validation/gate-04.json",
+        "log_sha256": "196268e468fbdacd6d2fcbf0f6a9b82e6554022f4aa707c75c9331a6f8c3657f"
+      },
+      {
+        "command": "python3 -B evals/agent-navigation/eval.py check",
+        "outcome": "passed",
+        "exit_code": 0,
+        "role": "local_report_validation",
+        "task_id": "ORB-13801",
+        "log_artifact": "validation/gate-05.json",
+        "log_sha256": "835173a0771b0006c4540c741603f95ad1276552eeac05875b415df2ad073970"
+      },
+      {
+        "command": "cargo deny --locked check",
+        "outcome": "denied_on_clean_baseline",
+        "exit_code": 1,
+        "role": "local_report_validation",
+        "task_id": "ORB-13801",
+        "log_artifact": "validation/gate-06.json",
+        "log_sha256": "263bae6bcc5ac2eb8c9c5896d1dccb230f74f65f2b12318f510fd9b947a7ce48"
+      },
+      {
+        "command": "cargo fmt --all --check",
+        "outcome": "passed",
+        "exit_code": 0,
+        "role": "local_report_validation",
+        "task_id": "ORB-13801",
+        "log_artifact": "validation/gate-07.json",
+        "log_sha256": "9491643ffc7c83f5e2e99bc2e0746285cc7645f6a20b6d8f981d8ce5d8e98954"
+      },
+      {
+        "command": "cargo clippy --workspace --all-targets --locked -- -D warnings",
+        "outcome": "passed",
+        "exit_code": 0,
+        "role": "local_report_validation",
+        "task_id": "ORB-13801",
+        "log_artifact": "validation/gate-08.json",
+        "log_sha256": "f3b402557203422dd32f8fb1c21c1f9e8e5f1d66418b40c1238a00d4e3372991"
+      },
+      {
+        "command": "cargo nextest run --workspace --locked --no-tests=fail",
+        "outcome": "passed",
+        "exit_code": 0,
+        "role": "local_report_validation",
+        "task_id": "ORB-13801",
+        "log_artifact": "validation/gate-09.json",
+        "log_sha256": "0ebe5967580d17f80d0687a1ee0510097505474f1aec0229b25260305281c1a3"
+      },
+      {
+        "command": "cargo test --workspace --doc --locked",
+        "outcome": "passed",
+        "exit_code": 0,
+        "role": "local_report_validation",
+        "task_id": "ORB-13801",
+        "log_artifact": "validation/gate-10.json",
+        "log_sha256": "65d624dc6cbc01a87e49c2d10facc5a32f742ea1fc0a086bbc6c00a93852336e"
+      },
+      {
+        "command": "RUSTDOCFLAGS=\"-D warnings\" cargo doc --workspace --no-deps --locked",
+        "outcome": "passed",
+        "exit_code": 0,
+        "role": "local_report_validation",
+        "task_id": "ORB-13801",
+        "log_artifact": "validation/gate-11.json",
+        "log_sha256": "afe92d78829f1543ad1cb53ec43670e365929b2444f2f01683b200f1f81226e1"
+      },
+      {
+        "command": "cargo build --workspace --locked",
+        "outcome": "passed",
+        "exit_code": 0,
+        "role": "local_report_validation",
+        "task_id": "ORB-13801",
+        "log_artifact": "validation/gate-12.json",
+        "log_sha256": "640f0cbeb96ae79ca4b72e909d3ee4dcd997d37c254a7fc9b80c11178b18a7ec"
+      },
+      {
+        "command": "git diff --check",
+        "outcome": "passed",
+        "exit_code": 0,
+        "role": "local_report_validation",
+        "task_id": "ORB-13801",
+        "log_artifact": "validation/gate-13.json",
+        "log_sha256": "3af9452a03f309a33613f900a7af4fee208c880cccb43e173bdcbd53fa81b2d9"
+      },
+      {
+        "command": "cargo deny --locked check",
+        "outcome": "denied_on_clean_baseline",
+        "exit_code": 1,
+        "role": "local_report_validation",
+        "task_id": "ORB-13801",
+        "log_artifact": "validation/baseline-deny.json",
+        "log_sha256": "afaf200179209fbc0da732fcad09c59ed8dd2b67f921c0a9562744d1d1d2eadb"
+      },
+      {
+        "command": "cargo deny --locked check --config /home/daniel/workspace/constellation/codebases/orbit-graph/.orbit/state/worktrees/orbit-jrun-20261003-1446-c2/.orbit/tmp/ORB-13801/deny.toml",
+        "outcome": "passed",
+        "exit_code": 0,
+        "role": "local_report_validation",
+        "task_id": "ORB-13801",
+        "log_artifact": "validation/deny-private.json",
+        "log_sha256": "2503db0b709114df22610c60b893c7eaa0e4e2fc0bac6919f78c4ff0f574d4fa"
+      },
+      {
+        "command": "orbit plugin add --help",
+        "outcome": "passed",
+        "exit_code": 0,
+        "role": "local_report_validation",
+        "task_id": "ORB-13801",
+        "log_artifact": "validation/help-add.json",
+        "log_sha256": "774a8810511911330e0f6d5f766f57a6e7155ef3a09ec939a55bcf41cdecaa9d"
+      },
+      {
+        "command": "orbit plugin enable --help",
+        "outcome": "passed",
+        "exit_code": 0,
+        "role": "local_report_validation",
+        "task_id": "ORB-13801",
+        "log_artifact": "validation/help-enable.json",
+        "log_sha256": "ff56cfa483d18f655fc0c33a4dddb7798db0999b3526eed95572a7d866e6d022"
+      },
+      {
+        "command": "orbit plugin show --help",
+        "outcome": "passed",
+        "exit_code": 0,
+        "role": "local_report_validation",
+        "task_id": "ORB-13801",
+        "log_artifact": "validation/help-show.json",
+        "log_sha256": "6bf24fcb0f4752e059ad8ba89d530df66c13d956e53b3bbc48a51d77bdfb0167"
+      },
+      {
+        "command": "orbit plugin test --help",
+        "outcome": "passed",
+        "exit_code": 0,
+        "role": "local_report_validation",
+        "task_id": "ORB-13801",
+        "log_artifact": "validation/help-test.json",
+        "log_sha256": "894dd0ab1e2c5711de6d5ebc73b1cdf7cb815c39ef557e88fa4dbd8bc6cb150b"
+      },
+      {
+        "command": "orbit tool show --help",
+        "outcome": "passed",
+        "exit_code": 0,
+        "role": "local_report_validation",
+        "task_id": "ORB-13801",
+        "log_artifact": "validation/help-tool-show.json",
+        "log_sha256": "4d4f4b4d8e65a3a5a60f5c3dbaf51116b3aa5dc16dc336cb481c3c65f3dc6b67"
+      },
+      {
+        "command": "orbit plugin upgrade --help",
+        "outcome": "passed",
+        "exit_code": 0,
+        "role": "local_report_validation",
+        "task_id": "ORB-13801",
+        "log_artifact": "validation/help-upgrade.json",
+        "log_sha256": "f25cd80785dfe9a344337131875b87efbee8c8e499ccf3cf951f21d912f062c4"
+      },
+      {
+        "command": "orbit plugin validate --help",
+        "outcome": "passed",
+        "exit_code": 0,
+        "role": "local_report_validation",
+        "task_id": "ORB-13801",
+        "log_artifact": "validation/help-validate.json",
+        "log_sha256": "b2c0d655aae9f178f8f3a23ea7ded1c3761f250352fb84bc512eebe5692d53d9"
+      },
+      {
+        "command": "orbit --version",
+        "outcome": "passed",
+        "exit_code": 0,
+        "role": "local_report_validation",
+        "task_id": "ORB-13801",
+        "log_artifact": "validation/help-version.json",
+        "log_sha256": "7ebb31d248573c25278dda27c4f3583f2f798c9ec785417bc81b0eafb125400a"
+      },
+      {
+        "command": "orbit workspace init --help",
+        "outcome": "passed",
+        "exit_code": 0,
+        "role": "local_report_validation",
+        "task_id": "ORB-13801",
+        "log_artifact": "validation/help-workspace-init.json",
+        "log_sha256": "1aa48069c5f2f99c76f01a3feecd73c08d4763b3f3110cbe42ca2db0b4580857"
+      }
+    ],
+    "report_checks_artifact": "validation/report-checks.json",
+    "durable_sources_artifact": "validation/durable-source-checks.json",
+    "disk_percent_before_build": 28,
+    "nextest_version": "0.9.146",
+    "nextest_sha256": "aac21fea56e7ae3f45b5b7c606e02d62d4ec5b3578658fefe4a98a5f29c4bf1a",
+    "advisory_disposition": "Default cache denial reproduced once on clean baseline; unchanged policy passed with scratch-local db-path. Default command not passed here.",
+    "ci": {
+      "run_id": "37129363533",
+      "supplied_by": "Codex root ORB-13709",
+      "reported_passed_jobs": 5,
+      "independently_fetched": false,
+      "reason": "github.run.view unavailable because gh authentication is not configured in worker"
+    },
+    "not_run": [
+      "New model cohort: not requested; follow_up_consideration=false",
+      "Fresh installed runtime/scorer suites: unchanged code; attributed qualification and correspondence reused",
+      "Live installation, grants, release, host upgrade, schedules: not authorized"
+    ]
+  }
+}
