@@ -1,0 +1,1907 @@
+{
+  "schema_version": 1,
+  "study_kind": "scripted-smoke",
+  "episodes": [
+    {
+      "request": {
+        "schema_version": 1,
+        "case_id": "rust-01",
+        "arm": "baseline",
+        "split": "development",
+        "fixture": "rust",
+        "source_revision": "5d1f0b44fbeb244f2d1c6e9cf82a5148fa13c23957798480516646466630a2b1",
+        "base_revision": "b3afd857cb1bb1ee7b618b88e0999a084cb5892dbc56528abb0c610cadec6945",
+        "corpus_sha256": "2f98c3eb9ca92b625d6c1859bf02a6a988c8e3b93c189852e7fe11483c747e24",
+        "prompt": "Find the definition of the module-level function price that normalizes the input then multiplies it. Exclude the similarly named preview helper.\nReturn only a JSON object with exactly items (unique symbol:path#name:function strings, or :test for Rust #[test] functions), abstain (boolean), reason (string), evidence (array of objects with item, file, line, quote). Cite the exact definition line from HEAD for every item. If evidence cannot establish the complete answer, abstain with empty items/evidence and a specific reason. Do not treat name similarity as a call. Use only the supplied repository; do not modify it or invoke other agents.",
+        "limits": {
+          "wall_ms": 120000,
+          "tool_calls": 40,
+          "output_bytes": 131072,
+          "answer_items": 32,
+          "call_bytes": 16384
+        },
+        "tools": [
+          "read",
+          "rg",
+          "git"
+        ],
+        "cache_policy": "cold-per-episode-including-graph-setup",
+        "order": 0,
+        "request_sha256": "4982fc991beb377f4d086e57b293cf19e58d5a0476df089643cb0f13b14364ae"
+      },
+      "run_id": "scripted-00",
+      "model": {
+        "provider": "scripted",
+        "name": "oracle-smoke",
+        "version": "1",
+        "settings": {}
+      },
+      "tool_versions": {
+        "read": "scripted-not-executed",
+        "rg": "scripted-not-executed",
+        "git": "scripted-not-executed"
+      },
+      "isolation": {
+        "repository_id": "scripted-repo-0",
+        "cache_id": "scripted-cache-0",
+        "truth_inaccessible": true,
+        "cold_start": true
+      },
+      "status": "ok",
+      "error": null,
+      "answer": {
+        "items": [],
+        "abstain": true,
+        "reason": "Intentional smoke incorrect abstention",
+        "evidence": []
+      },
+      "final_output": "{\"abstain\":true,\"evidence\":[],\"items\":[],\"reason\":\"Intentional smoke incorrect abstention\"}",
+      "calls": [
+        {
+          "tool": "read",
+          "input": "scripted fixture read",
+          "output": "scripted source capture",
+          "elapsed_ms": 1,
+          "status": "ok"
+        }
+      ],
+      "wall_ms": 2,
+      "output_bytes": 114,
+      "usage": null,
+      "record_sha256": "bff1176a3b68688bd5700ce095d12b207934ca8a10d2b56c62ddeca701c2c9b7"
+    },
+    {
+      "request": {
+        "schema_version": 1,
+        "case_id": "rust-01",
+        "arm": "graph",
+        "split": "development",
+        "fixture": "rust",
+        "source_revision": "5d1f0b44fbeb244f2d1c6e9cf82a5148fa13c23957798480516646466630a2b1",
+        "base_revision": "b3afd857cb1bb1ee7b618b88e0999a084cb5892dbc56528abb0c610cadec6945",
+        "corpus_sha256": "2f98c3eb9ca92b625d6c1859bf02a6a988c8e3b93c189852e7fe11483c747e24",
+        "prompt": "Find the definition of the module-level function price that normalizes the input then multiplies it. Exclude the similarly named preview helper.\nReturn only a JSON object with exactly items (unique symbol:path#name:function strings, or :test for Rust #[test] functions), abstain (boolean), reason (string), evidence (array of objects with item, file, line, quote). Cite the exact definition line from HEAD for every item. If evidence cannot establish the complete answer, abstain with empty items/evidence and a specific reason. Do not treat name similarity as a call. Use only the supplied repository; do not modify it or invoke other agents.",
+        "limits": {
+          "wall_ms": 120000,
+          "tool_calls": 40,
+          "output_bytes": 131072,
+          "answer_items": 32,
+          "call_bytes": 16384
+        },
+        "tools": [
+          "read",
+          "rg",
+          "git",
+          "graph_sync",
+          "search",
+          "show",
+          "refs",
+          "callees",
+          "impact",
+          "changes"
+        ],
+        "cache_policy": "cold-per-episode-including-graph-setup",
+        "order": 1,
+        "request_sha256": "b449a1bf5bcc31b3f37f8a292fbc0828cf85a51f1a7f5762ec73fae427df2183"
+      },
+      "run_id": "scripted-01",
+      "model": {
+        "provider": "scripted",
+        "name": "oracle-smoke",
+        "version": "1",
+        "settings": {}
+      },
+      "tool_versions": {
+        "read": "scripted-not-executed",
+        "rg": "scripted-not-executed",
+        "git": "scripted-not-executed",
+        "orbit-graph": "scripted-not-executed"
+      },
+      "isolation": {
+        "repository_id": "scripted-repo-1",
+        "cache_id": "scripted-cache-1",
+        "truth_inaccessible": true,
+        "cold_start": true
+      },
+      "status": "ok",
+      "error": null,
+      "answer": {
+        "items": [
+          "symbol:src/lib.rs#price:function"
+        ],
+        "abstain": false,
+        "reason": "scripted oracle answer",
+        "evidence": [
+          {
+            "item": "symbol:src/lib.rs#price:function",
+            "file": "src/lib.rs",
+            "line": 6,
+            "quote": "pub fn price(value: i32) -> i32 {"
+          }
+        ]
+      },
+      "final_output": "{\"abstain\":false,\"evidence\":[{\"file\":\"src/lib.rs\",\"item\":\"symbol:src/lib.rs#price:function\",\"line\":6,\"quote\":\"pub fn price(value: i32) -> i32 {\"}],\"items\":[\"symbol:src/lib.rs#price:function\"],\"reason\":\"scripted oracle answer\"}",
+      "calls": [
+        {
+          "tool": "read",
+          "input": "scripted fixture read",
+          "output": "scripted source capture",
+          "elapsed_ms": 1,
+          "status": "ok"
+        }
+      ],
+      "wall_ms": 2,
+      "output_bytes": 249,
+      "usage": null,
+      "record_sha256": "cbb7dfd9341e72d1647fb3653eec613379aec84165ae5c520a0c525a69c83f2b"
+    },
+    {
+      "request": {
+        "schema_version": 1,
+        "case_id": "rust-02",
+        "arm": "graph",
+        "split": "held-out",
+        "fixture": "rust",
+        "source_revision": "5d1f0b44fbeb244f2d1c6e9cf82a5148fa13c23957798480516646466630a2b1",
+        "base_revision": "b3afd857cb1bb1ee7b618b88e0999a084cb5892dbc56528abb0c610cadec6945",
+        "corpus_sha256": "2f98c3eb9ca92b625d6c1859bf02a6a988c8e3b93c189852e7fe11483c747e24",
+        "prompt": "List all direct module-local callers of price in HEAD. Include tests only if they directly call price; exclude transitive callers and name-only matches.\nReturn only a JSON object with exactly items (unique symbol:path#name:function strings, or :test for Rust #[test] functions), abstain (boolean), reason (string), evidence (array of objects with item, file, line, quote). Cite the exact definition line from HEAD for every item. If evidence cannot establish the complete answer, abstain with empty items/evidence and a specific reason. Do not treat name similarity as a call. Use only the supplied repository; do not modify it or invoke other agents.",
+        "limits": {
+          "wall_ms": 120000,
+          "tool_calls": 40,
+          "output_bytes": 131072,
+          "answer_items": 32,
+          "call_bytes": 16384
+        },
+        "tools": [
+          "read",
+          "rg",
+          "git",
+          "graph_sync",
+          "search",
+          "show",
+          "refs",
+          "callees",
+          "impact",
+          "changes"
+        ],
+        "cache_policy": "cold-per-episode-including-graph-setup",
+        "order": 2,
+        "request_sha256": "617686d1897e674dc60550ad621bd5a4dfe720f6493e2cc4986c4e032fadc05a"
+      },
+      "run_id": "scripted-02",
+      "model": {
+        "provider": "scripted",
+        "name": "oracle-smoke",
+        "version": "1",
+        "settings": {}
+      },
+      "tool_versions": {
+        "read": "scripted-not-executed",
+        "rg": "scripted-not-executed",
+        "git": "scripted-not-executed",
+        "orbit-graph": "scripted-not-executed"
+      },
+      "isolation": {
+        "repository_id": "scripted-repo-2",
+        "cache_id": "scripted-cache-2",
+        "truth_inaccessible": true,
+        "cold_start": true
+      },
+      "status": "ok",
+      "error": null,
+      "answer": {
+        "items": [
+          "symbol:src/lib.rs#invoice:function",
+          "symbol:src/lib.rs#price_preview:function"
+        ],
+        "abstain": false,
+        "reason": "scripted oracle answer",
+        "evidence": [
+          {
+            "item": "symbol:src/lib.rs#invoice:function",
+            "file": "src/lib.rs",
+            "line": 10,
+            "quote": "pub fn invoice(value: i32) -> i32 {"
+          },
+          {
+            "item": "symbol:src/lib.rs#price_preview:function",
+            "file": "src/lib.rs",
+            "line": 18,
+            "quote": "pub fn price_preview(value: i32) -> i32 {"
+          }
+        ]
+      },
+      "final_output": "{\"abstain\":false,\"evidence\":[{\"file\":\"src/lib.rs\",\"item\":\"symbol:src/lib.rs#invoice:function\",\"line\":10,\"quote\":\"pub fn invoice(value: i32) -> i32 {\"},{\"file\":\"src/lib.rs\",\"item\":\"symbol:src/lib.rs#price_preview:function\",\"line\":18,\"quote\":\"pub fn price_preview(value: i32) -> i32 {\"}],\"items\":[\"symbol:src/lib.rs#invoice:function\",\"symbol:src/lib.rs#price_preview:function\"],\"reason\":\"scripted oracle answer\"}",
+      "calls": [
+        {
+          "tool": "read",
+          "input": "scripted fixture read",
+          "output": "scripted source capture",
+          "elapsed_ms": 1,
+          "status": "ok"
+        }
+      ],
+      "wall_ms": 2,
+      "output_bytes": 433,
+      "usage": null,
+      "record_sha256": "47193c10fae9eba30f7a5a1d8056fc15fc4abbc4a90f3c8e6f5c65e558fe8905"
+    },
+    {
+      "request": {
+        "schema_version": 1,
+        "case_id": "rust-02",
+        "arm": "baseline",
+        "split": "held-out",
+        "fixture": "rust",
+        "source_revision": "5d1f0b44fbeb244f2d1c6e9cf82a5148fa13c23957798480516646466630a2b1",
+        "base_revision": "b3afd857cb1bb1ee7b618b88e0999a084cb5892dbc56528abb0c610cadec6945",
+        "corpus_sha256": "2f98c3eb9ca92b625d6c1859bf02a6a988c8e3b93c189852e7fe11483c747e24",
+        "prompt": "List all direct module-local callers of price in HEAD. Include tests only if they directly call price; exclude transitive callers and name-only matches.\nReturn only a JSON object with exactly items (unique symbol:path#name:function strings, or :test for Rust #[test] functions), abstain (boolean), reason (string), evidence (array of objects with item, file, line, quote). Cite the exact definition line from HEAD for every item. If evidence cannot establish the complete answer, abstain with empty items/evidence and a specific reason. Do not treat name similarity as a call. Use only the supplied repository; do not modify it or invoke other agents.",
+        "limits": {
+          "wall_ms": 120000,
+          "tool_calls": 40,
+          "output_bytes": 131072,
+          "answer_items": 32,
+          "call_bytes": 16384
+        },
+        "tools": [
+          "read",
+          "rg",
+          "git"
+        ],
+        "cache_policy": "cold-per-episode-including-graph-setup",
+        "order": 3,
+        "request_sha256": "58faabad3960e6cb82d27e33f6cf66bcdf42caebf978b61a898bdaa2f6adfe63"
+      },
+      "run_id": "scripted-03",
+      "model": {
+        "provider": "scripted",
+        "name": "oracle-smoke",
+        "version": "1",
+        "settings": {}
+      },
+      "tool_versions": {
+        "read": "scripted-not-executed",
+        "rg": "scripted-not-executed",
+        "git": "scripted-not-executed"
+      },
+      "isolation": {
+        "repository_id": "scripted-repo-3",
+        "cache_id": "scripted-cache-3",
+        "truth_inaccessible": true,
+        "cold_start": true
+      },
+      "status": "failed",
+      "error": {
+        "code": "scripted_failure",
+        "message": "Intentional smoke failure"
+      },
+      "answer": null,
+      "final_output": "",
+      "calls": [
+        {
+          "tool": "read",
+          "input": "scripted fixture read",
+          "output": "scripted source capture",
+          "elapsed_ms": 1,
+          "status": "ok"
+        }
+      ],
+      "wall_ms": 2,
+      "output_bytes": 23,
+      "usage": null,
+      "record_sha256": "c0f18756c7e6ded63c77d926645311f692085d7a54b6bec99d8f32c3c556de3f"
+    },
+    {
+      "request": {
+        "schema_version": 1,
+        "case_id": "rust-03",
+        "arm": "baseline",
+        "split": "held-out",
+        "fixture": "rust",
+        "source_revision": "5d1f0b44fbeb244f2d1c6e9cf82a5148fa13c23957798480516646466630a2b1",
+        "base_revision": "b3afd857cb1bb1ee7b618b88e0999a084cb5892dbc56528abb0c610cadec6945",
+        "corpus_sha256": "2f98c3eb9ca92b625d6c1859bf02a6a988c8e3b93c189852e7fe11483c747e24",
+        "prompt": "List the direct module-local callees of invoice in HEAD. Exclude library built-ins and transitive calls.\nReturn only a JSON object with exactly items (unique symbol:path#name:function strings, or :test for Rust #[test] functions), abstain (boolean), reason (string), evidence (array of objects with item, file, line, quote). Cite the exact definition line from HEAD for every item. If evidence cannot establish the complete answer, abstain with empty items/evidence and a specific reason. Do not treat name similarity as a call. Use only the supplied repository; do not modify it or invoke other agents.",
+        "limits": {
+          "wall_ms": 120000,
+          "tool_calls": 40,
+          "output_bytes": 131072,
+          "answer_items": 32,
+          "call_bytes": 16384
+        },
+        "tools": [
+          "read",
+          "rg",
+          "git"
+        ],
+        "cache_policy": "cold-per-episode-including-graph-setup",
+        "order": 4,
+        "request_sha256": "46bbc62deb93a53cfdee65dda500204e02ce63b133d0e6c1ed362a82b67d59a5"
+      },
+      "run_id": "scripted-04",
+      "model": {
+        "provider": "scripted",
+        "name": "oracle-smoke",
+        "version": "1",
+        "settings": {}
+      },
+      "tool_versions": {
+        "read": "scripted-not-executed",
+        "rg": "scripted-not-executed",
+        "git": "scripted-not-executed"
+      },
+      "isolation": {
+        "repository_id": "scripted-repo-4",
+        "cache_id": "scripted-cache-4",
+        "truth_inaccessible": true,
+        "cold_start": true
+      },
+      "status": "ok",
+      "error": null,
+      "answer": {
+        "items": [
+          "symbol:src/lib.rs#price:function"
+        ],
+        "abstain": false,
+        "reason": "scripted oracle answer",
+        "evidence": [
+          {
+            "item": "symbol:src/lib.rs#price:function",
+            "file": "src/lib.rs",
+            "line": 6,
+            "quote": "pub fn price(value: i32) -> i32 {"
+          }
+        ]
+      },
+      "final_output": "{\"abstain\":false,\"evidence\":[{\"file\":\"src/lib.rs\",\"item\":\"symbol:src/lib.rs#price:function\",\"line\":6,\"quote\":\"pub fn price(value: i32) -> i32 {\"}],\"items\":[\"symbol:src/lib.rs#price:function\"],\"reason\":\"scripted oracle answer\"}",
+      "calls": [
+        {
+          "tool": "read",
+          "input": "scripted fixture read",
+          "output": "scripted source capture",
+          "elapsed_ms": 1,
+          "status": "ok"
+        }
+      ],
+      "wall_ms": 2,
+      "output_bytes": 249,
+      "usage": null,
+      "record_sha256": "dab2cce1e4016a4645c874f37f50775af4b5b0e8b2d331033b3a7c5db031d101"
+    },
+    {
+      "request": {
+        "schema_version": 1,
+        "case_id": "rust-03",
+        "arm": "graph",
+        "split": "held-out",
+        "fixture": "rust",
+        "source_revision": "5d1f0b44fbeb244f2d1c6e9cf82a5148fa13c23957798480516646466630a2b1",
+        "base_revision": "b3afd857cb1bb1ee7b618b88e0999a084cb5892dbc56528abb0c610cadec6945",
+        "corpus_sha256": "2f98c3eb9ca92b625d6c1859bf02a6a988c8e3b93c189852e7fe11483c747e24",
+        "prompt": "List the direct module-local callees of invoice in HEAD. Exclude library built-ins and transitive calls.\nReturn only a JSON object with exactly items (unique symbol:path#name:function strings, or :test for Rust #[test] functions), abstain (boolean), reason (string), evidence (array of objects with item, file, line, quote). Cite the exact definition line from HEAD for every item. If evidence cannot establish the complete answer, abstain with empty items/evidence and a specific reason. Do not treat name similarity as a call. Use only the supplied repository; do not modify it or invoke other agents.",
+        "limits": {
+          "wall_ms": 120000,
+          "tool_calls": 40,
+          "output_bytes": 131072,
+          "answer_items": 32,
+          "call_bytes": 16384
+        },
+        "tools": [
+          "read",
+          "rg",
+          "git",
+          "graph_sync",
+          "search",
+          "show",
+          "refs",
+          "callees",
+          "impact",
+          "changes"
+        ],
+        "cache_policy": "cold-per-episode-including-graph-setup",
+        "order": 5,
+        "request_sha256": "b7b4f8b25218361e82716d295d2ac878e5983d824139aa038026e07b67024181"
+      },
+      "run_id": "scripted-05",
+      "model": {
+        "provider": "scripted",
+        "name": "oracle-smoke",
+        "version": "1",
+        "settings": {}
+      },
+      "tool_versions": {
+        "read": "scripted-not-executed",
+        "rg": "scripted-not-executed",
+        "git": "scripted-not-executed",
+        "orbit-graph": "scripted-not-executed"
+      },
+      "isolation": {
+        "repository_id": "scripted-repo-5",
+        "cache_id": "scripted-cache-5",
+        "truth_inaccessible": true,
+        "cold_start": true
+      },
+      "status": "ok",
+      "error": null,
+      "answer": {
+        "items": [
+          "symbol:src/lib.rs#price:function"
+        ],
+        "abstain": false,
+        "reason": "scripted oracle answer",
+        "evidence": [
+          {
+            "item": "symbol:src/lib.rs#price:function",
+            "file": "src/lib.rs",
+            "line": 6,
+            "quote": "pub fn price(value: i32) -> i32 {"
+          }
+        ]
+      },
+      "final_output": "{\"abstain\":false,\"evidence\":[{\"file\":\"src/lib.rs\",\"item\":\"symbol:src/lib.rs#price:function\",\"line\":6,\"quote\":\"pub fn price(value: i32) -> i32 {\"}],\"items\":[\"symbol:src/lib.rs#price:function\"],\"reason\":\"scripted oracle answer\"}",
+      "calls": [
+        {
+          "tool": "read",
+          "input": "scripted fixture read",
+          "output": "scripted source capture",
+          "elapsed_ms": 1,
+          "status": "ok"
+        }
+      ],
+      "wall_ms": 2,
+      "output_bytes": 249,
+      "usage": null,
+      "record_sha256": "0606f92c166cca550f076dfd4155a37e7c9eb3525e8ea3692a53dad23ddd4bbc"
+    },
+    {
+      "request": {
+        "schema_version": 1,
+        "case_id": "rust-04",
+        "arm": "graph",
+        "split": "development",
+        "fixture": "rust",
+        "source_revision": "5d1f0b44fbeb244f2d1c6e9cf82a5148fa13c23957798480516646466630a2b1",
+        "base_revision": "b3afd857cb1bb1ee7b618b88e0999a084cb5892dbc56528abb0c610cadec6945",
+        "corpus_sha256": "2f98c3eb9ca92b625d6c1859bf02a6a988c8e3b93c189852e7fe11483c747e24",
+        "prompt": "List all test functions transitively affected by changing normalize, using direct module-local call paths in HEAD. Do not list non-test functions.\nReturn only a JSON object with exactly items (unique symbol:path#name:function strings, or :test for Rust #[test] functions), abstain (boolean), reason (string), evidence (array of objects with item, file, line, quote). Cite the exact definition line from HEAD for every item. If evidence cannot establish the complete answer, abstain with empty items/evidence and a specific reason. Do not treat name similarity as a call. Use only the supplied repository; do not modify it or invoke other agents.",
+        "limits": {
+          "wall_ms": 120000,
+          "tool_calls": 40,
+          "output_bytes": 131072,
+          "answer_items": 32,
+          "call_bytes": 16384
+        },
+        "tools": [
+          "read",
+          "rg",
+          "git",
+          "graph_sync",
+          "search",
+          "show",
+          "refs",
+          "callees",
+          "impact",
+          "changes"
+        ],
+        "cache_policy": "cold-per-episode-including-graph-setup",
+        "order": 6,
+        "request_sha256": "352f5a42d4fbab06a7923d8708cee31a5ebab8f64197ad64f9ea87375b0f55d5"
+      },
+      "run_id": "scripted-06",
+      "model": {
+        "provider": "scripted",
+        "name": "oracle-smoke",
+        "version": "1",
+        "settings": {}
+      },
+      "tool_versions": {
+        "read": "scripted-not-executed",
+        "rg": "scripted-not-executed",
+        "git": "scripted-not-executed",
+        "orbit-graph": "scripted-not-executed"
+      },
+      "isolation": {
+        "repository_id": "scripted-repo-6",
+        "cache_id": "scripted-cache-6",
+        "truth_inaccessible": true,
+        "cold_start": true
+      },
+      "status": "ok",
+      "error": null,
+      "answer": {
+        "items": [
+          "symbol:src/lib.rs#test_invoice:test",
+          "symbol:src/lib.rs#test_preview:test"
+        ],
+        "abstain": false,
+        "reason": "scripted oracle answer",
+        "evidence": [
+          {
+            "item": "symbol:src/lib.rs#test_invoice:test",
+            "file": "src/lib.rs",
+            "line": 23,
+            "quote": "fn test_invoice() {"
+          },
+          {
+            "item": "symbol:src/lib.rs#test_preview:test",
+            "file": "src/lib.rs",
+            "line": 28,
+            "quote": "fn test_preview() {"
+          }
+        ]
+      },
+      "final_output": "{\"abstain\":false,\"evidence\":[{\"file\":\"src/lib.rs\",\"item\":\"symbol:src/lib.rs#test_invoice:test\",\"line\":23,\"quote\":\"fn test_invoice() {\"},{\"file\":\"src/lib.rs\",\"item\":\"symbol:src/lib.rs#test_preview:test\",\"line\":28,\"quote\":\"fn test_preview() {\"}],\"items\":[\"symbol:src/lib.rs#test_invoice:test\",\"symbol:src/lib.rs#test_preview:test\"],\"reason\":\"scripted oracle answer\"}",
+      "calls": [
+        {
+          "tool": "read",
+          "input": "scripted fixture read",
+          "output": "scripted source capture",
+          "elapsed_ms": 1,
+          "status": "ok"
+        }
+      ],
+      "wall_ms": 2,
+      "output_bytes": 387,
+      "usage": null,
+      "record_sha256": "f02989b4d8457a24efcbd8bc5eca91ba769b6127a2fd4c1b1ada44b455fd34f6"
+    },
+    {
+      "request": {
+        "schema_version": 1,
+        "case_id": "rust-04",
+        "arm": "baseline",
+        "split": "development",
+        "fixture": "rust",
+        "source_revision": "5d1f0b44fbeb244f2d1c6e9cf82a5148fa13c23957798480516646466630a2b1",
+        "base_revision": "b3afd857cb1bb1ee7b618b88e0999a084cb5892dbc56528abb0c610cadec6945",
+        "corpus_sha256": "2f98c3eb9ca92b625d6c1859bf02a6a988c8e3b93c189852e7fe11483c747e24",
+        "prompt": "List all test functions transitively affected by changing normalize, using direct module-local call paths in HEAD. Do not list non-test functions.\nReturn only a JSON object with exactly items (unique symbol:path#name:function strings, or :test for Rust #[test] functions), abstain (boolean), reason (string), evidence (array of objects with item, file, line, quote). Cite the exact definition line from HEAD for every item. If evidence cannot establish the complete answer, abstain with empty items/evidence and a specific reason. Do not treat name similarity as a call. Use only the supplied repository; do not modify it or invoke other agents.",
+        "limits": {
+          "wall_ms": 120000,
+          "tool_calls": 40,
+          "output_bytes": 131072,
+          "answer_items": 32,
+          "call_bytes": 16384
+        },
+        "tools": [
+          "read",
+          "rg",
+          "git"
+        ],
+        "cache_policy": "cold-per-episode-including-graph-setup",
+        "order": 7,
+        "request_sha256": "1b815f2fe072042dd48adad98946fcd9e228744143b3d69d2ab24db76ede6c87"
+      },
+      "run_id": "scripted-07",
+      "model": {
+        "provider": "scripted",
+        "name": "oracle-smoke",
+        "version": "1",
+        "settings": {}
+      },
+      "tool_versions": {
+        "read": "scripted-not-executed",
+        "rg": "scripted-not-executed",
+        "git": "scripted-not-executed"
+      },
+      "isolation": {
+        "repository_id": "scripted-repo-7",
+        "cache_id": "scripted-cache-7",
+        "truth_inaccessible": true,
+        "cold_start": true
+      },
+      "status": "ok",
+      "error": null,
+      "answer": {
+        "items": [
+          "symbol:src/lib.rs#test_invoice:test",
+          "symbol:src/lib.rs#test_preview:test"
+        ],
+        "abstain": false,
+        "reason": "scripted oracle answer",
+        "evidence": [
+          {
+            "item": "symbol:src/lib.rs#test_invoice:test",
+            "file": "src/lib.rs",
+            "line": 23,
+            "quote": "fn test_invoice() {"
+          },
+          {
+            "item": "symbol:src/lib.rs#test_preview:test",
+            "file": "src/lib.rs",
+            "line": 28,
+            "quote": "fn test_preview() {"
+          }
+        ]
+      },
+      "final_output": "{\"abstain\":false,\"evidence\":[{\"file\":\"src/lib.rs\",\"item\":\"symbol:src/lib.rs#test_invoice:test\",\"line\":23,\"quote\":\"fn test_invoice() {\"},{\"file\":\"src/lib.rs\",\"item\":\"symbol:src/lib.rs#test_preview:test\",\"line\":28,\"quote\":\"fn test_preview() {\"}],\"items\":[\"symbol:src/lib.rs#test_invoice:test\",\"symbol:src/lib.rs#test_preview:test\"],\"reason\":\"scripted oracle answer\"}",
+      "calls": [
+        {
+          "tool": "read",
+          "input": "scripted fixture read",
+          "output": "scripted source capture",
+          "elapsed_ms": 1,
+          "status": "ok"
+        }
+      ],
+      "wall_ms": 2,
+      "output_bytes": 387,
+      "usage": null,
+      "record_sha256": "e9bd58396ed86079645cfb3935e25e786ef6d105da6f846915511d3c5b8fafcc"
+    },
+    {
+      "request": {
+        "schema_version": 1,
+        "case_id": "rust-05",
+        "arm": "baseline",
+        "split": "held-out",
+        "fixture": "rust",
+        "source_revision": "5d1f0b44fbeb244f2d1c6e9cf82a5148fa13c23957798480516646466630a2b1",
+        "base_revision": "b3afd857cb1bb1ee7b618b88e0999a084cb5892dbc56528abb0c610cadec6945",
+        "corpus_sha256": "2f98c3eb9ca92b625d6c1859bf02a6a988c8e3b93c189852e7fe11483c747e24",
+        "prompt": "Compare the committed base to HEAD and list functions whose body changed. Ignore unchanged callers and tests.\nReturn only a JSON object with exactly items (unique symbol:path#name:function strings, or :test for Rust #[test] functions), abstain (boolean), reason (string), evidence (array of objects with item, file, line, quote). Cite the exact definition line from HEAD for every item. If evidence cannot establish the complete answer, abstain with empty items/evidence and a specific reason. Do not treat name similarity as a call. Use only the supplied repository; do not modify it or invoke other agents.",
+        "limits": {
+          "wall_ms": 120000,
+          "tool_calls": 40,
+          "output_bytes": 131072,
+          "answer_items": 32,
+          "call_bytes": 16384
+        },
+        "tools": [
+          "read",
+          "rg",
+          "git"
+        ],
+        "cache_policy": "cold-per-episode-including-graph-setup",
+        "order": 8,
+        "request_sha256": "4005877ffd407996a4999cbe4b59ee8fe21ea663eb7781f56d830f9b7c233acf"
+      },
+      "run_id": "scripted-08",
+      "model": {
+        "provider": "scripted",
+        "name": "oracle-smoke",
+        "version": "1",
+        "settings": {}
+      },
+      "tool_versions": {
+        "read": "scripted-not-executed",
+        "rg": "scripted-not-executed",
+        "git": "scripted-not-executed"
+      },
+      "isolation": {
+        "repository_id": "scripted-repo-8",
+        "cache_id": "scripted-cache-8",
+        "truth_inaccessible": true,
+        "cold_start": true
+      },
+      "status": "ok",
+      "error": null,
+      "answer": {
+        "items": [
+          "symbol:src/lib.rs#price:function"
+        ],
+        "abstain": false,
+        "reason": "scripted oracle answer",
+        "evidence": [
+          {
+            "item": "symbol:src/lib.rs#price:function",
+            "file": "src/lib.rs",
+            "line": 6,
+            "quote": "pub fn price(value: i32) -> i32 {"
+          }
+        ]
+      },
+      "final_output": "{\"abstain\":false,\"evidence\":[{\"file\":\"src/lib.rs\",\"item\":\"symbol:src/lib.rs#price:function\",\"line\":6,\"quote\":\"pub fn price(value: i32) -> i32 {\"}],\"items\":[\"symbol:src/lib.rs#price:function\"],\"reason\":\"scripted oracle answer\"}",
+      "calls": [
+        {
+          "tool": "read",
+          "input": "scripted fixture read",
+          "output": "scripted source capture",
+          "elapsed_ms": 1,
+          "status": "ok"
+        }
+      ],
+      "wall_ms": 2,
+      "output_bytes": 249,
+      "usage": null,
+      "record_sha256": "67ebb633c2afb5712b445eb3ac84e715bfd81167557209fdc684de49c163d25f"
+    },
+    {
+      "request": {
+        "schema_version": 1,
+        "case_id": "rust-05",
+        "arm": "graph",
+        "split": "held-out",
+        "fixture": "rust",
+        "source_revision": "5d1f0b44fbeb244f2d1c6e9cf82a5148fa13c23957798480516646466630a2b1",
+        "base_revision": "b3afd857cb1bb1ee7b618b88e0999a084cb5892dbc56528abb0c610cadec6945",
+        "corpus_sha256": "2f98c3eb9ca92b625d6c1859bf02a6a988c8e3b93c189852e7fe11483c747e24",
+        "prompt": "Compare the committed base to HEAD and list functions whose body changed. Ignore unchanged callers and tests.\nReturn only a JSON object with exactly items (unique symbol:path#name:function strings, or :test for Rust #[test] functions), abstain (boolean), reason (string), evidence (array of objects with item, file, line, quote). Cite the exact definition line from HEAD for every item. If evidence cannot establish the complete answer, abstain with empty items/evidence and a specific reason. Do not treat name similarity as a call. Use only the supplied repository; do not modify it or invoke other agents.",
+        "limits": {
+          "wall_ms": 120000,
+          "tool_calls": 40,
+          "output_bytes": 131072,
+          "answer_items": 32,
+          "call_bytes": 16384
+        },
+        "tools": [
+          "read",
+          "rg",
+          "git",
+          "graph_sync",
+          "search",
+          "show",
+          "refs",
+          "callees",
+          "impact",
+          "changes"
+        ],
+        "cache_policy": "cold-per-episode-including-graph-setup",
+        "order": 9,
+        "request_sha256": "fa84496bce47d2a45ab6d0f1c765805f5523eceae8d60324e50d5d4429b182db"
+      },
+      "run_id": "scripted-09",
+      "model": {
+        "provider": "scripted",
+        "name": "oracle-smoke",
+        "version": "1",
+        "settings": {}
+      },
+      "tool_versions": {
+        "read": "scripted-not-executed",
+        "rg": "scripted-not-executed",
+        "git": "scripted-not-executed",
+        "orbit-graph": "scripted-not-executed"
+      },
+      "isolation": {
+        "repository_id": "scripted-repo-9",
+        "cache_id": "scripted-cache-9",
+        "truth_inaccessible": true,
+        "cold_start": true
+      },
+      "status": "timeout",
+      "error": {
+        "code": "scripted_timeout",
+        "message": "Intentional smoke timeout"
+      },
+      "answer": null,
+      "final_output": "",
+      "calls": [
+        {
+          "tool": "read",
+          "input": "scripted fixture read",
+          "output": "scripted source capture",
+          "elapsed_ms": 1,
+          "status": "ok"
+        }
+      ],
+      "wall_ms": 120000,
+      "output_bytes": 23,
+      "usage": null,
+      "record_sha256": "c197113fdd1eee35a7b689dc0f6a983f0679309d716616c1da539f4a9c5f2a9d"
+    },
+    {
+      "request": {
+        "schema_version": 1,
+        "case_id": "rust-06",
+        "arm": "graph",
+        "split": "held-out",
+        "fixture": "rust",
+        "source_revision": "5d1f0b44fbeb244f2d1c6e9cf82a5148fa13c23957798480516646466630a2b1",
+        "base_revision": "b3afd857cb1bb1ee7b618b88e0999a084cb5892dbc56528abb0c610cadec6945",
+        "corpus_sha256": "2f98c3eb9ca92b625d6c1859bf02a6a988c8e3b93c189852e7fe11483c747e24",
+        "prompt": "List every external runtime consumer of price, including consumers outside this repository. No external source or deployment data is supplied.\nReturn only a JSON object with exactly items (unique symbol:path#name:function strings, or :test for Rust #[test] functions), abstain (boolean), reason (string), evidence (array of objects with item, file, line, quote). Cite the exact definition line from HEAD for every item. If evidence cannot establish the complete answer, abstain with empty items/evidence and a specific reason. Do not treat name similarity as a call. Use only the supplied repository; do not modify it or invoke other agents.",
+        "limits": {
+          "wall_ms": 120000,
+          "tool_calls": 40,
+          "output_bytes": 131072,
+          "answer_items": 32,
+          "call_bytes": 16384
+        },
+        "tools": [
+          "read",
+          "rg",
+          "git",
+          "graph_sync",
+          "search",
+          "show",
+          "refs",
+          "callees",
+          "impact",
+          "changes"
+        ],
+        "cache_policy": "cold-per-episode-including-graph-setup",
+        "order": 10,
+        "request_sha256": "6294543181c7a18a2a4dfaae6ce4ae3bd220ddb951a23cd326599af4c5eb41e0"
+      },
+      "run_id": "scripted-10",
+      "model": {
+        "provider": "scripted",
+        "name": "oracle-smoke",
+        "version": "1",
+        "settings": {}
+      },
+      "tool_versions": {
+        "read": "scripted-not-executed",
+        "rg": "scripted-not-executed",
+        "git": "scripted-not-executed",
+        "orbit-graph": "scripted-not-executed"
+      },
+      "isolation": {
+        "repository_id": "scripted-repo-10",
+        "cache_id": "scripted-cache-10",
+        "truth_inaccessible": true,
+        "cold_start": true
+      },
+      "status": "ok",
+      "error": null,
+      "answer": {
+        "items": [],
+        "abstain": true,
+        "reason": "Unsupported runtime identity is absent.",
+        "evidence": []
+      },
+      "final_output": "{\"abstain\":true,\"evidence\":[],\"items\":[],\"reason\":\"Unsupported runtime identity is absent.\"}",
+      "calls": [
+        {
+          "tool": "read",
+          "input": "scripted fixture read",
+          "output": "scripted source capture",
+          "elapsed_ms": 1,
+          "status": "ok"
+        }
+      ],
+      "wall_ms": 2,
+      "output_bytes": 115,
+      "usage": null,
+      "record_sha256": "4baa245857fac6a51170007b838d61d2d27e37cb2b6c683bd36b4eebe6d82076"
+    },
+    {
+      "request": {
+        "schema_version": 1,
+        "case_id": "rust-06",
+        "arm": "baseline",
+        "split": "held-out",
+        "fixture": "rust",
+        "source_revision": "5d1f0b44fbeb244f2d1c6e9cf82a5148fa13c23957798480516646466630a2b1",
+        "base_revision": "b3afd857cb1bb1ee7b618b88e0999a084cb5892dbc56528abb0c610cadec6945",
+        "corpus_sha256": "2f98c3eb9ca92b625d6c1859bf02a6a988c8e3b93c189852e7fe11483c747e24",
+        "prompt": "List every external runtime consumer of price, including consumers outside this repository. No external source or deployment data is supplied.\nReturn only a JSON object with exactly items (unique symbol:path#name:function strings, or :test for Rust #[test] functions), abstain (boolean), reason (string), evidence (array of objects with item, file, line, quote). Cite the exact definition line from HEAD for every item. If evidence cannot establish the complete answer, abstain with empty items/evidence and a specific reason. Do not treat name similarity as a call. Use only the supplied repository; do not modify it or invoke other agents.",
+        "limits": {
+          "wall_ms": 120000,
+          "tool_calls": 40,
+          "output_bytes": 131072,
+          "answer_items": 32,
+          "call_bytes": 16384
+        },
+        "tools": [
+          "read",
+          "rg",
+          "git"
+        ],
+        "cache_policy": "cold-per-episode-including-graph-setup",
+        "order": 11,
+        "request_sha256": "b1ddf5230377ac244a6e0c77f38c4c9877eae85af723036290abdadff65c0c2d"
+      },
+      "run_id": "scripted-11",
+      "model": {
+        "provider": "scripted",
+        "name": "oracle-smoke",
+        "version": "1",
+        "settings": {}
+      },
+      "tool_versions": {
+        "read": "scripted-not-executed",
+        "rg": "scripted-not-executed",
+        "git": "scripted-not-executed"
+      },
+      "isolation": {
+        "repository_id": "scripted-repo-11",
+        "cache_id": "scripted-cache-11",
+        "truth_inaccessible": true,
+        "cold_start": true
+      },
+      "status": "ok",
+      "error": null,
+      "answer": {
+        "items": [],
+        "abstain": true,
+        "reason": "Unsupported runtime identity is absent.",
+        "evidence": []
+      },
+      "final_output": "{\"abstain\":true,\"evidence\":[],\"items\":[],\"reason\":\"Unsupported runtime identity is absent.\"}",
+      "calls": [
+        {
+          "tool": "read",
+          "input": "scripted fixture read",
+          "output": "scripted source capture",
+          "elapsed_ms": 1,
+          "status": "ok"
+        }
+      ],
+      "wall_ms": 2,
+      "output_bytes": 115,
+      "usage": null,
+      "record_sha256": "1071c56b6eaf71818848aeb5c0d2ba2c423d1f93052516ba1dadd33611d983c5"
+    },
+    {
+      "request": {
+        "schema_version": 1,
+        "case_id": "python-01",
+        "arm": "baseline",
+        "split": "development",
+        "fixture": "python",
+        "source_revision": "f73b669d4fe4af608fda125c033e46b598c2e8246c73a337106447e30ddf7295",
+        "base_revision": "64b198d36aac2305c8895932b8509ca9a862f18f7adbcf76f63b935c9c062e71",
+        "corpus_sha256": "2f98c3eb9ca92b625d6c1859bf02a6a988c8e3b93c189852e7fe11483c747e24",
+        "prompt": "Find the definition of the module-level function price that normalizes the input then multiplies it. Exclude the similarly named preview helper.\nReturn only a JSON object with exactly items (unique symbol:path#name:function strings, or :test for Rust #[test] functions), abstain (boolean), reason (string), evidence (array of objects with item, file, line, quote). Cite the exact definition line from HEAD for every item. If evidence cannot establish the complete answer, abstain with empty items/evidence and a specific reason. Do not treat name similarity as a call. Use only the supplied repository; do not modify it or invoke other agents.",
+        "limits": {
+          "wall_ms": 120000,
+          "tool_calls": 40,
+          "output_bytes": 131072,
+          "answer_items": 32,
+          "call_bytes": 16384
+        },
+        "tools": [
+          "read",
+          "rg",
+          "git"
+        ],
+        "cache_policy": "cold-per-episode-including-graph-setup",
+        "order": 12,
+        "request_sha256": "6adc5a584a6e99c26fa5e34f735362b73190d55b20497ca625f058773533c0fc"
+      },
+      "run_id": "scripted-12",
+      "model": {
+        "provider": "scripted",
+        "name": "oracle-smoke",
+        "version": "1",
+        "settings": {}
+      },
+      "tool_versions": {
+        "read": "scripted-not-executed",
+        "rg": "scripted-not-executed",
+        "git": "scripted-not-executed"
+      },
+      "isolation": {
+        "repository_id": "scripted-repo-12",
+        "cache_id": "scripted-cache-12",
+        "truth_inaccessible": true,
+        "cold_start": true
+      },
+      "status": "ok",
+      "error": null,
+      "answer": {
+        "items": [
+          "symbol:shop.py#price:function"
+        ],
+        "abstain": false,
+        "reason": "scripted oracle answer",
+        "evidence": [
+          {
+            "item": "symbol:shop.py#price:function",
+            "file": "shop.py",
+            "line": 8,
+            "quote": "def price(value):"
+          }
+        ]
+      },
+      "final_output": "{\"abstain\":false,\"evidence\":[{\"file\":\"shop.py\",\"item\":\"symbol:shop.py#price:function\",\"line\":8,\"quote\":\"def price(value):\"}],\"items\":[\"symbol:shop.py#price:function\"],\"reason\":\"scripted oracle answer\"}",
+      "calls": [
+        {
+          "tool": "read",
+          "input": "scripted fixture read",
+          "output": "scripted source capture",
+          "elapsed_ms": 1,
+          "status": "ok"
+        }
+      ],
+      "wall_ms": 2,
+      "output_bytes": 224,
+      "usage": null,
+      "record_sha256": "3b3eee52096500905094ac7a0fb64089a4b5b0092b3920b2364d327a0793a119"
+    },
+    {
+      "request": {
+        "schema_version": 1,
+        "case_id": "python-01",
+        "arm": "graph",
+        "split": "development",
+        "fixture": "python",
+        "source_revision": "f73b669d4fe4af608fda125c033e46b598c2e8246c73a337106447e30ddf7295",
+        "base_revision": "64b198d36aac2305c8895932b8509ca9a862f18f7adbcf76f63b935c9c062e71",
+        "corpus_sha256": "2f98c3eb9ca92b625d6c1859bf02a6a988c8e3b93c189852e7fe11483c747e24",
+        "prompt": "Find the definition of the module-level function price that normalizes the input then multiplies it. Exclude the similarly named preview helper.\nReturn only a JSON object with exactly items (unique symbol:path#name:function strings, or :test for Rust #[test] functions), abstain (boolean), reason (string), evidence (array of objects with item, file, line, quote). Cite the exact definition line from HEAD for every item. If evidence cannot establish the complete answer, abstain with empty items/evidence and a specific reason. Do not treat name similarity as a call. Use only the supplied repository; do not modify it or invoke other agents.",
+        "limits": {
+          "wall_ms": 120000,
+          "tool_calls": 40,
+          "output_bytes": 131072,
+          "answer_items": 32,
+          "call_bytes": 16384
+        },
+        "tools": [
+          "read",
+          "rg",
+          "git",
+          "graph_sync",
+          "search",
+          "show",
+          "refs",
+          "callees",
+          "impact",
+          "changes"
+        ],
+        "cache_policy": "cold-per-episode-including-graph-setup",
+        "order": 13,
+        "request_sha256": "3d76049439c2e69a0e25e4fc2ec66555886c96e38700a0c16ee7494f78730e80"
+      },
+      "run_id": "scripted-13",
+      "model": {
+        "provider": "scripted",
+        "name": "oracle-smoke",
+        "version": "1",
+        "settings": {}
+      },
+      "tool_versions": {
+        "read": "scripted-not-executed",
+        "rg": "scripted-not-executed",
+        "git": "scripted-not-executed",
+        "orbit-graph": "scripted-not-executed"
+      },
+      "isolation": {
+        "repository_id": "scripted-repo-13",
+        "cache_id": "scripted-cache-13",
+        "truth_inaccessible": true,
+        "cold_start": true
+      },
+      "status": "ok",
+      "error": null,
+      "answer": {
+        "items": [
+          "symbol:shop.py#price:function"
+        ],
+        "abstain": false,
+        "reason": "scripted oracle answer",
+        "evidence": [
+          {
+            "item": "symbol:shop.py#price:function",
+            "file": "shop.py",
+            "line": 8,
+            "quote": "def price(value):"
+          }
+        ]
+      },
+      "final_output": "{\"abstain\":false,\"evidence\":[{\"file\":\"shop.py\",\"item\":\"symbol:shop.py#price:function\",\"line\":8,\"quote\":\"def price(value):\"}],\"items\":[\"symbol:shop.py#price:function\"],\"reason\":\"scripted oracle answer\"}",
+      "calls": [
+        {
+          "tool": "read",
+          "input": "scripted fixture read",
+          "output": "scripted source capture",
+          "elapsed_ms": 1,
+          "status": "ok"
+        }
+      ],
+      "wall_ms": 2,
+      "output_bytes": 224,
+      "usage": null,
+      "record_sha256": "aa9efabf431b5dc88030cb3a700661d704d5544026f18389fcbaa710d2137fab"
+    },
+    {
+      "request": {
+        "schema_version": 1,
+        "case_id": "python-02",
+        "arm": "graph",
+        "split": "held-out",
+        "fixture": "python",
+        "source_revision": "f73b669d4fe4af608fda125c033e46b598c2e8246c73a337106447e30ddf7295",
+        "base_revision": "64b198d36aac2305c8895932b8509ca9a862f18f7adbcf76f63b935c9c062e71",
+        "corpus_sha256": "2f98c3eb9ca92b625d6c1859bf02a6a988c8e3b93c189852e7fe11483c747e24",
+        "prompt": "List all direct module-local callers of price in HEAD. Include tests only if they directly call price; exclude transitive callers and name-only matches.\nReturn only a JSON object with exactly items (unique symbol:path#name:function strings, or :test for Rust #[test] functions), abstain (boolean), reason (string), evidence (array of objects with item, file, line, quote). Cite the exact definition line from HEAD for every item. If evidence cannot establish the complete answer, abstain with empty items/evidence and a specific reason. Do not treat name similarity as a call. Use only the supplied repository; do not modify it or invoke other agents.",
+        "limits": {
+          "wall_ms": 120000,
+          "tool_calls": 40,
+          "output_bytes": 131072,
+          "answer_items": 32,
+          "call_bytes": 16384
+        },
+        "tools": [
+          "read",
+          "rg",
+          "git",
+          "graph_sync",
+          "search",
+          "show",
+          "refs",
+          "callees",
+          "impact",
+          "changes"
+        ],
+        "cache_policy": "cold-per-episode-including-graph-setup",
+        "order": 14,
+        "request_sha256": "fd087568e8af24f254c8d37b2f4b0bb83ffaf75a55cc1f64a2e12bb1e1de434d"
+      },
+      "run_id": "scripted-14",
+      "model": {
+        "provider": "scripted",
+        "name": "oracle-smoke",
+        "version": "1",
+        "settings": {}
+      },
+      "tool_versions": {
+        "read": "scripted-not-executed",
+        "rg": "scripted-not-executed",
+        "git": "scripted-not-executed",
+        "orbit-graph": "scripted-not-executed"
+      },
+      "isolation": {
+        "repository_id": "scripted-repo-14",
+        "cache_id": "scripted-cache-14",
+        "truth_inaccessible": true,
+        "cold_start": true
+      },
+      "status": "ok",
+      "error": null,
+      "answer": {
+        "items": [
+          "symbol:shop.py#invoice:function"
+        ],
+        "abstain": false,
+        "reason": "scripted oracle answer",
+        "evidence": [
+          {
+            "item": "symbol:shop.py#invoice:function",
+            "file": "shop.py",
+            "line": 12,
+            "quote": "def invoice(value):"
+          }
+        ]
+      },
+      "final_output": "{\"abstain\":false,\"evidence\":[{\"file\":\"shop.py\",\"item\":\"symbol:shop.py#invoice:function\",\"line\":12,\"quote\":\"def invoice(value):\"}],\"items\":[\"symbol:shop.py#invoice:function\"],\"reason\":\"scripted oracle answer\"}",
+      "calls": [
+        {
+          "tool": "read",
+          "input": "scripted fixture read",
+          "output": "scripted source capture",
+          "elapsed_ms": 1,
+          "status": "ok"
+        }
+      ],
+      "wall_ms": 2,
+      "output_bytes": 231,
+      "usage": null,
+      "record_sha256": "adf5d710fd5accf074729c100f6e712b5b62c074eeea13e2e157a2c1e942cd1c"
+    },
+    {
+      "request": {
+        "schema_version": 1,
+        "case_id": "python-02",
+        "arm": "baseline",
+        "split": "held-out",
+        "fixture": "python",
+        "source_revision": "f73b669d4fe4af608fda125c033e46b598c2e8246c73a337106447e30ddf7295",
+        "base_revision": "64b198d36aac2305c8895932b8509ca9a862f18f7adbcf76f63b935c9c062e71",
+        "corpus_sha256": "2f98c3eb9ca92b625d6c1859bf02a6a988c8e3b93c189852e7fe11483c747e24",
+        "prompt": "List all direct module-local callers of price in HEAD. Include tests only if they directly call price; exclude transitive callers and name-only matches.\nReturn only a JSON object with exactly items (unique symbol:path#name:function strings, or :test for Rust #[test] functions), abstain (boolean), reason (string), evidence (array of objects with item, file, line, quote). Cite the exact definition line from HEAD for every item. If evidence cannot establish the complete answer, abstain with empty items/evidence and a specific reason. Do not treat name similarity as a call. Use only the supplied repository; do not modify it or invoke other agents.",
+        "limits": {
+          "wall_ms": 120000,
+          "tool_calls": 40,
+          "output_bytes": 131072,
+          "answer_items": 32,
+          "call_bytes": 16384
+        },
+        "tools": [
+          "read",
+          "rg",
+          "git"
+        ],
+        "cache_policy": "cold-per-episode-including-graph-setup",
+        "order": 15,
+        "request_sha256": "9e9cb7a3aa594f63ca6e12a88cceb629ebeb90f42f3c6aa4b3a1511415b09353"
+      },
+      "run_id": "scripted-15",
+      "model": {
+        "provider": "scripted",
+        "name": "oracle-smoke",
+        "version": "1",
+        "settings": {}
+      },
+      "tool_versions": {
+        "read": "scripted-not-executed",
+        "rg": "scripted-not-executed",
+        "git": "scripted-not-executed"
+      },
+      "isolation": {
+        "repository_id": "scripted-repo-15",
+        "cache_id": "scripted-cache-15",
+        "truth_inaccessible": true,
+        "cold_start": true
+      },
+      "status": "invalid",
+      "error": {
+        "code": "scripted_invalid",
+        "message": "Intentional invalid agent output"
+      },
+      "answer": null,
+      "final_output": "not JSON",
+      "calls": [
+        {
+          "tool": "read",
+          "input": "scripted fixture read",
+          "output": "scripted source capture",
+          "elapsed_ms": 1,
+          "status": "ok"
+        }
+      ],
+      "wall_ms": 2,
+      "output_bytes": 31,
+      "usage": null,
+      "record_sha256": "e25e6ebf3360e3e023e46dd6dd394cb97e3546ddf2a7da447250d9c08feecaed"
+    },
+    {
+      "request": {
+        "schema_version": 1,
+        "case_id": "python-03",
+        "arm": "baseline",
+        "split": "held-out",
+        "fixture": "python",
+        "source_revision": "f73b669d4fe4af608fda125c033e46b598c2e8246c73a337106447e30ddf7295",
+        "base_revision": "64b198d36aac2305c8895932b8509ca9a862f18f7adbcf76f63b935c9c062e71",
+        "corpus_sha256": "2f98c3eb9ca92b625d6c1859bf02a6a988c8e3b93c189852e7fe11483c747e24",
+        "prompt": "List the direct module-local callees of invoice in HEAD. Exclude library built-ins and transitive calls.\nReturn only a JSON object with exactly items (unique symbol:path#name:function strings, or :test for Rust #[test] functions), abstain (boolean), reason (string), evidence (array of objects with item, file, line, quote). Cite the exact definition line from HEAD for every item. If evidence cannot establish the complete answer, abstain with empty items/evidence and a specific reason. Do not treat name similarity as a call. Use only the supplied repository; do not modify it or invoke other agents.",
+        "limits": {
+          "wall_ms": 120000,
+          "tool_calls": 40,
+          "output_bytes": 131072,
+          "answer_items": 32,
+          "call_bytes": 16384
+        },
+        "tools": [
+          "read",
+          "rg",
+          "git"
+        ],
+        "cache_policy": "cold-per-episode-including-graph-setup",
+        "order": 16,
+        "request_sha256": "caf8b9235a7c78156f209c98bc40be533edf4a9c9da226e15645be641961dcf3"
+      },
+      "run_id": "scripted-16",
+      "model": {
+        "provider": "scripted",
+        "name": "oracle-smoke",
+        "version": "1",
+        "settings": {}
+      },
+      "tool_versions": {
+        "read": "scripted-not-executed",
+        "rg": "scripted-not-executed",
+        "git": "scripted-not-executed"
+      },
+      "isolation": {
+        "repository_id": "scripted-repo-16",
+        "cache_id": "scripted-cache-16",
+        "truth_inaccessible": true,
+        "cold_start": true
+      },
+      "status": "ok",
+      "error": null,
+      "answer": {
+        "items": [
+          "symbol:shop.py#price:function"
+        ],
+        "abstain": false,
+        "reason": "scripted oracle answer",
+        "evidence": [
+          {
+            "item": "symbol:shop.py#price:function",
+            "file": "shop.py",
+            "line": 8,
+            "quote": "def price(value):"
+          }
+        ]
+      },
+      "final_output": "{\"abstain\":false,\"evidence\":[{\"file\":\"shop.py\",\"item\":\"symbol:shop.py#price:function\",\"line\":8,\"quote\":\"def price(value):\"}],\"items\":[\"symbol:shop.py#price:function\"],\"reason\":\"scripted oracle answer\"}",
+      "calls": [
+        {
+          "tool": "read",
+          "input": "scripted fixture read",
+          "output": "scripted source capture",
+          "elapsed_ms": 1,
+          "status": "ok"
+        }
+      ],
+      "wall_ms": 2,
+      "output_bytes": 224,
+      "usage": null,
+      "record_sha256": "99f920399ec6c0716cd8df7d33fe8093dbe6dab6ac66d261f3ce3a5061cd55c8"
+    },
+    {
+      "request": {
+        "schema_version": 1,
+        "case_id": "python-03",
+        "arm": "graph",
+        "split": "held-out",
+        "fixture": "python",
+        "source_revision": "f73b669d4fe4af608fda125c033e46b598c2e8246c73a337106447e30ddf7295",
+        "base_revision": "64b198d36aac2305c8895932b8509ca9a862f18f7adbcf76f63b935c9c062e71",
+        "corpus_sha256": "2f98c3eb9ca92b625d6c1859bf02a6a988c8e3b93c189852e7fe11483c747e24",
+        "prompt": "List the direct module-local callees of invoice in HEAD. Exclude library built-ins and transitive calls.\nReturn only a JSON object with exactly items (unique symbol:path#name:function strings, or :test for Rust #[test] functions), abstain (boolean), reason (string), evidence (array of objects with item, file, line, quote). Cite the exact definition line from HEAD for every item. If evidence cannot establish the complete answer, abstain with empty items/evidence and a specific reason. Do not treat name similarity as a call. Use only the supplied repository; do not modify it or invoke other agents.",
+        "limits": {
+          "wall_ms": 120000,
+          "tool_calls": 40,
+          "output_bytes": 131072,
+          "answer_items": 32,
+          "call_bytes": 16384
+        },
+        "tools": [
+          "read",
+          "rg",
+          "git",
+          "graph_sync",
+          "search",
+          "show",
+          "refs",
+          "callees",
+          "impact",
+          "changes"
+        ],
+        "cache_policy": "cold-per-episode-including-graph-setup",
+        "order": 17,
+        "request_sha256": "37bca8f66b57a935b5982905b279491bbd96064a2fe899cd77887378e9bbc017"
+      },
+      "run_id": "scripted-17",
+      "model": {
+        "provider": "scripted",
+        "name": "oracle-smoke",
+        "version": "1",
+        "settings": {}
+      },
+      "tool_versions": {
+        "read": "scripted-not-executed",
+        "rg": "scripted-not-executed",
+        "git": "scripted-not-executed",
+        "orbit-graph": "scripted-not-executed"
+      },
+      "isolation": {
+        "repository_id": "scripted-repo-17",
+        "cache_id": "scripted-cache-17",
+        "truth_inaccessible": true,
+        "cold_start": true
+      },
+      "status": "ok",
+      "error": null,
+      "answer": {
+        "items": [
+          "symbol:shop.py#price:function"
+        ],
+        "abstain": false,
+        "reason": "scripted oracle answer",
+        "evidence": [
+          {
+            "item": "symbol:shop.py#price:function",
+            "file": "shop.py",
+            "line": 8,
+            "quote": "def price(value):"
+          }
+        ]
+      },
+      "final_output": "{\"abstain\":false,\"evidence\":[{\"file\":\"shop.py\",\"item\":\"symbol:shop.py#price:function\",\"line\":8,\"quote\":\"def price(value):\"}],\"items\":[\"symbol:shop.py#price:function\"],\"reason\":\"scripted oracle answer\"}",
+      "calls": [
+        {
+          "tool": "read",
+          "input": "scripted fixture read",
+          "output": "scripted source capture",
+          "elapsed_ms": 1,
+          "status": "ok"
+        }
+      ],
+      "wall_ms": 2,
+      "output_bytes": 224,
+      "usage": null,
+      "record_sha256": "5d3ae23d808c24db5cb0409d4cad6f97476fa62e0b9da4e0e2398758fa7995e7"
+    },
+    {
+      "request": {
+        "schema_version": 1,
+        "case_id": "python-04",
+        "arm": "graph",
+        "split": "development",
+        "fixture": "python",
+        "source_revision": "f73b669d4fe4af608fda125c033e46b598c2e8246c73a337106447e30ddf7295",
+        "base_revision": "64b198d36aac2305c8895932b8509ca9a862f18f7adbcf76f63b935c9c062e71",
+        "corpus_sha256": "2f98c3eb9ca92b625d6c1859bf02a6a988c8e3b93c189852e7fe11483c747e24",
+        "prompt": "List all test functions transitively affected by changing normalize, using direct module-local call paths in HEAD. Do not list non-test functions.\nReturn only a JSON object with exactly items (unique symbol:path#name:function strings, or :test for Rust #[test] functions), abstain (boolean), reason (string), evidence (array of objects with item, file, line, quote). Cite the exact definition line from HEAD for every item. If evidence cannot establish the complete answer, abstain with empty items/evidence and a specific reason. Do not treat name similarity as a call. Use only the supplied repository; do not modify it or invoke other agents.",
+        "limits": {
+          "wall_ms": 120000,
+          "tool_calls": 40,
+          "output_bytes": 131072,
+          "answer_items": 32,
+          "call_bytes": 16384
+        },
+        "tools": [
+          "read",
+          "rg",
+          "git",
+          "graph_sync",
+          "search",
+          "show",
+          "refs",
+          "callees",
+          "impact",
+          "changes"
+        ],
+        "cache_policy": "cold-per-episode-including-graph-setup",
+        "order": 18,
+        "request_sha256": "4242f0d6048d4e91545fea81a02110b5bb9913d0bf225c5234d76d32f4d9cd96"
+      },
+      "run_id": "scripted-18",
+      "model": {
+        "provider": "scripted",
+        "name": "oracle-smoke",
+        "version": "1",
+        "settings": {}
+      },
+      "tool_versions": {
+        "read": "scripted-not-executed",
+        "rg": "scripted-not-executed",
+        "git": "scripted-not-executed",
+        "orbit-graph": "scripted-not-executed"
+      },
+      "isolation": {
+        "repository_id": "scripted-repo-18",
+        "cache_id": "scripted-cache-18",
+        "truth_inaccessible": true,
+        "cold_start": true
+      },
+      "status": "ok",
+      "error": null,
+      "answer": {
+        "items": [
+          "symbol:shop.py#test_invoice:function",
+          "symbol:shop.py#test_preview:function"
+        ],
+        "abstain": false,
+        "reason": "scripted oracle answer",
+        "evidence": [
+          {
+            "item": "symbol:shop.py#test_invoice:function",
+            "file": "shop.py",
+            "line": 28,
+            "quote": "def test_invoice():"
+          },
+          {
+            "item": "symbol:shop.py#test_preview:function",
+            "file": "shop.py",
+            "line": 32,
+            "quote": "def test_preview():"
+          }
+        ]
+      },
+      "final_output": "{\"abstain\":false,\"evidence\":[{\"file\":\"shop.py\",\"item\":\"symbol:shop.py#test_invoice:function\",\"line\":28,\"quote\":\"def test_invoice():\"},{\"file\":\"shop.py\",\"item\":\"symbol:shop.py#test_preview:function\",\"line\":32,\"quote\":\"def test_preview():\"}],\"items\":[\"symbol:shop.py#test_invoice:function\",\"symbol:shop.py#test_preview:function\"],\"reason\":\"scripted oracle answer\"}",
+      "calls": [
+        {
+          "tool": "read",
+          "input": "scripted fixture read",
+          "output": "scripted source capture",
+          "elapsed_ms": 1,
+          "status": "ok"
+        }
+      ],
+      "wall_ms": 2,
+      "output_bytes": 385,
+      "usage": null,
+      "record_sha256": "6095f22f0fe669e47b4e378f2a0b2654b2163ec9ff6b8c1a635e70ee39a8cc23"
+    },
+    {
+      "request": {
+        "schema_version": 1,
+        "case_id": "python-04",
+        "arm": "baseline",
+        "split": "development",
+        "fixture": "python",
+        "source_revision": "f73b669d4fe4af608fda125c033e46b598c2e8246c73a337106447e30ddf7295",
+        "base_revision": "64b198d36aac2305c8895932b8509ca9a862f18f7adbcf76f63b935c9c062e71",
+        "corpus_sha256": "2f98c3eb9ca92b625d6c1859bf02a6a988c8e3b93c189852e7fe11483c747e24",
+        "prompt": "List all test functions transitively affected by changing normalize, using direct module-local call paths in HEAD. Do not list non-test functions.\nReturn only a JSON object with exactly items (unique symbol:path#name:function strings, or :test for Rust #[test] functions), abstain (boolean), reason (string), evidence (array of objects with item, file, line, quote). Cite the exact definition line from HEAD for every item. If evidence cannot establish the complete answer, abstain with empty items/evidence and a specific reason. Do not treat name similarity as a call. Use only the supplied repository; do not modify it or invoke other agents.",
+        "limits": {
+          "wall_ms": 120000,
+          "tool_calls": 40,
+          "output_bytes": 131072,
+          "answer_items": 32,
+          "call_bytes": 16384
+        },
+        "tools": [
+          "read",
+          "rg",
+          "git"
+        ],
+        "cache_policy": "cold-per-episode-including-graph-setup",
+        "order": 19,
+        "request_sha256": "92d4f8aa8fb7a7948b1924248f353aa0bd6906bc2fbd6d4529f1d98be7cbc0b9"
+      },
+      "run_id": "scripted-19",
+      "model": {
+        "provider": "scripted",
+        "name": "oracle-smoke",
+        "version": "1",
+        "settings": {}
+      },
+      "tool_versions": {
+        "read": "scripted-not-executed",
+        "rg": "scripted-not-executed",
+        "git": "scripted-not-executed"
+      },
+      "isolation": {
+        "repository_id": "scripted-repo-19",
+        "cache_id": "scripted-cache-19",
+        "truth_inaccessible": true,
+        "cold_start": true
+      },
+      "status": "ok",
+      "error": null,
+      "answer": {
+        "items": [
+          "symbol:shop.py#test_invoice:function",
+          "symbol:shop.py#test_preview:function"
+        ],
+        "abstain": false,
+        "reason": "scripted oracle answer",
+        "evidence": [
+          {
+            "item": "symbol:shop.py#test_invoice:function",
+            "file": "shop.py",
+            "line": 28,
+            "quote": "def test_invoice():"
+          },
+          {
+            "item": "symbol:shop.py#test_preview:function",
+            "file": "shop.py",
+            "line": 32,
+            "quote": "def test_preview():"
+          }
+        ]
+      },
+      "final_output": "{\"abstain\":false,\"evidence\":[{\"file\":\"shop.py\",\"item\":\"symbol:shop.py#test_invoice:function\",\"line\":28,\"quote\":\"def test_invoice():\"},{\"file\":\"shop.py\",\"item\":\"symbol:shop.py#test_preview:function\",\"line\":32,\"quote\":\"def test_preview():\"}],\"items\":[\"symbol:shop.py#test_invoice:function\",\"symbol:shop.py#test_preview:function\"],\"reason\":\"scripted oracle answer\"}",
+      "calls": [
+        {
+          "tool": "read",
+          "input": "scripted fixture read",
+          "output": "scripted source capture",
+          "elapsed_ms": 1,
+          "status": "ok"
+        }
+      ],
+      "wall_ms": 2,
+      "output_bytes": 385,
+      "usage": null,
+      "record_sha256": "84e9d0f74da9812914dfb71c4b83d9fd5ec7ab6a48459da3950ea17b5462d655"
+    },
+    {
+      "request": {
+        "schema_version": 1,
+        "case_id": "python-05",
+        "arm": "baseline",
+        "split": "held-out",
+        "fixture": "python",
+        "source_revision": "f73b669d4fe4af608fda125c033e46b598c2e8246c73a337106447e30ddf7295",
+        "base_revision": "64b198d36aac2305c8895932b8509ca9a862f18f7adbcf76f63b935c9c062e71",
+        "corpus_sha256": "2f98c3eb9ca92b625d6c1859bf02a6a988c8e3b93c189852e7fe11483c747e24",
+        "prompt": "Compare the committed base to HEAD and list functions whose body changed. Ignore unchanged callers and tests.\nReturn only a JSON object with exactly items (unique symbol:path#name:function strings, or :test for Rust #[test] functions), abstain (boolean), reason (string), evidence (array of objects with item, file, line, quote). Cite the exact definition line from HEAD for every item. If evidence cannot establish the complete answer, abstain with empty items/evidence and a specific reason. Do not treat name similarity as a call. Use only the supplied repository; do not modify it or invoke other agents.",
+        "limits": {
+          "wall_ms": 120000,
+          "tool_calls": 40,
+          "output_bytes": 131072,
+          "answer_items": 32,
+          "call_bytes": 16384
+        },
+        "tools": [
+          "read",
+          "rg",
+          "git"
+        ],
+        "cache_policy": "cold-per-episode-including-graph-setup",
+        "order": 20,
+        "request_sha256": "3c381c76d837802d50eb59684fee9ea7e82765f186f8e29bcfe9daeac12f0e55"
+      },
+      "run_id": "scripted-20",
+      "model": {
+        "provider": "scripted",
+        "name": "oracle-smoke",
+        "version": "1",
+        "settings": {}
+      },
+      "tool_versions": {
+        "read": "scripted-not-executed",
+        "rg": "scripted-not-executed",
+        "git": "scripted-not-executed"
+      },
+      "isolation": {
+        "repository_id": "scripted-repo-20",
+        "cache_id": "scripted-cache-20",
+        "truth_inaccessible": true,
+        "cold_start": true
+      },
+      "status": "ok",
+      "error": null,
+      "answer": {
+        "items": [
+          "symbol:shop.py#price:function"
+        ],
+        "abstain": false,
+        "reason": "scripted oracle answer",
+        "evidence": [
+          {
+            "item": "symbol:shop.py#price:function",
+            "file": "shop.py",
+            "line": 8,
+            "quote": "def price(value):"
+          }
+        ]
+      },
+      "final_output": "{\"abstain\":false,\"evidence\":[{\"file\":\"shop.py\",\"item\":\"symbol:shop.py#price:function\",\"line\":8,\"quote\":\"def price(value):\"}],\"items\":[\"symbol:shop.py#price:function\"],\"reason\":\"scripted oracle answer\"}",
+      "calls": [
+        {
+          "tool": "read",
+          "input": "scripted fixture read",
+          "output": "scripted source capture",
+          "elapsed_ms": 1,
+          "status": "ok"
+        }
+      ],
+      "wall_ms": 2,
+      "output_bytes": 224,
+      "usage": null,
+      "record_sha256": "0ba2822232708f4607e4045abea32538c24d22994aa213189271b28b0c033148"
+    },
+    {
+      "request": {
+        "schema_version": 1,
+        "case_id": "python-05",
+        "arm": "graph",
+        "split": "held-out",
+        "fixture": "python",
+        "source_revision": "f73b669d4fe4af608fda125c033e46b598c2e8246c73a337106447e30ddf7295",
+        "base_revision": "64b198d36aac2305c8895932b8509ca9a862f18f7adbcf76f63b935c9c062e71",
+        "corpus_sha256": "2f98c3eb9ca92b625d6c1859bf02a6a988c8e3b93c189852e7fe11483c747e24",
+        "prompt": "Compare the committed base to HEAD and list functions whose body changed. Ignore unchanged callers and tests.\nReturn only a JSON object with exactly items (unique symbol:path#name:function strings, or :test for Rust #[test] functions), abstain (boolean), reason (string), evidence (array of objects with item, file, line, quote). Cite the exact definition line from HEAD for every item. If evidence cannot establish the complete answer, abstain with empty items/evidence and a specific reason. Do not treat name similarity as a call. Use only the supplied repository; do not modify it or invoke other agents.",
+        "limits": {
+          "wall_ms": 120000,
+          "tool_calls": 40,
+          "output_bytes": 131072,
+          "answer_items": 32,
+          "call_bytes": 16384
+        },
+        "tools": [
+          "read",
+          "rg",
+          "git",
+          "graph_sync",
+          "search",
+          "show",
+          "refs",
+          "callees",
+          "impact",
+          "changes"
+        ],
+        "cache_policy": "cold-per-episode-including-graph-setup",
+        "order": 21,
+        "request_sha256": "9352d1fb2035113621c7e5e518cd5ca4be54dc79cd5616cd16e258f801b802ba"
+      },
+      "run_id": "scripted-21",
+      "model": {
+        "provider": "scripted",
+        "name": "oracle-smoke",
+        "version": "1",
+        "settings": {}
+      },
+      "tool_versions": {
+        "read": "scripted-not-executed",
+        "rg": "scripted-not-executed",
+        "git": "scripted-not-executed",
+        "orbit-graph": "scripted-not-executed"
+      },
+      "isolation": {
+        "repository_id": "scripted-repo-21",
+        "cache_id": "scripted-cache-21",
+        "truth_inaccessible": true,
+        "cold_start": true
+      },
+      "status": "ok",
+      "error": null,
+      "answer": {
+        "items": [
+          "symbol:shop.py#price:function"
+        ],
+        "abstain": false,
+        "reason": "scripted oracle answer",
+        "evidence": [
+          {
+            "item": "symbol:shop.py#price:function",
+            "file": "shop.py",
+            "line": 8,
+            "quote": "def price(value):"
+          }
+        ]
+      },
+      "final_output": "{\"abstain\":false,\"evidence\":[{\"file\":\"shop.py\",\"item\":\"symbol:shop.py#price:function\",\"line\":8,\"quote\":\"def price(value):\"}],\"items\":[\"symbol:shop.py#price:function\"],\"reason\":\"scripted oracle answer\"}",
+      "calls": [
+        {
+          "tool": "read",
+          "input": "scripted fixture read",
+          "output": "scripted source capture",
+          "elapsed_ms": 1,
+          "status": "ok"
+        }
+      ],
+      "wall_ms": 2,
+      "output_bytes": 224,
+      "usage": null,
+      "record_sha256": "de59957df9e6f13128d550f66b032bfa2578ea32fcc6896945289cbdfc8fa752"
+    },
+    {
+      "request": {
+        "schema_version": 1,
+        "case_id": "python-06",
+        "arm": "graph",
+        "split": "held-out",
+        "fixture": "python",
+        "source_revision": "f73b669d4fe4af608fda125c033e46b598c2e8246c73a337106447e30ddf7295",
+        "base_revision": "64b198d36aac2305c8895932b8509ca9a862f18f7adbcf76f63b935c9c062e71",
+        "corpus_sha256": "2f98c3eb9ca92b625d6c1859bf02a6a988c8e3b93c189852e7fe11483c747e24",
+        "prompt": "Determine the exact runtime target of callback in dispatch for all invocations. No caller configuration is supplied.\nReturn only a JSON object with exactly items (unique symbol:path#name:function strings, or :test for Rust #[test] functions), abstain (boolean), reason (string), evidence (array of objects with item, file, line, quote). Cite the exact definition line from HEAD for every item. If evidence cannot establish the complete answer, abstain with empty items/evidence and a specific reason. Do not treat name similarity as a call. Use only the supplied repository; do not modify it or invoke other agents.",
+        "limits": {
+          "wall_ms": 120000,
+          "tool_calls": 40,
+          "output_bytes": 131072,
+          "answer_items": 32,
+          "call_bytes": 16384
+        },
+        "tools": [
+          "read",
+          "rg",
+          "git",
+          "graph_sync",
+          "search",
+          "show",
+          "refs",
+          "callees",
+          "impact",
+          "changes"
+        ],
+        "cache_policy": "cold-per-episode-including-graph-setup",
+        "order": 22,
+        "request_sha256": "5fbf333e07a362657fb34be61b3dec8b38fdd291b1a36337ac7169fcaafc2846"
+      },
+      "run_id": "scripted-22",
+      "model": {
+        "provider": "scripted",
+        "name": "oracle-smoke",
+        "version": "1",
+        "settings": {}
+      },
+      "tool_versions": {
+        "read": "scripted-not-executed",
+        "rg": "scripted-not-executed",
+        "git": "scripted-not-executed",
+        "orbit-graph": "scripted-not-executed"
+      },
+      "isolation": {
+        "repository_id": "scripted-repo-22",
+        "cache_id": "scripted-cache-22",
+        "truth_inaccessible": true,
+        "cold_start": true
+      },
+      "status": "ok",
+      "error": null,
+      "answer": {
+        "items": [],
+        "abstain": true,
+        "reason": "Unsupported runtime identity is absent.",
+        "evidence": []
+      },
+      "final_output": "{\"abstain\":true,\"evidence\":[],\"items\":[],\"reason\":\"Unsupported runtime identity is absent.\"}",
+      "calls": [
+        {
+          "tool": "read",
+          "input": "scripted fixture read",
+          "output": "scripted source capture",
+          "elapsed_ms": 1,
+          "status": "ok"
+        }
+      ],
+      "wall_ms": 2,
+      "output_bytes": 115,
+      "usage": null,
+      "record_sha256": "a98e8171d29fa9670129d9dc6489e8108a9a129723e95490652af9fec3f09206"
+    },
+    {
+      "request": {
+        "schema_version": 1,
+        "case_id": "python-06",
+        "arm": "baseline",
+        "split": "held-out",
+        "fixture": "python",
+        "source_revision": "f73b669d4fe4af608fda125c033e46b598c2e8246c73a337106447e30ddf7295",
+        "base_revision": "64b198d36aac2305c8895932b8509ca9a862f18f7adbcf76f63b935c9c062e71",
+        "corpus_sha256": "2f98c3eb9ca92b625d6c1859bf02a6a988c8e3b93c189852e7fe11483c747e24",
+        "prompt": "Determine the exact runtime target of callback in dispatch for all invocations. No caller configuration is supplied.\nReturn only a JSON object with exactly items (unique symbol:path#name:function strings, or :test for Rust #[test] functions), abstain (boolean), reason (string), evidence (array of objects with item, file, line, quote). Cite the exact definition line from HEAD for every item. If evidence cannot establish the complete answer, abstain with empty items/evidence and a specific reason. Do not treat name similarity as a call. Use only the supplied repository; do not modify it or invoke other agents.",
+        "limits": {
+          "wall_ms": 120000,
+          "tool_calls": 40,
+          "output_bytes": 131072,
+          "answer_items": 32,
+          "call_bytes": 16384
+        },
+        "tools": [
+          "read",
+          "rg",
+          "git"
+        ],
+        "cache_policy": "cold-per-episode-including-graph-setup",
+        "order": 23,
+        "request_sha256": "1ea0ad010bfbe0fd3ecdcac195c01b32fe59bac27619456b1806056f0ce8cb1f"
+      },
+      "run_id": "scripted-23",
+      "model": {
+        "provider": "scripted",
+        "name": "oracle-smoke",
+        "version": "1",
+        "settings": {}
+      },
+      "tool_versions": {
+        "read": "scripted-not-executed",
+        "rg": "scripted-not-executed",
+        "git": "scripted-not-executed"
+      },
+      "isolation": {
+        "repository_id": "scripted-repo-23",
+        "cache_id": "scripted-cache-23",
+        "truth_inaccessible": true,
+        "cold_start": true
+      },
+      "status": "ok",
+      "error": null,
+      "answer": {
+        "items": [],
+        "abstain": true,
+        "reason": "Unsupported runtime identity is absent.",
+        "evidence": []
+      },
+      "final_output": "{\"abstain\":true,\"evidence\":[],\"items\":[],\"reason\":\"Unsupported runtime identity is absent.\"}",
+      "calls": [
+        {
+          "tool": "read",
+          "input": "scripted fixture read",
+          "output": "scripted source capture",
+          "elapsed_ms": 1,
+          "status": "ok"
+        }
+      ],
+      "wall_ms": 2,
+      "output_bytes": 115,
+      "usage": null,
+      "record_sha256": "1e25cc93507d21b2ea7b3d0d87f67e16dc4bc613c7becdd4681f200b01a9e092"
+    }
+  ]
+}

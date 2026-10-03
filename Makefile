@@ -1,5 +1,5 @@
 .DEFAULT_GOAL := help
-.PHONY: help build release run dev check test fmt fmt-check clippy doc tree ci ci-fast ci-lint standards-check structure deny install uninstall clean watch plugin-bundle plugin-check
+.PHONY: help build release run dev check test fmt fmt-check clippy doc tree ci ci-fast ci-lint standards-check structure agent-evaluation-check deny install uninstall clean watch plugin-bundle plugin-check
 
 CARGO ?= cargo
 BINARY := orbit-graph
@@ -38,7 +38,7 @@ help:
 	@echo "  make doc          Build documentation (deny warnings)"
 	@echo "  make tree         Print dependency feature tree"
 	@echo "  make ci           Run complete CONTRIBUTING.md validation"
-	@echo "  make ci-fast      Check formatting and diff whitespace"
+	@echo "  make ci-fast      Check formatting, source gates, evaluation smoke and diff whitespace"
 	@echo "  make ci-lint      Run clippy gate"
 	@echo "  make standards-check Verify vendored docs/standards"
 	@echo "  make structure    Dependency direction, stream guard, orphan tests (no build)"
@@ -98,6 +98,7 @@ tree:
 ci:
 	$(MAKE) standards-check
 	$(MAKE) structure
+	$(MAKE) agent-evaluation-check
 	$(MAKE) deny
 	$(MAKE) fmt-check
 	$(MAKE) clippy
@@ -106,10 +107,13 @@ ci:
 	$(MAKE) build
 	git diff --check
 
-ci-fast: fmt-check standards-check structure
+ci-fast: fmt-check standards-check structure agent-evaluation-check
 	git diff --check
 
 ci-lint: clippy
+
+agent-evaluation-check:
+	python3 -B docs/evaluation/agent-navigation/eval.py check
 
 standards-check:
 	sh docs/standards/check.sh
