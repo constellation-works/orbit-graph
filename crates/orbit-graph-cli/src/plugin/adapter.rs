@@ -10,6 +10,7 @@ use std::time::{Duration, Instant};
 use std::os::unix::process::{CommandExt, ExitStatusExt};
 
 use git2::{Oid, Repository};
+use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
 use orbit_graph::current_observation_cutoff;
@@ -32,12 +33,18 @@ const POLL_INTERVAL: Duration = Duration::from_millis(10);
 const MCP_PROTOCOL_VERSION: &str = "2025-06-18";
 const MCP_INITIALIZE_ID: u64 = 1;
 const MCP_CALL_ID: u64 = 2;
+/// Orbit's public task-scoped delivery read.
+pub(super) const DELIVERY_TOOL: &str = "orbit.workflow.run.delivery";
+/// The `orbit.workflow.run.delivery` wire version this adapter reads.
+const RUN_DELIVERY_SCHEMA_VERSION: u64 = 1;
 
 pub(super) struct OrbitAdapter<'a> {
     repository: &'a Path,
     workspace: Option<&'a str>,
     /// The bound on each Orbit call, resolved once from the environment.
     timeout: Duration,
+    /// `TMPDIR` for each nested `orbit` call, when the caller's is unusable.
+    callback_tmpdir: Option<&'a Path>,
 }
 
 /// What `orbit_sync` concluded about one run.
@@ -55,6 +62,8 @@ pub(super) struct VerifiedDelivery {
     pub(super) delivery: DeliveryImport,
     /// The caller's snapshot of its task, if one was supplied.
     pub(super) supplied_snapshot: Option<TaskAssociation>,
+    /// How the host landed the delivery and which Git check verified it.
+    pub(super) landing: Value,
 }
 
 /// Hits from `orbit.search`, and how many malformed results were dropped.
@@ -69,7 +78,17 @@ impl<'a> OrbitAdapter<'a> {
             repository,
             workspace,
             timeout,
+            callback_tmpdir: None,
         }
+    }
+
+    /// Give each nested `orbit` call `dir` as its `TMPDIR`. Orbit's plugin
+    /// sandbox lets the backend write only its own state, not the inherited
+    /// `TMPDIR` or `/tmp`. Without this, Orbit 0.25.1's delivery read cannot
+    /// run Git for the run's repository identity and answers `null`.
+    pub(super) fn with_callback_tmpdir(mut self, dir: Option<&'a Path>) -> Self {
+        self.callback_tmpdir = dir;
+        self
     }
 
     fn require_workspace(&self) -> Result<&str, GraphError> {
@@ -296,95 +315,99 @@ impl<'a> OrbitAdapter<'a> {
         })
     }
 
-    pub(super) fn delivery_from_run(
+    /// Judge one requested task/run pair through Orbit's public task-scoped
+    /// delivery read, `orbit.workflow.run.delivery`, and local Git.
+    ///
+    /// The task read binds the pair to its public workspace owner first; the
+    /// delivery read is routed to that same workspace and must answer for
+    /// exactly the requested task and run. Task ownership comes only from the
+    /// request and Orbit's answer, never from a run's other step outputs.
+    pub(super) fn delivery_for_task_run(
         &self,
+        task_id: &str,
         run_id: &str,
         branch: &str,
         supplied_snapshots: &BTreeMap<String, TaskAssociation>,
         repository_identity: &str,
     ) -> Result<RunVerdict, GraphError> {
-        let workspace = self.require_workspace()?;
-        let route = if Path::new(workspace).is_absolute() {
-            self.verify_explicit_checkout(workspace)?;
-            None
-        } else {
-            Some(self.require_authority()?)
-        };
-        let run = self.tool_run("orbit.workflow.run.show", json!({"id": run_id}))?;
-        let state = run
-            .pointer("/run/state")
-            .or_else(|| run.get("state"))
-            .and_then(Value::as_str);
-        if state != Some("success") {
-            return Ok(RunVerdict::Excluded(format!(
-                "run {run_id} is not successful"
-            )));
-        }
-        let Some(commit) = run
-            .pointer("/pipeline_state/step_outputs/2")
-            .or_else(|| run.pointer("/pipeline_state/pipeline/commit"))
-        else {
-            return Ok(RunVerdict::Excluded(format!(
-                "run {run_id} has no public commit step output"
-            )));
-        };
-        if commit.get("committed").and_then(Value::as_bool) != Some(true)
-            || string_field(commit, "phase") != Some("commit")
-        {
-            return Ok(RunVerdict::Excluded(format!(
-                "run {run_id} did not attest a committed output"
-            )));
-        }
-        let task_id = required_string(commit, "task_id")?;
-        let before = required_string(commit, "base_sha")?;
-        let after = required_string(commit, "commit_sha")?;
-        // A host-rewritten checkout selector needs the committed task's
-        // public owner proof before any delivery can be imported.
-        let observation = if route.is_none() {
-            Some(self.task_observation(task_id)?)
-        } else {
-            None
-        };
-        if let Some(reason) = verify_git_delivery(self.repository, branch, before, after)? {
-            return Ok(RunVerdict::Excluded(reason));
-        }
-        if let Some(reason) = verify_run_workspace(&run, self.repository)? {
-            return Ok(RunVerdict::Excluded(reason));
-        }
-        let (current_task, observed_route) = match observation {
-            Some(observation) => observation,
-            None => self.task_observation(task_id)?,
-        };
-        let route = route.unwrap_or(observed_route);
+        let (current_task, route) = self.task_observation(task_id)?;
         if required_string(&current_task, "id")? != task_id {
             return Ok(RunVerdict::Excluded(
                 "selected workspace returned a different task ID".to_string(),
             ));
         }
+        let value = self.tool_run(
+            DELIVERY_TOOL,
+            json!({
+                "run_id": run_id,
+                "task_id": task_id,
+                "workspace": route.workspace_id,
+                "model": "codex",
+            }),
+        )?;
+        let observation = decode_run_delivery(value, task_id, run_id)?;
+        if observation.workspace_id != route.workspace_id {
+            return Ok(RunVerdict::Excluded(format!(
+                "the delivery read answered for workspace {:?}, not the selected {:?}",
+                observation.workspace_id, route.workspace_id
+            )));
+        }
+        if let Some(reason) =
+            verify_observed_repository(self.repository, observation.repository.as_deref())?
+        {
+            return Ok(RunVerdict::Excluded(reason));
+        }
+        let landed = match landed_evidence(&observation) {
+            Ok(landed) => landed,
+            Err(reason) => return Ok(RunVerdict::Excluded(reason)),
+        };
+        let range = match verify_landed_range(self.repository, branch, &landed)? {
+            Ok(range) => range,
+            Err(reason) => return Ok(RunVerdict::Excluded(reason)),
+        };
         let task = task_snapshot_from_value(&current_task, route.workspace_id.as_str())?;
         let supplied_snapshot = supplied_snapshots.get(task_id).cloned();
-        let finished_at = run
-            .pointer("/run/finished_at")
-            .and_then(Value::as_str)
-            .map(str::to_string);
+        // The landing step's own finish time is the closest public proxy for
+        // the landing instant; neither it nor the run's finish time attests
+        // the exact merge moment, so the fact stays `uncertain`.
+        let delivered_at = match (
+            observation.landing.observed_at.clone(),
+            observation.run_finished_at.clone(),
+        ) {
+            (Some(timestamp), _) => (
+                TemporalStatus::Uncertain,
+                Some(timestamp),
+                "orbit.workflow.run.delivery.landing.observed_at",
+            ),
+            (None, Some(timestamp)) => (
+                TemporalStatus::Uncertain,
+                Some(timestamp),
+                "orbit.workflow.run.delivery.run_finished_at",
+            ),
+            (None, None) => (
+                TemporalStatus::Unavailable,
+                None,
+                "orbit.workflow.run.delivery",
+            ),
+        };
         Ok(RunVerdict::Deliverable(Box::new(VerifiedDelivery {
             delivery: DeliveryImport {
                 schema_version: orbit_graph::DELIVERY_IMPORT_SCHEMA_VERSION,
                 repository: repository_identity.to_string(),
                 landing_branch: branch.to_string(),
-                before_revision: before.to_string(),
-                after_revision: after.to_string(),
+                before_revision: range.before.to_string(),
+                after_revision: range.after.to_string(),
                 delivery_id: format!("orbit-run:{run_id}:{task_id}"),
                 evidence: DeliveryEvidence::VerifiedDelivery,
                 source: Provenance {
-                    system: "orbit.workflow.run.show+git".to_string(),
+                    system: format!("{DELIVERY_TOOL}+git"),
                     record_id: Some(run_id.to_string()),
                 },
                 delivered_at: TemporalFact {
-                    status: TemporalStatus::Uncertain,
-                    timestamp: finished_at,
+                    status: delivered_at.0,
+                    timestamp: delivered_at.1,
                     source: Provenance {
-                        system: "orbit.workflow.run.show.run.finished_at".to_string(),
+                        system: delivered_at.2.to_string(),
                         record_id: Some(run_id.to_string()),
                     },
                 },
@@ -392,6 +415,10 @@ impl<'a> OrbitAdapter<'a> {
                 tasks: vec![task],
             },
             supplied_snapshot,
+            landing: json!({
+                "method": landed.method.as_str(),
+                "verified_by": range.verified_by,
+            }),
         })))
     }
 
@@ -414,6 +441,9 @@ impl<'a> OrbitAdapter<'a> {
             .args(args)
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
+        if let Some(dir) = self.callback_tmpdir {
+            command.env("TMPDIR", dir);
+        }
         #[cfg(unix)]
         {
             command.process_group(0);
@@ -824,50 +854,6 @@ fn normalized_remote(url: &str) -> &str {
     url.strip_suffix(".git").unwrap_or(url)
 }
 
-/// Whether the run's checkout and the routed repository share Git object
-/// authority: `Some(reason)` when they do not.
-fn verify_same_repository(left: &Path, right: &Path) -> Result<Option<String>, GraphError> {
-    let left = Repository::discover(left)
-        .map_err(|error| GraphError::git("open routed Git repository", error))?;
-    let right = Repository::discover(right)
-        .map_err(|error| GraphError::git("open authority Git repository", error))?;
-    let left_common = left.commondir().canonicalize().map_err(|source| {
-        GraphError::io(
-            "canonicalize routed Git common directory",
-            left.commondir(),
-            source,
-        )
-    })?;
-    let right_common = right.commondir().canonicalize().map_err(|source| {
-        GraphError::io(
-            "canonicalize authority Git common directory",
-            right.commondir(),
-            source,
-        )
-    })?;
-    if left_common != right_common {
-        return Ok(Some(
-            "configured workspace checkout and requested repository do not share Git object authority"
-                .to_string(),
-        ));
-    }
-    Ok(None)
-}
-
-/// Whether the run was prepared in a checkout of the routed repository:
-/// `Some(reason)` when it was not, or does not say.
-fn verify_run_workspace(run: &Value, repository: &Path) -> Result<Option<String>, GraphError> {
-    let Some(path) = run
-        .pointer("/pipeline_state/step_outputs/0/workspace_path")
-        .and_then(Value::as_str)
-    else {
-        return Ok(Some(
-            "run omitted public prepare workspace_path".to_string(),
-        ));
-    };
-    verify_same_repository(Path::new(path), repository)
-}
-
 fn read_bounded(reader: impl Read) -> std::io::Result<Vec<u8>> {
     let mut bytes = Vec::new();
     reader
@@ -1130,48 +1116,410 @@ fn task_snapshot_from_value(task: &Value, workspace: &str) -> Result<TaskAssocia
     })
 }
 
-/// Whether `before..after` is a delivery on `branch`: `Some(reason)` when
-/// the revisions are not an ancestry the branch reaches.
-fn verify_git_delivery(
-    repository: &Path,
-    branch: &str,
-    before: &str,
-    after: &str,
-) -> Result<Option<String>, GraphError> {
-    let repo = Repository::open(repository)
-        .map_err(|error| GraphError::git("open routed delivery repository", error))?;
-    let before = Oid::from_str(before)
-        .map_err(|error| GraphError::git("parse Orbit base revision", error))?;
-    let after = Oid::from_str(after)
-        .map_err(|error| GraphError::git("parse Orbit commit revision", error))?;
-    repo.find_commit(before)
-        .map_err(|error| GraphError::git("verify Orbit base commit", error))?;
-    repo.find_commit(after)
-        .map_err(|error| GraphError::git("verify Orbit delivery commit", error))?;
-    if !repo
-        .graph_descendant_of(after, before)
-        .map_err(|error| GraphError::git("verify Orbit commit ancestry", error))?
-    {
-        return Ok(Some(
-            "commit_sha is not a strict descendant of base_sha".to_string(),
+/// The `orbit.workflow.run.delivery` schema version 1 answer, decoded from
+/// its published JSON shape (Orbit's `RunDeliveryObservation`) without linking
+/// any Orbit crate. Only the fields this adapter judges are read; every enum is
+/// closed, so a value this adapter does not know is malformed, never guessed.
+#[derive(Debug, Deserialize)]
+struct RunDeliveryObservation {
+    workspace_id: String,
+    repository: Option<String>,
+    task_id: String,
+    run_id: String,
+    run_state: String,
+    run_finished_at: Option<String>,
+    delivery_status: DeliveryStatus,
+    commit: CommitObservation,
+    landing: LandingObservation,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+enum DeliveryStatus {
+    Landed,
+    Committed,
+    NoChange,
+    InProgress,
+    NotDelivered,
+    Unavailable,
+}
+
+#[derive(Debug, Deserialize)]
+struct CommitObservation {
+    status: CommitStatus,
+    base_sha: Option<String>,
+    head_sha: Option<String>,
+    reason: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+enum CommitStatus {
+    Committed,
+    AlreadyCommitted,
+    VerifiedNoDiff,
+    VerifiedAlreadyLanded,
+    SkippedNoDiffExpected,
+    Pending,
+    NotReached,
+    Unavailable,
+}
+
+#[derive(Debug, Deserialize)]
+struct LandingObservation {
+    status: LandingStatus,
+    method: Option<LandingMethod>,
+    landed_commit: Option<String>,
+    observed_at: Option<String>,
+    reason: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+enum LandingStatus {
+    Merged,
+    NotRequested,
+    NotApplicable,
+    Pending,
+    NotReached,
+    Unavailable,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "snake_case")]
+enum LandingMethod {
+    PullRequest,
+    LocalFastForward,
+}
+
+impl LandingMethod {
+    const fn as_str(self) -> &'static str {
+        match self {
+            Self::PullRequest => "pull_request",
+            Self::LocalFastForward => "local_fast_forward",
+        }
+    }
+}
+
+/// A wire enum's own spelling, for reasons that quote Orbit's answer.
+fn wire_name(value: impl Serialize) -> String {
+    serde_json::to_value(value)
+        .ok()
+        .and_then(|value| value.as_str().map(str::to_string))
+        .unwrap_or_default()
+}
+
+/// Decode a delivery answer and check that it is for exactly the requested
+/// task and run. An unsupported version, a malformed shape or an answer for
+/// another task or run is invalid data: the pair could not be examined.
+fn decode_run_delivery(
+    value: Value,
+    task_id: &str,
+    run_id: &str,
+) -> Result<RunDeliveryObservation, GraphError> {
+    const OPERATION: &str = "decode orbit.workflow.run.delivery";
+    match value.get("schema_version").and_then(Value::as_u64) {
+        Some(RUN_DELIVERY_SCHEMA_VERSION) => {}
+        version => {
+            return Err(GraphError::invalid_data(
+                OPERATION,
+                format!(
+                    "unsupported schema_version {}; this plugin reads version {RUN_DELIVERY_SCHEMA_VERSION}",
+                    version.map_or_else(|| "(missing)".to_string(), |version| version.to_string())
+                ),
+            ));
+        }
+    }
+    let observation: RunDeliveryObservation = serde_json::from_value(value)
+        .map_err(|error| GraphError::invalid_data(OPERATION, error.to_string()))?;
+    if observation.task_id != task_id || observation.run_id != run_id {
+        return Err(GraphError::invalid_data(
+            OPERATION,
+            "the delivery read answered for a different task or run than requested",
         ));
     }
-    let branch = branch.trim_start_matches("refs/heads/");
+    for (field, sha) in [
+        ("commit.base_sha", observation.commit.base_sha.as_deref()),
+        ("commit.head_sha", observation.commit.head_sha.as_deref()),
+        (
+            "landing.landed_commit",
+            observation.landing.landed_commit.as_deref(),
+        ),
+    ] {
+        if sha.is_some_and(|sha| !is_full_sha(sha)) {
+            return Err(GraphError::invalid_data(
+                OPERATION,
+                format!("{field} is not a full lowercase commit ID"),
+            ));
+        }
+    }
+    Ok(observation)
+}
+
+/// A full SHA-1 or SHA-256 object ID in lowercase hex, as Orbit records them.
+fn is_full_sha(value: &str) -> bool {
+    matches!(value.len(), 40 | 64)
+        && value
+            .bytes()
+            .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+}
+
+/// Whether the host's repository identity names the requested repository:
+/// `Some(reason)` when it does not, or is unknown.
+///
+/// Orbit names a GitHub origin `owner/name` and any other origin
+/// `git:<SHA-256 of the origin URL>`. A GitHub identity is compared exactly.
+/// A `git:` digest is only checked for shape: this adapter links no SHA-256,
+/// so for those origins the binding rests on the workspace's `git_remote`
+/// match, the workspace ID check and the local commit checks.
+fn verify_observed_repository(
+    repository: &Path,
+    observed: Option<&str>,
+) -> Result<Option<String>, GraphError> {
+    let Some(observed) = observed else {
+        return Ok(Some(
+            "the host could not identify the run's repository".to_string(),
+        ));
+    };
+    let repo = Repository::discover(repository)
+        .map_err(|error| GraphError::git("open routed Git repository", error))?;
+    let origin = repo
+        .find_remote("origin")
+        .map_err(|error| GraphError::git("read routed repository origin", error))?;
+    let url = origin.url().map(str::trim).unwrap_or_default();
+    let normalized = url.trim_end_matches(".git");
+    let matches = match normalized
+        .strip_prefix("https://github.com/")
+        .or_else(|| normalized.strip_prefix("git@github.com:"))
+    {
+        Some(github) => observed == github,
+        None => observed
+            .strip_prefix("git:")
+            .is_some_and(|digest| digest.len() == 64 && is_full_sha(digest)),
+    };
+    Ok((!matches).then(|| {
+        "the run's repository identity does not match the requested repository's origin".to_string()
+    }))
+}
+
+/// What a `landed` answer attests, once checked for consistency.
+struct LandedEvidence {
+    base: String,
+    head: Option<String>,
+    landed_commit: Option<String>,
+    method: LandingMethod,
+}
+
+/// The landed evidence in an answer, or why the pair is not an eligible
+/// delivery. Only `landed` with a merged landing of a host commit qualifies;
+/// a commit alone never does, however reachable it later became.
+fn landed_evidence(observation: &RunDeliveryObservation) -> Result<LandedEvidence, String> {
+    let RunDeliveryObservation {
+        task_id,
+        run_id,
+        run_state,
+        commit,
+        landing,
+        ..
+    } = observation;
+    match observation.delivery_status {
+        DeliveryStatus::Landed => {}
+        DeliveryStatus::Committed => {
+            return Err(format!(
+                "run {run_id} committed task {task_id}, but the host recorded no verified landing (landing.status={})",
+                wire_name(landing.status)
+            ));
+        }
+        DeliveryStatus::NoChange => {
+            return Err(format!(
+                "the host verified that run {run_id} needed no new commit for task {task_id} (commit.status={}); there is no delivered change",
+                wire_name(commit.status)
+            ));
+        }
+        DeliveryStatus::InProgress => {
+            return Err(format!(
+                "run {run_id} has not reached a terminal outcome (run_state={run_state})"
+            ));
+        }
+        DeliveryStatus::NotDelivered => {
+            return Err(format!(
+                "run {run_id} ended (run_state={run_state}) without committing anything for task {task_id} (commit.status={})",
+                wire_name(commit.status)
+            ));
+        }
+        DeliveryStatus::Unavailable => {
+            return Err(format!(
+                "the host's delivery evidence for run {run_id} is unavailable (commit: {}, landing: {})",
+                commit
+                    .reason
+                    .as_deref()
+                    .unwrap_or(wire_name(commit.status).as_str()),
+                landing
+                    .reason
+                    .as_deref()
+                    .unwrap_or(wire_name(landing.status).as_str()),
+            ));
+        }
+    }
+    if landing.status != LandingStatus::Merged
+        || !matches!(
+            commit.status,
+            CommitStatus::Committed | CommitStatus::AlreadyCommitted
+        )
+    {
+        return Err(format!(
+            "run {run_id} reported landed with inconsistent evidence (commit.status={}, landing.status={})",
+            wire_name(commit.status),
+            wire_name(landing.status)
+        ));
+    }
+    let base = commit
+        .base_sha
+        .clone()
+        .ok_or_else(|| format!("the host recorded no base commit for run {run_id}"))?;
+    let method = landing
+        .method
+        .ok_or_else(|| format!("the host recorded no landing method for run {run_id}"))?;
+    Ok(LandedEvidence {
+        base,
+        head: commit.head_sha.clone(),
+        landed_commit: landing.landed_commit.clone(),
+        method,
+    })
+}
+
+/// The Git range a landed delivery is imported as, and the check that
+/// verified it.
+struct LandedRange {
+    before: Oid,
+    after: Oid,
+    verified_by: &'static str,
+}
+
+/// Verify a landed delivery against the routed repository: `Ok(Err(reason))`
+/// when Git does not support it.
+///
+/// The committed head must strictly descend from the base. When the landing
+/// branch reaches the head (a merge commit, fast-forward or local landing),
+/// the delivery is `base..head`. Otherwise only a pull-request landing that
+/// recorded its `landed_commit` can stand in: that commit must be on the
+/// branch, have one parent that builds on the base, and change exactly the
+/// paths `base..head` changes (a squash or single rebased commit). It is then
+/// imported as `parent..landed_commit`. A local landing records no SHA, so it
+/// is never inferred.
+fn verify_landed_range(
+    repository: &Path,
+    branch: &str,
+    landed: &LandedEvidence,
+) -> Result<Result<LandedRange, String>, GraphError> {
+    let repo = Repository::open(repository)
+        .map_err(|error| GraphError::git("open routed delivery repository", error))?;
+    let commit = |sha: &str, operation: &'static str| {
+        Oid::from_str(sha)
+            .and_then(|oid| repo.find_commit(oid).map(|commit| commit.id()))
+            .map_err(|error| GraphError::git(operation, error))
+    };
+    let descends = |descendant: Oid, ancestor: Oid| {
+        repo.graph_descendant_of(descendant, ancestor)
+            .map_err(|error| GraphError::git("verify Orbit commit ancestry", error))
+    };
+    let base = commit(landed.base.as_str(), "verify Orbit base commit")?;
     let tip = repo
-        .revparse_single(format!("refs/heads/{branch}").as_str())
+        .revparse_single(
+            format!("refs/heads/{}", branch.trim_start_matches("refs/heads/")).as_str(),
+        )
         .and_then(|object| object.peel_to_commit())
         .map(|commit| commit.id())
         .map_err(|error| GraphError::git("resolve routed landing branch", error))?;
-    if after != tip
-        && !repo
-            .graph_descendant_of(tip, after)
-            .map_err(|error| GraphError::git("verify delivery reachability", error))?
-    {
-        return Ok(Some(
-            "commit_sha is not reachable from the configured landing branch".to_string(),
+    let reaches = |oid: Oid| -> Result<bool, GraphError> { Ok(oid == tip || descends(tip, oid)?) };
+    let Some(head) = landed.head.as_deref() else {
+        return Ok(Err(
+            "the host recorded no head commit (commit.status=already_committed), so the delivered range cannot be verified"
+                .to_string(),
+        ));
+    };
+    let head = commit(head, "verify Orbit delivery commit")?;
+    if !descends(head, base)? {
+        return Ok(Err(
+            "head_sha is not a strict descendant of base_sha".to_string()
         ));
     }
-    Ok(None)
+    if reaches(head)? {
+        return Ok(Ok(LandedRange {
+            before: base,
+            after: head,
+            verified_by: "head_reachable",
+        }));
+    }
+    let landed_commit = match (landed.method, landed.landed_commit.as_deref()) {
+        (LandingMethod::LocalFastForward, _) => {
+            return Ok(Err(
+                "the host recorded a local landing, but head_sha is not reachable from the landing branch"
+                    .to_string(),
+            ));
+        }
+        (LandingMethod::PullRequest, None) => {
+            return Ok(Err(
+                "head_sha is not reachable from the landing branch and the host recorded no landed_commit"
+                    .to_string(),
+            ));
+        }
+        (LandingMethod::PullRequest, Some(landed_commit)) => {
+            commit(landed_commit, "verify Orbit landed commit")?
+        }
+    };
+    if !reaches(landed_commit)? {
+        return Ok(Err(
+            "landed_commit is not reachable from the landing branch".to_string(),
+        ));
+    }
+    let landed_object = repo
+        .find_commit(landed_commit)
+        .map_err(|error| GraphError::git("verify Orbit landed commit", error))?;
+    if landed_object.parent_count() != 1 {
+        return Ok(Err(
+            "landed_commit is a merge that does not reach head_sha".to_string()
+        ));
+    }
+    let parent = landed_object
+        .parent_id(0)
+        .map_err(|error| GraphError::git("read Orbit landed commit parent", error))?;
+    if parent != base && !descends(parent, base)? {
+        return Ok(Err("landed_commit does not build on base_sha".to_string()));
+    }
+    if changed_paths(&repo, base, head)? != changed_paths(&repo, parent, landed_commit)? {
+        return Ok(Err(
+            "landed_commit changes different paths than base_sha..head_sha, so it is not verified as this delivery's squash"
+                .to_string(),
+        ));
+    }
+    Ok(Ok(LandedRange {
+        before: parent,
+        after: landed_commit,
+        verified_by: "landed_commit_paths",
+    }))
+}
+
+/// Every path a tree diff from `old` to `new` touches, on either side.
+fn changed_paths(
+    repo: &Repository,
+    old: Oid,
+    new: Oid,
+) -> Result<std::collections::BTreeSet<PathBuf>, GraphError> {
+    let tree = |oid: Oid| {
+        repo.find_commit(oid)
+            .and_then(|commit| commit.tree())
+            .map_err(|error| GraphError::git("read delivery tree", error))
+    };
+    let diff = repo
+        .diff_tree_to_tree(Some(&tree(old)?), Some(&tree(new)?), None)
+        .map_err(|error| GraphError::git("diff delivery trees", error))?;
+    Ok(diff
+        .deltas()
+        .flat_map(|delta| [delta.old_file().path(), delta.new_file().path()])
+        .flatten()
+        .map(Path::to_path_buf)
+        .collect())
 }
 
 pub(super) fn canonical_repository(path: &Path) -> Result<PathBuf, GraphError> {

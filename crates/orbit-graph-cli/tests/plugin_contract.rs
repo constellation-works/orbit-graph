@@ -637,7 +637,8 @@ fn probe_base(verb: &str, field: &str, repository: &str) -> Value {
         "maintain" => {
             input["operation"] = json!(match field {
                 "delivery" => "import",
-                "workspace" | "task_ids" | "run_ids" | "task_snapshots" => "orbit_sync",
+                "workspace" | "task_ids" | "task_runs" | "run_ids" | "task_snapshots" =>
+                    "orbit_sync",
                 "full" | "budget_ms" => "graph_sync",
                 _ => "history_sync",
             });

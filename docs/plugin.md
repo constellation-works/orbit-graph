@@ -88,7 +88,8 @@ orbit plugin enable graph --grant fs,orbit_tools
 
 This records the complete grant set, replacing any earlier set. It does not
 grant ordinary callers permission to run mutating tools. Activity authority
-still applies to `maintain`, and the plugin has no operator run-read capability.
+still applies to `maintain`. The plugin needs no operator capability: it reads
+run deliveries through the task-scoped public `orbit.workflow.run.delivery`.
 
 For a tagged first-party release, build the matching executable first. Only
 after the operator authorizes host installation, install and bundle it so each
@@ -144,8 +145,17 @@ The manifest has one Linux/macOS version range. On Orbit 0.24.0, validation
 warns about the host requirement and installation is permitted, but enablement
 leaves the plugin inactive and tool execution is refused. CI uses a
 checksum-verified Orbit 0.25.0 release and exercises live task-ID
-recommendations and `orbit_sync` reads of an undelivered fixture task
-through both CLI and MCP alongside the thirteen-tool surface.
+recommendations and `orbit_sync` through both CLI and MCP alongside the
+thirteen-tool surface. The opt-in installed-plugin test
+(`ORBIT_GRAPH_TEST_ORBIT_BIN`) records a landed local delivery for a fixture
+task in the disposable Orbit store, imports it, replays it as
+`already_indexed`, and checks that an unlanded run, a foreign task/run pair and
+bare `run_ids` are not imported. The run is seeded as the host's stored run
+record rather than produced by a live pipeline. That proof needs an Orbit that
+serves `orbit.workflow.run.delivery`, which landed after the 0.25.1 release.
+Against CI's pinned 0.25.0 the test checks only that nothing is imported;
+`ORBIT_GRAPH_TEST_REQUIRE_RUN_DELIVERY=1` makes a host without the read a test
+failure.
 
 For a checkout, `make plugin-check` builds the executable and runs
 `orbit plugin validate --first-party .orbit-plugin` and
@@ -274,7 +284,7 @@ from result order. The source is named `orbit.search_lexical_rank` in
 call or invalid results array uses local lexical fallback with the cause in
 `adapter.warnings`.
 The calling activity must allow `orbit.workspace.list`, `orbit.task.show`,
-`orbit.search`, and `orbit.workflow.run.show` for the callback operations it
+`orbit.search`, and `orbit.workflow.run.delivery` for the callback operations it
 uses; the adapter does not bypass Orbit policy. `orbit.workspace.list` is served
 only over MCP, so the adapter reaches it through a short-lived, bounded
 `orbit mcp serve` stdio session and binds the requested repository to the
@@ -301,7 +311,8 @@ orbit tool run orbit.graph.maintain --input '{
   "repository":"/work/widgets",
   "workspace":"ws_widgets",
   "branch":"main",
-  "run_ids":["jrun-20260907-0339-3"],
+  "task_runs":[{"task_id":"WID-42","run_id":"jrun-20260907-0339-3"}],
+  "task_ids":["WID-43"],
   "limit":25
 }' --full
 ```
@@ -332,7 +343,7 @@ resolution can finish in the rest. Resolution itself is not interrupted, so if
 it runs past the budget the call still answers at the budget with
 `budget_exhausted` and the unfinished build is discarded. `graph_sync` indexes the checkout as it is
 and rejects the history fields (`branch`, `limit`, `delivery`, `workspace`,
-`task_ids`, `run_ids`, `task_snapshots`) rather than ignoring them.
+`task_ids`, `task_runs`, `task_snapshots`) rather than ignoring them.
 
 Every `maintain` operation refuses, with `invalid_request` and before any index
 is opened, each field it does not read, naming them all:
@@ -341,8 +352,11 @@ is opened, each field it does not read, naming them all:
 |---|---|
 | `history_sync` | `branch`, `limit` |
 | `import` | `branch`, `delivery` |
-| `orbit_sync` | `branch`, `limit`, `workspace`, `task_ids`, `run_ids`, `task_snapshots` |
+| `orbit_sync` | `branch`, `limit`, `workspace`, `task_ids`, `task_runs`, `task_snapshots` |
 | `graph_sync` | `full`, `budget_ms` |
+
+`run_ids` is retired. Every operation refuses it with `invalid_request`;
+`orbit_sync`'s message names `task_runs` and `task_ids` as the replacements.
 
 `import` validates Git boundaries but stamps any caller claim of
 `verified_delivery` as `caller_attested` and reports the requested and stored
@@ -543,27 +557,85 @@ whose incremental build fits the budget (see the timing note in the
 `graph_sync` response's `result.timings`).
 
 `orbit_sync` reads only public `orbit.workspace.list`, `orbit.task.show`, and
-`orbit.workflow.run.show` tool responses, then verifies full commit objects,
-strict base ancestry, and landing-branch reachability in the explicitly routed
-Git repository. `orbit.workflow.run.show` requires Orbit's `operator`
-capability, which a plugin backend does not hold, so under the plugin each run
-is currently reported `failed` rather than imported. A standalone refusal JSON
-maps to `orbit_refused` with Orbit's code under `error.orbit.code`. The tested
-Orbit 0.25.1 host prefixes run-read refusals with a diagnostic line: Graph then
-returns `graph_error` and embeds `capability_denied` in the message. This
-classification gap is recorded in the [Linux readiness report](plugin-readiness.md);
-the callback is still refused. Each outcome is one of `inserted`,
-`already_indexed`, `excluded` (a
-verdict: the run was examined and is not an eligible delivery, with the check
-it failed as `reason`) or `failed` (infrastructure: the run or task could not be
-examined, with a structured `error`); one failed item never stops the batch,
+`orbit.workflow.run.delivery` tool responses, then verifies the delivery in the
+explicitly routed Git repository. It never reads `orbit.workflow.run.show`,
+checkpoint indexes, agent envelopes or task prose.
+
+It examines task/run pairs. Each `task_runs` entry names a run and the task it
+was submitted with. Each `task_ids` entry means the task's current `job_run_id`
+as `orbit.task.show` reports it; a task without one is `excluded`. Earlier runs
+of a task need an explicit `task_runs` pair. A bare run ID is refused: no public
+Orbit read binds a run to its task, so Graph cannot ask the delivery read about
+it without guessing the owner. Duplicate pairs are examined once, and `limit`
+(1 to 100, default 25) bounds the distinct pairs, explicit pairs first.
+
+`orbit_sync` needs an Orbit host that serves `orbit.workflow.run.delivery`.
+No release includes it yet; it landed after 0.25.1. On an older host every
+pair is reported `failed` and nothing is imported.
+
+Orbit answers `orbit.workflow.run.delivery` (schema version 1) only for a pair
+whose run was submitted with that task; any other pair is refused and reported
+`failed` with `orbit_refused`. Graph also fails closed when the answer names a
+different task, run or workspace, has another `schema_version`, is malformed,
+or carries a commit ID that is not a full lowercase SHA. The answer's
+`repository` must match the routed repository: exactly for a GitHub
+`owner/name`, while for a non-GitHub `git:` digest Graph checks only its shape,
+because it does not recompute Orbit's digest of the origin URL. A null
+`repository` is excluded, as the host could not identify where the run
+delivered. Orbit's plugin sandbox lets the backend write only its own state,
+not the inherited `TMPDIR` or `/tmp`, and Orbit 0.25.1's delivery read needs a
+temporary file to run Git for that identity. So Graph gives each nested
+`orbit` call the repository's private plugin state directory as `TMPDIR`;
+without it every answer under the plugin carries `repository: null`.
+
+Only `delivery_status: landed` can be imported. The other statuses are
+`excluded` with a reason that names them:
+
+| `delivery_status` | Meaning |
+|---|---|
+| `committed` | The run committed, but the host recorded no verified landing. |
+| `no_change` | The host verified the run needed no new commit. |
+| `in_progress` | The run has not reached a terminal outcome. |
+| `not_delivered` | The run ended without committing anything. |
+| `unavailable` | The host could not read the run's delivery evidence. |
+
+A landed answer then needs `commit.base_sha`, `commit.head_sha` (absent when
+the run found the task already committed, so that case is excluded), and a
+landing method. The commits must exist locally, and `head_sha` must strictly
+descend from `base_sha`; Graph never trusts the host's answer alone:
+
+- When the landing branch reaches `head_sha` (a fast-forward or a merge
+  commit), Graph imports `base_sha..head_sha`.
+- A `local_fast_forward` landing has a null `landed_commit`, so its `head_sha`
+  must be reachable from the branch.
+- A `pull_request` landing whose `head_sha` is unreachable, as after a squash,
+  imports `landed_commit` only when that commit is on the branch, has a single
+  parent at or after `base_sha`, and changes exactly the same paths as
+  `base_sha..head_sha`. Graph imports that landed commit's range, with
+  `landing.verified_by: landed_commit_paths`.
+
+A landed answer that fails these checks is `excluded`. A missing commit object
+is `failed`, because fetching may fix it. The delivery ID stays
+`orbit-run:<run_id>:<task_id>`. Delivery time is `uncertain`: it comes from the
+host's landing observation time, or else the run's finish time. Each source is
+named in `delivered_at.source.system`. When the host attests neither, it is
+`unavailable`.
+
+A standalone refusal JSON maps to `orbit_refused` with Orbit's code under
+`error.orbit.code`. Some Orbit 0.25.1 refusals carry a diagnostic line before
+the JSON. Graph then returns `graph_error` with Orbit's code embedded in the
+message. This classification gap is recorded in the
+[Linux readiness report](plugin-readiness.md); the callback is still refused.
+Each outcome is one of `inserted`, `already_indexed`, `excluded` (a verdict:
+the pair was examined and is not an eligible delivery, with the check it failed
+as `reason`) or `failed` (infrastructure: the pair or task could not be
+examined, with a structured `error`). One failed item never stops the batch,
 and `coverage` counts `excluded` and `failed` separately. It reports partial
-coverage: current Orbit has no cursor-paginated detailed delivery feed, so only
-explicit run IDs and each requested task's current `job_run_id` are processed.
-Retrying or submitting omitted IDs is safe because the immutable first-observed
-envelope is preserved for a stable delivery ID; changed boundaries still fail.
-Run completion time remains `uncertain` delivery-time evidence when the public
-response does not attest the exact landing instant. `history_sync` is a bounded,
+coverage: current Orbit has no cursor-paginated delivery feed, so only the
+named pairs and each requested task's current run are processed.
+Retrying or submitting omitted pairs is safe because the immutable
+first-observed envelope is preserved for a stable delivery ID; changed
+boundaries still fail. `history_sync` is a bounded,
 resumable newest-first Git-only bootstrap: partial responses expose a frozen
 `snapshot_tip` and `resume_from`, keep the complete cursor unchanged, and reach
 a no-op caught-up state after repeated calls. `import` accepts one public

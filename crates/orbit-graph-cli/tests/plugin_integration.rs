@@ -1227,18 +1227,19 @@ fn inapplicable_fields_are_refused_by_name_before_any_index_is_opened() {
     };
     let delivery = fixture_delivery(fixture.path(), "training");
     let snapshot = task_snapshot("TASK-1", "Parser", 1);
+    let pair = json!({"task_id": "T-1", "run_id": "R-1"});
     for (operation, fields) in [
         (
             "history_sync",
             json!({"delivery": delivery, "workspace": "ws", "task_ids": ["T-1"],
-                   "run_ids": ["R-1"], "task_snapshots": [snapshot], "full": true,
-                   "budget_ms": 5000}),
+                   "task_runs": [pair], "run_ids": ["R-1"], "task_snapshots": [snapshot],
+                   "full": true, "budget_ms": 5000}),
         ),
         (
             "import",
             json!({"delivery": delivery, "limit": 10, "workspace": "ws", "task_ids": ["T-1"],
-                   "run_ids": ["R-1"], "task_snapshots": [snapshot], "full": true,
-                   "budget_ms": 5000}),
+                   "task_runs": [pair], "run_ids": ["R-1"], "task_snapshots": [snapshot],
+                   "full": true, "budget_ms": 5000}),
         ),
         (
             "orbit_sync",
@@ -1247,7 +1248,8 @@ fn inapplicable_fields_are_refused_by_name_before_any_index_is_opened() {
         (
             "graph_sync",
             json!({"branch": "main", "limit": 10, "delivery": delivery, "workspace": "ws",
-                   "task_ids": ["T-1"], "run_ids": ["R-1"], "task_snapshots": [snapshot]}),
+                   "task_ids": ["T-1"], "task_runs": [pair], "run_ids": ["R-1"],
+                   "task_snapshots": [snapshot]}),
         ),
     ] {
         let reads: &[&str] = match operation {
@@ -1258,7 +1260,7 @@ fn inapplicable_fields_are_refused_by_name_before_any_index_is_opened() {
                 "limit",
                 "workspace",
                 "task_ids",
-                "run_ids",
+                "task_runs",
                 "task_snapshots",
             ],
             _ => &["full", "budget_ms"],
@@ -1278,6 +1280,34 @@ fn inapplicable_fields_are_refused_by_name_before_any_index_is_opened() {
                 "{operation}: {field} in {message}"
             );
         }
+    }
+    // A bare run ID cannot be bound to its task through a public read, so
+    // `orbit_sync` refuses it with the selectors that can.
+    let message = refusal(
+        MAINTAIN_TOOL_NAME,
+        json!({"operation": "orbit_sync", "workspace": "ws", "run_ids": ["R-1"]}),
+    );
+    assert!(
+        message.contains("run_ids is retired")
+            && message.contains("task_runs")
+            && message.contains("task_ids"),
+        "{message}"
+    );
+    for pair in [
+        json!({"task_id": "T-1"}),
+        json!({"task_id": "T-1", "run_id": " "}),
+        json!({"task_id": " T-1", "run_id": "R-1"}),
+        json!({"task_id": "T-1", "run_id": "R".repeat(129)}),
+        json!({"task_id": "T-1", "run_id": "R-1", "job_id": "x"}),
+    ] {
+        let message = refusal(
+            MAINTAIN_TOOL_NAME,
+            json!({"operation": "orbit_sync", "workspace": "ws", "task_runs": [pair]}),
+        );
+        assert!(
+            message.contains("task_id") || message.contains("run_id") || message.contains("job_id"),
+            "{message}"
+        );
     }
     let message = refusal(
         RECOMMEND_TOOL_NAME,
@@ -2444,7 +2474,7 @@ fn public_adapter_is_idempotent_and_supports_honest_live_task_observations() {
                 "repository": repository,
                 "branch": "main",
                 "workspace": "ws-test",
-                "run_ids": ["RUN-1"],
+                "task_runs": [{"task_id": "TASK-PRIOR", "run_id": "RUN-1"}],
                 "task_snapshots": [task_snapshot("TASK-PRIOR", "original parser observation", 5)]
             }),
             &[
@@ -2622,7 +2652,7 @@ fn public_adapter_is_idempotent_and_supports_honest_live_task_observations() {
             "repository": repository,
             "branch": "main",
             "workspace": "ws-wrong",
-            "run_ids": ["RUN-1"],
+            "task_runs": [{"task_id": "TASK-PRIOR", "run_id": "RUN-1"}],
             "task_snapshots": [task_snapshot("TASK-PRIOR", "parser", 5)]
         }),
         &[("PATH", callback_path.as_os_str())],
@@ -2650,7 +2680,7 @@ fn orbit_sync_can_store_a_later_supplied_snapshot_without_replacing_observed_tex
             "repository": repository,
             "branch": "main",
             "workspace": "ws-test",
-            "run_ids": ["RUN-1"]
+            "task_runs": [{"task_id": "TASK-PRIOR", "run_id": "RUN-1"}]
         });
         if let Some(snapshot) = snapshot {
             input["task_snapshots"] = json!([snapshot]);
@@ -2925,7 +2955,7 @@ fn public_adapter_resolves_an_explicit_checkout_path_for_task_recommendations() 
         MAINTAIN_TOOL_NAME,
         json!({
             "operation": "orbit_sync", "repository": repository,
-            "branch": "main", "workspace": "ws-test", "run_ids": ["RUN-1"]
+            "branch": "main", "workspace": "ws-test", "task_runs": [{"task_id": "TASK-PRIOR", "run_id": "RUN-1"}]
         }),
         &environment,
     ));
@@ -2974,7 +3004,7 @@ fn public_adapter_imports_a_completed_run_with_a_host_resolved_checkout_owner() 
         MAINTAIN_TOOL_NAME,
         json!({
             "operation": "orbit_sync", "repository": repository,
-            "branch": "main", "workspace": repository, "run_ids": ["RUN-1"]
+            "branch": "main", "workspace": repository, "task_runs": [{"task_id": "TASK-PRIOR", "run_id": "RUN-1"}]
         }),
         &[
             ("PATH", callback_path.as_os_str()),
@@ -3155,24 +3185,28 @@ fn public_adapter_enforces_callback_denials() {
         }),
         &[
             ("PATH", callback_path.as_os_str()),
-            ("GRAPH_TEST_RUN_SHOW", std::ffi::OsStr::new("denied")),
+            ("GRAPH_TEST_DELIVERY", std::ffi::OsStr::new("denied")),
         ],
     );
     let sync = plugin_success(&sync);
-    // A refused run read is infrastructure, not a verdict on the run: it is
-    // `failed`, with Orbit's refusal code preserved.
+    // A refused delivery read is infrastructure, not a verdict on the run: it
+    // is `failed`, with Orbit's refusal code preserved.
     assert_eq!(sync["outcomes"][0]["run_id"], "RUN-1", "{sync}");
+    assert_eq!(sync["outcomes"][0]["task_id"], "TASK-PRIOR", "{sync}");
     assert_eq!(sync["outcomes"][0]["status"], "failed", "{sync}");
     assert!(
         sync["outcomes"][0]["reason"]
             .as_str()
-            .is_some_and(|reason| reason.contains("operator")),
+            .is_some_and(|reason| reason.contains("permissions.orbit_tools")),
         "{sync}"
     );
     let error = &sync["outcomes"][0]["error"];
     assert_eq!(error["code"], "orbit_refused", "{sync}");
     assert_eq!(error["orbit"]["code"], "policy_denied", "{sync}");
-    assert_eq!(error["orbit"]["tool"], "orbit.workflow.run.show", "{sync}");
+    assert_eq!(
+        error["orbit"]["tool"], "orbit.workflow.run.delivery",
+        "{sync}"
+    );
     assert_eq!(error["retryable"], false, "{sync}");
     assert_eq!(sync["coverage"]["failed"], 1, "{sync}");
     assert_eq!(sync["coverage"]["excluded"], 0, "{sync}");
@@ -3182,9 +3216,9 @@ fn public_adapter_enforces_callback_denials() {
 #[test]
 fn orbit_sync_preserves_diagnostic_prefixed_structured_refusals() {
     for stderr in [
-        "WARN orbit: callback diagnostic\n{\"code\":\"capability_denied\",\"error\":\"operator capability required\"}\n",
-        "WARN orbit: callback diagnostic\nINFO orbit: another diagnostic\n  {\n  \"code\": \"capability_denied\",\n  \"message\": \"operator capability required\"\n}\n",
-        "WARN orbit: callback diagnostic\r\n{\"code\":\"capability_denied\",\"error\":\"operator capability required\"}\r\n",
+        "WARN orbit: callback diagnostic\n{\"code\":\"capability_denied\",\"error\":\"orbit_tools grant required\"}\n",
+        "WARN orbit: callback diagnostic\nINFO orbit: another diagnostic\n  {\n  \"code\": \"capability_denied\",\n  \"message\": \"orbit_tools grant required\"\n}\n",
+        "WARN orbit: callback diagnostic\r\n{\"code\":\"capability_denied\",\"error\":\"orbit_tools grant required\"}\r\n",
     ] {
         let sync = orbit_sync_with_child_stderr(stderr.as_bytes());
         assert_eq!(sync["coverage"]["failed"], 1, "{sync}");
@@ -3193,10 +3227,13 @@ fn orbit_sync_preserves_diagnostic_prefixed_structured_refusals() {
         let error = &sync["outcomes"][0]["error"];
         assert_eq!(error["code"], "orbit_refused", "{sync}");
         assert_eq!(error["orbit"]["code"], "capability_denied", "{sync}");
-        assert_eq!(error["orbit"]["tool"], "orbit.workflow.run.show", "{sync}");
+        assert_eq!(
+            error["orbit"]["tool"], "orbit.workflow.run.delivery",
+            "{sync}"
+        );
         assert_eq!(
             error["message"],
-            "orbit.workflow.run.show refused: capability_denied: operator capability required",
+            "orbit.workflow.run.delivery refused: capability_denied: orbit_tools grant required",
             "{sync}"
         );
         assert_eq!(error["retryable"], false, "{sync}");
@@ -3266,7 +3303,7 @@ fn orbit_sync_with_child_stderr(stderr: &[u8]) -> Value {
         json!({
             "operation": "orbit_sync",
             "workspace": "ws-test",
-            "run_ids": ["RUN-1"]
+            "task_runs": [{"task_id": "TASK-PRIOR", "run_id": "RUN-1"}]
         }),
         &[
             ("PATH", callback_path.as_os_str()),
@@ -3330,7 +3367,7 @@ fn orbit_sync_reports_an_unreadable_task_as_failed_and_imports_the_rest() {
             "repository": repository,
             "branch": "main",
             "workspace": "ws-wrong",
-            "run_ids": ["RUN-1"]
+            "task_runs": [{"task_id": "TASK-PRIOR", "run_id": "RUN-1"}]
         }),
         &[("PATH", callback_path.as_os_str())],
     ));
@@ -3346,6 +3383,520 @@ fn orbit_sync_reports_an_unreadable_task_as_failed_and_imports_the_rest() {
         wrong_workspace["coverage"]["failed"], 0,
         "{wrong_workspace}"
     );
+}
+
+/// The adapter fixture's repository, its base and delivery commits, and the
+/// fake Orbit's PATH.
+struct DeliveryFixture {
+    fixture: TempDir,
+    repository: PathBuf,
+    before: String,
+    after: String,
+    path: std::ffi::OsString,
+}
+
+impl DeliveryFixture {
+    fn new() -> Self {
+        let fixture = adapter_fixture();
+        let repository = fixture
+            .path()
+            .join("repo")
+            .canonicalize()
+            .expect("repository");
+        let before = git_stdout(&repository, ["rev-parse", "HEAD~1"]);
+        let after = git_stdout(&repository, ["rev-parse", "HEAD"]);
+        let path = executable_path_with(fixture.path());
+        Self {
+            fixture,
+            repository,
+            before,
+            after,
+            path,
+        }
+    }
+
+    /// Commit `contents` to `file` on a new `branch` from `main`, returning
+    /// the commit and leaving `main` checked out.
+    fn side_commit(&self, branch: &str, file: &str, contents: &str) -> String {
+        run_git(&self.repository, ["checkout", "-q", "-b", branch, "main"]);
+        fs::write(self.repository.join(file), contents).expect("write side change");
+        run_git(&self.repository, ["add", "."]);
+        run_git(&self.repository, ["commit", "-q", "-m", branch]);
+        let commit = git_stdout(&self.repository, ["rev-parse", "HEAD"]);
+        run_git(&self.repository, ["checkout", "-q", "main"]);
+        commit
+    }
+
+    /// Run `orbit_sync` for `request` with `answer` as RUN-1's delivery
+    /// answer for TASK-PRIOR.
+    fn sync(&self, request: Value, answer: &Value) -> Value {
+        let answer_path = self.fixture.path().join("delivery-answer.json");
+        fs::write(&answer_path, answer.to_string()).expect("write delivery answer");
+        let mut input = json!({
+            "operation": "orbit_sync",
+            "repository": self.repository,
+            "branch": "main",
+            "workspace": "ws-test",
+        });
+        for (key, value) in request.as_object().expect("request fields") {
+            input[key] = value.clone();
+        }
+        plugin_success(&plugin_output_with_env(
+            &self.repository,
+            MAINTAIN_TOOL_NAME,
+            input,
+            &[
+                ("PATH", self.path.as_os_str()),
+                ("GRAPH_TEST_DELIVERY_FILE", answer_path.as_os_str()),
+            ],
+        ))
+    }
+
+    fn sync_pair(&self, answer: &Value) -> Value {
+        self.sync(
+            json!({"task_runs": [{"task_id": "TASK-PRIOR", "run_id": "RUN-1"}]}),
+            answer,
+        )
+    }
+
+    fn stored(&self) -> Option<orbit_graph::DeliveredChange> {
+        orbit_graph::HistoryIndex::open_read_only(&self.repository, "main")
+            .expect("read history index")
+            .delivery("orbit-run:RUN-1:TASK-PRIOR")
+            .expect("read delivery")
+    }
+}
+
+/// Orbit's plugin sandbox forbids writes to the inherited `TMPDIR` and
+/// `/tmp`, so each nested delivery read gets the repository's private plugin
+/// state directory as `TMPDIR` and can still run Git for the repository
+/// identity.
+#[cfg(unix)]
+#[test]
+fn orbit_sync_gives_nested_orbit_calls_a_private_tmpdir_under_plugin_state() {
+    let fixture = DeliveryFixture::new();
+    let state = TempDir::new().expect("plugin state");
+    let log = fixture.fixture.path().join("tmpdir.log");
+    let answer_path = fixture.fixture.path().join("delivery-answer.json");
+    fs::write(
+        &answer_path,
+        fixture_run_delivery(&fixture.before, &fixture.after).to_string(),
+    )
+    .expect("write delivery answer");
+    let sync = plugin_success(&plugin_output_with_env(
+        &fixture.repository,
+        MAINTAIN_TOOL_NAME,
+        json!({
+            "operation": "orbit_sync",
+            "repository": fixture.repository,
+            "branch": "main",
+            "workspace": "ws-test",
+            "task_runs": [{"task_id": "TASK-PRIOR", "run_id": "RUN-1"}],
+        }),
+        &[
+            ("PATH", fixture.path.as_os_str()),
+            ("GRAPH_TEST_DELIVERY_FILE", answer_path.as_os_str()),
+            ("GRAPH_TEST_TMPDIR_LOG", log.as_os_str()),
+            ("ORBIT_PLUGIN_STATE", state.path().as_os_str()),
+        ],
+    ));
+    assert_eq!(sync["outcomes"][0]["status"], "inserted", "{sync}");
+    let tmpdir = fs::read_to_string(&log).expect("nested TMPDIR log");
+    let tmpdir = Path::new(tmpdir.trim());
+    assert_eq!(tmpdir.parent(), Some(state.path()), "{}", tmpdir.display());
+    assert!(tmpdir.is_dir(), "{}", tmpdir.display());
+    let database = sync["status"]["database_path"]
+        .as_str()
+        .expect("database path");
+    assert!(Path::new(database).starts_with(tmpdir), "{database}");
+}
+
+/// `answer` with each JSON pointer in `changes` replaced.
+fn amended(answer: &Value, changes: &[(&str, Value)]) -> Value {
+    let mut answer = answer.clone();
+    for (pointer, value) in changes {
+        *answer.pointer_mut(pointer).expect("answer field") = value.clone();
+    }
+    answer
+}
+
+fn assert_single_outcome(sync: &Value, status: &str, reason: &str, case: &str) {
+    let outcome = &sync["outcomes"][0];
+    assert_eq!(outcome["status"], status, "{case}: {sync}");
+    assert_eq!(outcome["task_id"], "TASK-PRIOR", "{case}: {sync}");
+    assert_eq!(outcome["run_id"], "RUN-1", "{case}: {sync}");
+    assert!(
+        outcome["reason"]
+            .as_str()
+            .is_some_and(|text| text.contains(reason)),
+        "{case}: expected {reason:?}: {sync}"
+    );
+    let (excluded, failed) = if status == "excluded" { (1, 0) } else { (0, 1) };
+    assert_eq!(sync["coverage"]["excluded"], excluded, "{case}: {sync}");
+    assert_eq!(sync["coverage"]["failed"], failed, "{case}: {sync}");
+    assert_eq!(sync["status"]["deliveries"], 0, "{case}: {sync}");
+}
+
+#[test]
+fn orbit_sync_imports_only_host_landed_deliveries_and_excludes_every_other_status() {
+    let fixture = DeliveryFixture::new();
+    let landed = fixture_run_delivery(&fixture.before, &fixture.after);
+    let unreachable = fixture.side_commit("unmerged", "parser.rs", "pub fn parse() {}\n");
+    let null = Value::Null;
+    for (case, changes, reason) in [
+        (
+            "merely committed",
+            vec![
+                ("/delivery_status", json!("committed")),
+                ("/landing/status", json!("not_requested")),
+                ("/landing/method", null.clone()),
+            ],
+            "no verified landing (landing.status=not_requested)",
+        ),
+        (
+            "no change",
+            vec![
+                ("/delivery_status", json!("no_change")),
+                ("/commit/status", json!("verified_no_diff")),
+                ("/commit/head_sha", null.clone()),
+                ("/landing/status", json!("not_requested")),
+            ],
+            "needed no new commit for task TASK-PRIOR (commit.status=verified_no_diff)",
+        ),
+        (
+            "running",
+            vec![
+                ("/delivery_status", json!("in_progress")),
+                ("/run_state", json!("running")),
+                ("/commit/status", json!("pending")),
+            ],
+            "has not reached a terminal outcome (run_state=running)",
+        ),
+        (
+            "failed before committing",
+            vec![
+                ("/delivery_status", json!("not_delivered")),
+                ("/run_state", json!("failed")),
+                ("/commit/status", json!("not_reached")),
+                ("/landing/status", json!("not_reached")),
+            ],
+            "without committing anything for task TASK-PRIOR",
+        ),
+        (
+            "evidence gap",
+            vec![
+                ("/delivery_status", json!("unavailable")),
+                ("/commit/status", json!("unavailable")),
+                ("/commit/reason", json!("ownership_mismatch")),
+                ("/landing/status", json!("unavailable")),
+            ],
+            "unavailable (commit: ownership_mismatch, landing: unavailable)",
+        ),
+        (
+            "landed without a merge",
+            vec![("/landing/status", json!("not_requested"))],
+            "inconsistent evidence",
+        ),
+        (
+            "already committed without a head",
+            vec![
+                ("/commit/status", json!("already_committed")),
+                ("/commit/head_sha", null.clone()),
+            ],
+            "no head commit",
+        ),
+        (
+            "missing base",
+            vec![("/commit/base_sha", null.clone())],
+            "no base commit",
+        ),
+        (
+            "foreign workspace",
+            vec![("/workspace_id", json!("ws-other"))],
+            "not the selected \"ws-test\"",
+        ),
+        (
+            "unknown repository",
+            vec![("/repository", null.clone())],
+            "could not identify the run's repository",
+        ),
+        (
+            "foreign repository",
+            vec![("/repository", json!("constellation/fixture"))],
+            "does not match the requested repository",
+        ),
+        (
+            "local landing off the branch",
+            vec![("/commit/head_sha", json!(unreachable))],
+            "local landing, but head_sha is not reachable",
+        ),
+        (
+            "head not after base",
+            vec![
+                ("/commit/base_sha", json!(fixture.after)),
+                ("/commit/head_sha", json!(fixture.before)),
+            ],
+            "not a strict descendant of base_sha",
+        ),
+    ] {
+        let sync = fixture.sync_pair(&amended(&landed, &changes));
+        assert_single_outcome(&sync, "excluded", reason, case);
+        assert!(fixture.stored().is_none(), "{case}: nothing is stored");
+    }
+
+    let sync = fixture.sync_pair(&landed);
+    assert_eq!(sync["outcomes"][0]["status"], "inserted", "{sync}");
+    assert_eq!(
+        sync["outcomes"][0]["landing"],
+        json!({"method": "local_fast_forward", "verified_by": "head_reachable"}),
+        "{sync}"
+    );
+    assert_eq!(
+        sync["authority"]["interfaces"],
+        json!([
+            "orbit.workspace.list",
+            "orbit.task.show",
+            "orbit.workflow.run.delivery",
+            "git"
+        ]),
+        "{sync}"
+    );
+    let stored = fixture.stored().expect("landed delivery");
+    assert_eq!(stored.delivery.before_revision, fixture.before);
+    assert_eq!(stored.delivery.after_revision, fixture.after);
+    assert_eq!(
+        stored.delivery.source.system,
+        "orbit.workflow.run.delivery+git"
+    );
+    assert_eq!(
+        stored.delivery.delivered_at.status,
+        orbit_graph::TemporalStatus::Uncertain
+    );
+    assert_eq!(
+        stored.delivery.delivered_at.timestamp.as_deref(),
+        Some("2026-09-07T00:00:25Z"),
+        "the landing step's finish time is the delivery-time proxy"
+    );
+    assert_eq!(
+        stored.delivery.delivered_at.source.system,
+        "orbit.workflow.run.delivery.landing.observed_at"
+    );
+}
+
+#[test]
+fn orbit_sync_reports_malformed_or_foreign_delivery_answers_as_failed() {
+    let fixture = DeliveryFixture::new();
+    let landed = fixture_run_delivery(&fixture.before, &fixture.after);
+    let mut unversioned = landed.clone();
+    unversioned
+        .as_object_mut()
+        .expect("answer object")
+        .remove("schema_version");
+    let mut incomplete = landed.clone();
+    incomplete
+        .as_object_mut()
+        .expect("answer object")
+        .remove("landing");
+    for (case, answer, reason) in [
+        (
+            "unsupported version",
+            amended(&landed, &[("/schema_version", json!(2))]),
+            "unsupported schema_version 2",
+        ),
+        (
+            "unversioned",
+            unversioned,
+            "unsupported schema_version (missing)",
+        ),
+        ("missing landing", incomplete, "missing field `landing`"),
+        (
+            "unknown status",
+            amended(&landed, &[("/delivery_status", json!("merged_elsewhere"))]),
+            "unknown variant `merged_elsewhere`",
+        ),
+        (
+            "other task",
+            amended(&landed, &[("/task_id", json!("TASK-OTHER"))]),
+            "different task or run",
+        ),
+        (
+            "other run",
+            amended(&landed, &[("/run_id", json!("RUN-2"))]),
+            "different task or run",
+        ),
+        (
+            "abbreviated SHA",
+            amended(&landed, &[("/commit/head_sha", json!("abc1234"))]),
+            "commit.head_sha is not a full lowercase commit ID",
+        ),
+    ] {
+        let sync = fixture.sync_pair(&answer);
+        assert_single_outcome(&sync, "failed", reason, case);
+        assert_eq!(
+            sync["outcomes"][0]["error"]["code"], "graph_error",
+            "{case}: {sync}"
+        );
+    }
+
+    // Orbit itself refuses a run that was not submitted with the task.
+    let sync = fixture.sync(
+        json!({"task_runs": [{"task_id": "TASK-TARGET", "run_id": "RUN-1"}]}),
+        &landed,
+    );
+    let outcome = &sync["outcomes"][0];
+    assert_eq!(outcome["status"], "failed", "{sync}");
+    assert_eq!(outcome["task_id"], "TASK-TARGET", "{sync}");
+    assert_eq!(outcome["error"]["code"], "orbit_refused", "{sync}");
+    assert_eq!(outcome["error"]["orbit"]["code"], "invalid_input", "{sync}");
+    assert_eq!(
+        outcome["error"]["orbit"]["tool"], "orbit.workflow.run.delivery",
+        "{sync}"
+    );
+}
+
+#[test]
+fn orbit_sync_verifies_squash_and_merge_landings_against_git() {
+    // A squash merge lands a new commit whose content matches the head: the
+    // delivery is that landed commit, not the unreachable head.
+    let fixture = DeliveryFixture::new();
+    let head = fixture.side_commit("feature", "parser.rs", "pub fn parse() -> u8 { 1 }\n");
+    run_git(&fixture.repository, ["merge", "-q", "--squash", "feature"]);
+    run_git(
+        &fixture.repository,
+        ["commit", "-q", "-m", "squash feature"],
+    );
+    let squash = git_stdout(&fixture.repository, ["rev-parse", "HEAD"]);
+    let pull_request = |base: &str, head: &str, landed: Value| {
+        amended(
+            &fixture_run_delivery(base, head),
+            &[
+                ("/landing/method", json!("pull_request")),
+                ("/landing/landed_commit", landed),
+                ("/landing/pr_number", json!(7)),
+            ],
+        )
+    };
+    let wrong_paths = fixture.side_commit("other", "other.rs", "pub fn other() {}\n");
+    let off_branch = fixture.side_commit("parked", "parser.rs", "pub fn parse() -> u8 { 2 }\n");
+    for (case, answer, reason) in [
+        (
+            "no landed commit",
+            pull_request(&fixture.after, &head, Value::Null),
+            "recorded no landed_commit",
+        ),
+        (
+            "landed commit off the branch",
+            pull_request(&fixture.after, &head, json!(off_branch)),
+            "landed_commit is not reachable from the landing branch",
+        ),
+        (
+            "landed commit with other paths",
+            pull_request(&fixture.after, &wrong_paths, json!(squash)),
+            "changes different paths than base_sha..head_sha",
+        ),
+        (
+            "landed commit before the base",
+            pull_request(&fixture.after, &head, json!(fixture.after)),
+            "landed_commit does not build on base_sha",
+        ),
+    ] {
+        let sync = fixture.sync_pair(&answer);
+        assert_single_outcome(&sync, "excluded", reason, case);
+    }
+    let sync = fixture.sync_pair(&pull_request(&fixture.after, &head, json!(squash)));
+    assert_eq!(sync["outcomes"][0]["status"], "inserted", "{sync}");
+    assert_eq!(
+        sync["outcomes"][0]["landing"],
+        json!({"method": "pull_request", "verified_by": "landed_commit_paths"}),
+        "{sync}"
+    );
+    let stored = fixture.stored().expect("squash delivery");
+    assert_eq!(stored.delivery.before_revision, fixture.after);
+    assert_eq!(stored.delivery.after_revision, squash);
+
+    // A merge commit reaches the head itself, so the head's own range is the
+    // delivery whatever SHA the merge produced.
+    let fixture = DeliveryFixture::new();
+    let head = fixture.side_commit("feature", "parser.rs", "pub fn parse() -> u8 { 3 }\n");
+    fixture.side_commit("mainline", "other.rs", "pub fn other() {}\n");
+    run_git(
+        &fixture.repository,
+        ["merge", "-q", "--ff-only", "mainline"],
+    );
+    run_git(
+        &fixture.repository,
+        ["merge", "-q", "--no-ff", "-m", "merge feature", "feature"],
+    );
+    let merge = git_stdout(&fixture.repository, ["rev-parse", "HEAD"]);
+    let sync = fixture.sync_pair(&pull_request(&fixture.after, &head, json!(merge)));
+    assert_eq!(sync["outcomes"][0]["status"], "inserted", "{sync}");
+    assert_eq!(
+        sync["outcomes"][0]["landing"],
+        json!({"method": "pull_request", "verified_by": "head_reachable"}),
+        "{sync}"
+    );
+    let stored = fixture.stored().expect("merged delivery");
+    assert_eq!(stored.delivery.before_revision, fixture.after);
+    assert_eq!(stored.delivery.after_revision, head);
+}
+
+#[test]
+fn orbit_sync_deduplicates_pairs_and_keeps_a_partial_batch() {
+    let fixture = DeliveryFixture::new();
+    let landed = fixture_run_delivery(&fixture.before, &fixture.after);
+    let request = json!({
+        "task_runs": [
+            {"task_id": "TASK-PRIOR", "run_id": "RUN-1"},
+            {"task_id": "TASK-TARGET", "run_id": "RUN-1"},
+            {"task_id": "TASK-PRIOR", "run_id": "RUN-1"}
+        ],
+        // TASK-PRIOR's current job_run_id is RUN-1: the same pair again.
+        // TASK-TARGET has no current run, which is excluded, not guessed.
+        "task_ids": ["TASK-PRIOR", "TASK-TARGET"],
+    });
+    let first = fixture.sync(request.clone(), &landed);
+    assert_eq!(first["coverage"]["explicit_task_runs"], 3, "{first}");
+    assert_eq!(first["coverage"]["task_ids_examined"], 2, "{first}");
+    assert_eq!(first["coverage"]["unique_task_runs"], 2, "{first}");
+    assert_eq!(first["coverage"]["processed"], 2, "{first}");
+    assert_eq!(first["coverage"]["failed"], 1, "{first}");
+    assert_eq!(first["coverage"]["excluded"], 1, "{first}");
+    assert_eq!(first["outcomes"][0]["task_id"], "TASK-TARGET", "{first}");
+    assert_eq!(first["outcomes"][0]["status"], "excluded", "{first}");
+    assert!(
+        first["outcomes"][0]["reason"]
+            .as_str()
+            .is_some_and(|reason| reason.contains("no current job_run_id")),
+        "{first}"
+    );
+    assert_eq!(first["outcomes"][1]["status"], "inserted", "{first}");
+    assert_eq!(first["outcomes"][2]["task_id"], "TASK-TARGET", "{first}");
+    assert_eq!(first["outcomes"][2]["status"], "failed", "{first}");
+    assert_eq!(first["status"]["deliveries"], 1, "{first}");
+
+    let second = fixture.sync(request, &landed);
+    assert_eq!(
+        second["outcomes"][1]["status"], "already_indexed",
+        "{second}"
+    );
+    assert_eq!(second["outcomes"][2]["status"], "failed", "{second}");
+    assert_eq!(second["status"]["deliveries"], 1, "{second}");
+
+    // A limit smaller than the distinct pairs truncates and says so.
+    let bounded = fixture.sync(
+        json!({
+            "limit": 1,
+            "task_runs": [
+                {"task_id": "TASK-PRIOR", "run_id": "RUN-1"},
+                {"task_id": "TASK-TARGET", "run_id": "RUN-1"}
+            ],
+            "task_ids": ["TASK-PRIOR"],
+        }),
+        &landed,
+    );
+    assert_eq!(bounded["coverage"]["processed"], 1, "{bounded}");
+    assert_eq!(bounded["coverage"]["task_ids_examined"], 0, "{bounded}");
+    assert_eq!(bounded["coverage"]["truncated"], true, "{bounded}");
 }
 
 /// Run a hybrid `recommend` against the adapter fixture with the fake
@@ -3445,7 +3996,7 @@ fn sync_public_search_history(fixture: &TempDir) {
             "repository": repository,
             "branch": "main",
             "workspace": "ws-test",
-            "run_ids": ["RUN-1"]
+            "task_runs": [{"task_id": "TASK-PRIOR", "run_id": "RUN-1"}]
         }),
         &[("PATH", callback_path.as_os_str())],
     ));
@@ -4346,7 +4897,6 @@ fn adapter_fixture() -> TempDir {
     run_git(&repository, ["add", "."]);
     run_git(&repository, ["commit", "-m", "delivery"]);
     let after = git_stdout(&repository, ["rev-parse", "HEAD"]);
-    let canonical = repository.canonicalize().expect("canonical repository");
     // The public row shape `orbit mcp serve` returns for `orbit.workspace.list`
     // (Orbit 0.23): workspace identity and `git_remote`, never a checkout path.
     let discovery = json!({
@@ -4422,16 +4972,7 @@ fn adapter_fixture() -> TempDir {
     }});
     let unknown = json!({"jsonrpc": "2.0", "id": 2,
         "error": {"code": -32602, "message": "fixture serves only orbit.workspace.list"}});
-    let run_show = json!({
-        "run": {"state": "success", "finished_at": "2026-09-07T00:00:30Z"},
-        "pipeline_state": {"step_outputs": {
-            "0": {"workspace_path": canonical},
-            "2": {
-                "phase": "commit", "committed": true, "task_id": "TASK-PRIOR",
-                "base_sha": before, "commit_sha": after
-            }
-        }}
-    });
+    let delivery = fixture_run_delivery(&before, &after);
     let mut prior = public_task("TASK-PRIOR", "done", "parser validation");
     prior["job_run_id"] = json!("RUN-1");
     let mut prior_owned = prior.clone();
@@ -4453,14 +4994,21 @@ fn adapter_fixture() -> TempDir {
     let linger = fixture.path().join("linger.pid");
     // GRAPH_TEST_DISCOVERY selects the MCP server's behaviour (granted, denied
     // by the callback allowlist, refused before serving, or lingering after
-    // EOF); GRAPH_TEST_RUN_SHOW=denied models the operator-only run read, as
-    // Orbit's structured stderr refusal. GRAPH_TEST_SEARCH selects how
+    // EOF). `orbit.workflow.run.delivery` answers RUN-1 for TASK-PRIOR with
+    // GRAPH_TEST_DELIVERY_FILE's JSON when set, else a local landing of the
+    // fixture's delivery commit, and refuses every other pair as Orbit does;
+    // GRAPH_TEST_DELIVERY=denied models a callback-allowlist refusal and
+    // GRAPH_TEST_RUN_STDERR a failed read's raw stderr. GRAPH_TEST_SEARCH selects how
     // `orbit.search` misbehaves: a grandchild holding stdout (fork), death by
     // SIGKILL (signal), oversized stderr (noisy) or a malformed hit.
     // TASK-MISSING is always refused as `task_not_found`.
-    let run_show_denied = json!({
+    let delivery_denied = json!({
         "code": "policy_denied",
-        "error": "orbit.workflow.run.show requires the operator capability"
+        "error": "plugin graph may not call orbit.workflow.run.delivery: not in permissions.orbit_tools"
+    });
+    let foreign_pair = json!({
+        "code": "invalid_input",
+        "error": "invalid input: run did not deliver task in this workspace"
     });
     let task_missing =
         json!({"code": "task_not_found", "error": "task TASK-MISSING was not found"});
@@ -4500,16 +5048,29 @@ case "$*" in
       printf '%s' "$$" > "{linger}"
       exec sleep {stuck}
     fi ;;
-  *"tool run orbit.workflow.run.show"*"RUN-1"*)
+  *"tool run orbit.workflow.run.delivery"*)
+    if [ -n "$GRAPH_TEST_TMPDIR_LOG" ]; then
+      printf '%s\n' "$TMPDIR" >> "$GRAPH_TEST_TMPDIR_LOG"
+    fi
     if [ -n "$GRAPH_TEST_RUN_STDERR" ]; then
       cat "$GRAPH_TEST_RUN_STDERR" >&2
       exit 1
     fi
-    if [ "$GRAPH_TEST_RUN_SHOW" = denied ]; then
-      printf '%s\n' '{run_show_denied}' >&2
+    if [ "$GRAPH_TEST_DELIVERY" = denied ]; then
+      printf '%s\n' '{delivery_denied}' >&2
       exit 1
     fi
-    printf '%s\n' '{run_show}' ;;
+    case "$*" in
+      *'"run_id":"RUN-1","task_id":"TASK-PRIOR"'*)
+        if [ -n "$GRAPH_TEST_DELIVERY_FILE" ]; then
+          cat "$GRAPH_TEST_DELIVERY_FILE"
+        else
+          printf '%s\n' '{delivery}'
+        fi ;;
+      *)
+        printf '%s\n' '{foreign_pair}' >&2
+        exit 1 ;;
+    esac ;;
   *"tool run orbit.task.show"*"TASK-MISSING"*)
     printf '%s\n' '{task_missing}' >&2
     exit 1 ;;
@@ -4563,6 +5124,42 @@ esac
     );
     executable(&fixture.path().join("orbit"), script);
     fixture
+}
+
+/// The fixture remote's identity as Orbit derives it for a non-GitHub origin:
+/// `git:` and the SHA-256 of the origin URL.
+const FIXTURE_REPOSITORY_IDENTITY: &str =
+    "git:67de2f4554f73ccb49730c868722d8d7f238ce6ba0d68dcb4a94ac03a73d6d81";
+
+/// An `orbit.workflow.run.delivery` schema 1 answer for RUN-1 and TASK-PRIOR:
+/// a host commit of `before..after` landed by a local fast-forward, which
+/// records no landed SHA.
+fn fixture_run_delivery(before: &str, after: &str) -> Value {
+    json!({
+        "schema_version": 1,
+        "workspace_id": "ws-test",
+        "repository": FIXTURE_REPOSITORY_IDENTITY,
+        "task_id": "TASK-PRIOR",
+        "run_id": "RUN-1",
+        "job_id": "task_local_pipeline",
+        "run_state": "success",
+        "run_finished_at": "2026-09-07T00:00:30Z",
+        "delivery_status": "landed",
+        "commit": {
+            "status": "committed", "base_sha": before, "head_sha": after,
+            "observed_at": "2026-09-07T00:00:20Z",
+            "provenance": {"source": "host_step_checkpoint", "step_id": "commit",
+                "step_index": 2, "activity": "git_commit"},
+            "reason": null
+        },
+        "landing": {
+            "status": "merged", "method": "local_fast_forward", "landed_commit": null,
+            "pr_number": null, "observed_at": "2026-09-07T00:00:25Z",
+            "provenance": {"source": "host_step_checkpoint", "step_id": "merge",
+                "step_index": 3, "activity": "git_merge"},
+            "reason": null
+        }
+    })
 }
 
 fn mixed_truth_fixture() -> TempDir {

@@ -34,7 +34,7 @@ spec:
       - orbit.task.show
       - orbit.search
       - orbit.workspace.list
-      - orbit.workflow.run.show
+      - orbit.workflow.run.delivery
   tools:
     - name: version
       description: Report deterministic crate and index contract versions.

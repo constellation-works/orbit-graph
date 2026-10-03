@@ -650,7 +650,7 @@ impl MaintenanceOperation {
                 "limit",
                 "workspace",
                 "task_ids",
-                "run_ids",
+                "task_runs",
                 "task_snapshots",
             ],
             Self::GraphSync => &["full", "budget_ms"],
@@ -679,6 +679,11 @@ struct MaintainToolInput {
     workspace: Option<String>,
     #[serde(default)]
     task_ids: Option<Vec<String>>,
+    /// Explicit task/run pairs, for `orbit_sync` only.
+    #[serde(default)]
+    task_runs: Option<Vec<TaskRun>>,
+    /// Retired: refused for every operation, by name, with the remedy for
+    /// `orbit_sync`.
     #[serde(default)]
     run_ids: Option<Vec<String>>,
     /// `TaskAssociation`s, decoded only for `orbit_sync`, like `delivery`.
@@ -699,6 +704,7 @@ impl MaintainToolInput {
             ("delivery", self.delivery.is_some()),
             ("workspace", self.workspace.is_some()),
             ("task_ids", self.task_ids.is_some()),
+            ("task_runs", self.task_runs.is_some()),
             ("run_ids", self.run_ids.is_some()),
             ("task_snapshots", self.task_snapshots.is_some()),
             ("full", self.full.is_some()),
@@ -710,6 +716,18 @@ impl MaintainToolInput {
     }
 }
 
+/// One run Orbit recorded delivering one task: the only unit Orbit's public
+/// delivery read, `orbit.workflow.run.delivery`, answers for.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct TaskRun {
+    task_id: String,
+    run_id: String,
+}
+
+/// Longest task or run ID Orbit's delivery read accepts.
+const MAX_ORBIT_ID_LEN: usize = 128;
+
 /// `history_sync`'s commit bound: default and maximum.
 const DEFAULT_HISTORY_LIMIT: usize = 100;
 const MAX_HISTORY_LIMIT: usize = 1_000;
@@ -720,6 +738,15 @@ const MAX_ORBIT_SYNC_LIMIT: usize = 100;
 fn maintain(call: &ToolCall<'_>, mut input: MaintainToolInput) -> Result<Value, ToolError> {
     validate_schema(input.schema_version)?;
     let operation = input.operation;
+    if matches!(operation, MaintenanceOperation::OrbitSync) && input.run_ids.is_some() {
+        return Err(ToolError::invalid_request(
+            "validate Orbit adapter selectors",
+            "run_ids is retired: Orbit's public delivery read answers one run for one task, and \
+             no public read binds a bare run ID to its task; pass task_runs \
+             [{\"task_id\": ..., \"run_id\": ...}] for a known run, or task_ids for each task's \
+             current run",
+        ));
+    }
     let inapplicable = input
         .supplied()
         .into_iter()
@@ -762,6 +789,20 @@ fn maintain(call: &ToolCall<'_>, mut input: MaintainToolInput) -> Result<Value, 
                 return Err(ToolError::invalid_request(
                     "validate Orbit adapter sync bound",
                     format!("limit must be between 1 and {MAX_ORBIT_SYNC_LIMIT}"),
+                ));
+            }
+            let malformed = input.task_runs.iter().flatten().any(|pair| {
+                [&pair.task_id, &pair.run_id].into_iter().any(|id| {
+                    id.trim().is_empty() || id.trim() != id || id.len() > MAX_ORBIT_ID_LEN
+                })
+            });
+            if malformed {
+                return Err(ToolError::invalid_request(
+                    "validate Orbit adapter selectors",
+                    format!(
+                        "every task_runs task_id and run_id must be 1 to {MAX_ORBIT_ID_LEN} \
+                         characters without surrounding whitespace"
+                    ),
                 ));
             }
         }
@@ -987,20 +1028,23 @@ fn sync_orbit(
     task_snapshots: Vec<TaskAssociation>,
 ) -> Result<Value, GraphError> {
     let bound = input.limit.unwrap_or(DEFAULT_ORBIT_SYNC_LIMIT);
+    // The open history index already created this private directory.
+    let callback_tmpdir = plugin_index_dir(call, &repository)?;
     let adapter = OrbitAdapter::new(
         repository.as_path(),
         input.workspace.as_deref(),
         call.environment.orbit_timeout,
-    );
+    )
+    .with_callback_tmpdir(callback_tmpdir.as_deref());
     let requested_task_ids = input.task_ids.unwrap_or_default();
-    let mut run_ids = input.run_ids.unwrap_or_default();
-    let explicit_run_count = run_ids.len();
+    let mut pairs = input.task_runs.unwrap_or_default();
+    let explicit_pair_count = pairs.len();
     let task_count = requested_task_ids.len();
     let mut task_ids_examined = 0;
     let mut truncated = false;
     let mut outcomes = SyncOutcomes::default();
     for task_id in &requested_task_ids {
-        if run_ids.len() >= bound {
+        if pairs.len() >= bound {
             truncated = true;
             break;
         }
@@ -1008,39 +1052,53 @@ fn sync_orbit(
         // One unreadable task is reported and counted; the batch goes on
         // (STD-02 §R32).
         match adapter.task_show(task_id) {
-            Ok(task) => {
-                if let Some(run_id) = string_field(&task, "job_run_id") {
-                    run_ids.push(run_id.to_string());
-                }
-            }
+            Ok(task) => match string_field(&task, "job_run_id") {
+                Some(run_id) => pairs.push(TaskRun {
+                    task_id: task_id.clone(),
+                    run_id: run_id.to_string(),
+                }),
+                None => outcomes.record_excluded(
+                    json!({"task_id": task_id}),
+                    format!(
+                        "task {task_id} has no current job_run_id; pass task_runs to name an earlier run"
+                    ),
+                ),
+            },
             Err(error) => outcomes.unverified(json!({"task_id": task_id}), &error),
         }
     }
     let mut seen = BTreeSet::new();
-    run_ids.retain(|id| seen.insert(id.clone()));
-    truncated |= run_ids.len() > bound || task_ids_examined < task_count;
-    let discovered_run_count = run_ids.len();
-    run_ids.truncate(bound);
+    pairs.retain(|pair| seen.insert(pair.clone()));
+    truncated |= pairs.len() > bound || task_ids_examined < task_count;
+    let unique_pair_count = pairs.len();
+    pairs.truncate(bound);
     let snapshots = task_snapshots
         .into_iter()
         .map(|snapshot| (snapshot.task_id.clone(), snapshot))
         .collect::<std::collections::BTreeMap<_, _>>();
-    for run_id in &run_ids {
-        let identity = json!({"run_id": run_id});
-        let (delivery, supplied_snapshot) =
-            match adapter.delivery_from_run(run_id, branch, &snapshots, index.repository()) {
-                Ok(RunVerdict::Deliverable(verified)) => {
-                    (verified.delivery, verified.supplied_snapshot)
-                }
-                Ok(RunVerdict::Excluded(reason)) => {
-                    outcomes.record_excluded(identity, reason);
-                    continue;
-                }
-                Err(error) => {
-                    outcomes.unverified(identity, &error);
-                    continue;
-                }
-            };
+    for TaskRun { task_id, run_id } in &pairs {
+        let identity = json!({"task_id": task_id, "run_id": run_id});
+        let (delivery, supplied_snapshot, landing) = match adapter.delivery_for_task_run(
+            task_id,
+            run_id,
+            branch,
+            &snapshots,
+            index.repository(),
+        ) {
+            Ok(RunVerdict::Deliverable(verified)) => (
+                verified.delivery,
+                verified.supplied_snapshot,
+                verified.landing,
+            ),
+            Ok(RunVerdict::Excluded(reason)) => {
+                outcomes.record_excluded(identity, reason);
+                continue;
+            }
+            Err(error) => {
+                outcomes.unverified(identity, &error);
+                continue;
+            }
+        };
         let delivery_id = delivery.delivery_id.clone();
         let task_ids = delivery
             .tasks
@@ -1058,6 +1116,7 @@ fn sync_orbit(
                         "run_id": run_id,
                         "delivery_id": delivery_id,
                         "task_ids": task_ids,
+                        "landing": landing,
                         "status": "already_indexed",
                         "supplied_snapshot": if inserted { "inserted" } else { "already_indexed" },
                         "reason": "preserved first-observed delivery task text and provenance",
@@ -1068,6 +1127,7 @@ fn sync_orbit(
                     "run_id": run_id,
                     "delivery_id": delivery_id,
                     "task_ids": task_ids,
+                    "landing": landing,
                     "status": "already_indexed",
                     "reason": "preserved immutable first-observed delivery envelope",
                 })),
@@ -1081,6 +1141,7 @@ fn sync_orbit(
                 "run_id": run_id,
                 "delivery_id": delivery_id,
                 "task_ids": task_ids,
+                "landing": landing,
                 "status": if report.inserted {"inserted"} else {"already_indexed"},
             })),
             Err(error) => outcomes.refused(identity, &error),
@@ -1093,21 +1154,21 @@ fn sync_orbit(
         "branch": branch,
         "authority": {
             "workspace": input.workspace,
-            "interfaces": ["orbit.workspace.list", "orbit.task.show", "orbit.workflow.run.show", "git"],
+            "interfaces": ["orbit.workspace.list", "orbit.task.show", adapter::DELIVERY_TOOL, "git"],
         },
         "coverage": {
             "complete": false,
-            "kind": "explicit_bounded_run_set",
-            "explicit_run_ids": explicit_run_count,
+            "kind": "explicit_bounded_task_runs",
+            "explicit_task_runs": explicit_pair_count,
             "task_ids": task_count,
             "task_ids_examined": task_ids_examined,
-            "discovered_unique_runs": discovered_run_count,
-            "processed": run_ids.len(),
+            "unique_task_runs": unique_pair_count,
+            "processed": pairs.len(),
             "excluded": outcomes.excluded,
             "failed": outcomes.failed,
             "truncated": truncated,
-            "note": "Only explicit run_ids and each requested task's current job_run_id are examined. Orbit exposes no cursor-paginated detailed delivery feed; older retries and unlisted tasks are not claimed as covered. excluded counts runs examined and judged ineligible; failed counts tasks and runs that could not be examined.",
-            "resume": "resubmit omitted or failed run_ids or task_ids; delivery IDs are idempotent",
+            "note": "Only explicit task_runs pairs and each requested task's current job_run_id are examined, one run for one task through orbit.workflow.run.delivery. Orbit exposes no public run listing or cursor-paginated delivery feed, so older retries and unlisted tasks are not claimed as covered. Only a host-verified landing whose commits Git reaches on the landing branch is imported. excluded counts pairs examined and judged ineligible; failed counts tasks and pairs that could not be examined.",
+            "resume": "resubmit omitted or failed task_runs or task_ids; delivery IDs are idempotent",
         },
         "outcomes": outcomes.entries,
         "status": index.status()?,
