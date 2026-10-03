@@ -222,6 +222,14 @@ pub struct CalleeEdge {
 /// use orbit_graph::{CalleeOpts, Confidence, Graph, Selector, SyncMode, SyncPolicy};
 ///
 /// let dir = tempfile::tempdir()?;
+/// # // Bound Git discovery and ignore configuration to this fixture.
+/// # let mut git_options = git2::RepositoryInitOptions::new();
+/// # git_options.initial_head("main").external_template(false);
+/// # let repo = git2::Repository::init_opts(dir.path(), &git_options)?;
+/// # repo.config()?.open_level(git2::ConfigLevel::Local)?.set_str(
+/// #     "core.excludesFile",
+/// #     if cfg!(windows) { "NUL" } else { "/dev/null" },
+/// # )?;
 /// fs::create_dir_all(dir.path().join("src"))?;
 /// fs::write(
 ///     dir.path().join("src/lib.rs"),
