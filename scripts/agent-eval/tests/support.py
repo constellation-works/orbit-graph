@@ -2,7 +2,9 @@
 import json
 import os
 from pathlib import Path
+import select
 import shutil
+import signal
 import subprocess
 import sys
 import tempfile
@@ -17,6 +19,11 @@ import eval_broker  # noqa: E402
 import eval_runner  # noqa: E402
 
 RG = shutil.which("rg")
+# Every fixture wait is bounded (STD-03 R17): an MCP reply or write, and a
+# broker's exit after its stdin closes.
+MCP_TIMEOUT_S = 30.0
+CLOSE_TIMEOUT_S = 10.0
+MAX_REPLY_BYTES = 8 * 1024 * 1024
 FAKE_CODEX = TESTS / "fake_codex.py"
 FAKE_BWRAP = TESTS / "fake_bwrap.py"
 FAKE_GRAPH = TESTS / "fake_orbit_graph.py"
@@ -85,20 +92,60 @@ def snapshot_repo(work, files_head=HEAD, files_base=BASE):
 
 
 class McpClient:
-    """Minimal MCP stdio client speaking to the real broker process."""
+    """Minimal MCP stdio client speaking to the real broker process.
 
-    def __init__(self, config_path):
-        self.process = subprocess.Popen(
-            [sys.executable, "-B", str(TOOL / "eval_broker.py"), "--config", str(config_path)],
-            stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    Reads and writes have a deadline and check the process, so a hung or dead
+    broker fails the test instead of hanging the suite. The broker runs in its
+    own process group; `terminate` kills and reaps it on every path (STD-03 R18),
+    and tests register it with addCleanup.
+    """
+
+    def __init__(self, config_path=None, argv=None, timeout_s=MCP_TIMEOUT_S):
+        argv = argv or [sys.executable, "-B", str(TOOL / "eval_broker.py"), "--config",
+                        str(config_path)]
+        self.timeout_s = timeout_s
+        self.process = subprocess.Popen(argv, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                                        stderr=subprocess.DEVNULL, start_new_session=True)
+        os.set_blocking(self.process.stdin.fileno(), False)
+        self.buffer = b""
         self.next_id = 0
 
+    def _remaining(self, deadline, action):
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            raise TimeoutError(f"broker pid {self.process.pid}: no {action} within "
+                               f"{self.timeout_s}s (exit {self.process.poll()})")
+        return min(remaining, 0.25)
+
     def send_raw(self, data):
-        self.process.stdin.write(data if isinstance(data, bytes) else data.encode())
-        self.process.stdin.flush()
+        view = memoryview(data if isinstance(data, bytes) else data.encode())
+        fd = self.process.stdin.fileno()
+        deadline = time.monotonic() + self.timeout_s
+        while view:
+            wait = self._remaining(deadline, "write")
+            if not select.select([], [fd], [], wait)[1]:
+                continue
+            try:
+                view = view[os.write(fd, view[:65536]):]
+            except BlockingIOError:
+                continue
 
     def read(self):
-        return json.loads(self.process.stdout.readline())
+        fd = self.process.stdout.fileno()
+        deadline = time.monotonic() + self.timeout_s
+        while b"\n" not in self.buffer:
+            wait = self._remaining(deadline, "reply")
+            if not select.select([fd], [], [], wait)[0]:
+                continue
+            chunk = os.read(fd, 65536)
+            if not chunk:
+                raise EOFError(f"broker pid {self.process.pid} closed stdout "
+                               f"(exit {self.process.poll()})")
+            self.buffer += chunk
+            if len(self.buffer) > MAX_REPLY_BYTES:
+                raise ValueError(f"MCP reply exceeds {MAX_REPLY_BYTES} bytes")
+        line, _, self.buffer = self.buffer.partition(b"\n")
+        return json.loads(line)
 
     def request(self, method, params=None):
         self.next_id += 1
@@ -111,12 +158,32 @@ class McpClient:
         result = reply["result"]
         return json.loads(result["content"][0]["text"]), result["isError"]
 
-    def close(self):
-        self.process.stdin.close()
-        code = self.process.wait(timeout=30)
-        self.process.stdout.close()
-        self.process.stderr.close()
-        return code
+    def close(self, timeout_s=CLOSE_TIMEOUT_S):
+        """End of input, then a bounded wait; a broker still running is killed. Exit code."""
+        try:
+            self.process.stdin.close()
+        except OSError:
+            pass
+        try:
+            self.process.wait(timeout=timeout_s)
+        except subprocess.TimeoutExpired:
+            pass
+        return self.terminate()
+
+    def terminate(self):
+        """Kill the broker's group if it is still running, reap it, close pipes. Idempotent."""
+        if self.process.poll() is None:
+            try:
+                os.killpg(self.process.pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+            self.process.wait()
+        for stream in (self.process.stdin, self.process.stdout):
+            try:
+                stream.close()
+            except OSError:
+                pass
+        return self.process.returncode
 
 
 def broker_config(work, repo, snapshot, arm="baseline", limits=None, graph=None):

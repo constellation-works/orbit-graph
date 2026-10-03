@@ -4,10 +4,15 @@
 It never contacts a provider. `exec` starts the broker named by the
 `-c mcp_servers.eval_broker.*` overrides, speaks real MCP to it, follows a
 JSON script named by $FAKE_CODEX_SCRIPT (or inline in $FAKE_CODEX_SCRIPT_JSON)
-and prints codex-shaped JSONL events.
+and prints codex-shaped JSONL events. Like codex 0.160.0 under
+approval_policy="never", it refuses a tool call that is not approved before the
+broker sees it, and `mcp get` validates approval modes and reads back
+enabled_tools and default_tools_approval_mode.
 """
+import ctypes
 import json
 import os
+import signal
 import subprocess
 import sys
 import time
@@ -26,6 +31,9 @@ FEATURES = {
 }
 VALUE_FLAGS = {"-c", "--disable", "--enable", "-C", "-s", "-m", "--color",
                "--output-last-message"}
+SERVER = "mcp_servers.eval_broker"
+APPROVAL_MODES = ("auto", "prompt", "writes", "approve")
+APPROVAL_DENIED = "MCP tool call requires approval, but approval policy is never"
 
 
 def parse(argv):
@@ -65,6 +73,31 @@ def load_script():
         return {}
     with open(path) as stream:
         return json.load(stream)
+
+
+def approved(config, tool, annotations):
+    """The codex 0.160.0 gate under approval_policy=never, as observed against a mock model.
+
+    `approve` passes; `auto` (the default) passes only a tool annotated
+    readOnlyHint; `prompt` refuses whatever the annotations say.
+    """
+    if config.get("approval_policy") != "never":
+        return True
+    mode = config.get(f"{SERVER}.tools.{tool}.approval_mode",
+                      config.get(f"{SERVER}.default_tools_approval_mode", "auto"))
+    return mode == "approve" or (mode == "auto" and
+                                 annotations.get(tool, {}).get("readOnlyHint") is True)
+
+
+def invalid_approval_mode(config, script):
+    """The first approval-mode override codex would refuse at config load, if any."""
+    if script.get("unvalidated_tool_approvals"):
+        return None
+    for key, value in config.items():
+        if key.startswith(SERVER + ".") and key.endswith("approval_mode") and \
+                value not in APPROVAL_MODES:
+            return key, value
+    return None
 
 
 def emit(event):
@@ -111,6 +144,8 @@ def run_exec(options, script):
                                   "clientInfo": {"name": "fake-codex", "version": "0"}})
     client.send_raw(json.dumps({"jsonrpc": "2.0", "method": "notifications/initialized"}))
     listed = client.request("tools/list", {})
+    annotations = {tool["name"]: tool.get("annotations", {})
+                   for tool in listed["result"]["tools"]}
     emit({"type": "item.completed", "item": {"id": "tools", "type": "reasoning",
                                              "text": json.dumps(listed["result"]["tools"][0]
                                                                 ["name"])}})
@@ -133,6 +168,12 @@ def run_exec(options, script):
                        "tool": step["call"], "arguments": step.get("arguments", {}),
                        "status": "in_progress"}
             emit({"type": "item.started", "item": started})
+            if script.get("deny_tool_approvals") or \
+                    not approved(options["config"], step["call"], annotations):
+                emit({"type": "item.completed",
+                      "item": dict(started, result=None, error={"message": APPROVAL_DENIED},
+                                   status="failed")})
+                continue
             reply = client.request("tools/call", {"name": step["call"],
                                                   "arguments": step.get("arguments", {})})
             result = reply.get("result", reply.get("error"))
@@ -168,6 +209,7 @@ def run_exec(options, script):
             emit({"type": "item.completed", "item": {"id": f"item_{item}",
                                                      "type": step["unbrokered"],
                                                      "server": step.get("server"),
+                                                     "tool": step.get("tool"),
                                                      "status": "completed"}})
         elif "final" in step:
             last = options.get("--output-last-message")
@@ -191,13 +233,49 @@ def run_exec(options, script):
     return script.get("exit_code", 0)
 
 
+def mcp_get(options, script):
+    names = options["positional"]
+    config = options["config"]
+    if names != ["eval_broker"] or f"{SERVER}.command" not in config:
+        print(f"Error: No MCP server named '{' '.join(names)}' found.", file=sys.stderr)
+        return 1
+    enabled_tools = None if script.get("drop_enabled_tools") else \
+        config.get(f"{SERVER}.enabled_tools")
+    if options.get("--json"):
+        print(json.dumps({"name": "eval_broker", "enabled": True, "disabled_reason": None,
+                          "transport": {"type": "stdio", "command": config[f"{SERVER}.command"],
+                                        "args": config[f"{SERVER}.args"], "env": None,
+                                        "env_vars": [], "cwd": None},
+                          "enabled_tools": enabled_tools, "disabled_tools": None,
+                          "startup_timeout_sec": None, "tool_timeout_sec": None}, indent=2))
+        return 0
+    print("eval_broker\n  enabled: true")
+    if enabled_tools is not None:
+        print(f"  enabled_tools: {', '.join(enabled_tools)}")
+    print(f"  transport: stdio\n  command: {config[f'{SERVER}.command']}")
+    mode = config.get(f"{SERVER}.default_tools_approval_mode")
+    if mode is not None and not script.get("drop_default_approval"):
+        print(f"  default_tools_approval_mode: {mode}")
+    print("  remove: codex mcp remove eval_broker")
+    return 0
+
+
 def main():
     argv = sys.argv[1:]
     script = load_script()
+    # Die with the runner, as a real provider does inside bwrap --die-with-parent.
+    ctypes.CDLL(None).prctl(1, signal.SIGKILL, 0, 0, 0)  # PR_SET_PDEATHSIG
     if argv[:1] == ["--version"]:
         print("codex-cli 0.0.0-fake")
         return 0
     options = parse(argv[2:] if argv[:1] in (["features"], ["mcp"]) else argv[1:])
+    invalid = invalid_approval_mode(options["config"], script)
+    if invalid:
+        print("Error: failed to load bootstrap configuration\n\nCaused by:\n"
+              f"    unknown variant `{invalid[1]}`, expected one of "
+              f"{', '.join(f'`{mode}`' for mode in APPROVAL_MODES)}\n    in `{invalid[0]}`",
+              file=sys.stderr)
+        return 1
     if argv[:2] == ["features", "list"]:
         for name, default in FEATURES.items():
             if name in script.get("drop_features", []):
@@ -223,6 +301,8 @@ def main():
                             "transport": {"type": "stdio", "command": "x", "args": []}})
         print(json.dumps(servers))
         return 0
+    if argv[:2] == ["mcp", "get"]:
+        return mcp_get(options, script)
     if argv[:1] == ["exec"]:
         return run_exec(options, script)
     print(f"fake codex: unsupported {argv[:2]}", file=sys.stderr)

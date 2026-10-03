@@ -67,11 +67,12 @@ COMMON="--codex $(command -v codex) --model $MODEL \
    and `before/` (base).
 
 2. **Check that containment works on this host.** This step needs no provider
-   tokens. It reads back Codex's effective features and its MCP inventory
-   inside the sandbox:
+   tokens. It reads back Codex's effective features, its MCP inventory and
+   the broker's tool approvals inside the sandbox:
 
    ```sh
-   python3 -m unittest discover -s scripts/agent-eval/tests -k LiveContainment -v
+   AGENT_EVAL_REQUIRE_BWRAP=1 \
+     python3 -B -m unittest discover -s scripts/agent-eval/tests -k LiveContainment -v
    EP=$(ls -d "$EXPORT"/00-*)
    python3 $TOOL preflight --request "$EP/request.json" --head "$EP/repository" \
      --out "$RUNS/preflight" $COMMON
@@ -85,9 +86,10 @@ COMMON="--codex $(command -v codex) --model $MODEL \
    shows:
    - `calls` is non-empty;
    - `transcript.mcp_calls` lists the same tools;
-   - `isolation.unbrokered` is empty;
+   - `isolation.unbrokered` and `transcript.approval_denied` are empty;
    - the error is not a harness failure such as `provider_code_mode_required`
-     (see [Code mode](#code-mode)).
+     (see [Code mode](#code-mode)) or `provider_tool_approval_required` (see
+     [Tool approvals](#tool-approvals)).
 
 3. **Run every episode in plan order.** This is the paid, live step:
 
@@ -167,6 +169,47 @@ appear in the JSONL. The audit still fails closed:
 Before using it for a cohort, rehearse once with it and apply the checks in
 step 2.
 
+### Tool approvals
+
+Codex asks for approval before an MCP tool call it cannot classify as safe.
+The runner keeps `approval_policy="never"`, so such a call is refused before
+it reaches the broker. A developer rehearsal on 2026-10-03 with Codex
+0.160.0 and the broker's tools unapproved showed this: every `rg`, `read` and
+`git` call failed with `MCP tool call requires approval, but approval policy
+is never`, and the broker logged no call.
+
+The private invocation therefore approves the arm's broker tools, and only
+those, with Codex 0.160.0's per-server settings:
+
+```text
+mcp_servers.eval_broker.required=true
+mcp_servers.eval_broker.enabled_tools=[<arm tools>]
+mcp_servers.eval_broker.default_tools_approval_mode="prompt"
+mcp_servers.eval_broker.tools.<tool>.approval_mode="approve"   # one per arm tool
+```
+
+Any other tool keeps the `prompt` default and is still refused under `never`.
+User configuration is ignored and never changed. The explicit `prompt`
+default matters. Against a local mock model, Codex 0.160.0's own default
+(`auto`) passed tools that the broker annotates `readOnlyHint` but refused
+`graph_sync`. Under `prompt`, it refused an unlisted tool whatever its
+annotations. Approval therefore depends only on the runner's configuration,
+never on hints the broker sends. Preflight records what Codex
+reads back in `preflight.json` and `isolation.inventory.tool_approvals`:
+- `codex mcp get eval_broker --json` must report exactly the arm's tools in
+  `enabled_tools` and no `disabled_tools`;
+- `codex mcp get eval_broker` must report `default_tools_approval_mode:
+  prompt`;
+- Codex has no readback for per-tool approvals. Instead, preflight sets an
+  invalid value at `tools.<first tool>.approval_mode` and requires Codex to
+  reject it by key. That proves the installed CLI parses the key rather than
+  silently ignoring it, as it does unknown keys.
+
+If Codex still refuses a broker call at the approval gate, the episode is
+`invalid` / `provider_tool_approval_required`. The refused calls are listed in
+`transcript.approval_denied`, and `adapt` refuses the episode because it
+measures the harness, not the arm.
+
 ## Containment and evidence model
 
 - **OS confinement (`--containment bwrap`).** Codex, the broker and the broker's
@@ -195,15 +238,20 @@ step 2.
     tools, hooks, memories, worktrees and others (see `DISABLED_FEATURES`).
   - `codex mcp list --json` must report exactly one server, `eval_broker`,
     with the runner's own command.
+  - The broker's tool inventory and approvals must read back as described in
+    [Tool approvals](#tool-approvals).
   - User config, rules and history are ignored (`--ignore-user-config
-    --ignore-rules --ephemeral`), web search is disabled, and approvals are
-    `never`.
+    --ignore-rules --ephemeral`), web search is disabled, and the approval
+    policy is `never`. Only the arm's broker tools are approved.
 - **Transcript audit.** Any JSONL item that is not an agent message,
-  reasoning, todo list, error or `eval_broker` MCP call (for example
-  `command_execution`, `file_change`, `web_search`, or another MCP server)
-  makes the episode `invalid` (`unbrokered_tool_use`). Broker-logged calls
-  must also appear, in order, among the provider's reported calls
-  (`telemetry_mismatch`).
+  reasoning, todo list, error or `eval_broker` MCP call of one of the arm's
+  tools makes the episode `invalid` (`unbrokered_tool_use`). Examples:
+  `command_execution`, `file_change`, `web_search`, another MCP server, or
+  Codex's native MCP resource tools. Codex 0.160.0 reports
+  `list_mcp_resources` under server `codex` and `read_mcp_resource` under the
+  server it targets, so a broker server name with a non-broker tool name also
+  counts. Broker-logged calls must also appear, in order, among the provider's
+  reported calls (`telemetry_mismatch`).
 - **Broker.** The broker serves the arm's tools only; graph tools on the
   baseline arm are refused and not counted. It refuses:
   - absolute paths, `..`, `.git`/`.orbit-graph`, `~`, backslashes and
@@ -211,8 +259,13 @@ step 2.
   - symlinks, opened component by component with `O_NOFOLLOW`
   - option-shaped values, unknown fields and malformed MCP
 
-  Children run with fixed argv and environments. Each call has a deadline and
-  bounded output, and a timed-out child's whole process group is ended.
+  `tools/list` carries MCP annotations, which are client hints only. Every tool
+  is `readOnlyHint` and not `openWorldHint`, except `graph_sync`, which builds
+  and, with `full`, replaces the episode's private `.orbit-graph` index. It is
+  therefore annotated `readOnlyHint: false`, `destructiveHint: true`, and
+  `idempotentHint: true`. Children run with fixed argv and environments.
+  Each call has a deadline and bounded output, and a timed-out child's whole
+  process group is ended.
   Budgets for calls, input bytes, call output and episode output stop the
   episode through a sentinel the runner watches. Tool output is returned as
   data inside a JSON envelope; it is never instructions to the broker.
@@ -258,16 +311,18 @@ Episode status follows ORB-13710; the first matching rule wins:
 4. `invalid` `unbrokered_tool_use`
 5. `invalid` `provider_code_mode_required` (a harness failure; `adapt`
    refuses it)
-6. `broker_not_initialized`
-7. `tool_inventory_mismatch`
-8. `provider_output_malformed`
-9. `telemetry_mismatch`
-10. `provider_incomplete` (non-zero exit, no completed turn, or a failed turn)
-11. `final_answer_missing`
-12. `invalid` `final_output_oversized`
-13. `invalid` `answer_malformed`
-14. `invalid` `no_tool_calls`
-15. otherwise `ok`
+6. `invalid` `provider_tool_approval_required` (a harness failure; `adapt`
+   refuses it)
+7. `broker_not_initialized`
+8. `tool_inventory_mismatch`
+9. `provider_output_malformed`
+10. `telemetry_mismatch`
+11. `provider_incomplete` (non-zero exit, no completed turn, or a failed turn)
+12. `final_answer_missing`
+13. `invalid` `final_output_oversized`
+14. `invalid` `answer_malformed`
+15. `invalid` `no_tool_calls`
+16. otherwise `ok`
 
 ### Refusals
 
@@ -283,6 +338,12 @@ episode directory when that directory exists. Codes:
   Codex version changed).
 - `provider_feature_not_disableable`: a feature still reads back as enabled.
 - `mcp_inventory_mismatch`.
+- `mcp_tool_inventory_mismatch`: `enabled_tools` does not read back as
+  exactly the arm's tools.
+- `provider_tool_approval_unverified`: `default_tools_approval_mode` does not
+  read back as `prompt`.
+- `provider_tool_approval_unsupported`: Codex accepted an invalid per-tool
+  approval mode, so it is not applying the per-tool key.
 - `provider_preflight_failed`.
 - `provider_auth_unavailable` / `provider_auth_unsafe`.
 - `expected_tool_unavailable`: rg, git, python, codex, orbit-graph or (with
@@ -292,8 +353,24 @@ episode directory when that directory exists. Codes:
 ## Limits
 
 - **bwrap is required for evidence.** Where unprivileged namespaces are denied,
-  no episode runs. The contained path is covered by `LiveContainmentTests`,
-  which skips visibly on such hosts. Run it on the episode host first.
+  no episode runs. The contained path is covered by `LiveContainmentTests`.
+  Its capability probe runs `/usr/bin/true` in the runner's own namespaces
+  and system mounts (`system_sandbox_argv`). It skips, with bubblewrap's
+  reason, only when bubblewrap itself refuses. A sandbox that starts but
+  cannot run the command fails the test. Run the test on the episode host
+  first with `AGENT_EVAL_REQUIRE_BWRAP=1`, which turns the skip into a
+  failure.
+- **Per-tool approvals have no readback.** Codex 0.160.0 reports
+  `enabled_tools` and `default_tools_approval_mode`, not
+  `tools.<tool>.approval_mode`. The evidence is that the key is parsed (see
+  [Tool approvals](#tool-approvals)), plus the transcript: any approval-gate
+  refusal invalidates the episode.
+- **Some native tools leave no JSONL item.** Codex 0.160.0 also offers the
+  model `request_user_input` and the `goals` tools (`get_goal`, `create_goal`,
+  `update_goal`). Against a local mock provider, it refused each of them in
+  `exec --ephemeral` without effect (`request_user_input is unavailable in
+  Default mode`, `Goal tools require a persistent thread`). It reported no
+  item, so the transcript audit cannot see such attempts.
 - **The network is not isolated.** The provider needs it. The broker's
   children (`rg`, `git`, `orbit-graph`) do not use it, and the model has no
   network tool: web search and shell are disabled and audited.
@@ -331,5 +408,16 @@ AGENT_EVAL_ORBIT_GRAPH=$PWD/target/debug/orbit-graph \
 
 Scratch directories go under `.orbit/tmp/agent-eval-tests/`; set
 `AGENT_EVAL_TEST_TMP` to put them elsewhere. Without `rg` on `PATH`, the broker
-and runner tests skip visibly. The tests never contact a provider, read host
-Codex configuration, or install anything.
+and runner tests skip visibly. On the episode host, set
+`AGENT_EVAL_REQUIRE_BWRAP=1` so that `LiveContainmentTests` must run. The tests
+never contact a provider, read host Codex configuration, or install anything.
+
+The fake provider mirrors Codex 0.160.0's approval gate: it refuses an
+unapproved broker call before the broker sees it. Fixture I/O is bounded
+(STD-03 R17/R18):
+- every MCP read and write in `support.McpClient` has a deadline and checks
+  the broker process;
+- every broker and runner fixture runs in its own process group, which is
+  killed and reaped on close, on timeout and in test cleanup;
+- `FixtureBoundsTests` proves that a broker that stalls, never reads, exits
+  mid-request or ignores end of input fails fast and leaves no process.

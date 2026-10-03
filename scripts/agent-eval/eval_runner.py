@@ -70,6 +70,16 @@ SECRET_NAME = re.compile(r"KEY|TOKEN|SECRET|PASS|AUTH|CREDENTIAL|COOKIE|SESSION"
 HEX64 = re.compile(r"\A[0-9a-f]{64}\Z")
 CASE_ID = re.compile(r"\A[A-Za-z0-9._-]{1,128}\Z")
 BROKER_SERVER = "eval_broker"
+# The outer approval_policy stays "never", so codex refuses any MCP call that
+# still needs approval before it reaches the broker. Each of the arm's broker
+# tools is approved explicitly (codex 0.160.0 `mcp_servers.<id>.tools.<tool>.
+# approval_mode`); any other tool keeps the "prompt" default and is refused.
+TOOL_APPROVAL = "approve"
+DEFAULT_TOOL_APPROVAL = "prompt"
+# Codex has no readback of per-tool approvals; it does reject an unknown value
+# at a key it parses, which proves the key is not silently ignored.
+APPROVAL_PROBE_VALUE = "agent-eval-unsupported"
+APPROVAL_DENIED = "requires approval, but approval policy is never"
 ALLOWED_ITEM_TYPES = {"agent_message", "reasoning", "mcp_tool_call", "todo_list", "error"}
 USAGE_SOURCE = "codex exec --json turn.completed.usage"
 MAX_JSON_BYTES = 2 * 1024 * 1024
@@ -443,6 +453,31 @@ def tree_entries_with_git(repo):
 # Binaries, containment and the provider command.
 
 
+def system_sandbox_argv(bwrap):
+    """Namespaces plus the read-only system mounts every sandboxed process needs.
+
+    The /bin and /lib links matter: without them a dynamically linked binary
+    cannot find its loader. The LiveContainment capability probe uses this same
+    layout, so it cannot disagree with the runner.
+    """
+    argv = [bwrap, "--die-with-parent", "--unshare-user", "--unshare-pid", "--unshare-ipc",
+            "--unshare-uts", "--unshare-cgroup-try", "--hostname", "agent-eval",
+            "--proc", "/proc", "--dev", "/dev", "--tmpfs", "/tmp", "--ro-bind", "/usr", "/usr"]
+    for name in ("bin", "sbin", "lib", "lib32", "lib64"):
+        host = f"/{name}"
+        if os.path.islink(host):
+            argv += ["--symlink", os.readlink(host), host]
+        elif os.path.isdir(host):
+            argv += ["--ro-bind", host, host]
+    etc = list(ETC_ENTRIES) + sorted(str(path) for path in Path("/etc").glob("python3*"))
+    resolved = os.path.realpath("/etc/resolv.conf")
+    for entry in etc:
+        argv += ["--ro-bind-try", entry, entry]
+    if resolved != "/etc/resolv.conf":
+        argv += ["--ro-bind-try", resolved, resolved]
+    return argv
+
+
 def resolve_binary(value, name):
     if value is None:
         return None
@@ -569,22 +604,7 @@ class Episode:
     def sandbox_prefix(self):
         if not self.contained:
             return []
-        argv = [self.binaries["bwrap"], "--die-with-parent", "--unshare-user", "--unshare-pid",
-                "--unshare-ipc", "--unshare-uts", "--unshare-cgroup-try",
-                "--hostname", "agent-eval", "--proc", "/proc", "--dev", "/dev",
-                "--tmpfs", "/tmp", "--ro-bind", "/usr", "/usr"]
-        for name in ("bin", "sbin", "lib", "lib32", "lib64"):
-            host = f"/{name}"
-            if os.path.islink(host):
-                argv += ["--symlink", os.readlink(host), host]
-            elif os.path.isdir(host):
-                argv += ["--ro-bind", host, host]
-        etc = list(ETC_ENTRIES) + sorted(str(path) for path in Path("/etc").glob("python3*"))
-        resolved = os.path.realpath("/etc/resolv.conf")
-        for entry in etc:
-            argv += ["--ro-bind-try", entry, entry]
-        if resolved != "/etc/resolv.conf":
-            argv += ["--ro-bind-try", resolved, resolved]
+        argv = system_sandbox_argv(self.binaries["bwrap"])
         argv += ["--dir", "/eval", "--dir", SANDBOX["bin"],
                  "--ro-bind", str(self.repo), SANDBOX["repo"]]
         if self.arm == "graph":
@@ -610,7 +630,13 @@ class Episode:
                   "-c", f"{server}.command={json.dumps(self.binaries['python'])}",
                   "-c", f"{server}.args={json.dumps(self.broker_args())}",
                   "-c", f"{server}.startup_timeout_sec=30",
-                  "-c", f"{server}.tool_timeout_sec={tool_timeout}"]
+                  "-c", f"{server}.tool_timeout_sec={tool_timeout}",
+                  "-c", f"{server}.required=true",
+                  "-c", f"{server}.enabled_tools={json.dumps(self.request['tools'])}",
+                  "-c", f"{server}.default_tools_approval_mode={json.dumps(DEFAULT_TOOL_APPROVAL)}"]
+        # Tool names are the validated arm contract, so they are safe TOML keys.
+        for tool in self.request["tools"]:
+            flags += ["-c", f"{server}.tools.{tool}.approval_mode={json.dumps(TOOL_APPROVAL)}"]
         for key, value in sorted(self.settings().items()):
             flags += ["-c", f"{key}={json.dumps(value)}"]
         return flags
@@ -666,13 +692,17 @@ def preflight(episode, versions):
     started = time.monotonic()
     evidence = {"sandbox_argv": prefix, "env_names": sorted(env)}
 
-    def run(args):
+    def run(args, expect_failure=False):
+        """Codex stdout; with expect_failure, (exit code, stderr) of a codex-level failure."""
         argv = prefix + [episode.codex_in(), *args]
         result = broker.run_child(argv, str(episode.state), env, PREFLIGHT_TIMEOUT_S,
                                   capture_limit=1024 * 1024)
         stderr = result["stderr"].decode(errors="replace")
+        sandbox_failed = episode.contained and "bwrap:" in stderr[:200]
+        if expect_failure and not result["stopped"] and not sandbox_failed:
+            return result["exit_code"], stderr
         if result["exit_code"] != 0 or result["stopped"]:
-            if episode.contained and (stderr.startswith("bwrap:") or "bwrap:" in stderr[:200]):
+            if sandbox_failed:
                 raise CapabilityRefusal("containment_unavailable",
                                         "bubblewrap could not create the sandbox",
                                         dict(evidence, stderr=stderr[:2000],
@@ -712,12 +742,47 @@ def preflight(episode, versions):
         raise CapabilityRefusal("mcp_inventory_mismatch",
                                 f"the effective MCP inventory must be exactly {BROKER_SERVER}",
                                 evidence)
+    evidence["tool_approvals"] = verify_tool_approvals(episode, run, shared, evidence)
     evidence.update(shell_gated={name: features.get(name) for name in SHELL_GATED_FEATURES},
                     enabled_features=sorted(name for name, on in features.items() if on),
                     disabled_verified=list(episode.disabled),
                     code_mode_allowed=episode.code_mode, versions=versions,
                     elapsed_ms=int((time.monotonic() - started) * 1000))
     return evidence
+
+
+def verify_tool_approvals(episode, run, shared, evidence):
+    """Read back the broker's tool inventory and approvals as far as codex exposes them."""
+    tools = list(episode.request["tools"])
+    server = parse_json(run(["mcp", "get", BROKER_SERVER, "--json", *shared]).encode(),
+                        "codex mcp get")
+    evidence["mcp_server"] = server
+    if not isinstance(server, dict) or server.get("enabled_tools") != tools or \
+            server.get("disabled_tools") not in (None, []):
+        raise CapabilityRefusal("mcp_tool_inventory_mismatch",
+                                f"{BROKER_SERVER} must enable exactly the {episode.arm} arm's "
+                                f"tools {tools}", evidence)
+    shown = re.search(r"^\s*default_tools_approval_mode:\s*(\S+)\s*$",
+                      run(["mcp", "get", BROKER_SERVER, *shared]), re.MULTILINE)
+    if not shown or shown.group(1) != DEFAULT_TOOL_APPROVAL:
+        raise CapabilityRefusal("provider_tool_approval_unverified",
+                                f"codex did not read back default_tools_approval_mode="
+                                f"{DEFAULT_TOOL_APPROVAL} for {BROKER_SERVER}",
+                                dict(evidence, readback=shown.group(1) if shown else None))
+    # No per-tool readback exists: an invalid value at the same key must be refused
+    # by name, or codex is ignoring the key and every broker call would be denied.
+    key = f"mcp_servers.{BROKER_SERVER}.tools.{tools[0]}.approval_mode"
+    code, stderr = run(["mcp", "get", BROKER_SERVER, "--json", *shared,
+                        "-c", f"{key}={json.dumps(APPROVAL_PROBE_VALUE)}"], expect_failure=True)
+    if code == 0 or APPROVAL_PROBE_VALUE not in stderr or key not in stderr:
+        raise CapabilityRefusal("provider_tool_approval_unsupported",
+                                f"codex does not validate {key}; per-tool approvals cannot be "
+                                "shown to take effect",
+                                dict(evidence, probe_exit_code=code, probe_stderr=stderr[:2000]))
+    return {"approval_policy": "never", "default_tools_approval_mode": shown.group(1),
+            "approval_mode": TOOL_APPROVAL, "approved_tools": tools,
+            "enabled_tools": server["enabled_tools"], "per_tool_key_validated": key,
+            "per_tool_readback": None}
 
 
 def tool_versions(episode):
@@ -855,13 +920,15 @@ def sweep_broker(starts):
 # Transcript, broker log and answer analysis.
 
 
-def analyse_transcript(raw, truncated):
+def analyse_transcript(raw, truncated, tools):
+    """Audit provider JSONL; `tools` are the arm's broker tools, the only permitted calls."""
     lines = raw.split(b"\n")
     partial = lines.pop() if lines else b""
     summary = {"events": 0, "event_types": {}, "item_types": {}, "malformed_lines": 0,
                "partial_line": bool(partial), "truncated": truncated, "turns_started": 0,
                "turns_completed": 0, "turn_failures": [], "errors": [], "thread_id": None,
-               "unbrokered": [], "mcp_calls": [], "last_agent_message": None, "usage": None}
+               "unbrokered": [], "mcp_calls": [], "approval_denied": [], "last_agent_message": None,
+               "usage": None}
     usage = {}
     for line in lines:
         if not line.strip():
@@ -903,12 +970,17 @@ def analyse_transcript(raw, truncated):
                 continue
             item_type = str(item.get("type"))[:64]
             summary["item_types"][item_type] = summary["item_types"].get(item_type, 0) + 1
+            # Codex also routes its native MCP resource tools (read_mcp_resource, ...)
+            # through a server name, so a broker item must name a broker tool too.
             violation = item_type not in ALLOWED_ITEM_TYPES or (
-                item_type == "mcp_tool_call" and item.get("server") != BROKER_SERVER)
+                item_type == "mcp_tool_call" and (item.get("server") != BROKER_SERVER
+                                                  or item.get("tool") not in tools))
             if violation and len(summary["unbrokered"]) < 50:
                 summary["unbrokered"].append({"event": kind, "type": item_type,
                                               "server": str(item.get("server"))[:64]
-                                              if "server" in item else None})
+                                              if "server" in item else None,
+                                              "tool": str(item.get("tool"))[:64]
+                                              if "tool" in item else None})
             if kind == "item.completed" and item_type == "error" and \
                     len(summary["errors"]) < 50:
                 summary["errors"].append(str(item.get("message"))[:1000])
@@ -918,6 +990,11 @@ def analyse_transcript(raw, truncated):
             if kind == "item.completed" and item_type == "mcp_tool_call" and not violation:
                 summary["mcp_calls"].append({"tool": str(item.get("tool"))[:64],
                                              "status": str(item.get("status"))[:32]})
+                error = item.get("error")
+                message = str(error.get("message") if isinstance(error, dict) else error)
+                if APPROVAL_DENIED in message and len(summary["approval_denied"]) < 50:
+                    summary["approval_denied"].append({"tool": str(item.get("tool"))[:64],
+                                                       "message": message[:300]})
     if usage:
         summary["usage_raw"] = usage
         if "input_tokens" in usage or "output_tokens" in usage:
@@ -1028,6 +1105,12 @@ def decide(supervision, transcript, log, final, limits, sentinel_code, output_by
         return "invalid", "provider_code_mode_required", \
             "the provider routes tool calls through its code-mode host, which this run " \
             "disabled; no tool could run (see --allow-code-mode)"
+    if transcript["approval_denied"]:
+        denied = sorted({denial["tool"] for denial in transcript["approval_denied"]})
+        return "invalid", "provider_tool_approval_required", \
+            f"codex refused {len(transcript['approval_denied'])} broker call(s) ({denied}) " \
+            "before they reached the broker: they still required approval under " \
+            "approval_policy=never, so the per-tool approvals did not take effect"
     if not log["initialized"] or not log["tools_listed"]:
         return "failed", "broker_not_initialized", "the provider never listed the broker tools"
     if any(listed != log["tools_listed"][0] for listed in log["tools_listed"]):
@@ -1161,7 +1244,7 @@ def command_preflight(args):
     return {"status": "ready", "containment": args.containment, "arm": episode.arm,
             "provider": provider, "disabled_verified": evidence["disabled_verified"],
             "mcp_servers": [server.get("name") for server in evidence["mcp_servers"]],
-            "out": str(episode.out)}
+            "tool_approvals": evidence["tool_approvals"], "out": str(episode.out)}
 
 
 def command_run(args):
@@ -1220,7 +1303,8 @@ def command_run(args):
 
     swept = sweep_broker(read_broker_log(episode.state / "broker-calls.jsonl")[0]["starts"])
     log, log_bytes = read_broker_log(episode.state / "broker-calls.jsonl")
-    transcript = analyse_transcript(supervision["stdout"], supervision["stdout_truncated"])
+    transcript = analyse_transcript(supervision["stdout"], supervision["stdout_truncated"],
+                                    request["tools"])
     final_raw = read_bounded(episode.state / "final-message.txt", 4 * limits["call_bytes"])
     final_source = "output_last_message"
     if final_raw is None and transcript["last_agent_message"] is not None:
@@ -1299,6 +1383,7 @@ def command_run(args):
                           "code_mode_allowed": episode.code_mode,
                           "enabled_features": preflight_evidence["enabled_features"],
                           "shell_gated": preflight_evidence["shell_gated"],
+                          "tool_approvals": preflight_evidence["tool_approvals"],
                           "mcp_servers": [server.get("name") for server in
                                           preflight_evidence["mcp_servers"]]},
             "unbrokered": transcript["unbrokered"],
@@ -1317,7 +1402,7 @@ def command_run(args):
         "transcript": {key: transcript[key] for key in
                        ("events", "event_types", "item_types", "malformed_lines",
                         "partial_line", "turns_started", "turns_completed", "turn_failures",
-                        "errors", "mcp_calls")},
+                        "errors", "mcp_calls", "approval_denied")},
         "broker": {"protocol_errors": log["protocol_errors"], "budget": log["budget"],
                    "malformed_lines": log["malformed_lines"], "starts": len(log["starts"])},
         "cleanup": {"terminated_by": supervision["terminated_by"],
@@ -1327,6 +1412,8 @@ def command_run(args):
         "limitations": [
             "Provider tool inventory cannot be listed before the run; disabled features and "
             "the MCP inventory are read back, and any non-broker item invalidates the episode.",
+            "Per-tool approvals cannot be read back; codex is shown to parse the key, and any "
+            "approval-gate refusal of a broker call invalidates the episode.",
             "Model revision is the provider-reported model name plus the codex CLI version.",
             "Usage is copied from provider telemetry; cost is never estimated.",
         ],
@@ -1352,7 +1439,7 @@ def command_run(args):
 # --------------------------------------------------------------------------
 # Adapter to the ORB-13710 public episode contract.
 
-HARNESS_FAILURES = {"provider_code_mode_required"}
+HARNESS_FAILURES = {"provider_code_mode_required", "provider_tool_approval_required"}
 PUBLIC_FIELDS = ("request", "run_id", "model", "tool_versions", "isolation", "status", "error",
                  "answer", "final_output", "calls", "wall_ms", "output_bytes", "usage",
                  "record_sha256")

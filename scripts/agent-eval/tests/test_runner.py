@@ -7,6 +7,7 @@ import hashlib
 import json
 import os
 import shutil
+import signal
 import stat
 import subprocess
 import sys
@@ -25,17 +26,33 @@ OK_STEPS = [{"call": "read", "arguments": {"path": "src/lib.rs"}},
             {"final": json.dumps(support.ANSWER)}]
 
 
-def bwrap_works():
-    """None when unprivileged bubblewrap sandboxes work here, else the reason."""
-    binary = shutil.which("bwrap")
+REQUIRE_BWRAP = "AGENT_EVAL_REQUIRE_BWRAP"
+
+
+def bwrap_probe_argv(binary):
+    """The runner's own namespaces and system mounts around /usr/bin/true."""
+    return eval_runner.system_sandbox_argv(binary) + ["--", "/usr/bin/true"]
+
+
+def bwrap_unavailable(binary=None, env=None):
+    """None when the runner's sandbox works here, else the reason it cannot be created.
+
+    Only bubblewrap's own refusal (no binary, or a `bwrap:` error such as denied
+    user namespaces) is a capability gap. A sandbox that starts but cannot run
+    /usr/bin/true is a layout defect and raises, so it cannot become a skip.
+    """
+    binary = binary or shutil.which("bwrap")
     if not binary:
         return "bwrap is not installed"
-    result = subprocess.run([binary, "--unshare-user", "--ro-bind", "/usr", "/usr",
-                             "--symlink", "usr/bin", "/bin", "--", "/usr/bin/true"],
-                            capture_output=True, timeout=30, check=False)
-    if result.returncode != 0:
-        return f"bwrap cannot create a sandbox here: {result.stderr.decode(errors='replace')[:200]}"
-    return None
+    result = subprocess.run(bwrap_probe_argv(binary), capture_output=True, timeout=30,
+                            check=False, env=env)
+    stderr = result.stderr.decode(errors="replace")
+    if result.returncode == 0:
+        return None
+    if stderr.startswith("bwrap:"):
+        return f"bwrap cannot create the runner's sandbox here: {stderr.strip()[:300]}"
+    raise AssertionError(f"the runner's sandbox started but /usr/bin/true failed "
+                         f"(exit {result.returncode}): {stderr[:300]}")
 
 
 class EpisodeCase(unittest.TestCase):
@@ -54,16 +71,27 @@ class EpisodeCase(unittest.TestCase):
 
     # -- helpers ----------------------------------------------------------
     def cli(self, *argv, env=None, timeout=180):
+        """Run the runner CLI; past `timeout` its whole group is killed and reaped (R17/R18)."""
         environment = dict(os.environ)
         environment.update(env or {})
         started = time.monotonic()
-        result = subprocess.run([sys.executable, "-B", str(RUNNER), *map(str, argv)],
-                                capture_output=True, env=environment, timeout=timeout,
-                                check=False)
+        process = subprocess.Popen([sys.executable, "-B", str(RUNNER), *map(str, argv)],
+                                   stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                                   env=environment, start_new_session=True)
+        try:
+            stdout, stderr = process.communicate(timeout=timeout)
+        except subprocess.TimeoutExpired:
+            os.killpg(process.pid, signal.SIGKILL)
+            process.communicate()
+            self.fail(f"runner {argv[:1]} exceeded {timeout}s and was killed")
+        finally:
+            if process.poll() is None:
+                os.killpg(process.pid, signal.SIGKILL)
+                process.wait()
         self.elapsed = time.monotonic() - started
-        stdout = result.stdout.decode()
+        stdout = stdout.decode()
         report = json.loads(stdout) if stdout.strip() else None
-        return result.returncode, report, result.stderr.decode()
+        return process.returncode, report, stderr.decode()
 
     def request_file(self, arm="baseline", limits=None, raw=None, **overrides):
         self.counter += 1
@@ -151,6 +179,8 @@ class RunnerTests(EpisodeCase):
         self.assertEqual(isolation["inventory"]["mcp_servers"], ["eval_broker"])
         self.assertEqual(isolation["inventory"]["disabled_verified"],
                          list(eval_runner.DISABLED_FEATURES))
+        self.assertEqual(isolation["inventory"]["tool_approvals"]["approved_tools"],
+                         ["read", "rg", "git"])
         self.assertEqual(isolation["tools_listed"], [list(support.eval_broker.ARM_TOOLS
                                                           ["baseline"])])
         self.assertLessEqual(artifact["timing"]["setup_ms"], artifact["timing"]["wall_ms"])
@@ -190,6 +220,37 @@ class RunnerTests(EpisodeCase):
         self.assertTrue(isolation["cache_id"].endswith(":graph-state"))
         self.assertIn("orbit-graph", artifact["tool_versions"])
         self.assertIn("0.0.0-fake", artifact["tool_versions"]["orbit-graph"])
+
+    def test_only_the_arms_broker_tools_are_approved_under_never(self):
+        for arm, steps in (("baseline", OK_STEPS),
+                           ("graph", [{"call": "graph_sync"}, OK_STEPS[0], OK_STEPS[-1]])):
+            with self.subTest(arm=arm):
+                code, _, stderr, out = self.episode(steps, arm=arm)
+                self.assertEqual(code, 0, stderr)
+                artifact = self.assert_outcome(out, "ok", None)
+                tools = list(support.eval_broker.ARM_TOOLS[arm])
+                server = f"mcp_servers.{eval_runner.BROKER_SERVER}"
+                overrides = [value for flag, value in zip(artifact["provider"]["argv"],
+                                                          artifact["provider"]["argv"][1:])
+                             if flag == "-c"]
+                approvals = sorted(value for value in overrides if "approval_mode" in value)
+                self.assertEqual(approvals, sorted(
+                    [f'{server}.default_tools_approval_mode="prompt"'] +
+                    [f'{server}.tools.{tool}.approval_mode="approve"' for tool in tools]))
+                self.assertIn('approval_policy="never"', overrides)
+                self.assertIn(f"{server}.enabled_tools={json.dumps(tools)}", overrides)
+                self.assertIn(f"{server}.required=true", overrides)
+                self.assertFalse([value for value in overrides if value.startswith(
+                    "mcp_servers.") and not value.startswith(server + ".")])
+                inventory = artifact["isolation"]["inventory"]["tool_approvals"]
+                self.assertEqual(inventory, {
+                    "approval_policy": "never", "default_tools_approval_mode": "prompt",
+                    "approval_mode": "approve", "approved_tools": tools, "enabled_tools": tools,
+                    "per_tool_key_validated":
+                        f"{server}.tools.{tools[0]}.approval_mode",
+                    "per_tool_readback": None})
+                preflight = json.loads((out / "preflight.json").read_text())
+                self.assertEqual(preflight["mcp_server"]["enabled_tools"], tools)
 
     def test_missing_usage_is_null_not_imputed(self):
         code, _, stderr, out = self.episode(usage=None)
@@ -284,8 +345,17 @@ class RunnerTests(EpisodeCase):
                 self.assert_outcome(out, status, error)
 
     def test_non_broker_tool_use_invalidates_the_episode(self):
+        # Codex 0.160.0 reports its native MCP resource tools as mcp_tool_call items:
+        # list_mcp_resources under server "codex", read_mcp_resource under the
+        # server it targets, so the broker's server name alone is not proof.
         for step in ({"unbrokered": "command_execution"}, {"unbrokered": "web_search"},
-                     {"unbrokered": "mcp_tool_call", "server": "other"}):
+                     {"unbrokered": "mcp_tool_call", "server": "other"},
+                     {"unbrokered": "mcp_tool_call", "server": "codex",
+                      "tool": "list_mcp_resources"},
+                     {"unbrokered": "mcp_tool_call", "server": "eval_broker",
+                      "tool": "read_mcp_resource"},
+                     {"unbrokered": "mcp_tool_call", "server": "eval_broker",
+                      "tool": "graph_sync"}):
             with self.subTest(step=step):
                 code, _, stderr, out = self.episode([OK_STEPS[0], step, OK_STEPS[-1]])
                 self.assertEqual(code, 0, stderr)
@@ -301,6 +371,31 @@ class RunnerTests(EpisodeCase):
         _, _, _, out = self.episode([OK_STEPS[0], {"raw": hidden_call, "expect_reply": True},
                                      OK_STEPS[-1]])
         self.assert_outcome(out, "failed", "telemetry_mismatch")
+
+    def test_approval_gate_refusals_are_a_distinct_harness_failure(self):
+        code, report, stderr, out = self.episode(deny_tool_approvals=True)
+        self.assertEqual(code, 0, stderr)
+        self.assertEqual(report["error"]["code"], "provider_tool_approval_required")
+        artifact = self.assert_outcome(out, "invalid", "provider_tool_approval_required")
+        self.assertEqual(artifact["calls"], [])
+        self.assertEqual([denial["tool"] for denial in artifact["transcript"]["approval_denied"]],
+                         ["read", "rg", "git"])
+        self.assertIn(eval_runner.APPROVAL_DENIED,
+                      artifact["transcript"]["approval_denied"][0]["message"])
+        self.assertIn("approval_policy=never", artifact["error"]["message"])
+        code, _, stderr = self.cli("adapt", "--episode", self.forge_contained(out), "--output",
+                                   self.work / "harness.json")
+        self.assertEqual(code, 1)
+        self.assertIn("measures the harness", stderr)
+        # One refused call taints an episode whose other calls reached the broker.
+        steps = OK_STEPS[:1] + [{"emit": {"type": "item.completed", "item": {
+            "id": "denied", "type": "mcp_tool_call", "server": "eval_broker", "tool": "rg",
+            "status": "failed", "error": {"message": "MCP tool call requires approval, but "
+                                                     "approval policy is never"}}}}] + OK_STEPS[1:]
+        code, _, stderr, out = self.episode(steps)
+        self.assertEqual(code, 0, stderr)
+        artifact = self.assert_outcome(out, "invalid", "provider_tool_approval_required")
+        self.assertEqual([call["tool"] for call in artifact["calls"]], ["read", "rg", "git"])
 
     def test_tool_call_budget_stops_the_episode(self):
         limits = dict(support.LIMITS, tool_calls=2)
@@ -411,7 +506,10 @@ class RunnerTests(EpisodeCase):
     def test_provider_surface_that_cannot_be_verified_is_refused(self):
         cases = [({"sticky": ["shell_tool"]}, "provider_feature_not_disableable"),
                  ({"drop_features": ["hooks"]}, "provider_feature_unknown"),
-                 ({"extra_mcp": True}, "mcp_inventory_mismatch")]
+                 ({"extra_mcp": True}, "mcp_inventory_mismatch"),
+                 ({"drop_enabled_tools": True}, "mcp_tool_inventory_mismatch"),
+                 ({"drop_default_approval": True}, "provider_tool_approval_unverified"),
+                 ({"unvalidated_tool_approvals": True}, "provider_tool_approval_unsupported")]
         for extra, code in cases:
             for command in ("preflight", "run"):
                 with self.subTest(code=code, command=command):
@@ -427,6 +525,39 @@ class RunnerTests(EpisodeCase):
                               exec_marker=str(marker))
         self.assert_refused(result, "containment_unavailable", marker)
         self.assertIn("No permissions", result[1]["refusal"]["evidence"]["stderr"])
+
+    def test_capability_probe_uses_the_runner_sandbox_layout(self):
+        # A probe without the /lib links cannot start a dynamic /usr/bin/true and
+        # used to skip the live test on hosts where the runner's sandbox works.
+        system = eval_runner.system_sandbox_argv(str(support.FAKE_BWRAP))
+        probe = bwrap_probe_argv(str(support.FAKE_BWRAP))
+        self.assertEqual(probe, system + ["--", "/usr/bin/true"])
+        for name in ("bin", "lib", "lib64"):
+            host = f"/{name}"
+            if os.path.islink(host):
+                self.assertIn(["--symlink", os.readlink(host), host],
+                              [probe[i:i + 3] for i in range(len(probe))], host)
+        args = ["--containment", "bwrap", "--bwrap", support.FAKE_BWRAP, "--auth-file", "none",
+                "--truth-path", self.truth, "--provider-env", "FAKE_BWRAP_MODE"]
+        code, report, stderr, out = self.episode(command="preflight", args=args,
+                                                 env={"FAKE_BWRAP_MODE": "passthrough"})
+        self.assertEqual(code, 0, stderr)
+        self.assertEqual(report["status"], "ready")
+        recorded = json.loads((out / "preflight.json").read_text())["sandbox_argv"]
+        self.assertEqual(recorded[:len(system)], system)
+
+    def test_capability_probe_skips_only_for_bubblewrap_refusals(self):
+        denied = bwrap_unavailable(str(support.FAKE_BWRAP),
+                                   env={"PATH": "/usr/bin:/bin", "FAKE_BWRAP_MODE": "denied"})
+        self.assertIn("No permissions to create new namespace", denied)
+        self.assertIsNone(bwrap_unavailable(str(support.FAKE_BWRAP),
+                                            env={"PATH": "/usr/bin:/bin"}))
+        broken = self.work / "loaderless-bwrap"
+        broken.write_text("#!/bin/sh\necho 'true: error while loading shared libraries' >&2\n"
+                          "exit 127\n")
+        broken.chmod(0o700)
+        with self.assertRaises(AssertionError):
+            bwrap_unavailable(str(broken), env={"PATH": "/usr/bin:/bin"})
 
     def test_ineffective_sandbox_never_starts_the_provider(self):
         marker = self.work / "exec-marker"
@@ -541,10 +672,16 @@ class RunnerTests(EpisodeCase):
 
 @unittest.skipUnless(support.RG, "ripgrep (rg) not on PATH")
 class LiveContainmentTests(EpisodeCase):
-    """Real bubblewrap with the fake provider; skipped visibly where namespaces are denied."""
+    """Real bubblewrap with the fake provider, in the runner's own sandbox layout.
+
+    Skipped, with bubblewrap's reason, only where it cannot create namespaces;
+    AGENT_EVAL_REQUIRE_BWRAP=1 turns that skip into a failure on the episode host.
+    """
 
     def setUp(self):
-        reason = bwrap_works()
+        reason = bwrap_unavailable()
+        if reason and os.environ.get(REQUIRE_BWRAP) == "1":
+            self.fail(f"{REQUIRE_BWRAP}=1, but {reason}")
         if reason:
             self.skipTest(reason)
         super().setUp()
@@ -559,6 +696,9 @@ class LiveContainmentTests(EpisodeCase):
         self.assertEqual(probe["leaked"], [])
         self.assertTrue(artifact["isolation"]["contained"])
         self.assertIn(str(self.truth), probe["forbidden"])
+        self.assertEqual(artifact["isolation"]["inventory"]["tool_approvals"]["approved_tools"],
+                         ["read", "rg", "git"])
+        self.assertEqual([call["tool"] for call in artifact["calls"]], ["read", "rg", "git"])
         record = eval_runner.public_record(eval_runner.load_raw_episode(out))
         eval_runner.check_public_record(record)
 
