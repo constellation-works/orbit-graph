@@ -116,6 +116,39 @@ The split satisfies the task artifact tool's 1 MiB per-file limit.
 producer status and output. Re-scoring reads the frozen Git objects for the real
 source corpus; it does not call a provider.
 
+## Host gate and prepared export follow-up
+
+The initial worker `cargo deny --locked check` attempt was denied by a
+read-only advisory cache, and that denial was reproduced on the clean baseline.
+Operator-supplied follow-up evidence records the same unmodified command passing
+on the normal host at candidate `da5009b7bf8f1a328aa3923252b3b049b1e8bd17`
+(exit 0; `advisories ok, bans ok, licenses ok, sources ok`). The source artifact
+is `/home/daniel/workspace/constellation/codebases/orbit-graph/.orbit/tmp/ORB-13709-integrated-deny-da5009b.json`,
+SHA-256 `b8135f457eefe2a765a6fde5d75c948aee83890b520bca242a5267728603f4f8`.
+The denied worker attempt, clean-baseline denial, scratch-cache pass and this
+normal-host pass remain separately identified in `results.json`.
+
+The prepared bound export is at
+`/home/daniel/workspace/constellation/codebases/orbit-graph/.orbit/tmp/ORB-13709-handoff-da5009b/source`.
+Its bundled binary SHA-256 is
+`22f0580ca89f7aab5930194dd24d5946a05ba3beda20ccf93e194a19cb147a8b`; the
+manifest SHA-256 is
+`59b41656899605763366433e078eac2bbb38a176ec50e8c9b40ce2fd16453f43`. The
+operator provenance file (SHA-256
+`95abfe41158714206aa9f1537804a4cf065053c3ced6965d7dbb4f5b06aa6806`) records
+45 copied files and 159,751,519 bytes with per-file digest, size and mode. This
+reconciliation matched every entry against both the prepared copy and the
+worker export. The supplied host validation file
+`/home/daniel/workspace/constellation/codebases/orbit-graph/.orbit/tmp/ORB-13709-handoff-da5009b/host-graph-validation.json`
+(SHA-256 `fca7aef0bee72dc28a0da7acf5cd180e77318ea97a637fd33b46daca48ff4392`)
+records six passing host tests against the prepared binary. The fresh-export
+recreation procedure remains in the [readiness report](../../docs/plugin-readiness.md#candidate-install-and-upgrade-handoff);
+rebuilt binaries require their own recorded hash.
+
+The separate actual-plugin evaluation `profile13776` was still running at this
+reconciliation and remains unfinished. It is not represented in either cohort
+or certified by this report.
+
 ## Delivery evidence and repairs
 
 The installed private fixture seeds host run/checkpoint rows, then exercises

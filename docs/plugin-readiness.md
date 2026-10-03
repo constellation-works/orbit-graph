@@ -4,10 +4,12 @@ Measured on 2026-10-03 for ORB-13773, execution `jrun-20261003-0550-c2`.
 The clean integrated source, installed CLI/MCP tools, positive public-delivery
 fixtures and fresh exports pass the checks below on the exact measured Linux
 host. Actual historical executor deliveries are also supported by separately
-identified final-candidate backend evidence. The required advisory gate is
-**denied** by the worker's read-only host cache; the same policy passes with a
-scratch-local cache. This is bounded readiness evidence, with no live upgrade
-or release. [Agent measurements](../evals/readiness-20261003/README.md) establish
+identified final-candidate backend evidence. The required advisory gate passed
+on the normal host in operator-supplied follow-up evidence for this same clean
+candidate. The original worker attempt and its clean-baseline reproduction still
+record the read-only host-cache denial; the supplied pass and its provenance are
+listed below. This is bounded readiness evidence, with no live upgrade or
+release. [Agent measurements](../evals/readiness-20261003/README.md) establish
 no agent benefit or superiority.
 
 ## Candidate identities
@@ -110,7 +112,7 @@ run ID, tested HEAD, producer exit code and captured stdout/stderr.
 | `scripts/check-orphan-modules.sh` | Passed | `gate-04.json` |
 | `scripts/test-repo-gates.sh` | Passed, 52 seeded cases | `gate-05.json` |
 | `python3 -B evals/agent-navigation/eval.py check` | Passed, 23 tests / 12 scripted cases; not agent effectiveness | `gate-06.json` |
-| `cargo deny --locked check` | **Denied**, same denial on clean baseline | `gate-07.json`, `baseline-deny.json` |
+| `cargo deny --locked check` | Passed on normal host in operator follow-up; initial worker attempt and clean-baseline reproduction denied | `gate-07.json`, `baseline-deny.json`, supplied operator evidence below |
 | `cargo fmt --all --check` | Passed | `gate-08.json` |
 | `cargo clippy --workspace --all-targets --locked -- -D warnings` | Passed | `gate-09.json` |
 | `cargo nextest run --workspace --locked --no-tests=fail` | Passed, 698 tests; three ignored | `gate-10.json` |
@@ -119,19 +121,22 @@ run ID, tested HEAD, producer exit code and captured stdout/stderr.
 | `cargo build --workspace --locked` | Passed | `gate-13.json` |
 | `git diff --check` | Passed; repeated after report edits | `gate-14.json`, `final-review.json` |
 
-The advisory denial is `failed to obtain lock file
+The original worker advisory denial is `failed to obtain lock file
 /home/daniel/.cargo/advisory-dbs/db.lock: attempted to take an exclusive lock on
 a read-only path`. It reproduced once before tracked edits at the same clean
-candidate. A copy of `deny.toml` changing only advisory `db-path` into ignored
-scratch passed:
+candidate. Separately supplied operator evidence records the unmodified command
+passing on the normal host at the same candidate commit; see the source artifact,
+identity and digest in the next section. A copy of `deny.toml` changing only
+advisory `db-path` into ignored scratch also passed:
 
 ```sh
 cargo deny --locked check --config .orbit/tmp/certification/deny.toml
 ```
 
-No advisory, license, source or ban policy was relaxed; the original gate remains
-labeled denied. The task's baseline rule permits this documented environmental
-failure to be handed off with the scoped alternate check.
+No advisory, license, source or ban policy was relaxed. The original denial,
+clean-baseline denial, scratch-cache pass and normal-host pass remain distinct
+attempts in `results.json`; the required gate is resolved by the supplied normal
+host pass.
 
 Strict installed validation (3/3 passes, including two legacy tests):
 
@@ -140,6 +145,38 @@ ORBIT_GRAPH_TEST_ORBIT_BIN=/home/daniel/.orbit/bin/orbit \
 ORBIT_GRAPH_TEST_REQUIRE_RUN_DELIVERY=1 \
   cargo test -p orbit-graph-cli --test plugin_integration --test plugin_v2 --locked -- --ignored
 ```
+
+## Supplied normal-host gate and prepared export
+
+The follow-up evidence supplied for ORB-13773 records `cargo deny --locked
+check` exiting 0 on candidate `da5009b7bf8f1a328aa3923252b3b049b1e8bd17`, with
+stdout `advisories ok, bans ok, licenses ok, sources ok`. Its source is
+`/home/daniel/workspace/constellation/codebases/orbit-graph/.orbit/tmp/ORB-13709-integrated-deny-da5009b.json`
+(SHA-256 `b8135f457eefe2a765a6fde5d75c948aee83890b520bca242a5267728603f4f8`).
+The artifact identifies the command and tested commit; it is attributed to the
+operator follow-up, separately from the denied worker attempt recorded above.
+
+The prepared bound export is available at
+`/home/daniel/workspace/constellation/codebases/orbit-graph/.orbit/tmp/ORB-13709-handoff-da5009b/source`.
+It is a copy of the worker export for the same candidate, not a build from this
+report commit. Its `.orbit-plugin/bin/orbit-graph.bin` SHA-256 is
+`22f0580ca89f7aab5930194dd24d5946a05ba3beda20ccf93e194a19cb147a8b` and its
+`.orbit-plugin/plugin.yaml` SHA-256 is
+`59b41656899605763366433e078eac2bbb38a176ec50e8c9b40ce2fd16453f43`.
+The operator provenance record
+`/home/daniel/workspace/constellation/codebases/orbit-graph/.orbit/tmp/ORB-13709-handoff-da5009b/provenance.json`
+(SHA-256 `95abfe41158714206aa9f1537804a4cf065053c3ced6965d7dbb4f5b06aa6806`)
+records 45 files and 159,751,519 copied bytes. Each file's SHA-256, byte count
+and mode matched both the provenance inventory and the worker export in this
+reconciliation. The supplied host validation record
+`/home/daniel/workspace/constellation/codebases/orbit-graph/.orbit/tmp/ORB-13709-handoff-da5009b/host-graph-validation.json`
+(SHA-256 `fca7aef0bee72dc28a0da7acf5cd180e77318ea97a637fd33b46daca48ff4392`)
+identifies that stable binary path and records six passing tests across
+`RealGraphTests` and `LiveContainmentTests`.
+
+The fresh-export recipe below remains the recreation procedure. A separately
+running actual-plugin evaluation, `profile13776`, is still unfinished and is
+not certified or included in these results.
 
 ## Historical findings and outstanding limits
 
@@ -173,7 +210,9 @@ latency/cost advantage.
 ## Candidate install and upgrade handoff
 
 Daniel can prepare a **fresh bound export of the measured source**, without
-changing the live installation, from a clean checkout of this exact commit.
+changing the live installation, from a clean checkout of this exact commit. The
+already prepared operator copy and its hashes are recorded above; rebuilding it
+creates a new binary whose digest must be recorded separately.
 Check disk usage before every new build/export directory; at 80% stop. These
 Linux commands use scratch under `.orbit/tmp/`; a rebuilt binary gets a new
 recorded hash. Use an Orbit host that actually serves the public delivery read,
