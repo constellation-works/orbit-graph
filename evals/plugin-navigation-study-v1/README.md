@@ -93,13 +93,9 @@ not authentication or historical creation time.
 ## Operator runtime freeze and admission
 
 The shipped corpus/protocol are frozen; **runtime pins are not filled in**.
-Before any live episode the root operator must qualify the final repaired graph
-binary (including the independently tracked concurrent-first-sync repair), and
-approve an exact model, credential mount, source transfer plan, budget and run
-plan. Keep the historical source commits above unchanged. Do not qualify a
-runtime by silently relaxing confinement or borrowing old capture evidence.
-
-After that approval, first inspect the real installed treatment without a model:
+Offline source export, private installation inspection, exact runtime pinning
+and concrete request/run-plan preparation are authorized before source-transfer
+approval. First inspect the real installed treatment without a model:
 
 ```sh
 RUNNER=scripts/agent-eval/eval_runner.py
@@ -131,8 +127,8 @@ preregistration. All settings must be the runner's recorded dictionary, e.g.
   "study_kind": "agent",
   "operator": "accountable operator identity",
   "frozen_at": "RFC3339 UTC seconds",
-  "approval_reference": "external approval and qualified-runtime evidence",
-  "model": {"provider":"codex-cli", "name":"approved model", "version":"exact provider --version stdout", "settings":{"model_reasoning_effort":"high"}},
+  "approval_reference": "pending: concrete frozen plan awaiting explicit source-transfer/run approval",
+  "model": {"provider":"codex-cli", "name":"proposed exact model", "version":"exact provider --version stdout", "settings":{"model_reasoning_effort":"high"}},
   "provider_binary_sha256": "SHA256",
   "harness": {"eval_runner.py":"SHA256", "eval_broker.py":"SHA256", "plugin_profile.py":"SHA256"},
   "baseline_tool_versions": {"read":"agent-eval-broker 1 sha256:SHA256", "rg":"exact runner-normalized version sha256:SHA256", "git":"exact git --version stdout sha256:SHA256"},
@@ -166,6 +162,17 @@ produced as supposedly frozen requests. For deliberately fake captures use
 Known fake provider versions/names are rejected for agent freezes. External
 operator custody remains necessary: a checksum cannot identify an adversary
 who fabricates an entire sealed evidence set.
+
+An explicitly pending `approval_reference` is valid for this offline freeze.
+It records preparation, never authorization to contact a provider or transfer
+source. Once the concrete twelve-request plan, exact pins, credential mount,
+source transfer and budget are reviewable, the accountable operator obtains
+explicit approval referencing the freeze hash and qualifies the final repaired
+graph binary (including the independently tracked concurrent-first-sync repair)
+before any live episode. Keep approval and qualification evidence externally
+with custody records; do not rewrite the sealed pending reference. Keep the
+historical source commits unchanged. Do not qualify a runtime by silently
+relaxing confinement or borrowing old capture evidence.
 
 ## Run, adapt, review and score (operator only)
 
@@ -230,7 +237,10 @@ errors/setup/skill/tool hashes, and additionally checks selected Git blob sets.
 Every score and packet operation replays original captures again. It never
 accepts the synthetic dictionaries used in unit tests as raw captures.
 
-Assign packet hashes to a reviewer without arm/tools/timing metadata; answers
+Assign packet hashes to an attributed reviewer/operator, who may be an agent or
+a human, without arm/tools/timing metadata. Semantic and additional-symbol
+judgments are attributed review, not automatically established truth; name the
+actual reviewer and operator and preserve honest custody. Answers
 may themselves reveal a tool, so record `arm-blinded` or `unblinded` honestly.
 Write `audits.json` as `{"schema_version":1,"audits":[...]}` with exactly one
 review for each successful raw episode, none for failed outcomes. Bind packet
@@ -280,7 +290,13 @@ not an extra term to add twice. Cold index sync time remains a separate componen
 The frozen follow-up rule permits **consideration only** of a separately
 approved fresh cohort: complete genuine strict evidence, no held-out accuracy
 regression, at least one held-out improvement, and no unsupported held-out graph
-identities. Test-only fixtures can never satisfy it. Failure to meet the rule
+identities. The delivered replay must verify containment for all twelve episodes
+in both arms and both splits. A baseline harness failure, any other non-ok
+outcome, or unverified/incomplete replay cannot qualify, even when graph quality
+appears better; every outcome and its costs still remain scored. An ok baseline
+answer with a reviewed semantic error can support a quality improvement in an
+otherwise complete verified cohort. Test-only fixtures can never satisfy it.
+Failure to meet the rule
 is a result; it is not permission to tune the oracle or repeat exposed cases.
 
 Commands have a 600-second total deadline; each Git read is bounded at 30 seconds.

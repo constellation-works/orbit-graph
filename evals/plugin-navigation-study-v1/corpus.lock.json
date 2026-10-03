@@ -7,7 +7,7 @@
     "scripts/agent-eval/eval_runner.py": "ec94cf85f58061da2bdf67542fec8c6255a6339fe9d624a3047ce70f7efc88c7",
     "scripts/agent-eval/plugin_profile.py": "96eb555917e593100e00c3cc194eebd2b0fc6853d3a7ec54b1ad055c6bef5483"
   },
-  "protocol_sha256": "ce9915de8a154bf12318cd7f5287504402b09f63ca9cb11b80c8672c03900c06",
+  "protocol_sha256": "0115dd2a11a00b22f0be046a6baa39561f2c72de69bb68dd4abf1e74d8a71642",
   "schema_version": 1,
   "snapshots": {
     "Orbit": {

@@ -123,7 +123,139 @@ class StudyTests(unittest.TestCase):
                                plugin_install_ms=10 if slot['arm']=='graph' else 0,graph_sync_ms=0,preflight_ms=5),
                    setup_output_bytes=100 if slot['arm']=='graph' else 0,output_bytes=10,usage=None,usage_raw=None)
             episodes.append(e);audits.append(audit_for(e,c))
-        return dict(study_kind='test-only',episodes=episodes),dict(schema_version=1,audits=audits)
+        return dict(study_kind='test-only',episodes=episodes,
+                    replay=dict(episodes=12,containment_verified=False)),dict(schema_version=1,audits=audits)
+
+    def fixture_replay(self, bundle):
+        # TEST-ONLY policy-shaped objects exercise the real cohort replay predicate.
+        # Mocking raw loading does NOT admit these dictionaries as runner evidence.
+        episodes=bundle['episodes'];first=episodes[0]
+        plan=dict(schema_version=2,profile=study.plugin.PROFILE,model=first['model'],
+                  provider_binary_sha256=first['provider']['binary_sha256'],harness=first['harness'],
+                  requests=[e['request'] for e in episodes])
+        by_run={e['run_id']:e for e in episodes}
+        with mock.patch.object(study.profile,'load_episode',side_effect=lambda directory,diagnostic:by_run[directory]):
+            return study.profile.replay(plan,list(by_run),diagnostic=False)
+
+    def qualification_fixtures(self):
+        b,a=self.fixtures()
+        # TEST-ONLY: agent kind exercises qualification, never raw admission or a live result.
+        b['study_kind']='agent'
+        pin=dict(commit='1'*40,backend_sha256='2'*64,orbit_sha256='3'*64,inventory_sha256='4'*64,skill_sha256='5'*64)
+        for e,r in zip(b['episodes'],study.requests(self.data,self.protocol,self.lock,pin)):
+            e.update(request=r,model=dict(provider='codex-cli',name='TEST-ONLY policy fixture',version='synthetic',settings={}),
+                     provider=dict(binary_sha256='6'*64),harness={'TEST-ONLY':'7'*64},
+                     tool_versions=dict(read='TEST-ONLY read',rg='TEST-ONLY rg',git='TEST-ONLY git'),
+                     resource_limits={'memory.max':4294967296,'pids.max':256},
+                     isolation=dict(repository_id=e['run_id']+'-repo',cache_id=e['run_id']+'-cache'))
+        # A valid baseline answer can be semantically wrong without a harness failure.
+        index=next(n for n,e in enumerate(b['episodes']) if e['request']['split']=='held-out' and e['request']['arm']=='baseline')
+        a['audits'][index]['judgments'][0]['pass']=False
+        study.seal(a['audits'][index],'audit_sha256')
+        b['replay']=self.fixture_replay(b)
+        return b,a
+
+    def test_verified_complete_cohort_can_qualify(self):
+        b,a=self.qualification_fixtures()
+        self.assertIs(b['replay']['containment_verified'],True)
+        self.assertEqual(b['replay']['episodes'],12)
+        report=study.score(self.data,self.protocol,self.files,b,a)
+        self.assertTrue(report['follow_up_consideration'])
+        self.assertEqual(report['groups']['held-out/baseline']['correct'],3)
+        self.assertEqual(report['groups']['held-out/graph']['correct'],4)
+        b['study_kind']='test-only'
+        self.assertFalse(study.score(self.data,self.protocol,self.files,b,a)['follow_up_consideration'])
+
+    def test_held_out_baseline_harness_failure_cannot_qualify_and_keeps_costs(self):
+        for status in ('failed','invalid','timeout'):
+            with self.subTest(status=status):
+                b,a=self.qualification_fixtures()
+                failed=next(e for e in b['episodes'] if e['request']['split']=='held-out' and e['request']['arm']=='baseline')
+                failed.update(status=status,error=dict(code='telemetry_validation_failed',message='TEST-ONLY harness failure'),
+                              answer=None,usage=dict(input_tokens=17,output_tokens=9,cost_usd=0.25),
+                              usage_raw=dict(cached_input_tokens=3,total_tokens=26),calls=[dict(tool='read',status='failed')])
+                a['audits']=[r for r in a['audits'] if r['run_id']!=failed['run_id']]
+                b['replay']=self.fixture_replay(b)
+                self.assertIs(b['replay']['containment_verified'],False)
+                report=study.score(self.data,self.protocol,self.files,b,a)
+                self.assertFalse(report['follow_up_consideration'])
+                group=report['groups']['held-out/baseline']
+                self.assertEqual((group['total'],group['correct']),(4,3))
+                self.assertEqual(group['statuses'][status],1)
+                self.assertEqual(group['error_codes']['telemetry_validation_failed'],1)
+                self.assertEqual(group['tool_calls'],1)
+                self.assertEqual(group['output_bytes'],40)
+                self.assertEqual(group['timing_totals']['wall_ms'],sum(e['timing']['wall_ms'] for e in b['episodes']
+                    if e['request']['split']=='held-out' and e['request']['arm']=='baseline'))
+                self.assertEqual(group['usage']['cost_usd'],dict(observed=1,total=4,observed_sum=0.25,sum=None))
+                self.assertEqual(group['usage']['input_tokens']['observed_sum'],17)
+                self.assertEqual(group['usage']['total_tokens']['observed_sum'],26)
+                pair=next(p for p in report['pairs'] if p['case_id']==failed['request']['case_id'])
+                self.assertEqual(pair['correct_delta'],1)
+                self.assertIsNone(pair['wall_delta_ms'])
+
+    def test_unverified_or_incomplete_replay_cannot_qualify(self):
+        for replay in ({},dict(episodes=12,containment_verified=False),
+                       dict(episodes=12,containment_verified='true'),dict(episodes=11,containment_verified=True)):
+            with self.subTest(replay=replay):
+                b,a=self.qualification_fixtures();b['replay']=replay
+                self.assertFalse(study.score(self.data,self.protocol,self.files,b,a)['follow_up_consideration'])
+
+    def test_development_failure_invalidates_complete_cohort(self):
+        b,a=self.qualification_fixtures();failed=b['episodes'][0]
+        failed.update(status='failed',error=dict(code='TEST-ONLY',message='development failure'),answer=None)
+        a['audits'].pop(0);b['replay']=self.fixture_replay(b)
+        self.assertIs(b['replay']['containment_verified'],False)
+        report=study.score(self.data,self.protocol,self.files,b,a)
+        self.assertFalse(report['follow_up_consideration'])
+        self.assertEqual(report['groups']['all/baseline']['total'],6)
+
+    def test_agent_and_human_reviewer_attribution(self):
+        for reviewer in ('agent:TEST-ONLY reviewer','human:TEST-ONLY reviewer'):
+            b,a=self.fixtures();a['audits'][0].update(reviewer=reviewer,blinding='unblinded',
+                attestation='TEST-ONLY attributed reviewer; tool references revealed the arm')
+            study.seal(a['audits'][0],'audit_sha256')
+            report=study.score(self.data,self.protocol,self.files,b,a)
+            self.assertTrue(report['episodes'][0]['correct'])
+            self.assertEqual(report['episodes'][0]['review_blinding'],'unblinded')
+
+    def test_pending_approval_allows_offline_freeze_without_provider_authority(self):
+        # TEST-ONLY inspection/runtime fixture; external export validation is tested separately.
+        inventory=[dict(name=name,description='TEST-ONLY inventory',inputSchema={}) for name in study.plugin.TOOLS]
+        binary=Path('/usr/bin/python3').resolve();binary_hash=study.runner.sha256_file(binary)
+        pin=dict(commit='1'*40,backend_sha256=binary_hash,orbit_sha256=binary_hash,
+                 inventory_sha256=study.plugin.digest(inventory),skill_sha256='5'*64)
+        hashes={p:study.runner.sha256_file(study.REPO/'scripts/agent-eval'/p)
+                for p in ('eval_runner.py','eval_broker.py','plugin_profile.py')}
+        runtime=dict(schema_version=1,study_kind='agent',operator='TEST-ONLY operator',
+            frozen_at='2026-10-03T00:00:00Z',approval_reference='pending: TEST-ONLY concrete plan awaiting approval; no source transfer authorized',
+            model=dict(provider='codex-cli',name='TEST-ONLY policy fixture',version='synthetic',settings={}),
+            provider_binary_sha256=binary_hash,harness=hashes,
+            baseline_tool_versions=dict(read='TEST-ONLY read sha256:'+hashes['eval_broker.py'],
+                                        rg='TEST-ONLY rg sha256:'+binary_hash,git='TEST-ONLY git sha256:'+binary_hash),
+            resource_limits={'memory.max':4294967296,'pids.max':256},
+            binary_paths={k:str(binary) for k in ('provider','orbit','backend','git','rg','python','bwrap')})
+        with tempfile.TemporaryDirectory(dir=self.scratch) as tmp:
+            inspection=dict(out=tmp,pin=pin,inventory=inventory,profile=study.plugin.PROFILE,
+                            provider_started=False,contained=True)
+            treatment=study.seal(dict(pin=pin,inventory=inventory),'treatment_sha256')
+            study.source.write_new(Path(tmp)/'plugin-treatment.json',treatment)
+            destination=Path(tmp)/'frozen'
+            with mock.patch.object(study,'check_export',return_value=Path(tmp)/'source'), \
+                 mock.patch.object(study.runner.broker,'run_child',side_effect=AssertionError('offline freeze must not start a provider')):
+                result=study.freeze(self.data,self.protocol,self.lock,runtime,inspection,Path(tmp)/'source',destination)
+                frozen,plan=study.checked_freeze(self.data,self.protocol,self.lock,destination)
+                self.assertTrue(result['runtime_preregistered'])
+                self.assertEqual(len(plan['requests']),12)
+                self.assertEqual(frozen['runtime']['approval_reference'],runtime['approval_reference'])
+                runtime['model']['version']='fake-provider TEST-ONLY'
+                with self.assertRaisesRegex(ValueError,'fake provider is test-only'):
+                    study.freeze(self.data,self.protocol,self.lock,runtime,inspection,Path(tmp)/'source',Path(tmp)/'rejected-fake')
+                self.assertFalse((Path(tmp)/'rejected-fake').exists())
+                runtime['model']['version']='synthetic';inspection['contained']=False
+                with self.assertRaisesRegex(ValueError,'strict inspection required'):
+                    study.freeze(self.data,self.protocol,self.lock,runtime,inspection,Path(tmp)/'source',Path(tmp)/'rejected-diagnostic')
+                self.assertFalse((Path(tmp)/'rejected-diagnostic').exists())
 
     def test_full_semantics_and_all_denominators(self):
         bundle,audits=self.fixtures();report=study.score(self.data,self.protocol,self.files,bundle,audits)
@@ -255,7 +387,7 @@ class ProfileSmoke(unittest.TestCase):
         version=lambda binary:study.source.capture([str(binary),'--version'],{'PATH':'/usr/bin:/bin','HOME':str(work)}).decode().strip()
         hashes={p:study.runner.sha256_file(tool.parent/p) for p in ('eval_runner.py','eval_broker.py','plugin_profile.py')}
         runtime=dict(schema_version=1,study_kind='test-only',operator='TEST-ONLY fixture',
-                     frozen_at='2026-10-03T00:00:00Z',approval_reference='TEST-ONLY offline smoke; no live authority',
+                     frozen_at='2026-10-03T00:00:00Z',approval_reference='pending: TEST-ONLY offline smoke; no live authority',
                      model=dict(provider='codex-cli',name='fake-model',version=version(fake),settings={}),
                      provider_binary_sha256=study.runner.sha256_file(fake),harness=hashes,
                      baseline_tool_versions=dict(read=study.runner.broker.BROKER_NAME+' '+study.runner.broker.BROKER_VERSION+' sha256:'+hashes['eval_broker.py'],
@@ -296,6 +428,7 @@ class ProfileSmoke(unittest.TestCase):
             self.assertEqual(episode['status'], 'invalid' if n==1 else 'failed' if n==2 else 'ok')
             if episode['status']=='ok':audits.append(audit_for(episode,case))
         frozen=study.load(work/'frozen/freeze.json')
+        self.assertEqual(frozen['runtime']['approval_reference'],runtime['approval_reference'])
         custody=dict(operator='TEST-ONLY fixture',attested_at='2026-10-03T00:00:00Z',freeze_sha256=frozen['freeze_sha256'],
                      captures={a['run_id']:a['artifact_sha256'] for a in episodes},attestation='TEST-ONLY original local fake runner captures; uncontained; never agent evidence')
         study.source.write_new(work/'custody.json',custody)

@@ -1,12 +1,12 @@
 {
   "failures": "Keep failed/invalid/timeout in all denominators. No reruns/replacements; integrity refusal blocks scoring rather than dropping episodes.",
-  "follow_up": "Only consider a separately authorized fresh cohort if strict genuine complete evidence, graph held-out correctness >= baseline, at least one held-out improvement and no held-out graph unsupported identities. No automatic authorization or superiority claim.",
+  "follow_up": "Only consider a separately authorized fresh cohort if delivered strict replay verifies containment for all twelve genuine episodes in both arms and both splits, graph held-out correctness >= baseline, at least one held-out improvement and no held-out graph unsupported identities. Any non-ok outcome (including a baseline harness failure) or unverified/incomplete replay cannot qualify; all outcomes and costs remain scored. An ok baseline answer with a reviewed semantic error may support an improvement. Test-only fixtures never qualify. No automatic authorization or superiority claim.",
   "limitations": [
     "Six purposive questions are descriptive, not powered for superiority/p-values/generalization.",
     "Graph development repositories and Orbit/pulsar held-out repositories are disjoint within this study, but all three were inspected in prior work; no unseen-repository generalization.",
     "Different installed plugin plus shipped skill treatment, not a successful extension/relabel of old 24+16 episodes.",
-    "Questions chosen from source, never graph results. Semantic and additional-symbol judgments are attributed human review, not automated truth. Blind arms where possible; record any unblinding.",
-    "Frozen corpus/rubric/limits are supplied now; exact provider/tool/runner/backend/inventory/skill pins and transfer/run approval remain operator prerequisites.",
+    "Questions chosen from source, never graph results. Semantic and additional-symbol judgments are attributed reviewer/operator review (agent or human), not automated truth. Name actual reviewers/operators and preserve honest custody. Blind arms where possible; record any unblinding.",
+    "Offline source export, private installation inspection, exact provider/tool/runner/backend/inventory/skill pinning and concrete request-plan preparation are authorized before source-transfer approval. A plainly pending approval_reference is valid for offline runtime freeze and grants no provider/source-transfer authority. The operator obtains explicit approval only after the concrete plan is reviewable; approval and qualified-runtime evidence gate live execution and remain external custody records bound to the freeze hash.",
     "Hash seals establish local integrity, not authentication or capture origin; require operator custody and external pre-run freeze.",
     "Historical source pins stay unchanged; repaired runtime binary qualification (including ORB-13783) gates later live execution."
   ],
