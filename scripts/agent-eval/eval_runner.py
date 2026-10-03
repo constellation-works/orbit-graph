@@ -1225,6 +1225,37 @@ def check_answer(answer, limits):
         require(items and evidence, "a non-abstaining answer needs items and evidence")
 
 
+def recoverable_graph_error(call, body):
+    """Recognize a complete CLI index_missing response, never a backend failure.
+
+    command::report_graph_error and output::json::ErrorPayload define this
+    contract: query exit 1, empty stdout, {code, error} on stderr. Unlike the
+    generic graph_error (I/O, SQLite, subprocess, invalid data), index_missing
+    has an in-episode remedy: graph_sync. Keep other codes fail-closed until
+    their recovery is deliberately supported; retryable is not that policy.
+    """
+    if (call["status"] != "failed" or call["tool"] not in broker.GRAPH_TOOLS
+            or call["tool"] == "graph_sync" or body.get("tool") != call["tool"]
+            or body.get("status") != "failed" or "error" in body
+            or type(body.get("exit_code")) is not int or body["exit_code"] != 1
+            or "stopped" not in body or body["stopped"] is not None
+            or "error_type" not in body or body["error_type"] is not None
+            or body.get("cleanup") != {"signals": [], "survivors": []}
+            or body.get("stderr_truncated") is not False
+            or not isinstance(body.get("stderr"), str)
+            or body.get("output") != "" or body.get("offset") != 0
+            or body.get("total_chars") != 0 or "next_offset" not in body
+            or body["next_offset"] is not None):
+        return False
+    try:
+        error = parse_json(body["stderr"].encode(), "graph error stderr")
+    except (Invalid, UnicodeError):
+        return False
+    return (isinstance(error, dict) and set(error) == {"code", "error"}
+            and error["code"] == "index_missing"
+            and isinstance(error["error"], str) and bool(error["error"].strip()))
+
+
 def decide(supervision, transcript, log, final, limits, sentinel_code, output_bytes, wall_ms):
     """First matching failure wins; only a clean, complete, well-formed run is ok."""
     calls = log["calls"]
@@ -1272,10 +1303,13 @@ def decide(supervision, transcript, log, final, limits, sentinel_code, output_by
             except Invalid:
                 return "failed", "broker_output_malformed", "failed call output is not JSON"
             # An ordinary input refusal remains an agent-visible recoverable error.
-            # Execution failures must not become successful episodes after a final answer.
+            # Typed product errors can be recovered from; execution failures cannot.
             if not isinstance(body, dict) or not isinstance(body.get("error", {}), dict):
                 return "failed", "broker_output_malformed", "failed call output is not an envelope"
-            if "exit_code" in body or body.get("error", {}).get("code") == "tool_exception":
+            if (call["status"] == "timeout"
+                    or body.get("error", {}).get("code") == "tool_exception"
+                    or (any(key in body for key in ("exit_code", "stopped", "cleanup", "stderr"))
+                        and not recoverable_graph_error(call, body))):
                 return "failed", "tool_execution_failed", "a broker tool could not execute cleanly"
     if supervision["returncode"] != 0 or transcript["turns_completed"] < 1 or \
             transcript["turn_failures"]:
