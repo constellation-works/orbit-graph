@@ -1,0 +1,989 @@
+{
+  "cases": [
+    {
+      "base_snapshot": "orbit-graph/pinned",
+      "head_snapshot": "orbit-graph/pinned",
+      "id": "graph-inbound-identity",
+      "kind": "shared_inbound_callers",
+      "original_source_revision": "ac6d5b91f973874325bac789e9c433a71c805766",
+      "prompt": "Locate the shared inbound target-identity predicate and the reference and impact query consumers that must stay consistent when target row hints disappear, are reused, or distinguish duplicate definitions.",
+      "repository": "orbit-graph",
+      "split": "development",
+      "truth": {
+        "accepted_alternatives": [
+          "Equivalent prose for every required behavioral claim is accepted. Optional identities may be included when accurately cited. Class-qualified declarations are exact identity keys; file-only answers receive no symbol credit."
+        ],
+        "identities": [
+          {
+            "file": "crates/orbit-graph/src/query/mod.rs",
+            "line": 30,
+            "quote": "const INBOUND_TARGET_MATCH: &str = \"(r.target_qualified = ?2 AND (",
+            "required": true,
+            "selector": "symbol:crates/orbit-graph/src/query/mod.rs#INBOUND_TARGET_MATCH:constant"
+          },
+          {
+            "file": "crates/orbit-graph/src/query/refs.rs",
+            "line": 207,
+            "quote": "fn query_refs(",
+            "required": true,
+            "selector": "symbol:crates/orbit-graph/src/query/refs.rs#query_refs:function"
+          },
+          {
+            "file": "crates/orbit-graph/src/query/impact.rs",
+            "line": 270,
+            "quote": "fn inbound_ref_neighbors(",
+            "required": true,
+            "selector": "symbol:crates/orbit-graph/src/query/impact.rs#inbound_ref_neighbors:function"
+          }
+        ],
+        "limitations": [
+          "Named captured consumers only; not an exhaustive reference or call graph."
+        ],
+        "rubric": [
+          {
+            "evidence": [
+              {
+                "end_line": 35,
+                "excerpt_sha256": "14290174b817b5e9db5a2c9d7a8c9d93d10e3c477bee2f43acc43f1d302f6f7f",
+                "file": "crates/orbit-graph/src/query/mod.rs",
+                "line": 23,
+                "quote": "/// Match inbound refs (`r`) to a symbol ID (`?1`) and qualified name (`?2`).",
+                "revision": "head"
+              }
+            ],
+            "id": "identity",
+            "required_behavior": "Qualified identity is authoritative. A live hint of that identity disambiguates duplicates; absent/reused hints fall back to the qualified name, not unconditional row-id matching."
+          },
+          {
+            "evidence": [
+              {
+                "end_line": 235,
+                "excerpt_sha256": "59a4d2f5bc6582f7ea67c619365836882c15e484c17f495bdbe1677ea48d6fd2",
+                "file": "crates/orbit-graph/src/query/refs.rs",
+                "line": 207,
+                "quote": "fn query_refs(",
+                "revision": "head"
+              },
+              {
+                "end_line": 321,
+                "excerpt_sha256": "b1cb01a858f347eeccaa1d8ac8d0b56a49e653c0d8e2c67b60d155041a381b39",
+                "file": "crates/orbit-graph/src/query/impact.rs",
+                "line": 270,
+                "quote": "fn inbound_ref_neighbors(",
+                "revision": "head"
+              }
+            ],
+            "id": "consumers",
+            "required_behavior": "query_refs and inbound_ref_neighbors interpolate the same constant, which is a predicate reference rather than a function call."
+          }
+        ]
+      }
+    },
+    {
+      "base_snapshot": "orbit-graph/pinned",
+      "head_snapshot": "orbit-graph/pinned",
+      "id": "graph-sync-preserved-timestamp",
+      "kind": "sync_correctness",
+      "original_source_revision": "ac6d5b91f973874325bac789e9c433a71c805766",
+      "prompt": "A replacement source file preserves its modification time but changes size, and incremental indexing must refresh its symbols. Locate the relevant sync logic and the focused regression coverage.",
+      "repository": "orbit-graph",
+      "split": "held-out",
+      "truth": {
+        "accepted_alternatives": [
+          "Equivalent prose for every required behavioral claim is accepted. Optional identities may be included when accurately cited. Class-qualified declarations are exact identity keys; file-only answers receive no symbol credit."
+        ],
+        "identities": [
+          {
+            "file": "crates/orbit-graph/src/sync/scanner.rs",
+            "line": 110,
+            "quote": "fn scan(&self, mode: SyncMode, hasher: &dyn ContentHasher) -> Result<Diff, GraphError> {",
+            "required": true,
+            "selector": "symbol:crates/orbit-graph/src/sync/scanner.rs#Scanner::scan:method"
+          },
+          {
+            "file": "crates/orbit-graph/src/sync/mod.rs",
+            "line": 31,
+            "quote": "fn run_once(",
+            "required": true,
+            "selector": "symbol:crates/orbit-graph/src/sync/mod.rs#run_once:function"
+          },
+          {
+            "file": "crates/orbit-graph/tests/timestamp_preserved_edits.rs",
+            "line": 14,
+            "quote": "fn auto_sync_detects_size_changes_when_a_replacement_preserves_the_timestamp() {",
+            "required": true,
+            "selector": "symbol:crates/orbit-graph/tests/timestamp_preserved_edits.rs#auto_sync_detects_size_changes_when_a_replacement_preserves_the_timestamp:test"
+          },
+          {
+            "file": "crates/orbit-graph/src/sync/scanner.rs",
+            "line": 79,
+            "quote": "pub(crate) fn scan_diff_with_lock_held(",
+            "required": false,
+            "selector": "symbol:crates/orbit-graph/src/sync/scanner.rs#scan_diff_with_lock_held:function"
+          }
+        ],
+        "limitations": [
+          "Source supports size-changing replacements, not equal-size/equal-mtime detection or all filesystem races."
+        ],
+        "rubric": [
+          {
+            "evidence": [
+              {
+                "end_line": 196,
+                "excerpt_sha256": "1a67aa3dcca051d04b017a70d4c9529551fec6b0e836a345f53a81e0fef22417",
+                "file": "crates/orbit-graph/src/sync/scanner.rs",
+                "line": 155,
+                "quote": "let existing = rows.remove(&disk_file.path);",
+                "revision": "head"
+              }
+            ],
+            "id": "fast_path",
+            "required_behavior": "Auto bypasses hashing only when both mtime and size match. A size-changing replacement is hashed and modified content is reindexed; equal-size/equal-mtime changes are not guaranteed by this fast path."
+          },
+          {
+            "evidence": [
+              {
+                "end_line": 45,
+                "excerpt_sha256": "d048707748e245ad5bde8455bbfadc15d8972a928ec6809dd258abe051b37ba4",
+                "file": "crates/orbit-graph/src/sync/mod.rs",
+                "line": 31,
+                "quote": "fn run_once(",
+                "revision": "head"
+              }
+            ],
+            "id": "sync",
+            "required_behavior": "run_once locks the database, scans with lock held then writes the diff."
+          },
+          {
+            "evidence": [
+              {
+                "end_line": 72,
+                "excerpt_sha256": "2dbf20aaa348d6e4b24ee59941efa85df5134fa0f8ef45fe97ba6d6fa0c7f5d1",
+                "file": "crates/orbit-graph/tests/timestamp_preserved_edits.rs",
+                "line": 37,
+                "quote": "fs::write(&source, \"pub fn fresh_after_preserved_timestamp() {}\\n\")",
+                "revision": "head"
+              }
+            ],
+            "id": "regression",
+            "required_behavior": "The named test restores mtime after longer replacement, expects one changed file, finds the fresh symbol and rejects the old marker."
+          }
+        ]
+      }
+    },
+    {
+      "base_snapshot": "orbit-graph/pinned",
+      "head_snapshot": "orbit-graph/pinned",
+      "id": "graph-impact-test-selection",
+      "kind": "test_selection",
+      "original_source_revision": "ac6d5b91f973874325bac789e9c433a71c805766",
+      "prompt": "Select focused regression coverage for an impact-traversal change affecting confidence floors and inbound calls whose qualified target is absent. Identify what each selected test protects.",
+      "repository": "orbit-graph",
+      "split": "held-out",
+      "truth": {
+        "accepted_alternatives": [
+          "Equivalent prose for every required behavioral claim is accepted. Optional identities may be included when accurately cited. Class-qualified declarations are exact identity keys; file-only answers receive no symbol credit."
+        ],
+        "identities": [
+          {
+            "file": "crates/orbit-graph/src/query/tests/impact.rs",
+            "line": 209,
+            "quote": "fn confidence_floor_filters_and_prevents_below_floor_expansion() {",
+            "required": true,
+            "selector": "symbol:crates/orbit-graph/src/query/tests/impact.rs#confidence_floor_filters_and_prevents_below_floor_expansion:test"
+          },
+          {
+            "file": "crates/orbit-graph/src/query/tests/impact.rs",
+            "line": 505,
+            "quote": "fn fuzzy_name_inbound_ref_with_null_qualified_is_visible_at_fuzzy_floor() {",
+            "required": true,
+            "selector": "symbol:crates/orbit-graph/src/query/tests/impact.rs#fuzzy_name_inbound_ref_with_null_qualified_is_visible_at_fuzzy_floor:test"
+          },
+          {
+            "file": "crates/orbit-graph/src/query/impact.rs",
+            "line": 270,
+            "quote": "fn inbound_ref_neighbors(",
+            "required": false,
+            "selector": "symbol:crates/orbit-graph/src/query/impact.rs#inbound_ref_neighbors:function"
+          },
+          {
+            "file": "crates/orbit-graph/src/query/impact.rs",
+            "line": 437,
+            "quote": "fn rows_to_neighbors(",
+            "required": false,
+            "selector": "symbol:crates/orbit-graph/src/query/impact.rs#rows_to_neighbors:function"
+          }
+        ],
+        "limitations": [
+          "No claim that these two tests cover every impact traversal change."
+        ],
+        "rubric": [
+          {
+            "evidence": [
+              {
+                "end_line": 278,
+                "excerpt_sha256": "4bca7048cbe1c783e96dccda739ea03030e914f00a2e76e338a952d9b8d9b304",
+                "file": "crates/orbit-graph/src/query/tests/impact.rs",
+                "line": 209,
+                "quote": "fn confidence_floor_filters_and_prevents_below_floor_expansion() {",
+                "revision": "head"
+              }
+            ],
+            "id": "floor",
+            "required_behavior": "First test expects exact/same-module/leaf at SameModule, but only exact at Exact: it protects both filtering and below-floor traversal expansion."
+          },
+          {
+            "evidence": [
+              {
+                "end_line": 565,
+                "excerpt_sha256": "9b6c1052c2347f3ae73abecf929e5178895ad7b3c0c7690d2d1bc18dc13577d3",
+                "file": "crates/orbit-graph/src/query/tests/impact.rs",
+                "line": 505,
+                "quote": "fn fuzzy_name_inbound_ref_with_null_qualified_is_visible_at_fuzzy_floor() {",
+                "revision": "head"
+              }
+            ],
+            "id": "fuzzy",
+            "required_behavior": "Second test protects NULL qualified inbound name matching: precise result empty with labeled fallback below fuzzy, caller present directly at FuzzyName without fallback."
+          },
+          {
+            "evidence": [
+              {
+                "end_line": 308,
+                "excerpt_sha256": "ee48ce3ac80d28353b938f06f54dd75d9ea0409c2bc7a60777ef2717a6fe7cdc",
+                "file": "crates/orbit-graph/src/query/impact.rs",
+                "line": 300,
+                "quote": "let include_fuzzy_name = min_confidence == RefConfidence::FuzzyName;",
+                "revision": "head"
+              },
+              {
+                "end_line": 447,
+                "excerpt_sha256": "7acdbbf516c7cc46a14ade4f601480befad46e8f2696042fedcdba47f3793928",
+                "file": "crates/orbit-graph/src/query/impact.rs",
+                "line": 437,
+                "quote": "fn rows_to_neighbors(",
+                "revision": "head"
+              }
+            ],
+            "id": "limits",
+            "required_behavior": "Relevant focused selections are source grounded, not proven minimal coverage or an exhaustive impact result."
+          }
+        ]
+      }
+    },
+    {
+      "base_snapshot": "Orbit/pinned",
+      "head_snapshot": "Orbit/pinned",
+      "id": "orbit-crew-resolution-entrypoints",
+      "kind": "crew_resolution_callers",
+      "original_source_revision": "0db9356eef631ada11569d0ca4e1e407fad5bee3",
+      "prompt": "Locate the activity-dispatch and run-recording entry points that delegate crew selection to the run-input resolver. Identify the activity conditions under which that delegation occurs.",
+      "repository": "Orbit",
+      "split": "development",
+      "truth": {
+        "accepted_alternatives": [
+          "Equivalent prose for every required behavioral claim is accepted. Optional identities may be included when accurately cited. Class-qualified declarations are exact identity keys; file-only answers receive no symbol credit."
+        ],
+        "identities": [
+          {
+            "file": "crates/orbit-core/src/adapter/engine_host/runtime_host/crew.rs",
+            "line": 6,
+            "quote": "pub(super) fn agent_crew_config_for_input(",
+            "required": true,
+            "selector": "symbol:crates/orbit-core/src/adapter/engine_host/runtime_host/crew.rs#agent_crew_config_for_input:function"
+          },
+          {
+            "file": "crates/orbit-core/src/runtime/engine/crew.rs",
+            "line": 573,
+            "quote": "pub(crate) fn record_run_crew_from_input(",
+            "required": true,
+            "selector": "symbol:crates/orbit-core/src/runtime/engine/crew.rs#OrbitRuntime::record_run_crew_from_input:method"
+          },
+          {
+            "file": "crates/orbit-core/src/runtime/engine/crew.rs",
+            "line": 426,
+            "quote": "pub(crate) fn resolve_crew_for_run_input(&self, input: &Value) -> Result<Crew, OrbitError> {",
+            "required": true,
+            "selector": "symbol:crates/orbit-core/src/runtime/engine/crew.rs#OrbitRuntime::resolve_crew_for_run_input:method"
+          }
+        ],
+        "limitations": [
+          "Verified current resolver body replaces discovery capture limitation. Named entry points only; no exhaustive caller inventory."
+        ],
+        "rubric": [
+          {
+            "evidence": [
+              {
+                "end_line": 45,
+                "excerpt_sha256": "2a7ede53942dd5883e85dfab8b7a3ec42bc5fc4e8e062a191ef34098f9fc9312",
+                "file": "crates/orbit-core/src/adapter/engine_host/runtime_host/crew.rs",
+                "line": 10,
+                "quote": "let explicit = input",
+                "revision": "head"
+              }
+            ],
+            "id": "dispatch",
+            "required_behavior": "Activity dispatch trims empty crew/config strings and delegates to resolve_crew_for_run_input only when neither explicit crew nor config key is supplied. workflow.system_crew and explicit crew use resolve_crew_for_task; unsupported config keys fail."
+          },
+          {
+            "evidence": [
+              {
+                "end_line": 586,
+                "excerpt_sha256": "9b9393ddb04ccc418272f913f7bad74e330acc265b992ec295f494eded428ca4",
+                "file": "crates/orbit-core/src/runtime/engine/crew.rs",
+                "line": 573,
+                "quote": "pub(crate) fn record_run_crew_from_input(",
+                "revision": "head"
+              }
+            ],
+            "id": "recording",
+            "required_behavior": "record_run_crew_from_input resolves, logs and persists resolved crew with record_job_run_crew."
+          },
+          {
+            "evidence": [
+              {
+                "end_line": 453,
+                "excerpt_sha256": "f6a09a32cd7e3d2d0992c0fdb005229300815c0be2fb731e063ed57e767fc95f",
+                "file": "crates/orbit-core/src/runtime/engine/crew.rs",
+                "line": 426,
+                "quote": "pub(crate) fn resolve_crew_for_run_input(&self, input: &Value) -> Result<Crew, OrbitError> {",
+                "revision": "head"
+              }
+            ],
+            "id": "resolver",
+            "required_behavior": "Current resolver uses trimmed CLI crew plus claimed/task crew and resolve_crew_for_task; a claimed owner crew unavailable here does not fall back silently."
+          }
+        ]
+      }
+    },
+    {
+      "base_snapshot": "pulsar/pinned",
+      "head_snapshot": "pulsar/pinned",
+      "id": "pulsar-publication-ledger-callbacks",
+      "kind": "python_publisher_callbacks",
+      "original_source_revision": "6d33fb9d4609618c13d46deb2df6af53b7f504a6",
+      "prompt": "Trace the publication ledger's claim_plan callback through its transaction wrapper to admission checks and approval consumption. Locate the handling for both a new reservation and an eligible retry.",
+      "repository": "pulsar",
+      "split": "held-out",
+      "truth": {
+        "accepted_alternatives": [
+          "Equivalent prose for every required behavioral claim is accepted. Optional identities may be included when accurately cited. Class-qualified declarations are exact identity keys; file-only answers receive no symbol credit."
+        ],
+        "identities": [
+          {
+            "file": "src/pulsar/app/core/ledger/facade.py",
+            "line": 403,
+            "quote": "def claim_plan(",
+            "required": true,
+            "selector": "symbol:src/pulsar/app/core/ledger/facade.py#SqliteLedger.claim_plan:method"
+          },
+          {
+            "file": "src/pulsar/app/core/ledger/facade.py",
+            "line": 131,
+            "quote": "def _write[T](self, operation: str, body: Callable[[sqlite3.Connection], T]) -> T:",
+            "required": true,
+            "selector": "symbol:src/pulsar/app/core/ledger/facade.py#SqliteLedger._write:method"
+          },
+          {
+            "file": "src/pulsar/app/core/ledger/plans.py",
+            "line": 44,
+            "quote": "def claim_plan(",
+            "required": true,
+            "selector": "symbol:src/pulsar/app/core/ledger/plans.py#claim_plan:function"
+          },
+          {
+            "file": "src/pulsar/app/core/ledger/approvals.py",
+            "line": 123,
+            "quote": "def consume(",
+            "required": true,
+            "selector": "symbol:src/pulsar/app/core/ledger/approvals.py#consume:function"
+          }
+        ],
+        "limitations": [
+          "No runtime concurrency proof or exhaustive caller-specific policy interpretation."
+        ],
+        "rubric": [
+          {
+            "evidence": [
+              {
+                "end_line": 139,
+                "excerpt_sha256": "60826584751fa7a018d28cc45c05b2077f3fe30a34fb4877b4fdf2f195b58e86",
+                "file": "src/pulsar/app/core/ledger/facade.py",
+                "line": 131,
+                "quote": "def _write[T](self, operation: str, body: Callable[[sqlite3.Connection], T]) -> T:",
+                "revision": "head"
+              },
+              {
+                "end_line": 469,
+                "excerpt_sha256": "70f58612d5eaa9ccca458d6386113274a0389ba57c78d8fb95d40e87c3cc635c",
+                "file": "src/pulsar/app/core/ledger/facade.py",
+                "line": 453,
+                "quote": "result = self._write(",
+                "revision": "head"
+              }
+            ],
+            "id": "transaction",
+            "required_behavior": "Facade claim_plan passes a lambda forwarding admit/approved into plans.claim_plan. _write refuses read-only access, opens BEGIN IMMEDIATE, checks schema under lock, then invokes body(conn)."
+          },
+          {
+            "evidence": [
+              {
+                "end_line": 86,
+                "excerpt_sha256": "d164a1c18d8e8b495bea4499c6284bed9c9011716e7cb8087a1ed04bac69a86c",
+                "file": "src/pulsar/app/core/ledger/plans.py",
+                "line": 63,
+                "quote": "existing = load(conn, key)",
+                "revision": "head"
+              }
+            ],
+            "id": "new_order",
+            "required_behavior": "New reservation invokes admit on usage before consuming approval when approved, before writes/items insertion."
+          },
+          {
+            "evidence": [
+              {
+                "end_line": 132,
+                "excerpt_sha256": "675b8b3ec1b039aa852ebdd7e06284a6f72bea047a6cbb6f8d3c55062f2ca233",
+                "file": "src/pulsar/app/core/ledger/plans.py",
+                "line": 87,
+                "quote": "if existing.account_alias != account.alias:",
+                "revision": "head"
+              }
+            ],
+            "id": "retry_order",
+            "required_behavior": "Eligible pending/failed/partial retry excludes its own write from usage; admission precedes approval consumption and item updates. Published/skipped replay or in-flight/unknown paths do not unconditionally consume a new approval."
+          },
+          {
+            "evidence": [
+              {
+                "end_line": 135,
+                "excerpt_sha256": "11b29b1e900b6fcf6d4c6fa682154048d2022d620aa8019f274cbe00a31b1964",
+                "file": "src/pulsar/app/core/ledger/approvals.py",
+                "line": 123,
+                "quote": "def consume(",
+                "revision": "head"
+              },
+              {
+                "end_line": 58,
+                "excerpt_sha256": "17d5aaed8e2e615ad97e3872430b09003c8180d50ef002d22d4762863b9ba735",
+                "file": "src/pulsar/app/core/ledger/plans.py",
+                "line": 55,
+                "quote": "admit: Callable[[Usage], None] | None,",
+                "revision": "head"
+              }
+            ],
+            "id": "approval",
+            "required_behavior": "consume prefers an admitting approval already used by the same key, otherwise another admitting approval, and records used_key only when unused. Concrete admit implementation is supplied by caller."
+          }
+        ]
+      }
+    },
+    {
+      "base_snapshot": "pulsar/pinned",
+      "head_snapshot": "pulsar/pinned",
+      "id": "pulsar-media-deferred-callbacks",
+      "kind": "python_media_callbacks",
+      "original_source_revision": "6d33fb9d4609618c13d46deb2df6af53b7f504a6",
+      "prompt": "Locate media loading used by standalone upload and planned publication, including the deferred loading and upload callbacks. Identify where shared content validation is reached.",
+      "repository": "pulsar",
+      "split": "held-out",
+      "truth": {
+        "accepted_alternatives": [
+          "Equivalent prose for every required behavioral claim is accepted. Optional identities may be included when accurately cited. Class-qualified declarations are exact identity keys; file-only answers receive no symbol credit."
+        ],
+        "identities": [
+          {
+            "file": "src/pulsar/app/tools.py",
+            "line": 120,
+            "quote": "async def upload_media(",
+            "required": true,
+            "selector": "symbol:src/pulsar/app/tools.py#upload_media:function"
+          },
+          {
+            "file": "src/pulsar/app/tools.py",
+            "line": 67,
+            "quote": "async def validate_plan(rt: Runtime, plan: dict[str, Any], account: str | None) -> Result:",
+            "required": false,
+            "selector": "symbol:src/pulsar/app/tools.py#validate_plan:function"
+          },
+          {
+            "file": "src/pulsar/app/tools.py",
+            "line": 302,
+            "quote": "async def _settle_on_error[T](",
+            "required": true,
+            "selector": "symbol:src/pulsar/app/tools.py#_settle_on_error:function"
+          },
+          {
+            "file": "src/pulsar/app/core/publishing/media.py",
+            "line": 257,
+            "quote": "def load_media(",
+            "required": true,
+            "selector": "symbol:src/pulsar/app/core/publishing/media.py#load_media:function"
+          },
+          {
+            "file": "src/pulsar/app/core/publishing/media.py",
+            "line": 292,
+            "quote": "def load_ref(",
+            "required": true,
+            "selector": "symbol:src/pulsar/app/core/publishing/media.py#load_ref:function"
+          },
+          {
+            "file": "src/pulsar/app/core/publishing/media.py",
+            "line": 105,
+            "quote": "def _check_content(data: bytes, claimed: str | None) -> str:",
+            "required": true,
+            "selector": "symbol:src/pulsar/app/core/publishing/media.py#_check_content:function"
+          },
+          {
+            "file": "src/pulsar/app/core/publishing/publisher.py",
+            "line": 269,
+            "quote": "def _load(",
+            "required": true,
+            "selector": "symbol:src/pulsar/app/core/publishing/publisher.py#Publisher._load:method"
+          },
+          {
+            "file": "src/pulsar/app/core/publishing/publisher.py",
+            "line": 216,
+            "quote": "def prepare(self, plan: Plan, bound: Bound) -> Prepared:",
+            "required": true,
+            "selector": "symbol:src/pulsar/app/core/publishing/publisher.py#Publisher.prepare:method"
+          },
+          {
+            "file": "src/pulsar/app/core/publishing/publisher.py",
+            "line": 447,
+            "quote": "async def _run(self, prepared: Prepared, key: str, record: PlanRecord) -> Outcome:",
+            "required": true,
+            "selector": "symbol:src/pulsar/app/core/publishing/publisher.py#Publisher._run:method"
+          }
+        ],
+        "limitations": [
+          "Explicit callback sites only; no complete runtime callback graph."
+        ],
+        "rubric": [
+          {
+            "evidence": [
+              {
+                "end_line": 165,
+                "excerpt_sha256": "f2aaa1ff7332880e5dd51efe5eca999f4630c4b6861982bbeca5c8f0c1e49104",
+                "file": "src/pulsar/app/tools.py",
+                "line": 120,
+                "quote": "async def upload_media(",
+                "revision": "head"
+              },
+              {
+                "end_line": 319,
+                "excerpt_sha256": "073d04a22f26a9ebe27e0d950dfec276005f917fa144eed83d8d5e12eea2d5f9",
+                "file": "src/pulsar/app/tools.py",
+                "line": 302,
+                "quote": "async def _settle_on_error[T](",
+                "revision": "head"
+              }
+            ],
+            "id": "standalone",
+            "required_behavior": "upload_media defers load_media through asyncio.to_thread and supplies client.upload_media as a lambda to _settle_on_error, whose await call() invokes it after claim."
+          },
+          {
+            "evidence": [
+              {
+                "end_line": 79,
+                "excerpt_sha256": "684e417f9e6add6fa1bd9667de1c777b71023172d3b3ea3f99f3ecc7e34b74af",
+                "file": "src/pulsar/app/tools.py",
+                "line": 73,
+                "quote": "return {\"ok\": True, \"accounts\": await asyncio.to_thread(check)}",
+                "revision": "head"
+              },
+              {
+                "end_line": 289,
+                "excerpt_sha256": "20dea30d7e4cd61dd869e90408af17643fe4eee9282f7ec551b5c7ab483e9d65",
+                "file": "src/pulsar/app/core/publishing/publisher.py",
+                "line": 248,
+                "quote": "raise PulsarError(",
+                "revision": "head"
+              },
+              {
+                "end_line": 464,
+                "excerpt_sha256": "755ec32fcb179b6d7cb1ea5362a7877d9715787961ec87057fdd691716ac4422",
+                "file": "src/pulsar/app/core/publishing/publisher.py",
+                "line": 447,
+                "quote": "async def _run(self, prepared: Prepared, key: str, record: PlanRecord) -> Outcome:",
+                "revision": "head"
+              }
+            ],
+            "id": "planned",
+            "required_behavior": "validate_plan defers its check closure to a thread; Publisher.prepare loads refs through _load, caching bytes; _run uploads prepared media per item. Loading and upload occur at different stages."
+          },
+          {
+            "evidence": [
+              {
+                "end_line": 306,
+                "excerpt_sha256": "c1226acb050e16a128c13a43e947dece8d840ff21cac83080f2aca9988d558d1",
+                "file": "src/pulsar/app/core/publishing/media.py",
+                "line": 257,
+                "quote": "def load_media(",
+                "revision": "head"
+              },
+              {
+                "end_line": 134,
+                "excerpt_sha256": "772da60089ea760f821ff526d95cc3efa352ed824d6837bf99f5f833788b6d1b",
+                "file": "src/pulsar/app/core/publishing/media.py",
+                "line": 105,
+                "quote": "def _check_content(data: bytes, claimed: str | None) -> str:",
+                "revision": "head"
+              },
+              {
+                "end_line": 289,
+                "excerpt_sha256": "be8367a691db5882ddd596e0bd4d9523a2b8e41ab2875e7220d824fcc684c456",
+                "file": "src/pulsar/app/core/publishing/publisher.py",
+                "line": 269,
+                "quote": "def _load(",
+                "revision": "head"
+              }
+            ],
+            "id": "shared_validation",
+            "required_behavior": "load_ref calls load_media and hashes returned bytes. load_media selects path/base64 then _check_content, which sniffs MIME, reconciles declaration, limits size and scans ASCII chunks for secrets. _load also scans alt text."
+          }
+        ]
+      }
+    },
+    {
+      "base_snapshot": "pulsar/base",
+      "head_snapshot": "pulsar/change",
+      "id": "pulsar-bounded-error-commit",
+      "kind": "commit_change",
+      "original_source_revision": "6d33fb9d4609618c13d46deb2df6af53b7f504a6",
+      "prompt": "For commit cfe30af2dc8d05c10c9b476eb53a577c224aa898 relative to its parent, locate provider-error handling and regression coverage. Describe supported before/after behavior, including duplicate classification.",
+      "repository": "pulsar",
+      "split": "development",
+      "truth": {
+        "accepted_alternatives": [
+          "Equivalent prose for every required behavioral claim is accepted. Optional identities may be included when accurately cited. Class-qualified declarations are exact identity keys; file-only answers receive no symbol credit."
+        ],
+        "identities": [
+          {
+            "file": "src/pulsar/app/core/channels/x/client.py",
+            "line": 109,
+            "quote": "def __init__(self, state: str, message: str, *, detail: Any) -> None:",
+            "required": true,
+            "selector": "symbol:src/pulsar/app/core/channels/x/client.py#MediaProcessingError.__init__:method"
+          },
+          {
+            "file": "src/pulsar/app/core/channels/x/client.py",
+            "line": 140,
+            "quote": "def _bounded_provider_detail(value: Any, *, limit: int = PROVIDER_DETAIL_LIMIT_BYTES) -> Any:",
+            "required": true,
+            "selector": "symbol:src/pulsar/app/core/channels/x/client.py#_bounded_provider_detail:function"
+          },
+          {
+            "file": "src/pulsar/app/core/channels/x/client.py",
+            "line": 175,
+            "quote": "def _error_detail(resp: httpx.Response) -> Any:",
+            "required": true,
+            "selector": "symbol:src/pulsar/app/core/channels/x/client.py#_error_detail:function"
+          },
+          {
+            "file": "src/pulsar/app/core/channels/x/client.py",
+            "line": 194,
+            "quote": "def map_http_error(resp: httpx.Response) -> PulsarError:",
+            "required": true,
+            "selector": "symbol:src/pulsar/app/core/channels/x/client.py#map_http_error:function"
+          },
+          {
+            "file": "tests/test_xapi.py",
+            "line": 198,
+            "quote": "async def test_duplicate_code_uses_full_body_even_when_detail_is_truncated(client, authed, fake_x):",
+            "required": true,
+            "selector": "symbol:tests/test_xapi.py#test_duplicate_code_uses_full_body_even_when_detail_is_truncated:test"
+          },
+          {
+            "file": "tests/test_xapi.py",
+            "line": 170,
+            "quote": "async def test_oversized_http_error_detail_is_bounded_and_full_body_is_logged_redacted(",
+            "required": true,
+            "selector": "symbol:tests/test_xapi.py#test_oversized_http_error_detail_is_bounded_and_full_body_is_logged_redacted:test"
+          },
+          {
+            "file": "src/pulsar/app/core/channels/x/client.py",
+            "line": 85,
+            "quote": "def bounded_text(value: object, limit: int = PROVIDER_TEXT_LIMIT) -> str:",
+            "required": false,
+            "selector": "symbol:src/pulsar/app/core/channels/x/client.py#bounded_text:function"
+          }
+        ],
+        "limitations": [
+          "Actual diff and parent verified. Bounded provider error behavior only, not all changes or provider runtime behavior."
+        ],
+        "rubric": [
+          {
+            "evidence": [
+              {
+                "end_line": 118,
+                "excerpt_sha256": "3b9ac6d667991ab9a9f2b8aa9e2db73a0082df23c7c7dce257b29d686a4c37fd",
+                "file": "src/pulsar/app/core/channels/x/client.py",
+                "line": 103,
+                "quote": "class MediaProcessingError(PulsarError):",
+                "revision": "base"
+              },
+              {
+                "end_line": 134,
+                "excerpt_sha256": "589f37973aefe43e65a1f16f222d5fc91ad9736df6f2cf702ebc9d91befd86b8",
+                "file": "src/pulsar/app/core/channels/x/client.py",
+                "line": 131,
+                "quote": "",
+                "revision": "base"
+              },
+              {
+                "end_line": 157,
+                "excerpt_sha256": "909d9166dc0b93ce41c8058e5877ce64dae5772fe76d2b97396eeaa272e6ae96",
+                "file": "src/pulsar/app/core/channels/x/client.py",
+                "line": 108,
+                "quote": "class MediaProcessingError(PulsarError):",
+                "revision": "head"
+              },
+              {
+                "end_line": 182,
+                "excerpt_sha256": "36778fc69de87146733203d1c2f4f972b8246c706ce37386b224925ff1422326",
+                "file": "src/pulsar/app/core/channels/x/client.py",
+                "line": 160,
+                "quote": "def _log_provider_body(body: Any) -> None:",
+                "revision": "head"
+              }
+            ],
+            "id": "before_after",
+            "required_behavior": "At the real base, MediaProcessingError retains raw detail/state and HTTP classification uses returned detail. Head redacts/bounds detail to 2048 serialized UTF-8 bytes, bounds processing state, and logs full redacted body."
+          },
+          {
+            "evidence": [
+              {
+                "end_line": 215,
+                "excerpt_sha256": "bd68897db91a5807e546ab5bfe20400385c8d3757d35986c8451214bd102c4cb",
+                "file": "src/pulsar/app/core/channels/x/client.py",
+                "line": 194,
+                "quote": "def map_http_error(resp: httpx.Response) -> PulsarError:",
+                "revision": "head"
+              },
+              {
+                "end_line": 204,
+                "excerpt_sha256": "385b3aa381cc7822eb5c06a28913b46be357adba778afd094701e23578b87d51",
+                "file": "tests/test_xapi.py",
+                "line": 198,
+                "quote": "async def test_duplicate_code_uses_full_body_even_when_detail_is_truncated(client, authed, fake_x):",
+                "revision": "head"
+              }
+            ],
+            "id": "duplicate",
+            "required_behavior": "Head classification separately uses selected full body before returned truncation; a 403 detail with duplicate text beyond 3000 chars still classifies duplicate, not retryable."
+          },
+          {
+            "evidence": [
+              {
+                "end_line": 195,
+                "excerpt_sha256": "759ba1fa20a6689feb3aefe04ce925ccad4dcfb0b9559f0fb03f3ebf8bec817a",
+                "file": "tests/test_xapi.py",
+                "line": 166,
+                "quote": "@pytest.mark.parametrize(",
+                "revision": "head"
+              },
+              {
+                "end_line": 457,
+                "excerpt_sha256": "b2338c2c0275165b788686d70fe51f14580f538da3c295d6843ce78e185da821",
+                "file": "src/pulsar/app/core/channels/x/client.py",
+                "line": 440,
+                "quote": "**kwargs,",
+                "revision": "head"
+              }
+            ],
+            "id": "regression",
+            "required_behavior": "Oversized HTTP regression covers 429 rate_limited/retryable and non-idempotent 503 outcome_unknown/nonretryable with bounded returned detail, full redacted log and secret checks."
+          }
+        ]
+      }
+    },
+    {
+      "base_snapshot": "pulsar/pinned",
+      "head_snapshot": "pulsar/pinned",
+      "id": "pulsar-channel-dispatch-abstention",
+      "kind": "dynamic_dispatch_abstention",
+      "original_source_revision": "6d33fb9d4609618c13d46deb2df6af53b7f504a6",
+      "prompt": "Identify the concrete callee of channel.create in Publisher._run for every invocation. If source cannot guarantee a unique implementation, report that uncertainty and locate the contract, call site and captured implementation candidates.",
+      "repository": "pulsar",
+      "split": "held-out",
+      "truth": {
+        "accepted_alternatives": [
+          "Equivalent prose for every required behavioral claim is accepted. Optional identities may be included when accurately cited. Class-qualified declarations are exact identity keys; file-only answers receive no symbol credit."
+        ],
+        "identities": [
+          {
+            "file": "src/pulsar/app/core/publishing/publisher.py",
+            "line": 447,
+            "quote": "async def _run(self, prepared: Prepared, key: str, record: PlanRecord) -> Outcome:",
+            "required": true,
+            "selector": "symbol:src/pulsar/app/core/publishing/publisher.py#Publisher._run:method"
+          },
+          {
+            "file": "src/pulsar/app/core/publishing/publisher.py",
+            "line": 105,
+            "quote": "class Bound:",
+            "required": true,
+            "selector": "symbol:src/pulsar/app/core/publishing/publisher.py#Bound:class"
+          },
+          {
+            "file": "src/pulsar/app/core/channels/contract.py",
+            "line": 205,
+            "quote": "class Channel(Protocol):",
+            "required": true,
+            "selector": "symbol:src/pulsar/app/core/channels/contract.py#Channel:class"
+          },
+          {
+            "file": "src/pulsar/app/core/channels/contract.py",
+            "line": 234,
+            "quote": "async def create(",
+            "required": true,
+            "selector": "symbol:src/pulsar/app/core/channels/contract.py#Channel.create:method"
+          },
+          {
+            "file": "src/pulsar/app/core/channels/x/adapter.py",
+            "line": 194,
+            "quote": "async def create(",
+            "required": true,
+            "selector": "symbol:src/pulsar/app/core/channels/x/adapter.py#XChannel.create:method"
+          },
+          {
+            "file": "tests/test_publisher.py",
+            "line": 121,
+            "quote": "async def create(self, text, *, reply_to=None, quote=None, media_ids=()) -> Published:",
+            "required": true,
+            "selector": "symbol:tests/test_publisher.py#FakeChannel.create:method"
+          },
+          {
+            "file": "tests/test_publisher.py",
+            "line": 176,
+            "quote": "def bound(channel):",
+            "required": false,
+            "selector": "symbol:tests/test_publisher.py#bound:function"
+          }
+        ],
+        "limitations": [
+          "Candidate implementations are examples, not exhaustive implementor truth. Cited candidates with explicit uncertainty are accepted; empty-item abstention alone does not satisfy this locating prompt."
+        ],
+        "rubric": [
+          {
+            "evidence": [
+              {
+                "end_line": 112,
+                "excerpt_sha256": "efb49188a5cade9c25ad78abc4b1209449f8bcb4a2f1ad38d45e9620fe3eac0f",
+                "file": "src/pulsar/app/core/publishing/publisher.py",
+                "line": 105,
+                "quote": "class Bound:",
+                "revision": "head"
+              },
+              {
+                "end_line": 448,
+                "excerpt_sha256": "81eb1df9e3933399bce0b239684e36499c6d874e350974d4eab8ea6a1372a453",
+                "file": "src/pulsar/app/core/publishing/publisher.py",
+                "line": 447,
+                "quote": "async def _run(self, prepared: Prepared, key: str, record: PlanRecord) -> Outcome:",
+                "revision": "head"
+              },
+              {
+                "end_line": 492,
+                "excerpt_sha256": "a957220a329008e7a7be50809feff27ed62dc6e990fda84cb34f49a431b5d1fd",
+                "file": "src/pulsar/app/core/publishing/publisher.py",
+                "line": 487,
+                "quote": "published = await channel.create(",
+                "revision": "head"
+              },
+              {
+                "end_line": 241,
+                "excerpt_sha256": "f6e6e8cfc5c207ac4bb5297c7fc4a0082e179a55b6df9dd851a224c914a256e4",
+                "file": "src/pulsar/app/core/channels/contract.py",
+                "line": 205,
+                "quote": "class Channel(Protocol):",
+                "revision": "head"
+              }
+            ],
+            "id": "callsite",
+            "required_behavior": "Publisher._run obtains prepared.bound.channel and awaits its create. Bound stores a Channel protocol value, whose create is a contract, not one fixed implementation."
+          },
+          {
+            "evidence": [
+              {
+                "end_line": 209,
+                "excerpt_sha256": "660cef1756656b41dedf85be5f9a9fce0281ca8992841de85f6df7829bd8aa71",
+                "file": "src/pulsar/app/core/channels/x/adapter.py",
+                "line": 194,
+                "quote": "async def create(",
+                "revision": "head"
+              },
+              {
+                "end_line": 138,
+                "excerpt_sha256": "9db26bd3a939e8999b9757548ec4775dfbd0ca6d7106b9240b99f78a350e2d5f",
+                "file": "tests/test_publisher.py",
+                "line": 121,
+                "quote": "async def create(self, text, *, reply_to=None, quote=None, media_ids=()) -> Published:",
+                "revision": "head"
+              },
+              {
+                "end_line": 177,
+                "excerpt_sha256": "aec9fdd2e8ba907688c8038a79759ad6d81dc4296a490ef5206f9334ab0d5087",
+                "file": "tests/test_publisher.py",
+                "line": 170,
+                "quote": "@pytest.fixture",
+                "revision": "head"
+              }
+            ],
+            "id": "candidates",
+            "required_behavior": "XChannel.create delegates to client.create_post; FakeChannel.create implements different test behavior and a fixture injects it into Bound."
+          },
+          {
+            "evidence": [
+              {
+                "end_line": 112,
+                "excerpt_sha256": "ca08006807aad151bfa05785018efe31570219a14f02aeac732fd93809d091c1",
+                "file": "src/pulsar/app/core/publishing/publisher.py",
+                "line": 112,
+                "quote": "channel: Channel",
+                "revision": "head"
+              },
+              {
+                "end_line": 177,
+                "excerpt_sha256": "00a96fb0cdb50b11754ebb1e2a3e759e67f49a0911b4b798dd4bf0e6cf69ef82",
+                "file": "tests/test_publisher.py",
+                "line": 175,
+                "quote": "@pytest.fixture",
+                "revision": "head"
+              }
+            ],
+            "id": "uncertainty",
+            "required_behavior": "Explicitly deny an unconditional unique callee for every invocation. Conditional runtime-X attribution is allowed while acknowledging arbitrary injected Bound values and nonexhaustive candidate implementations."
+          }
+        ]
+      }
+    }
+  ],
+  "decisions": {
+    "answer_contract": "Dynamic dispatch returns cited candidates, abstain=false and uncertainty in reason; no exact-uniqueness claim.",
+    "follow_up": "Only consider larger independent-repo cohort when all 16 complete contained real records are audited; held-out graph has no negative paired accuracy deltas, at least one positive delta, no graph identity false positives. No superiority claim.",
+    "paired_order": "Alternate first arm by case index; each arm/case one fresh cold confined session.",
+    "prompts": "All eight discovery prompts preserved verbatim. No live episodes have run.",
+    "scope": "Read-only narrow source views; tests inspected to define truth are not proof of live runtime behavior.",
+    "semantic_audit": "Every ok episode needs attributed hash-bound judgments of every rubric claim, source references and verbatim answer explanation evidence. Hashes detect drift, do not authenticate humans.",
+    "speed": "Only both-correct pairs; include source/graph setup. Null token/cost totals when any constituent unknown.",
+    "truth": "Manual pinned-source review, not regex/graph-derived completeness. Current resolver body and actual change diff reviewed."
+  },
+  "export_policy": "source-view-v1: root Cargo.toml/Cargo.lock/pyproject.toml plus .rs/.py and Cargo.toml under src/crates/tests, excluding hidden, docs, skills, instructions, evaluation, agent-eval, generated/vendor/target/node_modules/secrets/credentials components. UTF-8 regular Git blobs only. Source test fixtures may contain inert fake credentials; no live stores/config copied.",
+  "frozen_at": "2026-10-03T02:35:28Z",
+  "label": "exploratory real-repository task holdout, unmeasured",
+  "limits": {
+    "answer_items": 32,
+    "call_bytes": 65536,
+    "output_bytes": 1048576,
+    "tool_calls": 60,
+    "wall_ms": 300000
+  },
+  "repositories": {
+    "Orbit": "0db9356eef631ada11569d0ca4e1e407fad5bee3",
+    "orbit-graph": "ac6d5b91f973874325bac789e9c433a71c805766",
+    "pulsar": "6d33fb9d4609618c13d46deb2df6af53b7f504a6"
+  },
+  "schema_version": 1
+}
