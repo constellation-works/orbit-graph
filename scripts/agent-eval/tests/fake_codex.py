@@ -119,15 +119,68 @@ class Client:
         line = self.process.stdout.readline()
         return json.loads(line) if line else None
 
-    def request(self, method, params):
+    def send_request(self, method, params):
         self.next_id += 1
         self.send_raw(json.dumps({"jsonrpc": "2.0", "id": self.next_id, "method": method,
                                   "params": params}))
+        return self.next_id
+
+    def request(self, method, params):
+        self.send_request(method, params)
         return self.read()
 
     def close(self):
         self.process.stdin.close()
         self.process.wait(timeout=30)
+
+
+def run_calls(client, options, script, annotations, calls, first_item, order):
+    """Keep several MCP requests in flight; report completions in a chosen order.
+
+    The broker executes serially, while Codex can publish their completions in
+    another order. All starts and requests precede reads; no sleeps or races.
+    Report overrides deliberately corrupt telemetry without changing the calls.
+    """
+    pending, completed = [], []
+    for index, step in enumerate(calls):
+        started = {"id": f"item_{first_item + index}", "type": "mcp_tool_call",
+                   "server": "eval_broker", "tool": step["call"],
+                   "arguments": step.get("arguments", {}), "status": "in_progress"}
+        if not step.get("omit_started"):
+            emit({"type": "item.started", "item": dict(started, **step.get("started", {}))})
+        if script.get("deny_tool_approvals") or \
+                not approved(options["config"], step["call"], annotations):
+            pending.append(None)
+            completed.append(dict(started, result=None, error={"message": APPROVAL_DENIED},
+                                  status="failed"))
+        else:
+            pending.append(client.send_request("tools/call", {"name": step["call"],
+                                                               "arguments": started["arguments"]}))
+            completed.append(started)
+    for index, request_id in enumerate(pending):
+        if request_id is None:
+            continue
+        reply = client.read()
+        if not reply or reply.get("id") != request_id:
+            raise RuntimeError(f"missing broker reply for request {request_id}")
+        result = reply.get("result", reply.get("error"))
+        # Real Codex JSONL omits MCP isError and includes null structured_content.
+        completed[index] = dict(completed[index],
+                                result={"content": result["content"], "structured_content": None},
+                                error=None,
+                                status="failed" if result.get("isError") else "completed")
+    for index in order:
+        step = calls[index]
+        reported = dict(completed[index], **step.get("completed", {}))
+        if "result_from" in step:
+            reported["result"] = completed[step["result_from"]]["result"]
+        for field in step.get("omit_fields", []):
+            reported.pop(field, None)
+        if not step.get("omit_completed"):
+            event = {"type": "item.completed", "item": reported}
+            emit(event)
+            if step.get("duplicate_completed"):
+                emit(event)
 
 
 def run_exec(options, script):
@@ -163,23 +216,11 @@ def run_exec(options, script):
     item = 0
     for step in steps:
         item += 1
-        if "call" in step:
-            started = {"id": f"item_{item}", "type": "mcp_tool_call", "server": "eval_broker",
-                       "tool": step["call"], "arguments": step.get("arguments", {}),
-                       "status": "in_progress"}
-            emit({"type": "item.started", "item": started})
-            if script.get("deny_tool_approvals") or \
-                    not approved(options["config"], step["call"], annotations):
-                emit({"type": "item.completed",
-                      "item": dict(started, result=None, error={"message": APPROVAL_DENIED},
-                                   status="failed")})
-                continue
-            reply = client.request("tools/call", {"name": step["call"],
-                                                  "arguments": step.get("arguments", {})})
-            result = reply.get("result", reply.get("error"))
-            emit({"type": "item.completed",
-                  "item": dict(started, result=result,
-                               status="failed" if result.get("isError") else "completed")})
+        if "call" in step or "parallel" in step:
+            calls = step.get("parallel", [step])
+            run_calls(client, options, script, annotations, calls, item,
+                      step.get("completion_order", list(range(len(calls)))))
+            item += len(calls) - 1
         elif "raw" in step:
             client.send_raw(step["raw"])
             if step.get("expect_reply"):
@@ -187,7 +228,7 @@ def run_exec(options, script):
         elif "emit" in step:
             emit(step["emit"])
         elif "emit_raw" in step:
-            sys.stdout.write(step["emit_raw"] + "\n")
+            sys.stdout.write(step["emit_raw"] + ("\n" if step.get("newline", True) else ""))
             sys.stdout.flush()
         elif "sleep" in step:
             time.sleep(step["sleep"])
