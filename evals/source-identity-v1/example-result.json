@@ -1,0 +1,146 @@
+{
+  "citation_recall": {
+    "matched": 1,
+    "required": 3
+  },
+  "diagnostics": [
+    {
+      "file": "python/settings.py",
+      "line": 5,
+      "name": "DYNAMIC",
+      "reason": "only module-level literal assignments supported; dynamic/alias values are uncertain"
+    },
+    {
+      "file": "python/settings.py",
+      "line": 6,
+      "name": "ALIAS",
+      "reason": "only module-level literal assignments supported; dynamic/alias values are uncertain"
+    }
+  ],
+  "identity_recall": {
+    "matched": 2,
+    "required": 3
+  },
+  "items": [
+    {
+      "citation_ok": true,
+      "citation_reason": null,
+      "classification": "required",
+      "identity": {
+        "column": 8,
+        "file": "rust/lib.rs",
+        "kind": "fn",
+        "language": "rust",
+        "leaf": "from_str",
+        "line": 6,
+        "module": "crate",
+        "owner": "crate::Compass",
+        "trait": "std::str::FromStr"
+      },
+      "identity_ok": true,
+      "reason": null,
+      "selector": {
+        "citation": {
+          "end_line": 6,
+          "quote": "    fn from_str(text: &str) -> Result<Self, Self::Err> { todo!() }",
+          "start_line": 6
+        },
+        "file": "rust/lib.rs",
+        "kind": "fn",
+        "language": "rust",
+        "line": 6,
+        "name": "<Compass as FromStr>::from_str"
+      }
+    },
+    {
+      "citation_ok": false,
+      "citation_reason": "quote differs from exact complete source lines",
+      "classification": "required",
+      "identity": {
+        "column": 1,
+        "file": "python/settings.py",
+        "kind": "assignment",
+        "language": "python",
+        "leaf": "RETRY_LIMIT",
+        "line": 2,
+        "module": "python.settings",
+        "owner": null,
+        "trait": null
+      },
+      "identity_ok": true,
+      "reason": null,
+      "selector": {
+        "citation": {
+          "end_line": 2,
+          "quote": "RETRY_LIMIT = 8",
+          "start_line": 2
+        },
+        "file": "python/settings.py",
+        "kind": "assignment",
+        "language": "python",
+        "line": 2,
+        "name": "RETRY_LIMIT"
+      }
+    },
+    {
+      "citation_ok": false,
+      "citation_reason": "identity unresolved",
+      "classification": "uncredited",
+      "identity": null,
+      "identity_ok": false,
+      "reason": "only module-level literal assignments supported; dynamic/alias values are uncertain",
+      "selector": {
+        "citation": {
+          "end_line": 6,
+          "quote": "ALIAS = RETRY_LIMIT",
+          "start_line": 6
+        },
+        "file": "python/settings.py",
+        "kind": "assignment",
+        "language": "python",
+        "line": 6,
+        "name": "ALIAS"
+      }
+    }
+  ],
+  "missing": [
+    {
+      "column": 12,
+      "file": "rust/lib.rs",
+      "kind": "fn",
+      "language": "rust",
+      "leaf": "parse",
+      "line": 12,
+      "module": "crate",
+      "owner": "crate::Ledger",
+      "trait": null
+    }
+  ],
+  "pins": {
+    "contract": "source-identity-v1",
+    "contract_sha256": "841cad23ec677d083ba04fbf5103c82629fcbec762b06977c6e747b9ac0eb7d3",
+    "implementation_sha256": {
+      "rust_source.py": "c70df11aa679a83a05c7f4be342caa5a0ecff470d19ec516db520d13217851d1",
+      "source_identity.py": "87ea12188d0e43f8fdd23b306e68ddb1bd3301800f32b2afa88ad100439d80bf"
+    },
+    "manifest": {
+      "python_files": [
+        "python/settings.py"
+      ],
+      "rust_root": "rust/lib.rs"
+    },
+    "python_ast_version": "3.12",
+    "source_sha256": {
+      "python/settings.py": "9cfc03e06fa615f0fbef187c94426ea635d415be756fe9a063fa18e2358c322c",
+      "rust/lib.rs": "e9d11e6094576e0011160f5696ec2afcc8e784c07bc6749f6e5ebbc7d540e398",
+      "rust/relocated.rs": "b5f4b84461eedd5e017af1b53b47fdcf2e83cb3a8cd0e448352fb5f7baefd089"
+    }
+  },
+  "schema_version": 1,
+  "semantic_review": {
+    "reason": "independent human/source review required",
+    "result": null,
+    "status": "pending"
+  },
+  "unsupported_sources": {}
+}

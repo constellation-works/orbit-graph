@@ -1,0 +1,8 @@
+usage: source_identity.py [-h] --root ROOT --input INPUT
+
+Score prospective source identities and exact citations; JSON output only.
+
+options:
+  -h, --help     show this help message and exit
+  --root ROOT    frozen source root
+  --input INPUT  JSON request; see README.md
