@@ -3430,6 +3430,12 @@ impl DeliveryFixture {
     /// Run `orbit_sync` for `request` with `answer` as RUN-1's delivery
     /// answer for TASK-PRIOR.
     fn sync(&self, request: Value, answer: &Value) -> Value {
+        self.sync_with(request, answer, None)
+    }
+
+    /// [`Self::sync`] with the fake Orbit's workspace discovery in
+    /// `discovery` mode.
+    fn sync_with(&self, request: Value, answer: &Value, discovery: Option<&str>) -> Value {
         let answer_path = self.fixture.path().join("delivery-answer.json");
         fs::write(&answer_path, answer.to_string()).expect("write delivery answer");
         let mut input = json!({
@@ -3441,14 +3447,18 @@ impl DeliveryFixture {
         for (key, value) in request.as_object().expect("request fields") {
             input[key] = value.clone();
         }
+        let mut environment = vec![
+            ("PATH", self.path.as_os_str()),
+            ("GRAPH_TEST_DELIVERY_FILE", answer_path.as_os_str()),
+        ];
+        if let Some(discovery) = discovery {
+            environment.push(("GRAPH_TEST_DISCOVERY", std::ffi::OsStr::new(discovery)));
+        }
         plugin_success(&plugin_output_with_env(
             &self.repository,
             MAINTAIN_TOOL_NAME,
             input,
-            &[
-                ("PATH", self.path.as_os_str()),
-                ("GRAPH_TEST_DELIVERY_FILE", answer_path.as_os_str()),
-            ],
+            &environment,
         ))
     }
 
@@ -3457,6 +3467,23 @@ impl DeliveryFixture {
             json!({"task_runs": [{"task_id": "TASK-PRIOR", "run_id": "RUN-1"}]}),
             answer,
         )
+    }
+
+    /// Commit on the checked-out branch whatever `edit` stages in the
+    /// repository, returning the commit.
+    fn commit(&self, message: &str, edit: impl FnOnce(&Path)) -> String {
+        edit(&self.repository);
+        run_git(&self.repository, ["commit", "-q", "-m", message]);
+        git_stdout(&self.repository, ["rev-parse", "HEAD"])
+    }
+
+    /// Commit on a new `branch` from `main` whatever `edit` stages, returning
+    /// the commit and leaving `main` checked out.
+    fn branch_commit(&self, branch: &str, edit: impl FnOnce(&Path)) -> String {
+        run_git(&self.repository, ["checkout", "-q", "-b", branch, "main"]);
+        let commit = self.commit(branch, edit);
+        run_git(&self.repository, ["checkout", "-q", "main"]);
+        commit
     }
 
     fn stored(&self) -> Option<orbit_graph::DeliveredChange> {
@@ -3807,7 +3834,7 @@ fn orbit_sync_verifies_squash_and_merge_landings_against_git() {
     assert_eq!(sync["outcomes"][0]["status"], "inserted", "{sync}");
     assert_eq!(
         sync["outcomes"][0]["landing"],
-        json!({"method": "pull_request", "verified_by": "landed_commit_paths"}),
+        json!({"method": "pull_request", "verified_by": "landed_commit_tree_entries"}),
         "{sync}"
     );
     let stored = fixture.stored().expect("squash delivery");
@@ -3838,6 +3865,207 @@ fn orbit_sync_verifies_squash_and_merge_landings_against_git() {
     let stored = fixture.stored().expect("merged delivery");
     assert_eq!(stored.delivery.before_revision, fixture.after);
     assert_eq!(stored.delivery.after_revision, head);
+}
+
+/// Write `contents` to `file` in `repository` and stage it.
+fn stage(repository: &Path, file: &str, contents: &str) {
+    fs::write(repository.join(file), contents).expect("write staged change");
+    run_git(repository, ["add", "--", file]);
+}
+
+/// A `pull_request` landing of `base..head` that recorded `landed`.
+fn pull_request_landing(base: &str, head: &str, landed: &str) -> Value {
+    amended(
+        &fixture_run_delivery(base, head),
+        &[
+            ("/landing/method", json!("pull_request")),
+            ("/landing/landed_commit", json!(landed)),
+            ("/landing/pr_number", json!(7)),
+        ],
+    )
+}
+
+#[test]
+fn orbit_sync_verifies_a_squash_by_its_tree_entries_not_its_paths() {
+    const ONE: &str = "pub fn parse() -> u8 { 1 }\n";
+    // Each delivery head and the commit landed in its place change the same
+    // paths from the fixture's delivered state, but not to the same entries.
+    type Edit = fn(&Path);
+    let cases: [(&str, Edit, Edit, &str); 4] = [
+        (
+            "same path, other content",
+            |repo| stage(repo, "parser.rs", ONE),
+            |repo| stage(repo, "parser.rs", "pub fn parse() -> u8 { 2 }\n"),
+            "leaves different contents or modes than head_sha",
+        ),
+        (
+            "same content, other mode",
+            |repo| {
+                // Index-only modes, so the result is the same on any
+                // filesystem.
+                run_git(repo, ["config", "core.fileMode", "false"]);
+                stage(repo, "parser.rs", ONE);
+                run_git(repo, ["update-index", "--chmod=+x", "parser.rs"]);
+            },
+            |repo| stage(repo, "parser.rs", ONE),
+            "leaves different contents or modes than head_sha",
+        ),
+        (
+            "deleted versus emptied",
+            |repo| run_git(repo, ["rm", "-q", "parser.rs"]),
+            |repo| stage(repo, "parser.rs", ""),
+            "leaves different contents or modes than head_sha",
+        ),
+        (
+            "renamed versus renamed and rewritten",
+            |repo| run_git(repo, ["mv", "parser.rs", "lexer.rs"]),
+            |repo| {
+                run_git(repo, ["mv", "parser.rs", "lexer.rs"]);
+                stage(repo, "lexer.rs", "pub fn lex() {}\n");
+            },
+            "leaves different contents or modes than head_sha",
+        ),
+    ];
+    for (case, delivered, landed, reason) in cases {
+        let fixture = DeliveryFixture::new();
+        let head = fixture.branch_commit("feature", delivered);
+        let squash = fixture.commit("squash feature", landed);
+        let sync = fixture.sync_pair(&pull_request_landing(&fixture.after, &head, &squash));
+        assert_single_outcome(&sync, "excluded", reason, case);
+        assert!(fixture.stored().is_none(), "{case}: nothing is stored");
+    }
+
+    // A squash onto a parent that changed a delivered path since the base
+    // cannot be proved to be this delivery, even when it ends at the head's
+    // content.
+    let fixture = DeliveryFixture::new();
+    let head = fixture.branch_commit("feature", |repo| stage(repo, "parser.rs", ONE));
+    fixture.commit("concurrent", |repo| {
+        stage(repo, "parser.rs", "pub fn parse() -> u8 { 9 }\n");
+    });
+    let squash = fixture.commit("squash feature", |repo| stage(repo, "parser.rs", ONE));
+    let sync = fixture.sync_pair(&pull_request_landing(&fixture.after, &head, &squash));
+    assert_single_outcome(
+        &sync,
+        "excluded",
+        "parent differs from base_sha at the delivered paths",
+        "parent changed a delivered path",
+    );
+
+    // An equivalent squash of several commits, with a rename and an added
+    // executable, landed after an unrelated mainline commit, is verified.
+    let fixture = DeliveryFixture::new();
+    run_git(&fixture.repository, ["config", "core.fileMode", "false"]);
+    run_git(
+        &fixture.repository,
+        ["checkout", "-q", "-b", "feature", "main"],
+    );
+    fixture.commit("rename parser", |repo| {
+        run_git(repo, ["mv", "parser.rs", "lexer.rs"]);
+        stage(repo, "lexer.rs", "pub fn lex() -> u8 { 1 }\n");
+    });
+    let head = fixture.commit("add tool", |repo| {
+        stage(repo, "tool.sh", "#!/bin/sh\n");
+        run_git(repo, ["update-index", "--chmod=+x", "tool.sh"]);
+    });
+    run_git(&fixture.repository, ["checkout", "-q", "main"]);
+    let mainline = fixture.commit("unrelated", |repo| {
+        stage(repo, "other.rs", "pub fn other() {}\n");
+    });
+    run_git(&fixture.repository, ["merge", "-q", "--squash", "feature"]);
+    let squash = fixture.commit("squash feature", |_| {});
+    assert_eq!(
+        git_stdout(&fixture.repository, ["ls-tree", &squash, "tool.sh"])
+            .split_whitespace()
+            .next(),
+        Some("100755"),
+        "the squash keeps the delivered mode"
+    );
+    let sync = fixture.sync_pair(&pull_request_landing(&fixture.after, &head, &squash));
+    assert_eq!(sync["outcomes"][0]["status"], "inserted", "{sync}");
+    assert_eq!(
+        sync["outcomes"][0]["landing"],
+        json!({"method": "pull_request", "verified_by": "landed_commit_tree_entries"}),
+        "{sync}"
+    );
+    let stored = fixture.stored().expect("squash delivery");
+    assert_eq!(stored.delivery.before_revision, mainline);
+    assert_eq!(stored.delivery.after_revision, squash);
+}
+
+#[test]
+fn orbit_sync_requires_the_hosts_exact_repository_identity() {
+    // Orbit names a non-GitHub origin `git:` and the SHA-256 of its exact
+    // configured URL. A well-shaped digest of anything else is excluded.
+    let fixture = DeliveryFixture::new();
+    let landed = fixture_run_delivery(&fixture.before, &fixture.after);
+    for (case, repository) in [
+        (
+            "digest of another origin",
+            // SHA-256 of https://example.invalid/constellation/other.git
+            "git:e8f82180e4b15c77235bced8c28fbd036619076aea39760379e0d083791ba867",
+        ),
+        (
+            "digest of the origin without .git",
+            // SHA-256 of https://example.invalid/constellation/fixture
+            "git:dc4cc121ad4fab0fdc7307372c511e5e05048cc0d067a2e168f80179dd17ef6f",
+        ),
+        (
+            "uppercase digest",
+            "git:67DE2F4554F73CCB49730C868722D8D7F238CE6BA0D68DCB4A94AC03A73D6D81",
+        ),
+        ("bare digest", &FIXTURE_REPOSITORY_IDENTITY["git:".len()..]),
+        ("GitHub name", "constellation/fixture"),
+    ] {
+        let sync = fixture.sync_pair(&amended(&landed, &[("/repository", json!(repository))]));
+        assert_single_outcome(
+            &sync,
+            "excluded",
+            "does not match the requested repository",
+            case,
+        );
+        assert!(fixture.stored().is_none(), "{case}: nothing is stored");
+    }
+    let sync = fixture.sync_pair(&landed);
+    assert_eq!(sync["outcomes"][0]["status"], "inserted", "{sync}");
+
+    // A GitHub origin is named `owner/name`, compared exactly.
+    let fixture = DeliveryFixture::new();
+    run_git(
+        &fixture.repository,
+        ["remote", "set-url", "origin", FIXTURE_GITHUB_REMOTE],
+    );
+    let request = json!({"task_runs": [{"task_id": "TASK-PRIOR", "run_id": "RUN-1"}]});
+    let landed = fixture_run_delivery(&fixture.before, &fixture.after);
+    for (case, repository) in [
+        ("another GitHub repository", "constellation/other"),
+        ("differently cased name", "Constellation/Fixture"),
+        (
+            "digest of the GitHub URL",
+            // SHA-256 of https://github.com/constellation/fixture.git
+            "git:e481bb4dabeab7babbc245718d955756eefb22db32e5d813d3de2403f1a128d2",
+        ),
+        ("non-GitHub fixture digest", FIXTURE_REPOSITORY_IDENTITY),
+    ] {
+        let sync = fixture.sync_with(
+            request.clone(),
+            &amended(&landed, &[("/repository", json!(repository))]),
+            Some("github"),
+        );
+        assert_single_outcome(
+            &sync,
+            "excluded",
+            "does not match the requested repository",
+            case,
+        );
+    }
+    let sync = fixture.sync_with(
+        request,
+        &amended(&landed, &[("/repository", json!("constellation/fixture"))]),
+        Some("github"),
+    );
+    assert_eq!(sync["outcomes"][0]["status"], "inserted", "{sync}");
+    assert!(fixture.stored().is_some(), "{sync}");
 }
 
 #[test]
@@ -4869,6 +5097,7 @@ fn many_commit_fixture() -> TempDir {
 
 /// The `origin` of the adapter fixture, published as its workspace's `git_remote`.
 const FIXTURE_REMOTE: &str = "https://example.invalid/constellation/fixture.git";
+const FIXTURE_GITHUB_REMOTE: &str = "https://github.com/constellation/fixture.git";
 
 fn adapter_fixture() -> TempDir {
     let fixture = TempDir::new().expect("create adapter fixture");
@@ -4948,6 +5177,11 @@ fn adapter_fixture() -> TempDir {
         "content": [{"type": "text", "text": shared_remote_discovery.to_string()}],
         "structuredContent": shared_remote_discovery, "isError": false
     }});
+    let mut github_discovery = discovery.clone();
+    github_discovery["workspaces"][0]["git_remote"] = json!(FIXTURE_GITHUB_REMOTE);
+    let github = json!({"jsonrpc": "2.0", "id": 2, "result": {
+        "structuredContent": github_discovery, "isError": false
+    }});
     let mut inactive_discovery = discovery.clone();
     inactive_discovery["workspaces"][0]["status"] = json!("inactive");
     let inactive = json!({"jsonrpc": "2.0", "id": 2, "result": {
@@ -4993,8 +5227,8 @@ fn adapter_fixture() -> TempDir {
     let log = fixture.path().join("orbit-invocations.log");
     let linger = fixture.path().join("linger.pid");
     // GRAPH_TEST_DISCOVERY selects the MCP server's behaviour (granted, denied
-    // by the callback allowlist, refused before serving, or lingering after
-    // EOF). `orbit.workflow.run.delivery` answers RUN-1 for TASK-PRIOR with
+    // by the callback allowlist, refused before serving, lingering after EOF,
+    // or `github`: ws-test registered with FIXTURE_GITHUB_REMOTE). `orbit.workflow.run.delivery` answers RUN-1 for TASK-PRIOR with
     // GRAPH_TEST_DELIVERY_FILE's JSON when set, else a local landing of the
     // fixture's delivery commit, and refuses every other pair as Orbit does;
     // GRAPH_TEST_DELIVERY=denied models a callback-allowlist refusal and
@@ -5034,6 +5268,8 @@ case "$*" in
             printf '%s\n' '{denied}'
           elif [ "$GRAPH_TEST_DISCOVERY" = shared_remote ]; then
             printf '%s\n' '{shared_remote}'
+          elif [ "$GRAPH_TEST_DISCOVERY" = github ]; then
+            printf '%s\n' '{github}'
           elif [ "$GRAPH_TEST_TASK_OWNER" = inactive ]; then
             printf '%s\n' '{inactive}'
           elif [ "$GRAPH_TEST_TASK_OWNER" = missing_status ]; then

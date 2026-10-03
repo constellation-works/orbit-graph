@@ -12,6 +12,7 @@ use std::os::unix::process::{CommandExt, ExitStatusExt};
 use git2::{Oid, Repository};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
+use sha2::{Digest, Sha256};
 
 use orbit_graph::current_observation_cutoff;
 use orbit_graph::{
@@ -1267,11 +1268,13 @@ fn is_full_sha(value: &str) -> bool {
 /// Whether the host's repository identity names the requested repository:
 /// `Some(reason)` when it does not, or is unknown.
 ///
-/// Orbit names a GitHub origin `owner/name` and any other origin
-/// `git:<SHA-256 of the origin URL>`. A GitHub identity is compared exactly.
-/// A `git:` digest is only checked for shape: this adapter links no SHA-256,
-/// so for those origins the binding rests on the workspace's `git_remote`
-/// match, the workspace ID check and the local commit checks.
+/// The expected identity is recomputed from the routed repository exactly as
+/// Orbit derives it: from the configured `remote.origin.url` (as
+/// `git config --get` prints it, trimmed, without `insteadOf` rewriting), a
+/// GitHub origin is `owner/name` and any other origin is `git:` and the
+/// lowercase hex SHA-256 of that URL. Both are compared exactly. Without an
+/// origin Orbit names the repository by a digest of its Git directory path;
+/// that path-dependent identity is not reproduced, so it is refused.
 fn verify_observed_repository(
     repository: &Path,
     observed: Option<&str>,
@@ -1283,23 +1286,41 @@ fn verify_observed_repository(
     };
     let repo = Repository::discover(repository)
         .map_err(|error| GraphError::git("open routed Git repository", error))?;
-    let origin = repo
-        .find_remote("origin")
-        .map_err(|error| GraphError::git("read routed repository origin", error))?;
-    let url = origin.url().map(str::trim).unwrap_or_default();
-    let normalized = url.trim_end_matches(".git");
-    let matches = match normalized
-        .strip_prefix("https://github.com/")
-        .or_else(|| normalized.strip_prefix("git@github.com:"))
-    {
-        Some(github) => observed == github,
-        None => observed
-            .strip_prefix("git:")
-            .is_some_and(|digest| digest.len() == 64 && is_full_sha(digest)),
+    let config = repo
+        .config()
+        .map_err(|error| GraphError::git("read routed repository configuration", error))?;
+    let url = match config.get_string("remote.origin.url") {
+        Ok(url) => url.trim().to_string(),
+        Err(error) if error.code() == git2::ErrorCode::NotFound => String::new(),
+        Err(error) => return Err(GraphError::git("read routed repository origin", error)),
     };
-    Ok((!matches).then(|| {
+    let Some(expected) = repository_identity(url.as_str()) else {
+        return Ok(Some(
+            "the requested repository has no origin URL, and its Git-directory identity is not verified"
+                .to_string(),
+        ));
+    };
+    Ok((observed != expected).then(|| {
         "the run's repository identity does not match the requested repository's origin".to_string()
     }))
+}
+
+/// Orbit's identity for a repository whose origin is `url`, or `None` when
+/// there is no origin URL.
+fn repository_identity(url: &str) -> Option<String> {
+    if url.is_empty() {
+        return None;
+    }
+    let normalized = url.trim_end_matches(".git");
+    Some(
+        match normalized
+            .strip_prefix("https://github.com/")
+            .or_else(|| normalized.strip_prefix("git@github.com:"))
+        {
+            Some(github) => github.to_string(),
+            None => format!("git:{:x}", Sha256::digest(url.as_bytes())),
+        },
+    )
 }
 
 /// What a `landed` answer attests, once checked for consistency.
@@ -1403,10 +1424,12 @@ struct LandedRange {
 /// branch reaches the head (a merge commit, fast-forward or local landing),
 /// the delivery is `base..head`. Otherwise only a pull-request landing that
 /// recorded its `landed_commit` can stand in: that commit must be on the
-/// branch, have one parent that builds on the base, and change exactly the
-/// paths `base..head` changes (a squash or single rebased commit). It is then
-/// imported as `parent..landed_commit`. A local landing records no SHA, so it
-/// is never inferred.
+/// branch, have one parent that builds on the base, and make exactly the tree
+/// changes `base..head` makes (a squash or single rebased commit): the same
+/// paths, each with the same object ID and file mode before and after. It is
+/// then imported as `parent..landed_commit`. A squash onto a parent that
+/// changed one of those paths since the base cannot be proved equivalent, so
+/// it is excluded. A local landing records no SHA, so it is never inferred.
 fn verify_landed_range(
     repository: &Path,
     branch: &str,
@@ -1487,25 +1510,58 @@ fn verify_landed_range(
     if parent != base && !descends(parent, base)? {
         return Ok(Err("landed_commit does not build on base_sha".to_string()));
     }
-    if changed_paths(&repo, base, head)? != changed_paths(&repo, parent, landed_commit)? {
+    let delivered = tree_changes(&repo, base, head)?;
+    let squashed = tree_changes(&repo, parent, landed_commit)?;
+    let paths = |changes: &[TreeChange]| {
+        changes
+            .iter()
+            .map(|change| change.path.clone())
+            .collect::<std::collections::BTreeSet<_>>()
+    };
+    if paths(&delivered) != paths(&squashed) {
         return Ok(Err(
             "landed_commit changes different paths than base_sha..head_sha, so it is not verified as this delivery's squash"
+                .to_string(),
+        ));
+    }
+    let after = |changes: &[TreeChange]| {
+        changes
+            .iter()
+            .map(|change| (change.path.clone(), change.new))
+            .collect::<Vec<_>>()
+    };
+    if after(&delivered) != after(&squashed) {
+        return Ok(Err(
+            "landed_commit leaves different contents or modes than head_sha at the delivered paths, so it is not verified as this delivery's squash"
+                .to_string(),
+        ));
+    }
+    if delivered != squashed {
+        return Ok(Err(
+            "landed_commit's parent differs from base_sha at the delivered paths, so its equivalence to base_sha..head_sha cannot be verified"
                 .to_string(),
         ));
     }
     Ok(Ok(LandedRange {
         before: parent,
         after: landed_commit,
-        verified_by: "landed_commit_paths",
+        verified_by: "landed_commit_tree_entries",
     }))
 }
 
-/// Every path a tree diff from `old` to `new` touches, on either side.
-fn changed_paths(
-    repo: &Repository,
-    old: Oid,
-    new: Oid,
-) -> Result<std::collections::BTreeSet<PathBuf>, GraphError> {
+/// One entry a tree diff changes: its path and its (object ID, file mode)
+/// before and after. An absent side has the zero ID and an unreadable mode.
+#[derive(Debug, PartialEq, Eq)]
+struct TreeChange {
+    path: PathBuf,
+    old: (Oid, u32),
+    new: (Oid, u32),
+}
+
+/// Every entry a tree diff from `old` to `new` changes, in path order.
+/// Renames are not detected, so a rename is a deletion and an addition, and
+/// each change has one path.
+fn tree_changes(repo: &Repository, old: Oid, new: Oid) -> Result<Vec<TreeChange>, GraphError> {
     let tree = |oid: Oid| {
         repo.find_commit(oid)
             .and_then(|commit| commit.tree())
@@ -1514,12 +1570,19 @@ fn changed_paths(
     let diff = repo
         .diff_tree_to_tree(Some(&tree(old)?), Some(&tree(new)?), None)
         .map_err(|error| GraphError::git("diff delivery trees", error))?;
-    Ok(diff
-        .deltas()
-        .flat_map(|delta| [delta.old_file().path(), delta.new_file().path()])
-        .flatten()
-        .map(Path::to_path_buf)
-        .collect())
+    diff.deltas()
+        .map(|delta| {
+            let (old_file, new_file) = (delta.old_file(), delta.new_file());
+            let path = new_file.path().or_else(|| old_file.path()).ok_or_else(|| {
+                GraphError::invalid_data("diff delivery trees", "a changed entry has no path")
+            })?;
+            Ok(TreeChange {
+                path: path.to_path_buf(),
+                old: (old_file.id(), u32::from(old_file.mode())),
+                new: (new_file.id(), u32::from(new_file.mode())),
+            })
+        })
+        .collect()
 }
 
 pub(super) fn canonical_repository(path: &Path) -> Result<PathBuf, GraphError> {

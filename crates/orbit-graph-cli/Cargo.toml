@@ -33,6 +33,10 @@ orbit-graph-changes.workspace = true
 rusqlite.workspace = true
 serde.workspace = true
 serde_json.workspace = true
+# SHA-256 of a non-GitHub origin URL, the digest Orbit names such a
+# repository by (`git:<hex>`), so a delivery answer's identity is compared
+# exactly rather than by shape.
+sha2 = "0.10"
 thiserror.workspace = true
 tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
 unicode-segmentation = "=1.13.3"
