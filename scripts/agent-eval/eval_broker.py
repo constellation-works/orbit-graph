@@ -80,7 +80,7 @@ def now_ms():
 
 
 def set_parent_death_signal():
-    """Ask the kernel to SIGKILL this process when its parent exits."""
+    """Kill on launching-thread exit; use only beneath our stable supervisor thread."""
     try:
         libc = ctypes.CDLL(None, use_errno=True)
         return libc.prctl(PR_SET_PDEATHSIG, signal.SIGKILL, 0, 0, 0) == 0
@@ -292,51 +292,83 @@ def _preexec():
     set_parent_death_signal()
 
 
-def run_child(argv, cwd, env, timeout_s, capture_limit=MAX_CHILD_CAPTURE, line_limit=None):
-    """Run argv with drained, bounded stdout/stderr; end its whole group on every path."""
+def run_child(argv, cwd, env, timeout_s, capture_limit=MAX_CHILD_CAPTURE, line_limit=None,
+              passthrough=False, parent_fd=None, cancelled=lambda: False, grace_s=KILL_GRACE_S):
+    """Bounded capture and group cleanup, including unexpected supervision exceptions.
+
+    passthrough is only for the broker worker: MCP pipes stay directly connected
+    to the provider while this process drains the worker's diagnostic stream.
+    """
     started = time.monotonic()
-    try:
-        process = subprocess.Popen(argv, cwd=cwd, env=env, stdin=subprocess.DEVNULL,
-                                   stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                                   start_new_session=True, preexec_fn=_preexec)
-    except OSError as error:
-        raise Refusal("tool_unavailable",
-                      f"{os.path.basename(argv[0])} could not start: {error.strerror}") from None
-    selector = selectors.DefaultSelector()
-    selector.register(process.stdout, selectors.EVENT_READ, "out")
-    selector.register(process.stderr, selectors.EVENT_READ, "err")
     out, err = bytearray(), bytearray()
-    stopped = None
-    open_streams = 2
-    while open_streams and not stopped:
-        remaining = timeout_s - (time.monotonic() - started)
-        if remaining <= 0:
-            stopped = "timeout"
-            break
-        for key, _ in selector.select(timeout=min(remaining, 0.25)):
-            chunk = os.read(key.fileobj.fileno(), 65536)
-            if not chunk:
-                selector.unregister(key.fileobj)
-                open_streams -= 1
-                continue
-            if key.data == "err":
-                err.extend(chunk[:max(0, MAX_STDERR_CAPTURE - len(err))])
-                continue
-            out.extend(chunk)
-            if line_limit is not None and out.count(b"\n") >= line_limit:
-                stopped = "line_limit"
-            elif len(out) > capture_limit:
-                del out[capture_limit:]
-                stopped = "truncated"
-    selector.close()
-    remaining = timeout_s - (time.monotonic() - started)
-    if not stopped and not wait_leader(process.pid, max(0.0, remaining)):
-        stopped = "timeout"
-    supervision = end_group(process, terminate=bool(stopped))
-    for stream in (process.stdout, process.stderr):
-        stream.close()
-    return {"exit_code": process.returncode, "stdout": bytes(out), "stderr": bytes(err),
-            "stopped": stopped, "supervision": supervision,
+    stopped, error_type, stderr_truncated = None, None, False
+    process, selector = None, None
+    terminate = True
+    supervision = {"signals": [], "survivors": []}
+    try:
+        process = subprocess.Popen(argv, cwd=cwd, env=env,
+                                   stdin=None if passthrough else subprocess.DEVNULL,
+                                   stdout=None if passthrough else subprocess.PIPE,
+                                   stderr=subprocess.PIPE,
+                                   start_new_session=True, preexec_fn=_preexec)
+        selector = selectors.DefaultSelector()
+        if process.stdout is not None:
+            selector.register(process.stdout, selectors.EVENT_READ, "out")
+        selector.register(process.stderr, selectors.EVENT_READ, "err")
+        if parent_fd is not None:
+            selector.register(parent_fd, selectors.EVENT_READ, "parent")
+        open_streams = 1 if passthrough else 2
+        while not stopped:
+            remaining = timeout_s - (time.monotonic() - started)
+            if cancelled():
+                stopped = "cancelled"
+                break
+            if remaining <= 0:
+                stopped = "timeout"
+                break
+            # Do not reap until after the group sweep. Even closed pipes do not
+            # mean the child exited; keep watching the parent and deadline.
+            if not open_streams and wait_leader(process.pid, 0):
+                terminate = False
+                break
+            for key, _ in selector.select(timeout=min(remaining, 0.05)):
+                if key.data == "parent":
+                    stopped = "parent_exit"
+                    break
+                chunk = os.read(key.fileobj.fileno(), 65536)
+                if not chunk:
+                    selector.unregister(key.fileobj)
+                    open_streams -= 1
+                    continue
+                if key.data == "err":
+                    room = max(0, MAX_STDERR_CAPTURE - len(err))
+                    err.extend(chunk[:room])
+                    stderr_truncated |= len(chunk) > room
+                    continue
+                out.extend(chunk)
+                if len(out) > capture_limit:
+                    del out[capture_limit:]
+                    stopped = "truncated"
+                elif line_limit is not None and out.count(b"\n") >= line_limit:
+                    stopped = "line_limit"
+    except Exception as error:
+        # Never persist exception text: it may embed env, argv or source data.
+        error_type = type(error).__name__[:64]
+        stopped = "spawn_error" if process is None else "exception"
+    finally:
+        try:
+            if process is not None:
+                supervision = end_group(process, terminate=terminate, grace_s=grace_s)
+        finally:
+            if selector is not None:
+                selector.close()
+            if process is not None:
+                for stream in (process.stdout, process.stderr):
+                    if stream is not None:
+                        stream.close()
+    return {"exit_code": process.returncode if process is not None else None,
+            "stdout": bytes(out), "stderr": bytes(err), "stderr_truncated": stderr_truncated,
+            "stopped": stopped, "error_type": error_type, "supervision": supervision,
             "elapsed_ms": int((time.monotonic() - started) * 1000)}
 
 
@@ -411,7 +443,7 @@ def end_group(process, terminate, grace_s=KILL_GRACE_S):
         signal_group(signal.SIGKILL)
         settled(grace_s)
         survivors = live_group_members(process.pid)
-    process.wait()
+    process.wait(timeout=grace_s)
     return {"signals": signals, "survivors": survivors}
 
 
@@ -508,12 +540,30 @@ class Broker:
             status = "timeout"
         elif result["stopped"] == "truncated":
             status = "truncated"
-        elif result["exit_code"] not in ok_codes:
+        elif result["stopped"] not in (None, "line_limit") or result["exit_code"] not in ok_codes:
             status = "failed"
+        if result["supervision"]["survivors"] != []:
+            status = "failed"
+        self.record({"type": "child", "seq": self.calls, "tool": tool,
+                     "exit_code": result["exit_code"], "stopped": result["stopped"],
+                     "error_type": result.get("error_type"), "cleanup": result["supervision"],
+                     "stderr": result["stderr"].decode("utf-8", errors="replace")[:2048]
+                     if status != "ok" else "",
+                     "stderr_truncated": result.get("stderr_truncated", False)
+                     or len(result["stderr"].decode("utf-8", errors="replace")) > 2048})
         text = result["stdout"].decode("utf-8", errors="replace")
         envelope = {"tool": tool, "status": status, "exit_code": result["exit_code"]}
         if status != "ok":
-            envelope["stderr"] = result["stderr"].decode("utf-8", errors="replace")[:2048]
+            # Leave room for structured evidence even at the minimum call budget.
+            stderr = result["stderr"].decode("utf-8", errors="replace")
+            stderr_limit = min(2048, max(0, (self.limits["call_bytes"] - 700) // 6))
+            envelope.update(stderr=stderr[:stderr_limit],
+                            stderr_truncated=result.get("stderr_truncated", False)
+                            or len(stderr) > stderr_limit,
+                            stopped=result["stopped"], error_type=result.get("error_type"),
+                            cleanup={"signals": result["supervision"]["signals"],
+                                     "survivors": result["supervision"]["survivors"][:8]
+                                     if result["supervision"]["survivors"] is not None else None})
         return status, self.page(envelope, text, offset)
 
     # -- tools -----------------------------------------------------------
@@ -752,6 +802,7 @@ class Broker:
                       f"more than {self.limits['tool_calls']} tool calls")
             return self.tool_error("tool_call_budget_exceeded", "tool call budget exhausted")
         self.calls += 1
+        self.record({"type": "call_start", "seq": self.calls, "tool": tool})
         started = time.monotonic()
         raw_input = canonical(arguments) if _jsonable(arguments) else repr(arguments)
         limit = self.limits["call_bytes"]
@@ -769,6 +820,11 @@ class Broker:
             status = "failed"
             output = canonical({"tool": tool, "status": "failed",
                                 "error": {"code": refusal.code, "message": refusal.message}})
+        except Exception as error:
+            status = "failed"
+            output = canonical({"tool": tool, "status": status,
+                                "error": {"code": "tool_exception",
+                                          "type": type(error).__name__[:64]}})
         remaining = self.limits["output_bytes"] - self.output_bytes
         if len(output.encode()) > remaining:
             output = output.encode()[:max(0, remaining)].decode("utf-8", errors="ignore")
@@ -990,8 +1046,52 @@ def launch(spec_path, argv):
     return 127  # not reached
 
 
+def supervise_broker(config_path, config):
+    """Watch provider *process* lifetime, never its transient launching thread.
+
+    pidfd pins identity and becomes readable on process exit. The worker's
+    PDEATHSIG is safe here because this supervisor's main thread owns its wait.
+    It also lets us retain worker exit/stderr even when the provider drops them.
+    """
+    parent = os.getppid()
+    parent_fd = os.pidfd_open(parent)
+    logger = Broker(config)
+    cancelled = []
+    previous = {}
+    try:
+        if os.getppid() != parent:
+            raise RuntimeError("parent changed before supervision")
+        for sig in (signal.SIGTERM, signal.SIGINT):
+            previous[sig] = signal.signal(sig, lambda signum, frame: cancelled.append(signum))
+        logger.record({"type": "supervisor_start", "identity": start_identity()})
+        result = run_child([sys.executable, "-B", os.path.abspath(__file__),
+                            "--worker", "--config", config_path],
+                           config["repo_root"], logger.child_env,
+                           max(0, config["deadline_unix_ms"] / 1000 - time.time()),
+                           passthrough=True, parent_fd=parent_fd,
+                           cancelled=lambda: bool(cancelled), grace_s=3 * KILL_GRACE_S)
+        logger.record({"type": "broker_exit", "exit_code": result["exit_code"],
+                       "stopped": result["stopped"], "error_type": result["error_type"],
+                       "stderr": result["stderr"].decode("utf-8", errors="replace"),
+                       "stderr_truncated": result["stderr_truncated"],
+                       "cleanup": result["supervision"]})
+        return 0 if result["exit_code"] == 0 and result["stopped"] is None else 1
+    finally:
+        for sig, handler in previous.items():
+            signal.signal(sig, handler)
+        os.close(parent_fd)
+        os.close(logger.root_fd)
+        os.close(logger.log)
+
+
+def terminate_worker(signum, frame):
+    # Unwind child supervision so its whole process group gets cleaned up.
+    raise SystemExit(128 + signum)
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    parser.add_argument("--worker", action="store_true", help=argparse.SUPPRESS)
     parser.add_argument("--config", help="broker configuration written by eval_runner.py")
     parser.add_argument("--launch", help="probe spec; run the probe, then exec the command")
     parser.add_argument("command", nargs=argparse.REMAINDER)
@@ -1003,16 +1103,25 @@ def main(argv=None):
         return launch(args.launch, command)
     if not args.config or args.command:
         parser.error("serve mode takes only --config")
-    set_parent_death_signal()
     try:
         config = load_config(args.config)
+        if not args.worker:
+            return supervise_broker(os.path.abspath(args.config), config)
         broker = Broker(config)
     except (OSError, ValueError) as error:
         print(f"{BROKER_NAME}: {error}", file=sys.stderr)
         return 2
-    signal.signal(signal.SIGPIPE, signal.SIG_DFL)
-    broker.serve(sys.stdin.buffer, sys.stdout.buffer)
-    return 0
+    for sig in (signal.SIGTERM, signal.SIGINT):
+        signal.signal(sig, terminate_worker)
+    try:
+        broker.serve(sys.stdin.buffer, sys.stdout.buffer)
+        return 0
+    except Exception as error:
+        print(f"{BROKER_NAME}: {type(error).__name__[:64]}", file=sys.stderr)
+        return 1
+    finally:
+        os.close(broker.root_fd)
+        os.close(broker.log)
 
 
 if __name__ == "__main__":

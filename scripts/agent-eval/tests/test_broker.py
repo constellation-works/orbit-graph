@@ -4,6 +4,7 @@ import os
 import signal
 import subprocess
 import sys
+import threading
 import time
 import unittest
 from unittest import mock
@@ -234,6 +235,149 @@ class BrokerTests(unittest.TestCase):
         self.assertRefused(client, "impact", {"selector": "symbol:a#b:function",
                                               "direction": "up"}, "invalid_argument")
         client.close()
+
+    def test_broker_survives_launching_thread_exit(self):
+        # Linux PDEATHSIG follows the launching thread, not process lifetime.
+        # Initialize before allowing that thread to exit: this failed with -9.
+        clients, errors = [], []
+        config, state = support.broker_config(self.work, self.repo, self.snapshot,
+                                              "graph", graph=str(support.FAKE_GRAPH))
+
+        def launch():
+            try:
+                client = support.McpClient(config)
+                clients.append(client)
+                client.request("initialize")
+            except Exception as error:
+                errors.append(error)
+        thread = threading.Thread(target=launch)
+        thread.start()
+        thread.join(timeout=10)
+        for client in clients:
+            self.addCleanup(client.terminate)
+        self.assertFalse(thread.is_alive())
+        self.assertEqual(errors, [])
+        client = clients[0]
+        for name, args in (("graph_sync", {}), ("git", {"op": "log"}),
+                           ("read", {"path": "src/lib.rs"})):
+            body, error = client.call(name, args)
+            self.assertFalse(error, body)
+        self.assertEqual(client.close(), 0)
+        exit_record = support.log_entries(state)[-1]
+        self.assertEqual(exit_record["type"], "broker_exit")
+        self.assertEqual(exit_record["exit_code"], 0)
+        self.assertEqual(exit_record["cleanup"]["survivors"], [])
+
+    def test_parent_process_exit_cleans_broker_with_open_mcp_pipes(self):
+        config, state = support.broker_config(self.work, self.repo, self.snapshot)
+        code = ("import subprocess, sys, threading, time\n"
+                f"argv = {[sys.executable, '-B', str(support.TOOL / 'eval_broker.py'), '--config', str(config)]!r}\n"
+                "def launch():\n"
+                "    subprocess.Popen(argv, start_new_session=True)\n"
+                "thread = threading.Thread(target=launch)\n"
+                "thread.start(); thread.join(5)\n"
+                "time.sleep(600)\n")
+        parent = support.McpClient(argv=[sys.executable, "-B", "-c", code])
+        self.addCleanup(parent.terminate)
+        parent.request("initialize")
+        identities = [e["identity"] for e in support.log_entries(state)
+                      if e["type"] in ("start", "supervisor_start")]
+        self.assertEqual(len(identities), 2)
+        for identity in identities:
+            fd = os.pidfd_open(identity["pid"])
+
+            def cleanup(fd=fd):
+                try:
+                    signal.pidfd_send_signal(fd, signal.SIGKILL)
+                except ProcessLookupError:
+                    pass
+                finally:
+                    os.close(fd)
+            self.addCleanup(cleanup)
+        # Keep MCP stdin open: only the process-lifetime watch can stop the worker.
+        os.kill(parent.process.pid, signal.SIGTERM)
+        deadline = time.monotonic() + 8
+        while any(support.alive(i["pid"]) for i in identities) and time.monotonic() < deadline:
+            time.sleep(0.02)
+        self.assertFalse(any(support.alive(i["pid"]) for i in identities))
+        exit_record = support.log_entries(state)[-1]
+        self.assertEqual(exit_record["stopped"], "parent_exit")
+        self.assertEqual(exit_record["cleanup"]["survivors"], [])
+
+    def test_killed_worker_has_durable_signal_evidence(self):
+        client, state = self.client()
+        identity = next(e["identity"] for e in support.log_entries(state) if e["type"] == "start")
+        fd = os.pidfd_open(identity["pid"])
+        try:
+            signal.pidfd_send_signal(fd, signal.SIGKILL)
+        finally:
+            os.close(fd)
+        self.assertEqual(client.close(), 1)
+        record = support.log_entries(state)[-1]
+        self.assertEqual(record["type"], "broker_exit")
+        self.assertEqual(record["exit_code"], -signal.SIGKILL)
+        self.assertEqual(record["cleanup"]["survivors"], [])
+
+    def test_worker_stderr_is_drained_bounded_and_exit_is_recorded(self):
+        config, state = support.broker_config(self.work, self.repo, self.snapshot)
+        runtime = self.work / "fault-broker.py"
+        source = (support.TOOL / "eval_broker.py").read_text()
+        runtime.write_text(source.replace(
+            "        broker.serve(sys.stdin.buffer, sys.stdout.buffer)",
+            "        sys.stderr.write('diagnostic' * 10000)\n"
+            "        raise RuntimeError('do-not-persist-source-or-env')"))
+        client = support.McpClient(argv=[sys.executable, "-B", str(runtime), "--config", str(config)])
+        self.addCleanup(client.terminate)
+        self.assertEqual(client.close(), 1)
+        entry = support.log_entries(state)[-1]
+        self.assertEqual(entry["exit_code"], 1)
+        self.assertEqual(len(entry["stderr"].encode()), eval_broker.MAX_STDERR_CAPTURE)
+        self.assertTrue(entry["stderr_truncated"])
+        self.assertNotIn("do-not-persist", json.dumps(entry))
+
+    def test_child_failures_are_bounded_logged_and_allow_subsequent_calls(self):
+        config, state = support.broker_config(self.work, self.repo, self.snapshot,
+                                              "graph", limits=dict(support.LIMITS, call_bytes=1024),
+                                              graph="/does/not/exist")
+        broker = eval_broker.Broker(json.loads(config.read_text()))
+        self.addCleanup(os.close, broker.log)
+        self.addCleanup(os.close, broker.root_fd)
+        cases = [(["/does/not/exist"], 1, "spawn_error"),
+                 ([sys.executable, "-c", "import sys; sys.stderr.write('é'*20000); sys.exit(7)"],
+                  2, None),
+                 ([sys.executable, "-c", "import time; time.sleep(30)"], .1, "timeout")]
+        original = eval_broker.run_child
+        for argv, timeout, stopped in cases:
+            with self.subTest(stopped=stopped):
+                result = original(argv, str(self.work), {"PATH": "/usr/bin:/bin"}, timeout)
+                self.assertEqual(result["stopped"], stopped)
+                with mock.patch.object(eval_broker, "run_child", return_value=result):
+                    reply = broker.call_tool({"name": "graph_sync", "arguments": {}})
+                self.assertTrue(reply["isError"])
+                text = reply["content"][0]["text"]
+                self.assertLessEqual(len(text.encode()), 1024)
+                body = json.loads(text)
+                self.assertEqual(body["cleanup"]["survivors"], [])
+                self.assertEqual(body["exit_code"], result["exit_code"])
+                self.assertEqual(support.log_entries(state)[-1]["output"], text)
+                self.assertFalse(broker.call_tool({"name": "read", "arguments": {}})["isError"])
+        with mock.patch.object(broker, "execute", side_effect=RuntimeError("secret-source-text")):
+            reply = broker.call_tool({"name": "graph_sync", "arguments": {}})
+        self.assertTrue(reply["isError"])
+        self.assertNotIn("secret-source-text", json.dumps(reply))
+        self.assertIn("tool_exception", json.dumps(reply))
+        self.assertEqual(support.log_entries(state)[-1]["status"], "failed")
+
+    def test_unexpected_supervision_exception_still_reaps_child(self):
+        with mock.patch.object(eval_broker.selectors.DefaultSelector, "select",
+                               side_effect=OSError("sensitive-path")):
+            result = eval_broker.run_child([sys.executable, "-c", "import time; time.sleep(30)"],
+                                          str(self.work), {"PATH": "/usr/bin:/bin"}, 1)
+        self.assertEqual(result["stopped"], "exception")
+        self.assertEqual(result["error_type"], "OSError")
+        self.assertEqual(result["supervision"]["survivors"], [])
+        self.assertIn("SIGTERM", result["supervision"]["signals"])
+        self.assertNotIn("sensitive-path", str(result))
 
     def test_child_timeout_kills_group(self):
         sleeper = self.work / "slow.sh"

@@ -1126,7 +1126,8 @@ def reconcile_calls(transcript, calls):
 
 def read_broker_log(path):
     log = {"starts": [], "initialized": False, "tools_listed": [], "calls": [], "refusals": [],
-           "budget": [], "protocol_errors": 0, "malformed_lines": 0, "truncated": False}
+           "budget": [], "protocol_errors": 0, "malformed_lines": 0, "truncated": False,
+           "supervisors": [], "exits": []}
     try:
         fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC)
     except FileNotFoundError:
@@ -1149,6 +1150,20 @@ def read_broker_log(path):
         kind = entry.get("type")
         if kind == "start":
             log["starts"].append(entry.get("identity") or {})
+        elif kind == "supervisor_start":
+            log["supervisors"].append(entry.get("identity") or {})
+        elif kind == "broker_exit":
+            cleanup = entry.get("cleanup")
+            if (type(entry.get("exit_code")) not in (int, type(None))
+                    or not isinstance(cleanup, dict)
+                    or not isinstance(entry.get("stderr"), str)
+                    or len(entry["stderr"].encode()) > 3 * broker.MAX_STDERR_CAPTURE
+                    or type(entry.get("stderr_truncated")) is not bool):
+                log["malformed_lines"] += 1
+                continue
+            log["exits"].append({key: entry.get(key) for key in
+                                 ("exit_code", "stopped", "error_type", "stderr",
+                                  "stderr_truncated", "cleanup")})
         elif kind == "initialize":
             log["initialized"] = True
         elif kind == "tools_list":
@@ -1210,6 +1225,37 @@ def check_answer(answer, limits):
         require(items and evidence, "a non-abstaining answer needs items and evidence")
 
 
+def recoverable_graph_error(call, body):
+    """Recognize a complete CLI index_missing response, never a backend failure.
+
+    command::report_graph_error and output::json::ErrorPayload define this
+    contract: query exit 1, empty stdout, {code, error} on stderr. Unlike the
+    generic graph_error (I/O, SQLite, subprocess, invalid data), index_missing
+    has an in-episode remedy: graph_sync. Keep other codes fail-closed until
+    their recovery is deliberately supported; retryable is not that policy.
+    """
+    if (call["status"] != "failed" or call["tool"] not in broker.GRAPH_TOOLS
+            or call["tool"] == "graph_sync" or body.get("tool") != call["tool"]
+            or body.get("status") != "failed" or "error" in body
+            or type(body.get("exit_code")) is not int or body["exit_code"] != 1
+            or "stopped" not in body or body["stopped"] is not None
+            or "error_type" not in body or body["error_type"] is not None
+            or body.get("cleanup") != {"signals": [], "survivors": []}
+            or body.get("stderr_truncated") is not False
+            or not isinstance(body.get("stderr"), str)
+            or body.get("output") != "" or body.get("offset") != 0
+            or body.get("total_chars") != 0 or "next_offset" not in body
+            or body["next_offset"] is not None):
+        return False
+    try:
+        error = parse_json(body["stderr"].encode(), "graph error stderr")
+    except (Invalid, UnicodeError):
+        return False
+    return (isinstance(error, dict) and set(error) == {"code", "error"}
+            and error["code"] == "index_missing"
+            and isinstance(error["error"], str) and bool(error["error"].strip()))
+
+
 def decide(supervision, transcript, log, final, limits, sentinel_code, output_bytes, wall_ms):
     """First matching failure wins; only a clean, complete, well-formed run is ok."""
     calls = log["calls"]
@@ -1245,6 +1291,26 @@ def decide(supervision, transcript, log, final, limits, sentinel_code, output_by
     mismatch = reconcile_calls(transcript, calls)
     if mismatch:
         return "failed", "telemetry_mismatch", mismatch
+    if any(entry["exit_code"] != 0 or entry["stopped"] is not None or
+           (entry["cleanup"] or {}).get("survivors") != [] for entry in log.get("exits", [])):
+        return "failed", "broker_failed", "the broker worker did not exit cleanly"
+    if log.get("supervisors") and len(log.get("exits", [])) != len(log["supervisors"]):
+        return "failed", "broker_exit_missing", "broker supervision ended without exit evidence"
+    for call in calls:
+        if call["status"] in ("failed", "timeout"):
+            try:
+                body = parse_json(call["output"].encode(), "failed call")
+            except Invalid:
+                return "failed", "broker_output_malformed", "failed call output is not JSON"
+            # An ordinary input refusal remains an agent-visible recoverable error.
+            # Typed product errors can be recovered from; execution failures cannot.
+            if not isinstance(body, dict) or not isinstance(body.get("error", {}), dict):
+                return "failed", "broker_output_malformed", "failed call output is not an envelope"
+            if (call["status"] == "timeout"
+                    or body.get("error", {}).get("code") == "tool_exception"
+                    or (any(key in body for key in ("exit_code", "stopped", "cleanup", "stderr"))
+                        and not recoverable_graph_error(call, body))):
+                return "failed", "tool_execution_failed", "a broker tool could not execute cleanly"
     if supervision["returncode"] != 0 or transcript["turns_completed"] < 1 or \
             transcript["turn_failures"]:
         return "failed", "provider_incomplete", \
@@ -1420,7 +1486,16 @@ def command_run(args):
             {"probe": probe, "exit": supervision["exit"],
              "stderr": supervision["stderr"].decode(errors="replace")[:2000]})
 
-    swept = sweep_broker(read_broker_log(episode.state / "broker-calls.jsonl")[0]["starts"])
+    pending_log, _ = read_broker_log(episode.state / "broker-calls.jsonl")
+    # A provider may exit without waiting for its MCP servers. Give the pidfd
+    # supervisor its bounded cleanup window before the last-resort identity sweep.
+    cleanup_deadline = time.monotonic() + 3 * broker.KILL_GRACE_S + 1
+    while len(pending_log["exits"]) < len(pending_log["supervisors"]):
+        if time.monotonic() >= cleanup_deadline:
+            break
+        time.sleep(0.02)
+        pending_log, _ = read_broker_log(episode.state / "broker-calls.jsonl")
+    swept = sweep_broker(pending_log["starts"] + pending_log["supervisors"])
     log, log_bytes = read_broker_log(episode.state / "broker-calls.jsonl")
     transcript = analyse_transcript(supervision["stdout"], supervision["stdout_truncated"],
                                     request["tools"])
@@ -1523,7 +1598,8 @@ def command_run(args):
                         "partial_line", "turns_started", "turns_completed", "turn_failures",
                         "errors", "mcp_calls", "approval_denied")},
         "broker": {"protocol_errors": log["protocol_errors"], "budget": log["budget"],
-                   "malformed_lines": log["malformed_lines"], "starts": len(log["starts"])},
+                   "malformed_lines": log["malformed_lines"], "starts": len(log["starts"]),
+                   "exits": log["exits"]},
         "cleanup": {"terminated_by": supervision["terminated_by"],
                     "signals": supervision["signals"], "survivors": supervision["survivors"],
                     "pipes_closed": supervision["pipes_closed"], "brokers_swept": swept},
