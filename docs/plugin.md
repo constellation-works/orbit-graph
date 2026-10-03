@@ -62,6 +62,12 @@ Preparation, installation and permission consent are separate steps. The
 [Linux candidate report](plugin-readiness.md) gives the exact tested revision,
 digests, supported surfaces and remaining limitations. Preparing or checking an
 export is not permission to install it on the live host.
+The [2026-10-03 measurement report](../evals/readiness-20261003/README.md)
+separates installed fixture proof from actual historical executor deliveries and
+retains all 40 navigation episodes. It establishes no agent benefit. Its measured
+Orbit binary serves public delivery after the tagged 0.25.1 release; check the
+exact host digest/capability and require `ORBIT_GRAPH_TEST_REQUIRE_RUN_DELIVERY=1`
+for positive delivery certification. Version 0.25.1 alone is insufficient.
 
 For a local candidate, prepare a clean export, remove `metadata.origin`, and
 bundle the matching binary **before** installing. The default bundler records
