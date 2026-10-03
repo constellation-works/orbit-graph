@@ -270,20 +270,25 @@ def score(data, trees, raw):
             require(any(usage[k] is not None for k in ("input_tokens", "output_tokens", "cost_usd")), "empty usage must be null")
         case = cases[request["case_id"]]
         fixture, head, _ = trees[case["fixture"]]
+        verdict = {"correct": False, "false_positives": [], "missed": case["truth"]["items"],
+                   "abstained": False, "correct_abstention": False}
+        answer_error = None
         if episode["status"] == "ok":
             require(episode["error"] is None, "ok episode carries error")
             parsed = json.loads(episode["final_output"], object_pairs_hook=unique_pairs)
             require(canonical(parsed) == canonical(episode["answer"]), "answer differs from captured final output")
-            verdict = answer_check(episode["answer"], case, head, fixture["language"])
+            # Capture integrity remains cohort-fatal; answer validity is an episode verdict.
+            try:
+                verdict = answer_check(episode["answer"], case, head, fixture["language"])
+            except Invalid as error:
+                answer_error = str(error)
         else:
             shape(episode["error"], ["code", "message"], "failure")
             string(episode["error"]["code"], "error code")
             string(episode["error"]["message"], "error message")
             require(episode["answer"] is None, "failed episode must not supply scored answer")
-            verdict = {"correct": False, "false_positives": [], "missed": case["truth"]["items"],
-                       "abstained": False, "correct_abstention": False}
         rows.append({"case_id": case["id"], "split": case["split"], "arm": request["arm"],
-                     "status": episode["status"], "error": episode["error"], **verdict,
+                     "status": episode["status"], "error": episode["error"], "answer_error": answer_error, **verdict,
                      "wall_ms": episode["wall_ms"], "tool_calls": len(calls),
                      "failed_calls": sum(call["status"] != "ok" for call in calls),
                      "output_bytes": output_bytes, "usage": usage})
@@ -296,7 +301,7 @@ def score(data, trees, raw):
                 "false_positives": sum(len(r["false_positives"]) for r in selected),
                 "abstentions": sum(r["abstained"] for r in selected),
                 "correct_abstentions": sum(r["correct_abstention"] for r in selected),
-                "failures": sum(r["status"] != "ok" for r in selected),
+                "failures": sum(r["status"] != "ok" or r["answer_error"] is not None for r in selected),
                 "wall_ms_total": sum(r["wall_ms"] for r in selected),
                 "tool_calls_total": sum(r["tool_calls"] for r in selected),
                 "output_bytes_total": sum(r["output_bytes"] for r in selected),
