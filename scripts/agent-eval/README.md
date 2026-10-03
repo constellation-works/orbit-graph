@@ -587,6 +587,20 @@ revisions, selected Git blob hashes, product spans and raw transport hashes
 retain their original meanings. Paging offsets into transformed text describe
 that transformed view; they are not original-source byte offsets.
 
+Page and read-line producers fit the **final** delivered envelope, including
+`text_view`, JSON escaping, UTF-8 bytes and any redaction expansion. Sizing uses
+the same transformation as delivery without adding candidate views to the
+proof. Ordinary long `rg`/Git results retain advancing offsets even at the
+1024-byte minimum call budget. Reads retain line continuations: a first line
+that cannot fit is explicitly cut and marked in the transformed view, then the
+continuation advances to the next line. This can omit the rest of that line;
+`rg` or Git supplies character paging when the whole transformed text is needed.
+Installed product replies cannot be paged without changing their lossless
+contract, so their bound includes the final envelope too. Oversized replies
+retain complete private diagnostic evidence and deliver a bounded structured
+`call_output_truncated` error. The final per-call and episode byte guard stays
+in force; an exhausted episode budget still ends the episode.
+
 `reply_provenance.py` supplies the shared masking policy and replay verifier.
 It recognizes the previous bearer/provider-key/JWT shapes and host values of at
 least eight characters, including escaped forms in nested JSON. The runner
