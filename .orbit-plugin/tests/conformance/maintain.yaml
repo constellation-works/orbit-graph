@@ -85,6 +85,31 @@ tests:
     expect:
       error:
         code: invalid_request
+  # No public Orbit read binds a bare run ID to its task.
+  - name: maintain_orbit_sync_refuses_retired_run_ids
+    tool: maintain
+    input:
+      schema_version: 1
+      operation: orbit_sync
+      repository: "{{workspace}}"
+      workspace: ws_graph
+      run_ids: [jrun-1]
+    expect:
+      error:
+        code: invalid_request
+  - name: maintain_orbit_sync_refuses_a_padded_task_run_id
+    tool: maintain
+    input:
+      schema_version: 1
+      operation: orbit_sync
+      repository: "{{workspace}}"
+      workspace: ws_graph
+      task_runs:
+        - task_id: " ORB-1"
+          run_id: jrun-1
+    expect:
+      error:
+        code: invalid_request
   - name: maintain_import_refuses_a_limit
     tool: maintain
     input:

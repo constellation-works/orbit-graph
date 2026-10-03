@@ -71,20 +71,57 @@ fn installed_v2_plugin_serves_every_tool_over_cli_and_mcp() {
         "public task search recommendation",
     );
     assert_hybrid_search(&hybrid);
-    let task_sync = json!({"operation":"orbit_sync", "workspace":"graph-v2-test", "task_ids":[task_request["task_id"]]});
+    let task_id = task_request["task_id"]
+        .as_str()
+        .expect("task id")
+        .to_string();
+    let task_sync =
+        json!({"operation":"orbit_sync", "workspace":"graph-v2-test", "task_ids":[task_id]});
     let sync = json_output(
         fixture.cli_tool("maintain", &task_sync, true),
         "authoritative task sync",
     );
-    assert_task_sync(&sync);
-    // The outer operator may invoke maintenance, while the installed plugin's
-    // callback still cannot read operator-only workflow runs.
-    let run_sync = json!({"operation":"orbit_sync", "workspace":"graph-v2-test", "run_ids":["jrun-graph-v2-nonexistent"]});
-    let denied = json_output(
-        fixture.cli_tool("maintain", &run_sync, true),
-        "CLI run callback denial",
+    assert_task_sync_without_run(&sync);
+    // Released Orbit 0.25.x predates the public delivery read (ORB-13744);
+    // there no pair can be read, so nothing may be imported.
+    let serves_delivery = fixture.serves_run_delivery();
+    assert!(
+        serves_delivery || std::env::var_os(REQUIRE_RUN_DELIVERY_ENV).is_none(),
+        "{REQUIRE_RUN_DELIVERY_ENV} is set, but this Orbit has no orbit.workflow.run.delivery"
     );
-    assert_run_callback_denied(&denied);
+    if serves_delivery {
+        // The host records a landed run and an unlanded one for the task. The
+        // outer operator may invoke maintenance; the installed plugin's
+        // callbacks read the runs only through the public task-scoped
+        // delivery observation.
+        fixture.seed_run(LANDED_RUN, &task_id, true);
+        fixture.seed_run(COMMITTED_RUN, &task_id, false);
+    }
+    let unrelated_task = fixture.add_task("Unrelated task");
+    let delivery_sync = json!({"operation":"orbit_sync", "workspace":"graph-v2-test", "task_runs":[
+        {"task_id": task_id, "run_id": LANDED_RUN},
+        {"task_id": task_id, "run_id": COMMITTED_RUN},
+        {"task_id": unrelated_task, "run_id": LANDED_RUN}
+    ]});
+    let delivered = json_output(
+        fixture.cli_tool("maintain", &delivery_sync, true),
+        "CLI delivered-run import",
+    );
+    assert_delivery_sync(&delivered, &task_id, serves_delivery, "inserted");
+    // No public read binds a bare run ID to its task.
+    let bare_runs =
+        json!({"operation":"orbit_sync", "workspace":"graph-v2-test", "run_ids":[LANDED_RUN]});
+    let refused = fixture.cli_tool("maintain", &bare_runs, true);
+    assert!(!refused.status.success(), "{refused:?}");
+    assert!(
+        String::from_utf8_lossy(&refused.stdout).contains("run_ids is retired")
+            || String::from_utf8_lossy(&refused.stderr).contains("run_ids is retired"),
+        "{refused:?}"
+    );
+    // The task's current run now names the landed run.
+    if serves_delivery {
+        fixture.set_job_run(&task_id, LANDED_RUN);
+    }
 
     let mut agent = Mcp::start(&fixture, false);
     let version = agent.call("version", json!({}));
@@ -130,10 +167,25 @@ fn installed_v2_plugin_serves_every_tool_over_cli_and_mcp() {
     assert_hybrid_search(&hybrid["structuredContent"]);
     let sync = mcp.call("maintain", task_sync);
     assert_ne!(sync["isError"], true, "{sync}");
-    assert_task_sync(&sync["structuredContent"]);
-    let denied = mcp.call("maintain", run_sync);
-    assert_ne!(denied["isError"], true, "{denied}");
-    assert_run_callback_denied(&denied["structuredContent"]);
+    if serves_delivery {
+        assert_task_sync_current_run(&sync["structuredContent"], &task_id);
+    } else {
+        assert_task_sync_without_run(&sync["structuredContent"]);
+    }
+    let replayed = mcp.call("maintain", delivery_sync);
+    assert_ne!(replayed["isError"], true, "{replayed}");
+    assert_delivery_sync(
+        &replayed["structuredContent"],
+        &task_id,
+        serves_delivery,
+        "already_indexed",
+    );
+    let refused = mcp.call("maintain", bare_runs);
+    assert_eq!(refused["isError"], true, "{refused}");
+    assert_eq!(
+        refused["structuredContent"]["code"], "invalid_request",
+        "{refused}"
+    );
     let malformed = mcp.call("search", json!({"query": "parse", "unknown_field": true}));
     assert_eq!(malformed["isError"], true, "{malformed}");
     assert!(
@@ -153,33 +205,106 @@ fn assert_hybrid_search(value: &Value) {
     assert_eq!(value["adapter"]["warnings"], json!([]), "{value}");
 }
 
-fn assert_task_sync(value: &Value) {
+/// Set to fail, rather than narrow, the delivered-run proof on an Orbit that
+/// does not serve `orbit.workflow.run.delivery`.
+const REQUIRE_RUN_DELIVERY_ENV: &str = "ORBIT_GRAPH_TEST_REQUIRE_RUN_DELIVERY";
+
+/// Runs the host records for the fixture task.
+const LANDED_RUN: &str = "jrun-20261003-0101-g1";
+const COMMITTED_RUN: &str = "jrun-20261003-0102-g2";
+
+fn assert_task_sync_without_run(value: &Value) {
     assert_eq!(value["coverage"]["task_ids_examined"], 1, "{value}");
     assert_eq!(value["coverage"]["failed"], 0, "{value}");
-    assert_eq!(value["coverage"]["discovered_unique_runs"], 0, "{value}");
-    assert_eq!(value["outcomes"], json!([]), "{value}");
+    assert_eq!(value["coverage"]["excluded"], 1, "{value}");
+    assert_eq!(value["coverage"]["unique_task_runs"], 0, "{value}");
+    assert_eq!(value["outcomes"][0]["status"], "excluded", "{value}");
+    assert!(
+        value["outcomes"][0]["reason"]
+            .as_str()
+            .is_some_and(|reason| reason.contains("no current job_run_id")),
+        "{value}"
+    );
     assert_eq!(value["status"]["verified_deliveries"], 0, "{value}");
 }
 
-fn assert_run_callback_denied(value: &Value) {
-    assert_eq!(value["coverage"]["failed"], 1, "{value}");
+/// A task ID examines the task's current run, already imported by pair.
+fn assert_task_sync_current_run(value: &Value, task_id: &str) {
+    assert_eq!(value["coverage"]["task_ids_examined"], 1, "{value}");
+    assert_eq!(value["coverage"]["unique_task_runs"], 1, "{value}");
+    assert_eq!(value["coverage"]["failed"], 0, "{value}");
     assert_eq!(value["coverage"]["excluded"], 0, "{value}");
+    assert_eq!(value["outcomes"][0]["status"], "already_indexed", "{value}");
     assert_eq!(
-        value["outcomes"].as_array().expect("run outcomes").len(),
-        1,
+        value["outcomes"][0]["delivery_id"],
+        format!("orbit-run:{LANDED_RUN}:{task_id}"),
+        "{value}"
+    );
+    assert_eq!(value["status"]["verified_deliveries"], 1, "{value}");
+}
+
+/// The landed run is imported (or replayed), the unlanded run is excluded,
+/// and Orbit refuses the run paired with a task it did not deliver. A host
+/// without the delivery read imports nothing.
+fn assert_delivery_sync(value: &Value, task_id: &str, serves_delivery: bool, landed_status: &str) {
+    assert_eq!(value["coverage"]["unique_task_runs"], 3, "{value}");
+    assert_eq!(value["coverage"]["processed"], 3, "{value}");
+    if !serves_delivery {
+        let outcomes = value["outcomes"].as_array().expect("pair outcomes");
+        assert_eq!(outcomes.len(), 3, "{value}");
+        assert!(
+            outcomes.iter().all(|outcome| outcome["status"] == "failed"),
+            "{value}"
+        );
+        assert_eq!(value["status"]["verified_deliveries"], 0, "{value}");
+        return;
+    }
+    assert_eq!(value["coverage"]["excluded"], 1, "{value}");
+    assert_eq!(value["coverage"]["failed"], 1, "{value}");
+    assert_eq!(
+        value["authority"]["interfaces"],
+        json!([
+            "orbit.workspace.list",
+            "orbit.task.show",
+            "orbit.workflow.run.delivery",
+            "git"
+        ]),
+        "{value}"
+    );
+    let landed = &value["outcomes"][0];
+    assert_eq!(landed["status"], landed_status, "{value}");
+    assert_eq!(
+        landed["delivery_id"],
+        format!("orbit-run:{LANDED_RUN}:{task_id}"),
+        "{value}"
+    );
+    assert_eq!(landed["task_ids"], json!([task_id]), "{value}");
+    assert_eq!(
+        landed["landing"],
+        json!({"method": "local_fast_forward", "verified_by": "head_reachable"}),
+        "{value}"
+    );
+    let unlanded = &value["outcomes"][1];
+    assert_eq!(unlanded["run_id"], COMMITTED_RUN, "{value}");
+    assert_eq!(unlanded["status"], "excluded", "{value}");
+    assert!(
+        unlanded["reason"]
+            .as_str()
+            .is_some_and(|reason| reason.contains("recorded no verified landing")),
+        "{value}"
+    );
+    let foreign = &value["outcomes"][2];
+    assert_eq!(foreign["status"], "failed", "{value}");
+    assert_eq!(foreign["error"]["code"], "orbit_refused", "{value}");
+    assert_eq!(
+        foreign["error"]["orbit"]["code"], "invalid_input",
         "{value}"
     );
     assert_eq!(
-        value["outcomes"][0]["run_id"], "jrun-graph-v2-nonexistent",
+        foreign["error"]["orbit"]["tool"], "orbit.workflow.run.delivery",
         "{value}"
     );
-    assert_eq!(value["outcomes"][0]["status"], "failed", "{value}");
-    let error = &value["outcomes"][0]["error"];
-    assert_eq!(error["code"], "orbit_refused", "{value}");
-    assert_eq!(error["orbit"]["code"], "capability_denied", "{value}");
-    assert_eq!(error["orbit"]["tool"], "orbit.workflow.run.show", "{value}");
-    assert_eq!(error["retryable"], false, "{value}");
-    assert_eq!(value["status"]["verified_deliveries"], 0, "{value}");
+    assert_eq!(value["status"]["verified_deliveries"], 1, "{value}");
 }
 
 fn requests() -> Vec<(&'static str, Value)> {
@@ -431,6 +556,10 @@ impl Fixture {
     }
 
     fn task_recommendation(&self) -> Value {
+        json!({"task_id": self.add_task("Improve parser parse"), "workspace":"graph-v2-test"})
+    }
+
+    fn add_task(&self, title: &str) -> String {
         let task = json_output(
             self.command()
                 .env("ORBIT_OPERATOR", "1")
@@ -438,7 +567,7 @@ impl Fixture {
                     "task",
                     "add",
                     "--title",
-                    "Improve parser parse",
+                    title,
                     "--description",
                     "Improve parser parsing in src/parser.rs",
                     "--acceptance-criteria",
@@ -448,10 +577,134 @@ impl Fixture {
                     "--json",
                 ])
                 .output()
-                .expect("create private recommendation task"),
+                .expect("create private task"),
             "fixture task",
         );
-        json!({"task_id":task["id"].as_str().expect("created task id"), "workspace":"graph-v2-test"})
+        task["id"].as_str().expect("created task id").to_string()
+    }
+
+    /// Record a finished `task_local_pipeline` run submitted with `task_id`
+    /// in the private Orbit store, as Orbit's executor persists one: the run
+    /// row and its pipeline checkpoints. The commit step committed
+    /// `HEAD~1..HEAD`; when `landed`, the merge step fast-forwarded `main`.
+    /// Running a real pipeline would need an agent provider, so the host
+    /// record is seeded and Orbit itself derives the delivery observation.
+    fn seed_run(&self, run_id: &str, task_id: &str, landed: bool) {
+        let orbit_home = self.home.join(".orbit");
+        let workspaces: Value = serde_json::from_str(
+            &fs::read_to_string(orbit_home.join("workspaces.json")).expect("Orbit workspaces"),
+        )
+        .expect("Orbit workspaces JSON");
+        let workspace_id = workspaces["workspaces"]
+            .as_array()
+            .expect("registered workspaces")
+            .iter()
+            .find(|workspace| workspace["name"] == "graph-v2-test")
+            .and_then(|workspace| workspace["id"].as_str())
+            .expect("fixture workspace ID");
+        let job: Value = serde_norway::from_str(
+            &fs::read_to_string(orbit_home.join("resources/jobs/task_local_pipeline.yaml"))
+                .expect("seeded task_local_pipeline job"),
+        )
+        .expect("job YAML");
+        let step = |id: &str| {
+            job["spec"]["steps"]
+                .as_array()
+                .expect("job steps")
+                .iter()
+                .position(|step| step["id"] == id)
+                .unwrap_or_else(|| panic!("task_local_pipeline has a {id} step"))
+                .to_string()
+        };
+        let commit = json!({
+            "phase": "commit",
+            "decision": "performed",
+            "committed": true,
+            "commit_sha": self.revision("HEAD"),
+            "base_sha": self.revision("HEAD~1"),
+            "job_run_id": run_id,
+            "task_id": task_id,
+        });
+        let mut outputs = serde_json::Map::new();
+        let mut states = serde_json::Map::new();
+        let mut pipeline = serde_json::Map::new();
+        outputs.insert(step("commit"), commit.clone());
+        states.insert(step("commit"), json!("success"));
+        pipeline.insert("commit".to_string(), commit);
+        if landed {
+            let merge = json!({"base": "main"});
+            outputs.insert(step("merge"), merge.clone());
+            states.insert(step("merge"), json!("success"));
+            pipeline.insert("merge".to_string(), merge);
+        }
+        let state = json!({
+            "run_id": run_id,
+            "job_id": "task_local_pipeline",
+            "initial_input": {"task_ids": [task_id]},
+            "pipeline": pipeline,
+            "step_outputs": outputs,
+            "step_states": states,
+            "updated_at": "2026-10-03T01:30:00Z",
+        });
+        let store = rusqlite::Connection::open(orbit_home.join("orbit.db")).expect("Orbit store");
+        store
+            .execute(
+                "INSERT INTO job_runs (run_id, workspace_id, job_id, attempt, state, input_json,
+                     scheduled_at, started_at, finished_at, duration_ms, created_at,
+                     pipeline_state_json)
+                 VALUES (?1, ?2, 'task_local_pipeline', 1, ?3, ?4,
+                     '2026-10-03T01:00:00+00:00', '2026-10-03T01:00:01+00:00',
+                     '2026-10-03T01:30:00+00:00', 1799000, '2026-10-03T01:00:00+00:00', ?5)",
+                rusqlite::params![
+                    run_id,
+                    workspace_id,
+                    if landed { "success" } else { "failed" },
+                    json!({"task_ids": [task_id]}).to_string(),
+                    state.to_string(),
+                ],
+            )
+            .expect("record the host run");
+    }
+
+    /// Whether this Orbit serves the public task-scoped delivery read.
+    fn serves_run_delivery(&self) -> bool {
+        self.command()
+            .args(["tool", "show", "orbit.workflow.run.delivery"])
+            .output()
+            .expect("look up orbit.workflow.run.delivery")
+            .status
+            .success()
+    }
+
+    /// Point the task's current run at `run_id` through Orbit's own update.
+    fn set_job_run(&self, task_id: &str, run_id: &str) {
+        let updated = json_output(
+            self.command()
+                .env("ORBIT_OPERATOR", "1")
+                .args(["tool", "run", "orbit.task.update", "--input"])
+                .arg(
+                    json!({"id": task_id, "job_run_id": run_id, "workspace": "graph-v2-test",
+                    "model": "codex", "fields": ["job_run_id"]})
+                    .to_string(),
+                )
+                .arg("--full")
+                .output()
+                .expect("set the task's current run"),
+            "task job_run_id update",
+        );
+        assert_eq!(updated, json!(run_id), "{updated}");
+    }
+
+    fn revision(&self, revision: &str) -> String {
+        let output = common::git_command(&self.repository)
+            .args(["rev-parse", "--verify", revision])
+            .output()
+            .expect("fixture git rev-parse");
+        assert!(output.status.success(), "rev-parse {revision}: {output:?}");
+        String::from_utf8(output.stdout)
+            .expect("UTF-8 commit ID")
+            .trim()
+            .to_string()
     }
 
     fn assert_public_search_hit(&self, task_id: &Value) {

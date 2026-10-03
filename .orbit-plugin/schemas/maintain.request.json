@@ -10,7 +10,7 @@
       "const": 1
     },
     "operation": {
-      "description": "history_sync indexes bounded first-parent Git history; import stores one DeliveryImport v2 envelope; orbit_sync imports deliveries for explicit run or task ids through public Orbit tools; graph_sync builds the code-graph index recommendations read structure from, within budget_ms, and publishes it only when complete.",
+      "description": "history_sync indexes bounded first-parent Git history; import stores one DeliveryImport v2 envelope; orbit_sync imports host-landed deliveries for explicit task/run pairs or task ids through public Orbit tools and Git; graph_sync builds the code-graph index recommendations read structure from, within budget_ms, and publishes it only when complete.",
       "type": "string",
       "enum": [
         "history_sync",
@@ -30,7 +30,7 @@
       "minLength": 1
     },
     "limit": {
-      "description": "Per-call bound: commits for history_sync (1-1000, default 100) or runs for orbit_sync (1-100, default 25). Refused for import and graph_sync.",
+      "description": "Per-call bound: commits for history_sync (1-1000, default 100) or distinct task/run pairs for orbit_sync (1-100, default 25). Refused for import and graph_sync.",
       "type": "integer",
       "minimum": 1,
       "maximum": 1000
@@ -45,15 +45,41 @@
       "minLength": 1
     },
     "task_ids": {
-      "description": "orbit_sync only: tasks whose current job_run_id is examined. Refused for every other operation.",
+      "description": "orbit_sync only: tasks whose current job_run_id is examined, as the pair (task, job_run_id). Earlier runs of a task need task_runs. Refused for every other operation.",
       "type": "array",
       "items": {
         "type": "string",
         "minLength": 1
       }
     },
+    "task_runs": {
+      "description": "orbit_sync only: explicit pairs of a task and a workflow run Orbit recorded delivering it, each read through orbit.workflow.run.delivery. Refused for every other operation.",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "task_id",
+          "run_id"
+        ],
+        "properties": {
+          "task_id": {
+            "description": "Task the run was submitted with, in the selected workspace.",
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "run_id": {
+            "description": "Workflow run (jrun-*) that delivered the task.",
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          }
+        },
+        "additionalProperties": false
+      }
+    },
     "run_ids": {
-      "description": "orbit_sync only: explicit workflow run ids to import. Refused for every other operation.",
+      "description": "Retired and refused for every operation. No public Orbit read binds a bare run id to its task; orbit_sync refuses it naming task_runs and task_ids instead.",
       "type": "array",
       "items": {
         "type": "string",
