@@ -62,12 +62,14 @@ Preparation, installation and permission consent are separate steps. The
 [Linux candidate report](plugin-readiness.md) gives the exact tested revision,
 digests, supported surfaces and remaining limitations. Preparing or checking an
 export is not permission to install it on the live host.
-The [2026-10-03 measurement report](../evals/readiness-20261003/README.md)
-separates installed fixture proof from actual historical executor deliveries and
-retains all 40 navigation episodes. It establishes no agent benefit. Its measured
-Orbit binary serves public delivery after the tagged 0.25.1 release; check the
-exact host digest/capability and require `ORBIT_GRAPH_TEST_REQUIRE_RUN_DELIVERY=1`
-for positive delivery certification. Version 0.25.1 alone is insufficient.
+The [current measurement report](../evals/readiness-20261003-v2/README.md)
+retains all 12 installed-v2 attempts and shows no measured agent advantage.
+The [historical report](../evals/readiness-20261003/README.md) separately retains
+40 earlier navigation episodes and distinguishes installed fixture proof from
+actual historical executor deliveries. Check the exact host digest/capability
+and require `ORBIT_GRAPH_TEST_REQUIRE_RUN_DELIVERY=1` for positive delivery
+certification: the qualified Orbit binary serves public delivery after the tagged
+0.25.1 release, so version 0.25.1 alone is insufficient.
 
 For a local candidate, prepare a clean export, remove `metadata.origin`, and
 bundle the matching binary **before** installing. The default bundler records
@@ -89,12 +91,21 @@ After reviewing the manifest, binary digest and requested roots, the separate
 host-consent command is:
 
 ```sh
-orbit plugin enable graph --grant fs,orbit_tools
+orbit plugin enable graph --scope host --grant fs,orbit_tools
 ```
 
-This records the complete grant set, replacing any earlier set. It does not
-grant ordinary callers permission to run mutating tools. Activity authority
-still applies to `maintain`. The plugin needs no operator capability: it reads
+Host scope (the default) enables the plugin for every workspace on the machine
+and records the complete grant set, replacing any earlier set. To turn an
+already host-enabled plugin back on in a workspace that has its own disabled
+toggle, use the separate workspace command:
+
+```sh
+orbit plugin enable graph --scope workspace --workspace /absolute/path/to/registered/workspace
+```
+
+Workspace enable never records grants and is refused while the host plugin is
+disabled. Neither scope grants ordinary callers permission to run mutating tools.
+Activity authority still applies to `maintain`. The plugin needs no operator capability: it reads
 run deliveries through the task-scoped public `orbit.workflow.run.delivery`.
 
 For a tagged first-party release, build the matching executable first. Only
@@ -637,11 +648,11 @@ host's landing observation time, or else the run's finish time. Each source is
 named in `delivered_at.source.system`. When the host attests neither, it is
 `unavailable`.
 
-A standalone refusal JSON maps to `orbit_refused` with Orbit's code under
-`error.orbit.code`. Some Orbit 0.25.1 refusals carry a diagnostic line before
-the JSON. Graph then returns `graph_error` with Orbit's code embedded in the
-message. This classification gap is recorded in the
-[Linux readiness report](plugin-readiness.md); the callback is still refused.
+A structured refusal JSON maps to `orbit_refused` with Orbit's code under
+`error.orbit.code`, including when diagnostic lines precede it. The JSON object
+must start on its own line and consume the remaining stderr. Embedded JSON,
+malformed objects, multiple documents and trailing text remain `graph_error`;
+a malformed first object is never skipped to find a later refusal.
 Each outcome is one of `inserted`, `already_indexed`, `excluded` (a verdict:
 the pair was examined and is not an eligible delivery, with the check it failed
 as `reason`) or `failed` (infrastructure: the pair or task could not be

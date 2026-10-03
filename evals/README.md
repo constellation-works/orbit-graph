@@ -10,10 +10,14 @@ they are not current file locations. Archived explorer service/UI recipes also
 require their historical binary, retired by ORB-13255; relocation does not
 rerun those measurements or certify that tooling against the current workspace.
 
-* **[Integrated readiness and measured agent navigation](readiness-20261003/README.md)** —
-  final-candidate Linux CLI/MCP and delivery evidence, plus immutable 24 synthetic
-  and 16 real provider episodes. Held-out accuracy is equal across arms; failures
-  are retained and agent benefit is not established.
+* **[Current plugin readiness and measured effectiveness](readiness-20261003-v2/README.md)** —
+  candidate `1523af8`, exact debug runtime/export provenance and all 12 installed-v2
+  attempts: baseline 3/6, graph 2/6; held-out 1/4 each. No demonstrated advantage.
+  Unblinded semantic review, transport repair and prospective scorer qualification
+  remain separate. Includes the [installation handoff](../docs/plugin-readiness.md).
+* **[Historical readiness and navigation measurements](readiness-20261003/README.md)** —
+  immutable earlier Linux CLI/MCP and delivery evidence, plus 24 synthetic and
+  16 real provider episodes. Their named candidates and limitations are historical.
 
 * **Recommendation evaluation** — below: `orbit-graph evaluate`'s chronological,
   fail-closed backtest of change-destination recommendations.
