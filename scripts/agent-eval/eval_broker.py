@@ -571,7 +571,7 @@ class Broker:
 
     # -- paging ----------------------------------------------------------
     def page(self, envelope, text, offset):
-        """Fit envelope + text[offset:offset+k] into call_bytes, k maximal."""
+        """Fit the final safe envelope + text[offset:offset+k], k maximal."""
         text = self.mask_view(text, "page-input")
         limit = self.limits["call_bytes"]
         offset = min(offset, len(text))
@@ -584,11 +584,11 @@ class Broker:
                         output=text[offset:end])
             return canonical(body)
 
-        if len(render(high).encode()) <= limit:
+        if self.output_size(render(high)) <= limit:
             return render(high)
         while low < high:
             middle = (low + high + 1) // 2
-            if len(render(middle).encode()) <= limit:
+            if self.output_size(render(middle)) <= limit:
                 low = middle
             else:
                 high = middle - 1
@@ -694,15 +694,13 @@ class Broker:
                                     window, start, len(lines), numbered=True)
 
     def fit_lines(self, envelope, window, start, total, numbered):
-        """Return as many whole lines as fit call_bytes; long lines are cut and marked."""
+        """Fit whole lines in the final envelope; cut and mark an oversized first line."""
         limit = self.limits["call_bytes"]
         window = [self.mask_view(line, "read-line") for line in window]
         window = [line if len(line) <= MAX_LINE_CHARS else
                   line[:MAX_LINE_CHARS] + " [line cut at %d chars]" % MAX_LINE_CHARS
                   for line in window]
-        taken = len(window)
-        while True:
-            chosen = window[:taken]
+        def render(chosen):
             rendered = [f"{start + index}\t{line}" if numbered else line
                         for index, line in enumerate(chosen)]
             end = start + len(chosen) - 1
@@ -710,9 +708,32 @@ class Broker:
                                                                    start <= total else None)
             body = dict(envelope, start_line=start, end_line=end if chosen else None,
                         next_start_line=following, content="\n".join(rendered))
-            text = canonical(body)
-            if len(text.encode()) <= limit or taken == 0:
+            return canonical(body)
+
+        taken = len(window)
+        while True:
+            text = render(window[:taken])
+            if self.output_size(text) <= limit:
                 return text
+            if taken == 0:
+                return text  # the final guard handles an unpageable envelope
+            if taken == 1 and self.redactor:
+                # Line continuations cannot address the middle of a line. Keep
+                # the existing explicit cut semantics, and advance to the next
+                # line rather than returning an empty page forever.
+                def cut(count):
+                    return render([window[0][:count] + f" [line cut at {count} chars]"])
+
+                low, high = 0, min(len(window[0]), MAX_LINE_CHARS)
+                if self.output_size(cut(0)) > limit:
+                    return text  # no room for even the cut disclosure
+                while low < high:
+                    middle = (low + high + 1) // 2
+                    if self.output_size(cut(middle)) <= limit:
+                        low = middle
+                    else:
+                        high = middle - 1
+                return cut(low)
             taken = taken // 2
 
     def tool_rg(self, args):
@@ -927,13 +948,26 @@ class Broker:
             self.views.append({"role": role, "text": proof, "safe_text": safe})
         return safe
 
-    def safe_output(self, output):
+    def transform_output(self, output):
+        """Render exactly the delivered view, without changing proof/view state.
+
+        Bound producers use this same transformation while fitting candidates;
+        JSON escaping, redaction expansion and disclosure all consume bytes.
+        """
         if not self.redactor:
             return output, None
         body = json.loads(output)
         body["text_view"] = {"contract": replies.CONTRACT, "source_metadata": "original",
                              "redacted": bool(self.views or self.redactor.text(output)[1])}
-        safe, text = self.redactor.transform(canonical(body))
+        return self.redactor.transform(canonical(body))
+
+    def output_size(self, output):
+        return len(self.transform_output(output)[0].encode())
+
+    def safe_output(self, output):
+        safe, text = self.transform_output(output)
+        if not self.redactor:
+            return safe, None
         return safe, {"seq": self.calls, "views": self.views,
                       "contract_sha256": replies.digest(self.reply_contract),
                       "text": text, "safe_output": safe, "delivered_sha256": replies.sha(safe),
