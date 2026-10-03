@@ -3180,6 +3180,102 @@ fn public_adapter_enforces_callback_denials() {
 }
 
 #[test]
+fn orbit_sync_preserves_diagnostic_prefixed_structured_refusals() {
+    for stderr in [
+        "WARN orbit: callback diagnostic\n{\"code\":\"capability_denied\",\"error\":\"operator capability required\"}\n",
+        "WARN orbit: callback diagnostic\nINFO orbit: another diagnostic\n  {\n  \"code\": \"capability_denied\",\n  \"message\": \"operator capability required\"\n}\n",
+        "WARN orbit: callback diagnostic\r\n{\"code\":\"capability_denied\",\"error\":\"operator capability required\"}\r\n",
+    ] {
+        let sync = orbit_sync_with_child_stderr(stderr.as_bytes());
+        assert_eq!(sync["coverage"]["failed"], 1, "{sync}");
+        assert_eq!(sync["coverage"]["excluded"], 0, "{sync}");
+        assert_eq!(sync["outcomes"][0]["status"], "failed", "{sync}");
+        let error = &sync["outcomes"][0]["error"];
+        assert_eq!(error["code"], "orbit_refused", "{sync}");
+        assert_eq!(error["orbit"]["code"], "capability_denied", "{sync}");
+        assert_eq!(error["orbit"]["tool"], "orbit.workflow.run.show", "{sync}");
+        assert_eq!(
+            error["message"],
+            "orbit.workflow.run.show refused: capability_denied: operator capability required",
+            "{sync}"
+        );
+        assert_eq!(error["retryable"], false, "{sync}");
+        assert_eq!(sync["status"]["deliveries"], 0, "{sync}");
+    }
+}
+
+#[test]
+fn orbit_sync_keeps_unframed_or_malformed_child_failures_as_graph_errors() {
+    for stderr in [
+        "WARN orbit: capability_denied requires the operator capability\n",
+        "WARN orbit: callback diagnostic\n{\"code\":\"capability_denied\",\"error\":",
+        "WARN orbit: callback diagnostic\n{\"code\":7,\"error\":\"capability_denied\"}\n",
+        "WARN orbit: callback diagnostic\n{\"error\":\"capability_denied\"}\n",
+        "WARN orbit: {\"code\":\"capability_denied\",\"error\":\"operator required\"}\n",
+        "WARN orbit: callback diagnostic\n{\"code\":\"capability_denied\"}\ntrailing diagnostic\n",
+        "WARN orbit: callback diagnostic\n{\"code\":\"capability_denied\"}\n{\"code\":\"policy_denied\"}\n",
+        "WARN orbit: callback diagnostic\n{malformed}\n{\"code\":\"capability_denied\"}\n",
+        "WARN orbit: callback diagnostic\n{\"nested\":{\"code\":\"capability_denied\"}}\n",
+    ] {
+        let sync = orbit_sync_with_child_stderr(stderr.as_bytes());
+        let error = &sync["outcomes"][0]["error"];
+        assert_eq!(error["code"], "graph_error", "{stderr:?}: {sync}");
+        assert!(error["orbit"].is_null(), "{sync}");
+        assert_eq!(error["retryable"], false, "{sync}");
+        assert_eq!(sync["coverage"]["failed"], 1, "{sync}");
+        assert_eq!(sync["coverage"]["excluded"], 0, "{sync}");
+        assert_eq!(sync["status"]["deliveries"], 0, "{sync}");
+    }
+
+    let noisy = orbit_sync_with_child_stderr(&vec![b'x'; 6_000]);
+    let error = &noisy["outcomes"][0]["error"];
+    assert_eq!(error["code"], "graph_error", "{noisy}");
+    assert!(
+        error["message"]
+            .as_str()
+            .is_some_and(|message| message.contains("…[truncated 1904 bytes]")),
+        "{noisy}"
+    );
+
+    let mut oversized = vec![b'x'; 1_048_576];
+    oversized.extend_from_slice(b"\n{\"code\":\"capability_denied\"}\n");
+    let oversized = orbit_sync_with_child_stderr(&oversized);
+    let error = &oversized["outcomes"][0]["error"];
+    assert_eq!(error["code"], "graph_error", "{oversized}");
+    assert!(
+        error["message"]
+            .as_str()
+            .is_some_and(|message| message.contains("exceeded 1048576 bytes")),
+        "{oversized}"
+    );
+}
+
+fn orbit_sync_with_child_stderr(stderr: &[u8]) -> Value {
+    let fixture = adapter_fixture();
+    let repository = fixture
+        .path()
+        .join("repo")
+        .canonicalize()
+        .expect("repository");
+    let callback_path = executable_path_with(fixture.path());
+    let stderr_path = fixture.path().join("child-stderr");
+    fs::write(&stderr_path, stderr).expect("child stderr fixture");
+    plugin_success(&plugin_output_with_env(
+        &repository,
+        MAINTAIN_TOOL_NAME,
+        json!({
+            "operation": "orbit_sync",
+            "workspace": "ws-test",
+            "run_ids": ["RUN-1"]
+        }),
+        &[
+            ("PATH", callback_path.as_os_str()),
+            ("GRAPH_TEST_RUN_STDERR", stderr_path.as_os_str()),
+        ],
+    ))
+}
+
+#[test]
 fn orbit_sync_reports_an_unreadable_task_as_failed_and_imports_the_rest() {
     let fixture = adapter_fixture();
     let repository = fixture
@@ -4405,6 +4501,10 @@ case "$*" in
       exec sleep {stuck}
     fi ;;
   *"tool run orbit.workflow.run.show"*"RUN-1"*)
+    if [ -n "$GRAPH_TEST_RUN_STDERR" ]; then
+      cat "$GRAPH_TEST_RUN_STDERR" >&2
+      exit 1
+    fi
     if [ "$GRAPH_TEST_RUN_SHOW" = denied ]; then
       printf '%s\n' '{run_show_denied}' >&2
       exit 1
