@@ -260,10 +260,17 @@ measures the harness, not the arm.
   - option-shaped values, unknown fields and malformed MCP
 
   `tools/list` carries MCP annotations, which are client hints only. Every tool
-  is `readOnlyHint` and not `openWorldHint`, except `graph_sync`, which builds
-  and, with `full`, replaces the episode's private `.orbit-graph` index. It is
-  therefore annotated `readOnlyHint: false`, `destructiveHint: true`, and
-  `idempotentHint: true`. Children run with fixed argv and environments.
+  has `openWorldHint: false`. `graph_sync` builds and, with `full`, replaces
+  the episode's private `.orbit-graph` index: `readOnlyHint: false`,
+  `destructiveHint: true`, `idempotentHint: true`. `changes` also has
+  `readOnlyHint: false`: even with `--no-cache`, it writes disposable snapshot
+  trees and indexes in the episode's private `TMPDIR`. It has
+  `destructiveHint: false` because it does not replace existing source or
+  index state, and `idempotentHint: true` because repeating the comparison
+  leaves the same state after its temporary snapshots are removed. All other
+  tools have `readOnlyHint: true`. Source files and Git remain immutable;
+  these hints never change the explicit per-tool approvals above.
+  Children run with fixed argv and environments.
   Each call has a deadline and bounded output, and a timed-out child's whole
   process group is ended.
   Budgets for calls, input bytes, call output and episode output stop the
@@ -419,5 +426,10 @@ unapproved broker call before the broker sees it. Fixture I/O is bounded
   the broker process;
 - every broker and runner fixture runs in its own process group, which is
   killed and reaped on close, on timeout and in test cleanup;
+- the MCP fixture observes leader exit with `waitid(WNOWAIT)` and retains
+  that leader until its group is swept, preventing PID/group reuse during
+  signalling; TERM grace, group survival checks and final reaping are bounded;
 - `FixtureBoundsTests` proves that a broker that stalls, never reads, exits
-  mid-request or ignores end of input fails fast and leaves no process.
+  mid-request or ignores end of input fails fast and leaves no live process.
+  It also covers exited leaders with live descendants and closed pipes with
+  live children, with independent pidfd cleanup if an assertion fails.
