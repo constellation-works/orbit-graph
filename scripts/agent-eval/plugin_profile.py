@@ -193,10 +193,10 @@ def execute(instance, tool, arguments):
     body = {"tool": tool, "status": status, "product_reply": reply, "transport": record}
     if reply is None:
         body["error"] = {"code": "plugin_transport_failed"}
-    output = broker.canonical(body)
+    output = instance.mask_view(broker.canonical(body), "plugin-result")
     if len(output.encode()) > instance.limits["call_bytes"]:
         # Never trim a product response into apparently valid evidence.
-        instance.record({"type": "plugin_output", "tool": tool, "reply": body})
+        instance.record({"type": "plugin_output", "tool": tool, "reply": json.loads(output)})
         return "truncated", broker.canonical({"tool": tool, "status": "truncated",
                                                "error": {"code": "call_output_truncated"}})
     return status, output

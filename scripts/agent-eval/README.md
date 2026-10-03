@@ -472,7 +472,8 @@ or corpus are provided by this profile.
 
 ## Prospective orderly teardown contract
 
-Runner version **4**, broker version **3**, writes
+Runner version **4** / broker **3** introduced (and runner **5** / broker **4**
+retains)
 `lifecycle_contract: eof-idle-at-term-observation-v2` in both raw profiles.
 Request and raw schema numbers stay 1 (CLI proxy) and 2 (installed plugin).
 Harness hashes and the explicit contract pin prospective classification:
@@ -559,3 +560,80 @@ AGENT_EVAL_ORBIT=/absolute/orbit \
 AGENT_EVAL_ORBIT_GRAPH="$PWD/target/debug/orbit-graph" \
   python3 -B -m unittest discover -s scripts/agent-eval/tests -v
 ```
+
+## Prospective source-reply provenance (runner 5)
+
+Installed-plugin **schema-2** episodes now use runner 5, broker 4 and
+`reply_contract.version: safe-tool-text-v1`. Both baseline and graph arms use
+this same boundary for `read`, `rg`, Git and installed product replies. The
+schema-1 writer keeps its historical runner-4 path; existing schema-1/2 captures
+are never rewritten, migrated or rescored. Lifecycle semantics remain exactly
+`eof-idle-at-term-observation-v2`. Runner 2 and 3 replay dispatch remains intact,
+and runner 4 keeps its existing redaction refusal.
+
+The former runner sent raw source text to the provider, then independently
+masked the provider JSONL, broker log and artifact. Credential-shaped regression
+literals therefore caused a correct exact-provenance refusal. Synthetic `read`
+and `rg` fixtures reproduce this on delivered baseline
+`46009e6b4091c1918f81c0dd0f2e0f146f8c54cd`; no live credential or old study was
+needed to establish the cause. A match is never assumed harmless.
+
+The prospective path masks text before broker paging/line cuts and before the
+common reply is delivered and recorded. Ripgrep's own column preview is disabled
+for this path, so it cannot cut a credential before masking. The outer JSON
+reply discloses `text_view` (contract, whether transformed, and that source
+metadata still describes the original). Original source commits, content
+revisions, selected Git blob hashes, product spans and raw transport hashes
+retain their original meanings. Paging offsets into transformed text describe
+that transformed view; they are not original-source byte offsets.
+
+`reply_provenance.py` supplies the shared masking policy and replay verifier.
+It recognizes the previous bearer/provider-key/JWT shapes and host values of at
+least eight characters, including escaped forms in nested JSON. The runner
+passes only salted SHA-256 fingerprints and lengths to the broker, never copies
+credential values into its configuration or broadens subprocess environments.
+Fingerprints and raw-content commitments are private evidence: they are **not**
+a guarantee against guessing low-entropy preimages and must not be published as
+anonymized data. The source snapshot stays the original input, not a redacted
+substitute.
+
+For each measured call, the private log and sealed artifact record:
+
+- The versioned policy and a digest binding the request, original input manifests
+  and immutable source provenance; all four harness module hashes are pinned.
+- Changed intermediate views before paging (read lines, child stdout, installed
+  product envelopes), with original text digests/UTF-8 byte lengths, safe text,
+  and ordered replacement spans/rules. Original text is not copied into evidence.
+- The final safe envelope, its original/safe digest and byte accounting, the
+  exact delivered digest/bytes, any subsequent budget cut, and a digest of the
+  measured tool/input/status/time/output call.
+
+Only the delivered text plus the answer counts toward `output_bytes`; diagnostic
+views and JSON-RPC framing do not count as model tool text. Masking time is inside
+the measured call and episode clocks. Token usage still comes only from provider
+telemetry, with no inferred dollar cost. Product `stdout_sha256` continues to
+identify the raw private transport; safe text has its own explicitly named hash.
+
+Replay cross-checks the artifact against the broker log, source binding,
+transformation spans, provider results and exact costs. The original-text
+commitments are attestations from the pinned capture producer, not a standalone
+proof of secret preimages. Like the existing artifact seal, they do not
+authenticate a malicious operator who rewrites every capture and preregistration.
+No source/hash, outcome, containment, authorization or exact-result check is
+waived. Provider telemetry mismatches remain failed outcomes, including missing
+or forged tool results; transformations cannot turn them into success.
+
+Durable writers and the final broker wire retain a masking backstop. Any
+unplanned broker audit/wire masking, or any late masking of provider JSONL,
+stderr, final answer, setup/treatment or artifact, still makes exact replay
+refuse. Broker logs never store newly encountered raw credential strings. No
+provider-generated secret is legitimized by the prospective reply contract.
+
+Admission remains root-owned: freeze all four module hashes plus evaluator,
+provider, Orbit and backend hashes, run the strict zero-skip fake-provider suite,
+then explicitly admit a new synthetic actual-Codex rehearsal in **both** arms on
+those exact bytes. The worker performs only fake-provider/private-plugin tests.
+A denied namespace check is not containment evidence. The frozen twelve-episode
+cohort, its failed outcomes and original adapter refusal remain authoritative,
+with no accepted quality score. A later measured study needs a fresh frozen
+preregistration/corpus under this contract; no old episode may be replaced.
