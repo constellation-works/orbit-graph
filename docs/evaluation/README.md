@@ -14,6 +14,10 @@ This directory holds these unrelated evaluations.
   change-explorer evaluation re-run through `orbit-graph changes` and the
   `orbit.graph.changes` plugin tool, with cold and warm latency for both.
 
+* **[Paired agent navigation](agent-navigation/README.md)** — a frozen Rust/Python
+  fixture corpus, independent truth, operator episode plan and fail-closed scorer.
+  Checked-in results are scripted smoke only; real agent effectiveness is unmeasured.
+
 ## Recommendation evaluation
 
 `orbit-graph evaluate --input <corpus.json>` runs a chronological, fail-closed

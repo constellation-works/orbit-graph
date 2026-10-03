@@ -15,6 +15,7 @@ scripts/check-dependency-direction.sh
 scripts/check-terminal-guard.sh
 scripts/check-orphan-modules.sh
 scripts/test-repo-gates.sh
+python3 -B docs/evaluation/agent-navigation/eval.py check
 cargo deny --locked check
 cargo fmt --all --check
 cargo clippy --workspace --all-targets --locked -- -D warnings
@@ -25,7 +26,10 @@ cargo build --workspace --locked
 git diff --check
 ```
 
-`make ci` runs the same sequence. `cargo deny` needs cargo-deny 0.19.9
+`make ci` runs the same sequence. The paired agent-evaluation smoke gate uses
+Python 3.10+ and its standard library; it validates frozen fixture truth,
+negative cases and scripted artifact parity, not agent effectiveness.
+`cargo deny` needs cargo-deny 0.19.9
 (`cargo install cargo-deny --version 0.19.9 --locked`); CI installs that
 release from a SHA-256-pinned download. Tests run under cargo-nextest 0.9.146
 (`cargo install cargo-nextest --version 0.9.146 --locked`), which CI also
