@@ -7,7 +7,7 @@ import sys
 import tempfile
 import unittest
 
-from source_identity import Project, ContractError, score
+from source_identity import Project, ContractError, score, score_request
 
 HERE = Path(__file__).resolve().parent
 
@@ -30,6 +30,192 @@ class SourceIdentityTests(unittest.TestCase):
     def setUp(self):
         self.project = Project(HERE / "fixtures", rust_root="rust/lib.rs",
                                python_files=["python/settings.py"])
+
+    def request_for(self, required, submitted):
+        return {"schema_version": 1, "manifest": {"rust_root": "lib.rs", "python_files": ["truth.py"]},
+                "required": required, "submitted": submitted}
+
+    def run_request_cli(self, project, request):
+        request_path = project.root / "request.json"
+        request_path.write_text(json.dumps(request))
+        return subprocess.run([sys.executable, "-B", str(HERE / "source_identity.py"),
+                               "--root", str(project.root), "--input", str(request_path)],
+                              capture_output=True, text=True, timeout=20, env={})
+
+    def test_malformed_rust_public_boundaries(self):
+        # Independently authored balanced syntax faults, not copies of the parser.
+        sources = [
+            "pub fn choose(value u8) {}",                 # parameter separator
+            "pub fn choose(!!!) -> Definitely nonsense {}", # header
+            "pub fn choose() -> & {}",                   # incomplete return type
+            "pub fn choose() -> Vec<,> {}",               # malformed generic type
+            "pub fn choose() { let = ; }",               # pattern and initializer
+            "pub fn choose() { let x = (1 +); }",         # expression
+            "pub fn choose() { if true else {} }",        # control flow
+            'pub fn choose() { let x = "bad\\q"; }',       # invalid escape
+            'pub fn choose() { let x = r##"unclosed"#; }', # raw string terminator
+            "pub fn choose() {} /* unterminated",          # lexical fault
+            "struct Other { field u8 }\npub fn choose() {}", # unrelated invalid source
+        ]
+        truth = {"language": "python", "name": "VALUE", "file": "truth.py", "line": 1,
+                 "kind": "assignment", "citation": {"start_line": 1, "end_line": 1, "quote": "VALUE = 1"}}
+        for source in sources:
+            with self.subTest(source=source):
+                project = self.synthetic({"lib.rs": source, "truth.py": "VALUE = 1"},
+                                         rust_root="lib.rs", python_files=["truth.py"])
+                line = 2 if source.startswith("struct") else 1
+                selector = rust("choose", line, file="lib.rs", quote=source.splitlines()[line - 1])
+                checked = project.check(selector)
+                self.assertFalse(checked["identity_ok"], checked)
+                self.assertFalse(checked["citation_ok"], checked)
+                request = self.request_for([truth], [selector])
+                result = score_request(project.root, request)
+                self.assertEqual(result["identity_recall"], {"matched": 0, "required": 1})
+                self.assertEqual(result["citation_recall"], {"matched": 0, "required": 1})
+                self.assertEqual(result["semantic_review"]["status"], "pending")
+                process = self.run_request_cli(project, request)
+                self.assertEqual(process.returncode, 0, process.stderr)
+                self.assertEqual(json.loads(process.stdout)["identity_recall"]["matched"], 0)
+                invalid_truth = self.request_for([selector], [selector])
+                with self.assertRaises(ContractError):
+                    score_request(project.root, invalid_truth)
+                process = self.run_request_cli(project, invalid_truth)
+                self.assertEqual(process.returncode, 2)
+                self.assertEqual(process.stdout, "")
+                self.assertEqual(json.loads(process.stderr)["code"], "invalid_input")
+
+    def test_realistic_rust_public_boundaries(self):
+        source = '''//! A representative crate.
+#![allow(dead_code)]
+#[derive(Debug, Clone)]
+struct Parcel<T> { value: T }
+trait Read<T>: Sized {
+    type Output;
+    fn read(&self, value: T) -> Self::Output;
+}
+impl<T: Clone> Parcel<T> where T: std::fmt::Debug {
+    /// A documented method.
+    #[inline]
+    fn take(&self) -> &T { &self.value }
+}
+impl<T: Clone> Read<T> for Parcel<T> {
+    type Output = T;
+    fn read(&self, value: T) -> T { value }
+}
+const LIMIT: usize = 3;
+type Other<T> = Option<T>;
+#[doc = "A free function"]
+#[must_use]
+pub fn choose<T>(value: T) -> T { value }
+'''
+        project = self.synthetic({"lib.rs": source, "truth.py": "VALUE = 1"},
+                                 rust_root="lib.rs", python_files=["truth.py"])
+        selectors = [rust(name, line, file="lib.rs", quote=source.splitlines()[line - 1])
+                     for name, line in [("Parcel::take", 12), ("<Parcel as Read>::read", 16),
+                                        ("Read::read", 7), ("choose", 22)]]
+        for selector in selectors:
+            with self.subTest(selector=selector):
+                checked = project.check(selector)
+                self.assertTrue(checked["identity_ok"] and checked["citation_ok"], checked)
+        request = self.request_for(selectors, selectors)
+        result = score_request(project.root, request)
+        self.assertEqual(result["identity_recall"], {"matched": 4, "required": 4})
+        self.assertEqual(result["citation_recall"], {"matched": 4, "required": 4})
+        process = self.run_request_cli(project, request)
+        self.assertEqual(process.returncode, 0, process.stderr)
+        self.assertEqual(json.loads(process.stdout)["identity_recall"], {"matched": 4, "required": 4})
+        for name in ["Other::take", "<Parcel as Missing>::read", "wrong::Parcel::take", "read"]:
+            self.assertFalse(project.check(selectors[0] | {"name": name})["identity_ok"])
+
+    def test_named_uncertainty_preserves_unrelated_declarations_and_blocks_ties(self):
+        source = '''#[cfg(unix)] fn maybe() {}
+fn choose() {}
+mod other { #[cfg(windows)] fn choose() {} }
+type Alias = u8;
+const COUNT: usize = 1;
+'''
+        project = self.synthetic({"lib.rs": source}, rust_root="lib.rs")
+        choose = rust("crate::choose", 2, file="lib.rs", quote=source.splitlines()[1])
+        self.assertTrue(project.check(choose)["identity_ok"], project.failures)
+        self.assertIn("ambiguous", project.check(choose | {"name": "choose"})["reason"])
+        self.assertFalse(project.check(choose | {"name": "maybe", "line": 1})["identity_ok"])
+        self.assertTrue(project.diagnostics)
+        for source in ["#[cfg(unix)] struct Box; impl Box { fn choose() {} }",
+                       "struct Box; #[cfg(unix)] impl Box { fn choose() {} }",
+                       "#[cfg(unix)] mod a { pub fn choose() {} }"]:
+            with self.subTest(source=source):
+                project = self.synthetic({"lib.rs": source}, rust_root="lib.rs")
+                for name in ["Box::choose", "a::choose", "choose"]:
+                    self.assertFalse(project.check(choose | {"name": name, "line": 1})["identity_ok"])
+
+    def test_ordinary_context_and_free_method_control(self):
+        sources = [
+            '#[derive(Debug)] struct Other;\npub fn choose() {}',
+            '#[doc = "documented"]\npub fn choose() {}',
+            'struct Other<T>(T);\npub fn choose() {}',
+            'struct Other; impl Other { fn choose() {} }\npub fn choose() {}',
+        ]
+        for source in sources:
+            with self.subTest(source=source):
+                project = self.synthetic({"lib.rs": source, "truth.py": "VALUE = 1"}, rust_root="lib.rs")
+                selector = rust("choose", 2, file="lib.rs", quote=source.splitlines()[1])
+                self.assertTrue(project.check(selector)["citation_ok"], project.failures)
+                request = self.request_for([selector], [selector])
+                self.assertEqual(score_request(project.root, request)["identity_recall"],
+                                 {"matched": 1, "required": 1})
+                process = self.run_request_cli(project, request)
+                self.assertEqual(process.returncode, 0, process.stderr)
+                self.assertEqual(json.loads(process.stdout)["citation_recall"],
+                                 {"matched": 1, "required": 1})
+
+    def test_missing_and_stale_frontend_refuse_public_credit(self):
+        from unittest.mock import patch
+        import rust_source
+        source = "fn choose() {}"
+        project = self.synthetic({"lib.rs": source}, rust_root="lib.rs")
+        selector = rust("choose", 1, file="lib.rs", quote=source)
+        self.assertTrue(project.check(selector)["identity_ok"])
+        with patch.object(rust_source, "PARSER", project.root / "absent-frontend"):
+            missing = Project(project.root, rust_root="lib.rs")
+            self.assertFalse(missing.check(selector)["identity_ok"])
+            self.assertIn("unavailable", missing.failures["rust"])
+        # The real binary still runs, but an altered source manifest cannot match
+        # its embedded build inputs. No substitute parser or permissive fallback.
+        with patch.object(rust_source, "PARSER_SOURCES", ()):
+            stale = Project(project.root, rust_root="lib.rs")
+            self.assertFalse(stale.check(selector)["citation_ok"])
+            self.assertIn("stale", stale.failures["rust"])
+
+    def test_generic_owner_ambiguity_and_macro_uncertainty(self):
+        sources = [
+            "struct Box<T>(T); impl Box<u8> { fn choose() {} } impl Box<u16> { fn choose() {} }",
+            "struct Box; impl<Box> Box { fn choose() {} }",
+            "#[custom] fn choose() {}",
+            "#[derive(Custom)] struct Box; fn choose() {}",
+            "macro_rules! make { () => {} } make!(); fn choose() {}",
+            "#[cfg_attr(unix, custom)] fn choose() {}",
+            "macro_rules! unused { malformed matcher } fn choose() {}",
+        ]
+        for source in sources:
+            with self.subTest(source=source):
+                project = self.synthetic({"lib.rs": source}, rust_root="lib.rs")
+                for name in ["Box::choose", "choose"]:
+                    selector = rust(name, 1, file="lib.rs", quote=source)
+                    self.assertFalse(project.check(selector)["identity_ok"])
+
+    def test_rust_strings_comments_and_no_execution(self):
+        source = '''/* nested /* fn fake() {} */ comments */
+fn choose() {
+    let text = r###"fn fake(!!!) { let = ; }"###;
+    let character = '}';
+    std::fs::write("EXECUTED", text);
+}
+'''
+        project = self.synthetic({"lib.rs": source}, rust_root="lib.rs")
+        selector = rust("choose", 2, file="lib.rs", quote="fn choose() {")
+        self.assertTrue(project.check(selector)["citation_ok"], project.failures)
+        self.assertFalse(project.check(selector | {"name": "fake"})["identity_ok"])
+        self.assertFalse((project.root / "EXECUTED").exists())
 
     def test_trait_and_owner_variants(self):
         spellings = ["Compass::from_str", "<Compass as FromStr>::from_str",

@@ -8,7 +8,7 @@ from pathlib import Path, PurePosixPath
 import re
 import sys
 
-from rust_source import RustIndex, UnsupportedRust
+from rust_source import RustIndex, UnsupportedRust, PARSER_SOURCES
 
 HERE = Path(__file__).resolve().parent
 CONTRACT = json.loads((HERE / "contract.json").read_text(encoding="utf-8"))
@@ -147,6 +147,7 @@ class Project:
             try:
                 index = RustIndex(self.read, rust_root)
                 self.declarations.extend(index.declarations)
+                self.diagnostics.extend(index.diagnostics)
             except (UnsupportedRust, ContractError, RecursionError) as error:
                 self.failures["rust"] = str(error)
         if not isinstance(python_files, (list, tuple)) or len(python_files) > 128:
@@ -261,9 +262,10 @@ class Project:
         return {"contract": CONTRACT["contract"],
                 "contract_sha256": sha256((HERE / "contract.json").read_bytes()),
                 "implementation_sha256": {name: sha256((HERE / name).read_bytes())
-                                          for name in ("source_identity.py", "rust_source.py")},
+                                          for name in ("source_identity.py", "rust_source.py", *PARSER_SOURCES)},
                 "source_sha256": {name: value["sha256"] for name, value in sorted(self.sources.items())},
                 "manifest": self.manifest,
+                "rust_syntax_runtime": "syn-2.0.119/proc-macro2-1.0.106; dependencies pinned by syntax/Cargo.lock",
                 "python_ast_version": f"{sys.version_info.major}.{sys.version_info.minor}"}
 
 
