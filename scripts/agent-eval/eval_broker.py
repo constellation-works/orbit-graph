@@ -18,6 +18,7 @@ import ctypes
 import json
 import os
 import re
+import select
 import selectors
 import signal
 import stat
@@ -28,7 +29,10 @@ import time
 sys.dont_write_bytecode = True
 
 BROKER_NAME = "agent-eval-broker"
-BROKER_VERSION = "1"
+BROKER_VERSION = "3"
+EXITED_LIFECYCLE_CONTRACT = "eof-exited-at-term-observation-v1"
+LIFECYCLE_CONTRACT = "eof-idle-at-term-observation-v2"
+MAX_LIFECYCLE_LOG = 64 * 1024 * 1024
 COMMON_TOOLS = ("read", "rg", "git")
 GRAPH_TOOLS = ("graph_sync", "search", "show", "refs", "callees", "impact", "changes")
 ARM_TOOLS = {"baseline": COMMON_TOOLS, "graph": COMMON_TOOLS + GRAPH_TOOLS}
@@ -294,7 +298,7 @@ def _preexec():
 
 def run_child(argv, cwd, env, timeout_s, capture_limit=MAX_CHILD_CAPTURE, line_limit=None,
               passthrough=False, parent_fd=None, cancelled=lambda: False, grace_s=KILL_GRACE_S,
-              input_bytes=None):
+              input_bytes=None, on_spawn=lambda process: None):
     """Bounded capture and group cleanup, including unexpected supervision exceptions.
 
     passthrough is only for the broker worker: MCP pipes stay directly connected
@@ -306,6 +310,7 @@ def run_child(argv, cwd, env, timeout_s, capture_limit=MAX_CHILD_CAPTURE, line_l
     process, selector = None, None
     terminate = True
     supervision = {"signals": [], "survivors": []}
+    stderr_eof = False
     try:
         if input_bytes is not None and (passthrough or len(input_bytes) > MAX_MESSAGE_BYTES):
             raise ValueError("invalid bounded child input")
@@ -315,6 +320,7 @@ def run_child(argv, cwd, env, timeout_s, capture_limit=MAX_CHILD_CAPTURE, line_l
                                    stdout=None if passthrough else subprocess.PIPE,
                                    stderr=subprocess.PIPE,
                                    start_new_session=True, preexec_fn=_preexec)
+        on_spawn(process)
         selector = selectors.DefaultSelector()
         pending_input = memoryview(input_bytes or b"")
         if process.stdin is not None:
@@ -355,6 +361,8 @@ def run_child(argv, cwd, env, timeout_s, capture_limit=MAX_CHILD_CAPTURE, line_l
                     break
                 chunk = os.read(key.fileobj.fileno(), 65536)
                 if not chunk:
+                    if key.data == "err":
+                        stderr_eof = True
                     selector.unregister(key.fileobj)
                     open_streams -= 1
                     continue
@@ -376,7 +384,27 @@ def run_child(argv, cwd, env, timeout_s, capture_limit=MAX_CHILD_CAPTURE, line_l
     finally:
         try:
             if process is not None:
-                supervision = end_group(process, terminate=terminate, grace_s=grace_s)
+                try:
+                    # Cancellation can race an already exited worker. Preserve its
+                    # diagnostic tail before closing pipes; never wait here or infer
+                    # EOF from exit alone (a descendant may still hold the pipe).
+                    if passthrough and not stderr_eof:
+                        os.set_blocking(process.stderr.fileno(), False)
+                        while True:
+                            try:
+                                chunk = os.read(process.stderr.fileno(), 65536)
+                            except BlockingIOError:
+                                break
+                            if not chunk:
+                                stderr_eof = True
+                                break
+                            room = max(0, MAX_STDERR_CAPTURE - len(err))
+                            err.extend(chunk[:room])
+                            stderr_truncated |= len(chunk) > room
+                            if stderr_truncated:
+                                break
+                finally:
+                    supervision = end_group(process, terminate=terminate, grace_s=grace_s)
         finally:
             if selector is not None:
                 selector.close()
@@ -387,6 +415,7 @@ def run_child(argv, cwd, env, timeout_s, capture_limit=MAX_CHILD_CAPTURE, line_l
     return {"exit_code": process.returncode if process is not None else None,
             "stdout": bytes(out), "stderr": bytes(err), "stderr_truncated": stderr_truncated,
             "stopped": stopped, "error_type": error_type, "supervision": supervision,
+            "stderr_eof": stderr_eof,
             "elapsed_ms": int((time.monotonic() - started) * 1000)}
 
 
@@ -909,6 +938,7 @@ class Broker:
         raise ProtocolError(-32601, f"method not supported: {method[:64]}")
 
     def serve(self, stdin, stdout):
+        requests = replies = 0
         self.record({"type": "start", "arm": self.arm, "tools": list(self.tools),
                      "identity": start_identity()})
         while True:
@@ -934,6 +964,9 @@ class Broker:
                 continue
             request_id = message.get("id") if isinstance(message, dict) else None
             is_request = isinstance(message, dict) and "id" in message and "method" in message
+            if is_request:
+                requests += 1
+                self.record({"type": "request", "seq": requests})
             try:
                 result = self.handle(message)
             except ProtocolError as error:
@@ -941,10 +974,16 @@ class Broker:
                              "reason": error.message[:200]})
                 if is_request or not isinstance(message, dict):
                     self.reply(stdout, request_id, error=(error.code, error.message))
+                    if is_request:
+                        replies += 1
+                        self.record({"type": "reply", "seq": requests, "calls": self.calls})
                 continue
             if is_request:
                 self.reply(stdout, request_id, result=result if result is not None else {})
-        self.record({"type": "stop", "calls": self.calls, "output_bytes": self.output_bytes})
+                replies += 1
+                self.record({"type": "reply", "seq": requests, "calls": self.calls})
+        self.record({"type": "stop", "reason": "stdin_eof", "requests": requests,
+                     "replies": replies, "calls": self.calls, "output_bytes": self.output_bytes})
 
     @staticmethod
     def reply(stdout, request_id, result=None, error=None):
@@ -1091,6 +1130,87 @@ def launch(spec_path, argv):
     return 127  # not reached
 
 
+def idle_checkpoint(path):
+    """Snapshot the last exchange boundary; final validation checks the full ledger.
+
+    Any partial write, busy request/call, unknown count or oversized log refuses
+    the drain. Counts fence off requests prefetched into the worker's buffer:
+    final EOF must contain exactly these counts, not additional buffered work.
+    """
+    try:
+        fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC)
+        with os.fdopen(fd, "rb") as stream:
+            data = stream.read(MAX_LIFECYCLE_LOG + 1)
+        if len(data) > MAX_LIFECYCLE_LOG or not data.endswith(b"\n"):
+            return None
+        last = {}
+        for line in data.splitlines():
+            entry = json.loads(line, object_pairs_hook=_unique, parse_constant=_reject_constant)
+            if not isinstance(entry, dict):
+                return None
+            if entry.get("type") in ("request", "reply", "call_start", "call", "stop"):
+                last = entry
+        if last.get("type") == "reply":
+            checkpoint = {"requests": last.get("seq"), "calls": last.get("calls")}
+        elif last.get("type") == "stop" and last.get("reason") == "stdin_eof":
+            checkpoint = {"requests": last.get("requests"), "calls": last.get("calls")}
+        else:
+            return None
+        return checkpoint if valid_checkpoint(checkpoint) else None
+    except (OSError, ValueError, RecursionError):
+        return None
+
+
+def valid_checkpoint(value):
+    return (isinstance(value, dict) and set(value) == {"requests", "calls"}
+            and all(type(count) is int and count >= 0 for count in value.values())
+            and value["requests"] > 0)
+
+
+def input_pipe_eof(fd):
+    """Only kernel-confirmed empty pipe + no writers permits an orderly drain."""
+    if not stat.S_ISFIFO(os.fstat(fd).st_mode):
+        return False
+    watch = select.poll()
+    watch.register(fd, select.POLLIN | select.POLLHUP | select.POLLERR)
+    return watch.poll(0) == [(fd, select.POLLHUP)]
+
+
+def eof_idle_signal(observed):
+    return (observed.get("signal") == "SIGTERM" and observed.get("parent_alive") is True
+            and observed.get("input_eof") is True and valid_checkpoint(observed.get("checkpoint")))
+
+
+def orderly_broker_exit(entry, contract=LIFECYCLE_CONTRACT):
+    """Prospective process proof only; the runner also requires EOF/reply evidence.
+
+    Raw cancellation is retained. A TERM observation with an already exited
+    worker does not prove the sender or kernel signal-generation ordering.
+    """
+    facts = entry.get("lifecycle")
+    if (not isinstance(facts, dict) or facts.get("contract") != contract
+            or facts.get("parent_alive") is not True or facts.get("stderr_eof") is not True
+            or type(entry.get("exit_code")) is not int or entry["exit_code"] != 0
+            or entry.get("error_type") is not None or entry.get("stderr_truncated") is not False
+            or (entry.get("cleanup") or {}).get("survivors") != []):
+        return False
+    if contract == LIFECYCLE_CONTRACT and facts.get("drain_expired") is not False:
+        return False
+    received = facts.get("signals")
+    if received == []:
+        return entry.get("stopped") is None and entry["cleanup"].get("signals") == []
+    if (not isinstance(received, list) or len(received) != 1
+            or entry.get("stopped") not in (None, "cancelled")
+            or entry["cleanup"].get("signals") not in ([], ["SIGTERM"])):
+        return False
+    observed = received[0]
+    if not isinstance(observed, dict) or observed.get("signal") != "SIGTERM" \
+            or observed.get("parent_alive") is not True:
+        return False
+    exited = all(observed.get(key) is True for key in ("worker_exited_zero", "group_empty"))
+    return exited or (contract == LIFECYCLE_CONTRACT and eof_idle_signal(observed))
+
+
 def supervise_broker(config_path, config):
     """Watch provider *process* lifetime, never its transient launching thread.
 
@@ -1102,25 +1222,79 @@ def supervise_broker(config_path, config):
     parent_fd = os.pidfd_open(parent)
     logger = Broker(config)
     cancelled = []
+    child = []
     previous = {}
+    drain_deadline = None
+    drain_expired = False
+
+    def parent_alive():
+        with selectors.DefaultSelector() as watch:
+            watch.register(parent_fd, selectors.EVENT_READ)
+            return not watch.select(0)
+
+    def receive(signum, frame):
+        nonlocal drain_deadline
+        # Snapshot before cleanup can affect the worker, retaining its zombie
+        # identity with WNOWAIT. A running worker needs the separate EOF/idle
+        # checkpoint and a successful bounded drain; exit alone cannot qualify.
+        if len(cancelled) >= 2:
+            return  # two observations already fail closed; bound signal storms
+        observed = {"signal": signal.Signals(signum).name, "worker_exited_zero": False,
+                    "group_empty": False, "parent_alive": False,
+                    "checkpoint": None, "input_eof": False}
+        cancelled.append(observed)
+        try:
+            # Read the exchange boundary BEFORE the pipe check. A request that
+            # starts later changes the final counts and cannot qualify.
+            observed["checkpoint"] = idle_checkpoint(config["log_path"])
+            observed["input_eof"] = input_pipe_eof(sys.stdin.fileno())
+            if child and child[0].returncode is None:
+                info = os.waitid(os.P_PID, child[0].pid,
+                                 os.WEXITED | os.WNOHANG | os.WNOWAIT)
+                observed["worker_exited_zero"] = bool(
+                    info is not None and info.si_code == os.CLD_EXITED and info.si_status == 0)
+                observed["group_empty"] = live_group_members(child[0].pid) == []
+            observed["parent_alive"] = parent_alive()
+        except OSError:
+            pass
+        if len(cancelled) == 1 and eof_idle_signal(observed):
+            drain_deadline = time.monotonic() + KILL_GRACE_S
+        logger.record({"type": "supervisor_signal", **observed})
+
+    def cancel_requested():
+        nonlocal drain_expired
+        if not cancelled:
+            return False
+        if len(cancelled) == 1 and drain_deadline is not None:
+            if time.monotonic() < drain_deadline:
+                return False  # proven EOF + idle checkpoint: await exit, not more work
+            drain_expired = True
+        return True
     try:
         if os.getppid() != parent:
             raise RuntimeError("parent changed before supervision")
         for sig in (signal.SIGTERM, signal.SIGINT):
-            previous[sig] = signal.signal(sig, lambda signum, frame: cancelled.append(signum))
-        logger.record({"type": "supervisor_start", "identity": start_identity()})
+            previous[sig] = signal.signal(sig, receive)
+        logger.record({"type": "supervisor_start", "identity": start_identity(),
+                       "lifecycle_contract": LIFECYCLE_CONTRACT})
         result = run_child([sys.executable, "-B", os.path.abspath(__file__),
                             "--worker", "--config", config_path],
                            config["repo_root"], logger.child_env,
                            max(0, config["deadline_unix_ms"] / 1000 - time.time()),
                            passthrough=True, parent_fd=parent_fd,
-                           cancelled=lambda: bool(cancelled), grace_s=3 * KILL_GRACE_S)
-        logger.record({"type": "broker_exit", "exit_code": result["exit_code"],
-                       "stopped": result["stopped"], "error_type": result["error_type"],
-                       "stderr": result["stderr"].decode("utf-8", errors="replace"),
-                       "stderr_truncated": result["stderr_truncated"],
-                       "cleanup": result["supervision"]})
-        return 0 if result["exit_code"] == 0 and result["stopped"] is None else 1
+                           cancelled=cancel_requested, grace_s=3 * KILL_GRACE_S,
+                           on_spawn=child.append)
+        entry = {"type": "broker_exit", "exit_code": result["exit_code"],
+                 "stopped": result["stopped"] or ("cancelled" if cancelled else None),
+                 "error_type": result["error_type"],
+                 "stderr": result["stderr"].decode("utf-8", errors="replace"),
+                 "stderr_truncated": result["stderr_truncated"],
+                 "cleanup": result["supervision"],
+                 "lifecycle": {"contract": LIFECYCLE_CONTRACT, "signals": cancelled,
+                               "parent_alive": parent_alive(), "stderr_eof": result["stderr_eof"],
+                               "drain_expired": drain_expired}}
+        logger.record(entry)
+        return 0 if orderly_broker_exit(entry) else 1
     finally:
         for sig, handler in previous.items():
             signal.signal(sig, handler)

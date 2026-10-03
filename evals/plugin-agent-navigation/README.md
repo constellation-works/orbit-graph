@@ -210,3 +210,25 @@ AGENT_EVAL_ORBIT_GRAPH="$PWD/target/debug/orbit-graph" \
 Use a fresh checkout/build that matches the chosen plugin commit and check disk
 usage before creating a build directory. Tests never alter the real HOME or
 install a global plugin. Host variables do not enter the private fixture.
+
+### Lifecycle version boundary and operator handoff
+
+New captures use runner version 4 and
+`lifecycle_contract: eof-idle-at-term-observation-v2`, retaining schema 2 and
+this profile. Replay selects that contract explicitly. Runner version 2 without
+a contract retains historical cancellation failures; runner version 3 with the
+original `eof-exited-at-term-observation-v1` retains its narrower rules, including
+the first failed actual-Codex rehearsal. Unsupported combinations are refused.
+Harness hashes in the capture and preregistration bind exact implementation
+bytes. New semantics cannot be mixed into a frozen cohort or old rehearsal.
+
+See the [prospective teardown contract](../../scripts/agent-eval/README.md#prospective-orderly-teardown-contract)
+for EOF, idle checkpoint, final count fence and bounded drain requirements. The
+first actual-Codex rehearsal proved that an already-exited-worker rule was too
+narrow. The revised offline fixture covers EOF while the worker is still alive.
+The operator must repeat strict zero-skip admission on the exact revised hashes,
+then run a new small synthetic actual-Codex rehearsal in both arms before new
+measurements. A fake-provider pass alone is insufficient actual-client evidence.
+Keep all 12 current outcomes and the original scoring attempt under the frozen
+contract, including redacted-treatment refusals. Source-output redaction repair
+is a separate change; no accepted old score is required for prospective review.

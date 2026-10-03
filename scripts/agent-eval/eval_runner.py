@@ -36,7 +36,8 @@ sys.path.insert(0, str(HERE))
 import eval_broker as broker  # noqa: E402  (sibling module, same checkout)
 import plugin_profile as plugin  # noqa: E402
 
-RUNNER_VERSION = "1"
+RUNNER_VERSION = "4"
+LIFECYCLE_CONTRACTS = {"3": broker.EXITED_LIFECYCLE_CONTRACT, "4": broker.LIFECYCLE_CONTRACT}
 RAW_KIND = "agent-eval-raw-episode"
 CACHE_POLICY = "cold-per-episode-including-graph-setup"
 ARMS = ("baseline", "graph")
@@ -87,7 +88,7 @@ USAGE_SOURCE = "codex exec --json turn.completed.usage"
 MAX_JSON_BYTES = 2 * 1024 * 1024
 MAX_PROVIDER_STDOUT = 8 * 1024 * 1024
 MAX_PROVIDER_STDERR = 256 * 1024
-MAX_BROKER_LOG = 64 * 1024 * 1024
+MAX_BROKER_LOG = broker.MAX_LIFECYCLE_LOG
 TREE_LIMITS = {"files": 50_000, "bytes": 512 * 1024 * 1024, "file_bytes": 16 * 1024 * 1024}
 COMMIT_EPOCH = calendar.timegm((2026, 10, 3, 0, 0, 0))
 PREFLIGHT_TIMEOUT_S = 60.0
@@ -1182,7 +1183,7 @@ def reconcile_calls(transcript, calls):
 def read_broker_log(path):
     log = {"starts": [], "initialized": False, "tools_listed": [], "calls": [], "refusals": [],
            "budget": [], "protocol_errors": 0, "malformed_lines": 0, "truncated": False,
-           "supervisors": [], "exits": []}
+           "supervisors": [], "exits": [], "lifecycle_contracts": [], "lifecycle_events": []}
     try:
         fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC)
     except FileNotFoundError:
@@ -1203,10 +1204,15 @@ def read_broker_log(path):
             log["malformed_lines"] += 1
             continue
         kind = entry.get("type")
+        if kind in ("request", "reply", "call_start", "call", "stop"):
+            log["lifecycle_events"].append({key: entry[key] for key in
+                ("type", "seq", "reason", "requests", "replies", "calls", "output_bytes")
+                if key in entry})
         if kind == "start":
             log["starts"].append(entry.get("identity") or {})
         elif kind == "supervisor_start":
             log["supervisors"].append(entry.get("identity") or {})
+            log["lifecycle_contracts"].append(entry.get("lifecycle_contract"))
         elif kind == "broker_exit":
             cleanup = entry.get("cleanup")
             if (type(entry.get("exit_code")) not in (int, type(None))
@@ -1219,6 +1225,8 @@ def read_broker_log(path):
             log["exits"].append({key: entry.get(key) for key in
                                  ("exit_code", "stopped", "error_type", "stderr",
                                   "stderr_truncated", "cleanup")})
+            if "lifecycle" in entry:
+                log["exits"][-1]["lifecycle"] = entry["lifecycle"]
         elif kind == "initialize":
             log["initialized"] = True
         elif kind == "tools_list":
@@ -1311,7 +1319,66 @@ def recoverable_graph_error(call, body):
             and isinstance(error["error"], str) and bool(error["error"].strip()))
 
 
-def decide(supervision, transcript, log, final, limits, sentinel_code, output_bytes, wall_ms):
+def complete_broker_lifecycle(log, contract=broker.LIFECYCLE_CONTRACT):
+    """One serial MCP session, every admitted request replied to, then input EOF.
+
+    A completed tool log alone precedes writing/flushing its MCP reply and is
+    insufficient. Provider reconciliation independently proves receipt of calls.
+    """
+    if (len(log["starts"]) != 1 or len(log["supervisors"]) != 1 or len(log["exits"]) != 1
+            or log["lifecycle_contracts"] != [contract]
+            or log["protocol_errors"]):
+        return False
+    requests = replies = started = completed = 0
+    pending = calling = stopped = False
+    for event in log["lifecycle_events"]:
+        if stopped:
+            return False
+        kind = event["type"]
+        if kind == "stop":
+            if (pending or calling or not all(type(event.get(key)) is int for key in
+                    ("requests", "replies", "calls", "output_bytes"))
+                    or event != {"type": "stop", "reason": "stdin_eof",
+                    "requests": requests, "replies": replies, "calls": completed,
+                    "output_bytes": sum(len(c["output"].encode()) for c in log["calls"])}):
+                return False
+            stopped = True
+            continue
+        seq = event.get("seq")
+        if type(seq) is not int:
+            return False
+        if kind == "request":
+            if pending or seq != requests + 1:
+                return False
+            requests += 1
+            pending = True
+        elif kind == "reply":
+            if not pending or calling or seq != requests:
+                return False
+            replies += 1
+            pending = False
+        elif kind == "call_start":
+            if not pending or calling or seq != started + 1:
+                return False
+            started += 1
+            calling = True
+        elif kind == "call":
+            if not calling or seq != started:
+                return False
+            completed += 1
+            calling = False
+    if not (stopped and requests == replies and started == completed == len(log["calls"])):
+        return False
+    if contract == broker.LIFECYCLE_CONTRACT:
+        for observed in log["exits"][0]["lifecycle"]["signals"]:
+            if not (observed.get("worker_exited_zero") is True and observed.get("group_empty") is True):
+                if observed.get("checkpoint") != {"requests": requests, "calls": completed}:
+                    return False
+    return True
+
+
+def decide(supervision, transcript, log, final, limits, sentinel_code, output_bytes, wall_ms,
+           lifecycle_contract=None):
     """First matching failure wins; only a clean, complete, well-formed run is ok."""
     calls = log["calls"]
     if supervision["terminated_by"] == "timeout":
@@ -1346,8 +1413,20 @@ def decide(supervision, transcript, log, final, limits, sentinel_code, output_by
     mismatch = reconcile_calls(transcript, calls)
     if mismatch:
         return "failed", "telemetry_mismatch", mismatch
-    if any(entry["exit_code"] != 0 or entry["stopped"] is not None or
-           (entry["cleanup"] or {}).get("survivors") != [] for entry in log.get("exits", [])):
+    if lifecycle_contract is not None:
+        if lifecycle_contract not in LIFECYCLE_CONTRACTS.values():
+            return "failed", "lifecycle_contract_unknown", "unsupported broker lifecycle contract"
+        if not all(broker.orderly_broker_exit(entry, lifecycle_contract) for entry in log["exits"]):
+            return "failed", "broker_failed", "the broker worker did not exit cleanly"
+        if not complete_broker_lifecycle(log, lifecycle_contract):
+            return "failed", "broker_lifecycle_incomplete", "missing orderly EOF or request/reply evidence"
+        if (supervision.get("terminated_by") is not None
+                or supervision.get("pipes_closed") is not True
+                or supervision.get("survivors") != [] or supervision.get("signals") != []
+                or supervision.get("brokers_swept") != []):
+            return "failed", "process_cleanup_failed", "episode cleanup required intervention or is unproven"
+    elif any(entry["exit_code"] != 0 or entry["stopped"] is not None or
+             (entry["cleanup"] or {}).get("survivors") != [] for entry in log.get("exits", [])):
         return "failed", "broker_failed", "the broker worker did not exit cleanly"
     if log.get("supervisors") and len(log.get("exits", [])) != len(log["supervisors"]):
         return "failed", "broker_exit_missing", "broker supervision ended without exit evidence"
@@ -1371,7 +1450,8 @@ def decide(supervision, transcript, log, final, limits, sentinel_code, output_by
                         and not recoverable_graph_error(call, body))):
                 return "failed", "tool_execution_failed", "a broker tool could not execute cleanly"
     if supervision["returncode"] != 0 or transcript["turns_completed"] < 1 or \
-            transcript["turn_failures"]:
+            transcript["turn_failures"] or (lifecycle_contract is not None and
+            transcript["turns_started"] != transcript["turns_completed"]):
         return "failed", "provider_incomplete", \
             f"provider exit {supervision['exit']} without a completed turn " \
             f"({transcript['turn_failures'][:1] or transcript['errors'][:1]})"
@@ -1574,6 +1654,7 @@ def command_run(args):
         time.sleep(0.02)
         pending_log, _ = read_broker_log(episode.state / "broker-calls.jsonl")
     swept = sweep_broker(pending_log["starts"] + pending_log["supervisors"])
+    supervision["brokers_swept"] = swept
     log, log_bytes = read_broker_log(episode.state / "broker-calls.jsonl")
     transcript = analyse_transcript(supervision["stdout"], supervision["stdout_truncated"],
                                     request["tools"])
@@ -1599,7 +1680,8 @@ def command_run(args):
                             or "budget_exceeded")[:64]
     status, code, message = decide(supervision, transcript, log,
                                    {"text": final_text, "truncated": final_truncated},
-                                   limits, sentinel_code, output_bytes, wall_ms)
+                                   limits, sentinel_code, output_bytes, wall_ms,
+                                   lifecycle_contract=broker.LIFECYCLE_CONTRACT)
     answer = parse_json(final_text.encode(), "final") if status == "ok" else None
     graph_state = None
     if episode.arm == "graph":
@@ -1630,7 +1712,7 @@ def command_run(args):
     artifact = {
         "schema_version": request["schema_version"],
         "kind": plugin.RAW_KIND if episode.plugin_profile else RAW_KIND,
-        "runner_version": "2" if episode.plugin_profile else RUNNER_VERSION,
+        "runner_version": RUNNER_VERSION, "lifecycle_contract": broker.LIFECYCLE_CONTRACT,
         "run_id": run_id, "request": request, "request_digest": digest(request),
         "started_at_unix": round(started_at, 3),
         "model": {"provider": "codex-cli", "name": args.model, "version": provider["version"],

@@ -318,6 +318,126 @@ class BrokerTests(unittest.TestCase):
         self.assertEqual(record["exit_code"], -signal.SIGKILL)
         self.assertEqual(record["cleanup"]["survivors"], [])
 
+    def test_sigterm_with_open_input_is_cancellation(self):
+        client, state = self.client()
+        client.call("read", {"path": "src/lib.rs"})
+        os.kill(client.process.pid, signal.SIGTERM)
+        # Keep stdin open until the supervisor has finished its bounded sweep.
+        self.assertTrue(eval_broker.wait_leader(client.process.pid, 10))
+        self.assertEqual(client.close(), 1)
+        record = support.log_entries(state)[-1]
+        self.assertEqual(record["stopped"], "cancelled")
+        self.assertFalse(record["lifecycle"]["signals"][0]["worker_exited_zero"])
+        self.assertFalse(eval_broker.orderly_broker_exit(record))
+        self.assertEqual(record["cleanup"]["survivors"], [])
+        self.assertFalse(any(e["type"] == "stop" for e in support.log_entries(state)))
+
+    def test_sigterm_during_inflight_call_cleans_descendant_and_never_completes_reply(self):
+        ready = self.work / "tool-ready"
+        tool = self.work / "blocked-tool"
+        tool.write_text("#!/usr/bin/python3\nimport os, signal\n"
+                        f"with open({str(ready) + '.pending'!r}, 'w') as stream: stream.write(str(os.getpid()))\n"
+                        f"os.replace({str(ready) + '.pending'!r}, {str(ready)!r})\n"
+                        "signal.pause()\n")
+        tool.chmod(0o700)
+        client, state = self.client("graph", graph=str(tool))
+        client.send_raw(json.dumps({"jsonrpc": "2.0", "id": 42, "method": "tools/call",
+                                    "params": {"name": "graph_sync", "arguments": {}}}) + "\n")
+        deadline = time.monotonic() + 10
+        while not ready.exists() and time.monotonic() < deadline:
+            time.sleep(.01)
+        self.assertTrue(ready.exists(), "tool did not acknowledge its in-flight call")
+        pid = int(ready.read_text())
+        fd = os.pidfd_open(pid)
+        try:
+            client.process.stdin.close()  # EOF alone must not forgive in-flight work
+            os.kill(client.process.pid, signal.SIGTERM)
+            self.assertTrue(eval_broker.wait_leader(client.process.pid, 10))
+            self.assertEqual(client.close(), 1)
+            entries = support.log_entries(state)
+            self.assertTrue(any(e["type"] == "call_start" for e in entries))
+            self.assertFalse(any(e["type"] in ("call", "stop") for e in entries))
+            self.assertEqual(sum(e["type"] == "reply" for e in entries), 1)  # initialize only
+            self.assertFalse(eval_broker.orderly_broker_exit(entries[-1]))
+            self.assertIsNone(entries[-1]["lifecycle"]["signals"][0]["checkpoint"])
+            self.assertEqual(entries[-1]["cleanup"]["survivors"], [])
+            self.assertFalse(support.alive(pid))
+        finally:
+            try:
+                signal.pidfd_send_signal(fd, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+            os.close(fd)
+
+    def test_cancelled_worker_exiting_zero_is_not_orderly_teardown(self):
+        config, state = support.broker_config(self.work, self.repo, self.snapshot)
+        runtime = self.work / "zero-on-term-broker.py"
+        source = (support.TOOL / "eval_broker.py").read_text()
+        runtime.write_text(source.replace("raise SystemExit(128 + signum)", "raise SystemExit(0)"))
+        client = support.McpClient(argv=[sys.executable, "-B", str(runtime), "--config", str(config)])
+        self.addCleanup(client.terminate)
+        client.request("initialize")
+        client.call("read", {"path": "src/lib.rs"})
+        os.kill(client.process.pid, signal.SIGTERM)
+        self.assertTrue(eval_broker.wait_leader(client.process.pid, 10))
+        self.assertEqual(client.close(), 1)
+        entry = support.log_entries(state)[-1]
+        self.assertEqual(entry["exit_code"], 0)
+        self.assertEqual(entry["stopped"], "cancelled")
+        self.assertFalse(entry["lifecycle"]["signals"][0]["worker_exited_zero"])
+        self.assertFalse(eval_broker.orderly_broker_exit(entry))
+
+    def test_empty_kernel_pipe_with_python_buffered_request_fails_count_fence(self):
+        config, state = support.broker_config(self.work, self.repo, self.snapshot)
+        runtime = self.work / "buffered-broker.py"
+        source = (support.TOOL / "eval_broker.py").read_text()
+        boundary = '\n                self.record({"type": "reply", "seq": requests, "calls": self.calls})'
+        self.assertEqual(source.count(boundary), 1)
+        runtime.write_text(source.replace(boundary, boundary +
+            '\n                if request_id == 41: os.kill(os.getpid(), signal.SIGSTOP)'))
+        client = support.McpClient(argv=[sys.executable, "-B", str(runtime), "--config", str(config)])
+        self.addCleanup(client.terminate)
+        client.request("initialize")
+        client.request("tools/list")
+        identity = next(e["identity"] for e in support.log_entries(state) if e["type"] == "start")
+        fd = os.pidfd_open(identity["pid"])
+        try:
+            # One write is prefetched by BufferedReader. Hold the worker after
+            # flushing the first reply, before it starts the buffered request.
+            client.send_raw("\n".join(json.dumps(message) for message in [
+                {"jsonrpc": "2.0", "id": 41, "method": "tools/call",
+                 "params": {"name": "read", "arguments": {}}},
+                {"jsonrpc": "2.0", "id": 42, "method": "ping"}]) + "\n")
+            self.assertEqual(client.read()["id"], 41)
+            deadline = time.monotonic() + 10
+            while True:
+                with open(f"/proc/{identity['pid']}/stat") as stream:
+                    stopped = stream.read().rsplit(")", 1)[1].split()[0] == "T"
+                if stopped:
+                    break
+                self.assertLess(time.monotonic(), deadline)
+            client.process.stdin.close()
+            os.kill(client.process.pid, signal.SIGTERM)
+            while not any(e["type"] == "supervisor_signal" for e in support.log_entries(state)):
+                self.assertLess(time.monotonic(), deadline)
+            signal.pidfd_send_signal(fd, signal.SIGCONT)
+            self.assertEqual(client.read()["id"], 42)
+            self.assertEqual(client.close(), 0)  # process exit alone is insufficient
+            log, _ = support.eval_runner.read_broker_log(state / "calls.jsonl")
+            observation = log["exits"][0]["lifecycle"]["signals"][0]
+            self.assertTrue(observation["input_eof"], "fixture did not prefetch the queued request")
+            self.assertEqual(observation["checkpoint"], {"requests": 3, "calls": 1})
+            self.assertEqual(log["lifecycle_events"][-1]["requests"], 4)
+            self.assertTrue(eval_broker.orderly_broker_exit(log["exits"][0]))
+            self.assertFalse(support.eval_runner.complete_broker_lifecycle(log))
+        finally:
+            try:
+                signal.pidfd_send_signal(fd, signal.SIGCONT)
+                signal.pidfd_send_signal(fd, signal.SIGTERM)
+            except ProcessLookupError:
+                pass
+            os.close(fd)
+
     def test_worker_stderr_is_drained_bounded_and_exit_is_recorded(self):
         config, state = support.broker_config(self.work, self.repo, self.snapshot)
         runtime = self.work / "fault-broker.py"
@@ -334,6 +454,51 @@ class BrokerTests(unittest.TestCase):
         self.assertEqual(len(entry["stderr"].encode()), eval_broker.MAX_STDERR_CAPTURE)
         self.assertTrue(entry["stderr_truncated"])
         self.assertNotIn("do-not-persist", json.dumps(entry))
+
+    def test_flushed_reply_is_not_inferred_from_completed_tool(self):
+        client, state = self.client()
+        client.process.stdout.close()  # nobody can receive the next MCP reply
+        client.send_raw(json.dumps({"jsonrpc": "2.0", "id": 42, "method": "tools/call",
+                                    "params": {"name": "read", "arguments": {}}}) + "\n")
+        self.assertEqual(client.close(), 1)
+        entries = support.log_entries(state)
+        self.assertEqual(sum(e["type"] == "call" for e in entries), 1)
+        self.assertEqual(sum(e["type"] == "reply" for e in entries), 1)  # initialize only
+        self.assertFalse(any(e["type"] == "stop" for e in entries))
+        self.assertFalse(eval_broker.orderly_broker_exit(entries[-1]))
+
+    def test_clean_worker_with_descendant_requires_failed_cleanup(self):
+        config, state = support.broker_config(self.work, self.repo, self.snapshot)
+        runtime = self.work / "leaking-broker.py"
+        pid_path = self.work / "descendant.pid"
+        source = (support.TOOL / "eval_broker.py").read_text()
+        runtime.write_text(source.replace(
+            "        broker.serve(sys.stdin.buffer, sys.stdout.buffer)",
+            "        descendant = subprocess.Popen(['/usr/bin/sleep', '600'],\n"
+            "            stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)\n"
+            f"        with open({str(pid_path)!r}, 'w') as stream: stream.write(str(descendant.pid))\n"
+            "        broker.serve(sys.stdin.buffer, sys.stdout.buffer)"))
+        client = support.McpClient(argv=[sys.executable, "-B", str(runtime), "--config", str(config)])
+        self.addCleanup(client.terminate)
+        client.request("initialize")
+        fd = os.pidfd_open(int(pid_path.read_text()))
+
+        def cleanup():
+            try:
+                signal.pidfd_send_signal(fd, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+            finally:
+                os.close(fd)
+        self.addCleanup(cleanup)
+        self.assertEqual(client.close(), 1)
+        entry = support.log_entries(state)[-1]
+        self.assertEqual(entry["exit_code"], 0)
+        self.assertIsNone(entry["stopped"])
+        self.assertTrue(entry["cleanup"]["signals"])
+        self.assertEqual(set(entry["cleanup"]["signals"]), {"SIGKILL"})
+        self.assertEqual(entry["cleanup"]["survivors"], [])
+        self.assertFalse(eval_broker.orderly_broker_exit(entry))
 
     def test_child_failures_are_bounded_logged_and_allow_subsequent_calls(self):
         config, state = support.broker_config(self.work, self.repo, self.snapshot,
