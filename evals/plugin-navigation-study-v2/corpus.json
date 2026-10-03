@@ -1,0 +1,770 @@
+{
+  "cases": [
+    {
+      "base_snapshot": "orbit-graph",
+      "head_snapshot": "orbit-graph",
+      "id": "graph-lexical-selector-paths",
+      "original_source_revision": "ac6d5b91f973874325bac789e9c433a71c805766",
+      "prompt": "Locate the selector FromStr implementation, its path-normalization wrapper and lexical path normalizer. Explain how symbol selectors split a qualified symbol from its kind, and which empty components fail. Explain whitespace, backslash, dot and parent-segment handling, including relative versus absolute paths; give the results for file:a/../../b, file:/../../b and file:a/.. . Does successful parsing establish file existence, resolve symlinks or enforce repository containment? State the source-supported boundary.",
+      "repository": "orbit-graph",
+      "split": "development",
+      "truth": {
+        "identities": [
+          {
+            "aliases": [
+              "symbol:crates/orbit-graph-extract/src/selector.rs#selector::Selector::from_str:method",
+              "symbol:crates/orbit-graph-extract/src/selector.rs#crate::selector::Selector::from_str:method"
+            ],
+            "file": "crates/orbit-graph-extract/src/selector.rs",
+            "line": 92,
+            "owner_evidence": {
+              "end_line": 92,
+              "excerpt_sha256": "163e01390ea833f701c68e0703403067785001d7a63be4e04e65012457537aae",
+              "file": "crates/orbit-graph-extract/src/selector.rs",
+              "line": 89,
+              "quote": "impl FromStr for Selector {",
+              "revision": "head"
+            },
+            "quote": "fn from_str(selector: &str) -> Result<Self, Self::Err> {",
+            "required": true,
+            "selector": "symbol:crates/orbit-graph-extract/src/selector.rs#Selector::from_str:method"
+          },
+          {
+            "aliases": [
+              "symbol:crates/orbit-graph-extract/src/selector.rs#selector::normalize_selector_path:function",
+              "symbol:crates/orbit-graph-extract/src/selector.rs#crate::selector::normalize_selector_path:function"
+            ],
+            "file": "crates/orbit-graph-extract/src/selector.rs",
+            "line": 171,
+            "quote": "fn normalize_selector_path(",
+            "required": true,
+            "selector": "symbol:crates/orbit-graph-extract/src/selector.rs#normalize_selector_path:function"
+          },
+          {
+            "aliases": [
+              "symbol:crates/orbit-graph-extract/src/selector.rs#selector::normalize_path_text:function",
+              "symbol:crates/orbit-graph-extract/src/selector.rs#crate::selector::normalize_path_text:function"
+            ],
+            "file": "crates/orbit-graph-extract/src/selector.rs",
+            "line": 181,
+            "quote": "fn normalize_path_text(raw: &str) -> Result<String, String> {",
+            "required": true,
+            "selector": "symbol:crates/orbit-graph-extract/src/selector.rs#normalize_path_text:function"
+          }
+        ],
+        "limitations": [
+          "Lexical parser behavior only; do not infer downstream filesystem authorization."
+        ],
+        "rubric": [
+          {
+            "evidence": [
+              {
+                "end_line": 134,
+                "excerpt_sha256": "9c58d9c4b4a22772f2c5b3da0fff6da3d74882c1971f95b286ab83599a3556e8",
+                "file": "crates/orbit-graph-extract/src/selector.rs",
+                "line": 92,
+                "quote": "fn from_str(selector: &str) -> Result<Self, Self::Err> {",
+                "revision": "head"
+              },
+              {
+                "end_line": 185,
+                "excerpt_sha256": "9447882bdd987c4837be7b918236607098e04ac9533c8d1c1c6f726d9de39416",
+                "file": "crates/orbit-graph-extract/src/selector.rs",
+                "line": 171,
+                "quote": "fn normalize_selector_path(",
+                "revision": "head"
+              }
+            ],
+            "id": "grammar",
+            "required_behavior": "Symbol parsing splits at the last colon and then the first #, preserving qualified symbol separators; normalized path, trimmed symbol and trimmed kind must be nonempty."
+          },
+          {
+            "evidence": [
+              {
+                "end_line": 218,
+                "excerpt_sha256": "f323c888c2358bb90e953a84a99b162c02974ab52b01b1ee315c8a0012557e48",
+                "file": "crates/orbit-graph-extract/src/selector.rs",
+                "line": 181,
+                "quote": "fn normalize_path_text(raw: &str) -> Result<String, String> {",
+                "revision": "head"
+              }
+            ],
+            "id": "lexical",
+            "required_behavior": "Paths trim whitespace, replace backslashes with slashes, discard empty/dot segments and cancel a preceding normal segment for ..; relative unmatched parents remain while absolute parents cannot climb above root. Results are ../b, /b and . respectively."
+          },
+          {
+            "evidence": [
+              {
+                "end_line": 218,
+                "excerpt_sha256": "1041072d85c2fe71102a3f64f793b3fcb20313089fb86923a78c42f94d78baec",
+                "file": "crates/orbit-graph-extract/src/selector.rs",
+                "line": 92,
+                "quote": "fn from_str(selector: &str) -> Result<Self, Self::Err> {",
+                "revision": "head"
+              }
+            ],
+            "id": "boundary",
+            "required_behavior": "These functions perform lexical string processing only: success does not establish existence, resolve symlinks or enforce repository containment."
+          }
+        ]
+      }
+    },
+    {
+      "base_snapshot": "orbit-graph",
+      "head_snapshot": "orbit-graph",
+      "id": "graph-trace-expansion-budget",
+      "original_source_revision": "ac6d5b91f973874325bac789e9c433a71c805766",
+      "prompt": "Locate the command call-tree traversal, its tree-materialization helper and the branching-cap regression. Explain how the materialization helper constructs the returned tree from arena children. Explain breadth-first expansion and how depth zero is interpreted; whether reaching the requested depth alone sets truncated; how unresolved callees appear; and what bounds repeated/cyclic expansion without a visited-symbol set. Explain the node cap including the root, visited_nodes and total when the cap stops expansion. State what the regression proves about returned tree size, and why a depth-limited tree is not proof of the complete runtime call graph.",
+      "repository": "orbit-graph",
+      "split": "development",
+      "truth": {
+        "identities": [
+          {
+            "aliases": [
+              "symbol:crates/orbit-graph/src/query/trace.rs#query::trace::run:function",
+              "symbol:crates/orbit-graph/src/query/trace.rs#crate::query::trace::run:function"
+            ],
+            "file": "crates/orbit-graph/src/query/trace.rs",
+            "line": 13,
+            "quote": "pub(crate) fn run(",
+            "required": true,
+            "selector": "symbol:crates/orbit-graph/src/query/trace.rs#run:function"
+          },
+          {
+            "aliases": [
+              "symbol:crates/orbit-graph/src/query/trace.rs#query::trace::build_tree:function",
+              "symbol:crates/orbit-graph/src/query/trace.rs#crate::query::trace::build_tree:function"
+            ],
+            "file": "crates/orbit-graph/src/query/trace.rs",
+            "line": 153,
+            "quote": "fn build_tree(arena: &[TraceNodeBuilder], index: usize) -> TraceNode {",
+            "required": true,
+            "selector": "symbol:crates/orbit-graph/src/query/trace.rs#build_tree:function"
+          },
+          {
+            "aliases": [
+              "symbol:crates/orbit-graph/src/query/tests/trace.rs#query::trace::tests::branching_factor_five_depth_five_caps_at_200_nodes:test",
+              "symbol:crates/orbit-graph/src/query/tests/trace.rs#crate::query::trace::tests::branching_factor_five_depth_five_caps_at_200_nodes:test"
+            ],
+            "file": "crates/orbit-graph/src/query/tests/trace.rs",
+            "line": 89,
+            "quote": "fn branching_factor_five_depth_five_caps_at_200_nodes() {",
+            "required": true,
+            "selector": "symbol:crates/orbit-graph/src/query/tests/trace.rs#branching_factor_five_depth_five_caps_at_200_nodes:test"
+          }
+        ],
+        "limitations": [
+          "No graph execution informed selection. Depth completion and unique runtime reachability are different claims."
+        ],
+        "rubric": [
+          {
+            "evidence": [
+              {
+                "end_line": 68,
+                "excerpt_sha256": "ee23b87599823572c66fa4806f32ecc79d903b0889be3b5b3c229e00c88c6b83",
+                "file": "crates/orbit-graph/src/query/trace.rs",
+                "line": 25,
+                "quote": "let max_depth = usize::from(if depth == 0 {",
+                "revision": "head"
+              }
+            ],
+            "id": "walk",
+            "required_behavior": "Traversal uses a FIFO queue and substitutes DEFAULT_TRACE_DEPTH for zero. It skips expansion at the depth bound without setting truncated. Unresolved callees remain leaf nodes; only resolved targets below the bound are queued."
+          },
+          {
+            "evidence": [
+              {
+                "end_line": 75,
+                "excerpt_sha256": "1968e35fc657a7fa3aac5dbf2bf9eaeefca07cdbedf2b08e99d10dfe3575d06d",
+                "file": "crates/orbit-graph/src/query/trace.rs",
+                "line": 25,
+                "quote": "let max_depth = usize::from(if depth == 0 {",
+                "revision": "head"
+              }
+            ],
+            "id": "bounds",
+            "required_behavior": "No visited-symbol set deduplicates repeated/cyclic paths; depth and TRACE_NODE_CAP bound expansion. The arena starts with the root, checks the cap before adding each visible child, and sets truncated only when that cap prevents another child. visited_nodes is arena length; total is absent on truncation and otherwise that length."
+          },
+          {
+            "evidence": [
+              {
+                "end_line": 165,
+                "excerpt_sha256": "c17c0230fe5d98039400f5cb925ae12c19335f970f112418955abff78b46e7ae",
+                "file": "crates/orbit-graph/src/query/trace.rs",
+                "line": 153,
+                "quote": "fn build_tree(arena: &[TraceNodeBuilder], index: usize) -> TraceNode {",
+                "revision": "head"
+              },
+              {
+                "end_line": 109,
+                "excerpt_sha256": "77ea1bc0634812b5e34a9b08df41400a36e751d85b01732aebdbe4b42b211646",
+                "file": "crates/orbit-graph/src/query/tests/trace.rs",
+                "line": 89,
+                "quote": "fn branching_factor_five_depth_five_caps_at_200_nodes() {",
+                "revision": "head"
+              }
+            ],
+            "id": "materialization",
+            "required_behavior": "build_tree recursively materializes arena children. The branching regression asserts both visited_nodes and actual tree-node count equal TRACE_NODE_CAP, with truncated true. These are structural bounded traversal results, not proof of the full runtime graph."
+          }
+        ]
+      }
+    },
+    {
+      "base_snapshot": "Orbit",
+      "head_snapshot": "Orbit",
+      "id": "orbit-interval-catchup-projection",
+      "original_source_revision": "0db9356eef631ada11569d0ca4e1e407fad5bee3",
+      "prompt": "Locate auto-task decide_due and next_scheduled_slot, the interval due helper, latest-boundary helper and next-interval helper. Explain which cursor is the exclusive due floor versus interval anchor, and why missed intervals collapse into one fire. Explain behavior before the anchor and at an already-consumed boundary. Contrast strictly future projection, including missing baseline and time before baseline. Distinguish delivery schedules in due checking versus projection. Does the projected slot establish that a task was or will successfully be created?",
+      "repository": "Orbit",
+      "split": "held-out",
+      "truth": {
+        "identities": [
+          {
+            "aliases": [
+              "symbol:crates/orbit-automation/src/auto_tasks/schedule.rs#auto_tasks::schedule::decide_due:function",
+              "symbol:crates/orbit-automation/src/auto_tasks/schedule.rs#crate::auto_tasks::schedule::decide_due:function"
+            ],
+            "file": "crates/orbit-automation/src/auto_tasks/schedule.rs",
+            "line": 58,
+            "quote": "pub fn decide_due(",
+            "required": true,
+            "selector": "symbol:crates/orbit-automation/src/auto_tasks/schedule.rs#decide_due:function"
+          },
+          {
+            "aliases": [
+              "symbol:crates/orbit-automation/src/auto_tasks/schedule.rs#auto_tasks::schedule::next_scheduled_slot:function",
+              "symbol:crates/orbit-automation/src/auto_tasks/schedule.rs#crate::auto_tasks::schedule::next_scheduled_slot:function"
+            ],
+            "file": "crates/orbit-automation/src/auto_tasks/schedule.rs",
+            "line": 87,
+            "quote": "pub fn next_scheduled_slot(",
+            "required": true,
+            "selector": "symbol:crates/orbit-automation/src/auto_tasks/schedule.rs#next_scheduled_slot:function"
+          },
+          {
+            "aliases": [
+              "symbol:crates/orbit-automation/src/auto_tasks/schedule.rs#auto_tasks::schedule::decide_interval:function",
+              "symbol:crates/orbit-automation/src/auto_tasks/schedule.rs#crate::auto_tasks::schedule::decide_interval:function"
+            ],
+            "file": "crates/orbit-automation/src/auto_tasks/schedule.rs",
+            "line": 131,
+            "quote": "fn decide_interval(",
+            "required": true,
+            "selector": "symbol:crates/orbit-automation/src/auto_tasks/schedule.rs#decide_interval:function"
+          },
+          {
+            "aliases": [
+              "symbol:crates/orbit-automation/src/auto_tasks/schedule.rs#auto_tasks::schedule::interval_slot_at_or_before:function",
+              "symbol:crates/orbit-automation/src/auto_tasks/schedule.rs#crate::auto_tasks::schedule::interval_slot_at_or_before:function"
+            ],
+            "file": "crates/orbit-automation/src/auto_tasks/schedule.rs",
+            "line": 187,
+            "quote": "fn interval_slot_at_or_before(",
+            "required": true,
+            "selector": "symbol:crates/orbit-automation/src/auto_tasks/schedule.rs#interval_slot_at_or_before:function"
+          },
+          {
+            "aliases": [
+              "symbol:crates/orbit-automation/src/auto_tasks/schedule.rs#auto_tasks::schedule::next_interval_slot:function",
+              "symbol:crates/orbit-automation/src/auto_tasks/schedule.rs#crate::auto_tasks::schedule::next_interval_slot:function"
+            ],
+            "file": "crates/orbit-automation/src/auto_tasks/schedule.rs",
+            "line": 156,
+            "quote": "fn next_interval_slot(",
+            "required": true,
+            "selector": "symbol:crates/orbit-automation/src/auto_tasks/schedule.rs#next_interval_slot:function"
+          }
+        ],
+        "limitations": [
+          "Time arithmetic and local code only; no claims about actual scheduler uptime or future delivery."
+        ],
+        "rubric": [
+          {
+            "evidence": [
+              {
+                "end_line": 74,
+                "excerpt_sha256": "4a9a8f1828868f07b3d2139d9ea99b8a0abb308120fc68bfad97c1d6549edc9d",
+                "file": "crates/orbit-automation/src/auto_tasks/schedule.rs",
+                "line": 58,
+                "quote": "pub fn decide_due(",
+                "revision": "head"
+              },
+              {
+                "end_line": 149,
+                "excerpt_sha256": "ed22bde6d49ecf481bc7e2230d2db615dbd1224a1817a50453c6a9174f8c7d41",
+                "file": "crates/orbit-automation/src/auto_tasks/schedule.rs",
+                "line": 131,
+                "quote": "fn decide_interval(",
+                "revision": "head"
+              },
+              {
+                "end_line": 199,
+                "excerpt_sha256": "137eadd0fad126c6a05ee28ecc8ed7e255226f077771667ff56534148f73189f",
+                "file": "crates/orbit-automation/src/auto_tasks/schedule.rs",
+                "line": 187,
+                "quote": "fn interval_slot_at_or_before(",
+                "revision": "head"
+              }
+            ],
+            "id": "due",
+            "required_behavior": "Due floor is last_slot if present, otherwise baseline; intervals remain anchored to baseline. The latest boundary at or before now is computed by elapsed whole periods, giving at most one catch-up fire only if strictly above the floor; before baseline or an already-consumed boundary is NotDue."
+          },
+          {
+            "evidence": [
+              {
+                "end_line": 105,
+                "excerpt_sha256": "a101d8dbf6a8e6013e7d9d7cd881fb73e9b8af7f7f44931638b25daa64f4b547",
+                "file": "crates/orbit-automation/src/auto_tasks/schedule.rs",
+                "line": 87,
+                "quote": "pub fn next_scheduled_slot(",
+                "revision": "head"
+              },
+              {
+                "end_line": 165,
+                "excerpt_sha256": "c7cfedfc72addb65dfda4b5ce4faab010330036ee985ac5f7691c73204c480d2",
+                "file": "crates/orbit-automation/src/auto_tasks/schedule.rs",
+                "line": 156,
+                "quote": "fn next_interval_slot(",
+                "revision": "head"
+              }
+            ],
+            "id": "projection",
+            "required_behavior": "Projection is distinct from pending catch-up: next_interval_slot returns the current boundary plus one period, or baseline PLUS ONE PERIOD when now precedes baseline. Missing interval baseline yields None; it does not invent an anchor."
+          },
+          {
+            "evidence": [
+              {
+                "end_line": 105,
+                "excerpt_sha256": "cdb6109dcf6a517ee7f230e4e33444913005b6658d03a762bd56e110e0d8c036",
+                "file": "crates/orbit-automation/src/auto_tasks/schedule.rs",
+                "line": 58,
+                "quote": "pub fn decide_due(",
+                "revision": "head"
+              }
+            ],
+            "id": "limits",
+            "required_behavior": "Delivery schedules error in decide_due because they require source evaluation, but project None. A projected time is arithmetic, not evidence of task creation or eventual successful execution."
+          }
+        ]
+      }
+    },
+    {
+      "base_snapshot": "Orbit",
+      "head_snapshot": "Orbit",
+      "id": "orbit-indexed-overlap-candidates",
+      "original_source_revision": "0db9356eef631ada11569d0ca4e1e407fad5bee3",
+      "prompt": "Locate OverlapIndex insertion and overlapping lookup plus OverlapScope parsing and overlap predicate. Explain invalid-input behavior and separate anchored versus anchorless storage. Trace which candidate anchors a lookup visits, when descendants are searched, slash-boundary matching and the special relative-root handling. Explain why every candidate is rechecked, whether distinct symbols in one file overlap, and whether module and command selectors use exact trimmed text. Does this index resolve symbol definitions or inspect the filesystem?",
+      "repository": "Orbit",
+      "split": "held-out",
+      "truth": {
+        "identities": [
+          {
+            "aliases": [
+              "symbol:crates/orbit-common/src/fs/overlap_index.rs#fs::overlap_index::OverlapIndex::insert:method",
+              "symbol:crates/orbit-common/src/fs/overlap_index.rs#crate::fs::overlap_index::OverlapIndex::insert:method"
+            ],
+            "file": "crates/orbit-common/src/fs/overlap_index.rs",
+            "line": 62,
+            "owner_evidence": {
+              "end_line": 62,
+              "excerpt_sha256": "a690e93ab14d318676e18e5bc7eb5a2c6163ca040f7299634841e9f1385a187d",
+              "file": "crates/orbit-common/src/fs/overlap_index.rs",
+              "line": 53,
+              "quote": "impl<V> OverlapIndex<V> {",
+              "revision": "head"
+            },
+            "quote": "pub fn insert(&mut self, selector: &str, value: V) -> bool {",
+            "required": true,
+            "selector": "symbol:crates/orbit-common/src/fs/overlap_index.rs#OverlapIndex::insert:method"
+          },
+          {
+            "aliases": [
+              "symbol:crates/orbit-common/src/fs/overlap_index.rs#fs::overlap_index::OverlapIndex::overlapping:method",
+              "symbol:crates/orbit-common/src/fs/overlap_index.rs#crate::fs::overlap_index::OverlapIndex::overlapping:method"
+            ],
+            "file": "crates/orbit-common/src/fs/overlap_index.rs",
+            "line": 84,
+            "owner_evidence": {
+              "end_line": 84,
+              "excerpt_sha256": "c24b7eef9446d6b6bc2397e06815ae98e3b0a421bb0b2dcca70d39da4d4ff6cd",
+              "file": "crates/orbit-common/src/fs/overlap_index.rs",
+              "line": 53,
+              "quote": "impl<V> OverlapIndex<V> {",
+              "revision": "head"
+            },
+            "quote": "pub fn overlapping<'a>(&'a self, selector: &str) -> Vec<(&'a str, &'a V)> {",
+            "required": true,
+            "selector": "symbol:crates/orbit-common/src/fs/overlap_index.rs#OverlapIndex::overlapping:method"
+          },
+          {
+            "aliases": [
+              "symbol:crates/orbit-common/src/fs/selector.rs#fs::selector::OverlapScope::parse:method",
+              "symbol:crates/orbit-common/src/fs/selector.rs#crate::fs::selector::OverlapScope::parse:method"
+            ],
+            "file": "crates/orbit-common/src/fs/selector.rs",
+            "line": 343,
+            "owner_evidence": {
+              "end_line": 343,
+              "excerpt_sha256": "e74ac2aedd217db49ab6bc1c0dd38fecadb9e409b99c0e4e40e31745be472d09",
+              "file": "crates/orbit-common/src/fs/selector.rs",
+              "line": 340,
+              "quote": "impl OverlapScope {",
+              "revision": "head"
+            },
+            "quote": "pub fn parse(selector: &str) -> Option<Self> {",
+            "required": true,
+            "selector": "symbol:crates/orbit-common/src/fs/selector.rs#OverlapScope::parse:method"
+          },
+          {
+            "aliases": [
+              "symbol:crates/orbit-common/src/fs/selector.rs#fs::selector::OverlapScope::overlaps:method",
+              "symbol:crates/orbit-common/src/fs/selector.rs#crate::fs::selector::OverlapScope::overlaps:method"
+            ],
+            "file": "crates/orbit-common/src/fs/selector.rs",
+            "line": 356,
+            "owner_evidence": {
+              "end_line": 356,
+              "excerpt_sha256": "f7580390ec73541853fb468a479f5061de1714f1d9e42be052dc314d0a61e9cb",
+              "file": "crates/orbit-common/src/fs/selector.rs",
+              "line": 340,
+              "quote": "impl OverlapScope {",
+              "revision": "head"
+            },
+            "quote": "pub fn overlaps(&self, other: &Self) -> bool {",
+            "required": true,
+            "selector": "symbol:crates/orbit-common/src/fs/selector.rs#OverlapScope::overlaps:method"
+          }
+        ],
+        "limitations": [
+          "Candidates are lexical conflict scopes, not semantic dependencies or physical file identities."
+        ],
+        "rubric": [
+          {
+            "evidence": [
+              {
+                "end_line": 89,
+                "excerpt_sha256": "a79755ff504586874887a22eb0e6e4888186cbc6948e5de70bdb3768d44bfb79",
+                "file": "crates/orbit-common/src/fs/overlap_index.rs",
+                "line": 62,
+                "quote": "pub fn insert(&mut self, selector: &str, value: V) -> bool {",
+                "revision": "head"
+              },
+              {
+                "end_line": 352,
+                "excerpt_sha256": "49439054604bf1921be68a29c95d7f1d77b943107206af838d0e1fb7f6dd0025",
+                "file": "crates/orbit-common/src/fs/selector.rs",
+                "line": 343,
+                "quote": "pub fn parse(selector: &str) -> Option<Self> {",
+                "revision": "head"
+              }
+            ],
+            "id": "storage",
+            "required_behavior": "Unparseable insertion returns false without indexing; unparseable queries return empty. Anchored scopes use normalized path buckets and anchorless scopes use separate exact trimmed-text buckets."
+          },
+          {
+            "evidence": [
+              {
+                "end_line": 133,
+                "excerpt_sha256": "d366cd7c39437987f356bc195cab66b49adc010506f0c35019b8a19431e37e8e",
+                "file": "crates/orbit-common/src/fs/overlap_index.rs",
+                "line": 94,
+                "quote": "let mut candidates = Vec::new();",
+                "revision": "head"
+              }
+            ],
+            "id": "candidates",
+            "required_behavior": "Lookup visits root, slash-boundary ancestors and the exact anchor; descendant-capable scopes additionally scan a contiguous anchor/ prefix range. Absolute / uses /; relative . scans an empty prefix and relies on the final overlap recheck to discard absolute keys."
+          },
+          {
+            "evidence": [
+              {
+                "end_line": 378,
+                "excerpt_sha256": "f85daa20c92b35252d24048b239b3797541ea2443247e9e0ea370b9ca5bd85ec",
+                "file": "crates/orbit-common/src/fs/selector.rs",
+                "line": 303,
+                "quote": "/// Return whether two selector/path scopes overlap on the same filesystem",
+                "revision": "head"
+              },
+              {
+                "end_line": 473,
+                "excerpt_sha256": "fb492fc11fe867ee7479e919df7be6fc4998d586c29d63e12f86576b281d0774",
+                "file": "crates/orbit-common/src/fs/selector.rs",
+                "line": 429,
+                "quote": "impl ParsedScope {",
+                "revision": "head"
+              },
+              {
+                "end_line": 134,
+                "excerpt_sha256": "632075f180c578a3ed4d01668e9bcc529d78fd5213ffa9456981ef2e19179efc",
+                "file": "crates/orbit-common/src/fs/overlap_index.rs",
+                "line": 84,
+                "quote": "pub fn overlapping<'a>(&'a self, selector: &str) -> Vec<(&'a str, &'a V)> {",
+                "revision": "head"
+              }
+            ],
+            "id": "semantics",
+            "required_behavior": "Every candidate is filtered through OverlapScope.overlaps. Equal file anchors overlap even for different symbol names; directories/legacy paths can contain descendants, while module/command scopes compare exact trimmed text and do not overlap anchored scopes. This is lexical scope matching, not symbol resolution or filesystem inspection."
+          }
+        ]
+      }
+    },
+    {
+      "base_snapshot": "pulsar",
+      "head_snapshot": "pulsar",
+      "id": "pulsar-account-selection-uncertainty",
+      "original_source_revision": "6d33fb9d4609618c13d46deb2df6af53b7f504a6",
+      "prompt": "Locate AccountRegistry.resolve, its unknown-account error helper and trusted_identity. For an unknown alias, explain the error code, known-alias details and how the message distinguishes a configured default from an explicit name. Explain explicit alias versus configured default precedence; the fallback with one, several or zero non-revoked accounts; whether reauth_required accounts are excluded; and the legacy no-registry case. Does explicitly naming a revoked registered account fail in resolve itself? Separately explain the cached-identity binding and missing-field checks. Can the source alone identify which account an unspecified call uses without registry/settings, or prove credentials are currently valid?",
+      "repository": "pulsar",
+      "split": "held-out",
+      "truth": {
+        "identities": [
+          {
+            "aliases": [
+              "symbol:src/pulsar/app/core/account/registry.py#pulsar.app.core.account.registry.AccountRegistry.resolve:method"
+            ],
+            "file": "src/pulsar/app/core/account/registry.py",
+            "line": 367,
+            "owner_evidence": {
+              "end_line": 367,
+              "excerpt_sha256": "d72b585b4573fe261b33e1fe01feca39908653d258e9cd4ab107cce5d7a71ffb",
+              "file": "src/pulsar/app/core/account/registry.py",
+              "line": 258,
+              "quote": "class AccountRegistry:",
+              "revision": "head"
+            },
+            "quote": "def resolve(self, alias: str | None, settings: AccountSettings) -> Account:",
+            "required": true,
+            "selector": "symbol:src/pulsar/app/core/account/registry.py#AccountRegistry.resolve:method"
+          },
+          {
+            "aliases": [
+              "symbol:src/pulsar/app/core/account/registry.py#pulsar.app.core.account.registry.AccountRegistry._unknown:method"
+            ],
+            "file": "src/pulsar/app/core/account/registry.py",
+            "line": 401,
+            "owner_evidence": {
+              "end_line": 401,
+              "excerpt_sha256": "51d97d31d3c79f80317c21eb275655337adeb9068a4070e30fbf36df76fce8a8",
+              "file": "src/pulsar/app/core/account/registry.py",
+              "line": 258,
+              "quote": "class AccountRegistry:",
+              "revision": "head"
+            },
+            "quote": "def _unknown(self, alias: str, rows: dict[str, Account], *, from_default: bool) -> PulsarError:",
+            "required": true,
+            "selector": "symbol:src/pulsar/app/core/account/registry.py#AccountRegistry._unknown:method"
+          },
+          {
+            "aliases": [
+              "symbol:src/pulsar/app/core/account/registry.py#pulsar.app.core.account.registry.AccountRegistry.trusted_identity:method"
+            ],
+            "file": "src/pulsar/app/core/account/registry.py",
+            "line": 417,
+            "owner_evidence": {
+              "end_line": 417,
+              "excerpt_sha256": "8e102daf74075005d84f44786445ed2cd688fe68ab66395b8bc2e91fa84ba6c6",
+              "file": "src/pulsar/app/core/account/registry.py",
+              "line": 258,
+              "quote": "class AccountRegistry:",
+              "revision": "head"
+            },
+            "quote": "def trusted_identity(account: Account, bundle: TokenBundle) -> Identity | None:",
+            "required": true,
+            "selector": "symbol:src/pulsar/app/core/account/registry.py#AccountRegistry.trusted_identity:method"
+          }
+        ],
+        "limitations": [
+          "No ambient account registry, credentials or provider lookup is supplied or permitted."
+        ],
+        "rubric": [
+          {
+            "evidence": [
+              {
+                "end_line": 414,
+                "excerpt_sha256": "c5c347ff2ae4e4e7f3c227df4ef75e8f6777e1c16a494c2a9797f8a89b8d84ca",
+                "file": "src/pulsar/app/core/account/registry.py",
+                "line": 367,
+                "quote": "def resolve(self, alias: str | None, settings: AccountSettings) -> Account:",
+                "revision": "head"
+              }
+            ],
+            "id": "precedence",
+            "required_behavior": "An explicit alias is canonicalized and takes precedence over settings.default_account. Either chosen name must be registered or _unknown reports UNKNOWN_ACCOUNT, with known aliases and a default-specific message. A named registered revoked account is returned here without status rejection."
+          },
+          {
+            "evidence": [
+              {
+                "end_line": 95,
+                "excerpt_sha256": "6271ef95d7be815fdc7f8a28f92e75dba3b227e592c405d3f89309ce6b0032c5",
+                "file": "src/pulsar/app/core/account/registry.py",
+                "line": 92,
+                "quote": "ACTIVE = \"active\"",
+                "revision": "head"
+              },
+              {
+                "end_line": 399,
+                "excerpt_sha256": "f14d37b2d0a5437f3361c38a03a4ab586b6abbc32dfed350ccf23042114dcf91",
+                "file": "src/pulsar/app/core/account/registry.py",
+                "line": 375,
+                "quote": "rows = self._read()",
+                "revision": "head"
+              }
+            ],
+            "id": "fallback",
+            "required_behavior": "With no chosen name, exactly one non-revoked row is returned (reauth_required is not excluded); several raise INVALID_ARGUMENT. No fallback candidates raise AuthExpired; no rows plus legacy tokens yields the migration-alias message."
+          },
+          {
+            "evidence": [
+              {
+                "end_line": 423,
+                "excerpt_sha256": "19b3c737774dda552f476ddab17bab5b86616e11366123d2723a59552207fdfd",
+                "file": "src/pulsar/app/core/account/registry.py",
+                "line": 417,
+                "quote": "def trusted_identity(account: Account, bundle: TokenBundle) -> Identity | None:",
+                "revision": "head"
+              },
+              {
+                "end_line": 399,
+                "excerpt_sha256": "84c6aee23fe713a60e9aabcebe801f2cdecb68bc63657445c4adad12785d320a",
+                "file": "src/pulsar/app/core/account/registry.py",
+                "line": 367,
+                "quote": "def resolve(self, alias: str | None, settings: AccountSettings) -> Account:",
+                "revision": "head"
+              }
+            ],
+            "id": "uncertainty",
+            "required_behavior": "trusted_identity returns None for binding mismatch or absent handle/provider_user_id, otherwise returns cached Identity. Account choice needs actual settings/rows; cache binding equality is not evidence of currently valid credentials or a fresh provider check."
+          }
+        ]
+      }
+    },
+    {
+      "base_snapshot": "pulsar",
+      "head_snapshot": "pulsar",
+      "id": "pulsar-readonly-wal-fallback",
+      "original_source_revision": "6d33fb9d4609618c13d46deb2df6af53b7f504a6",
+      "prompt": "Locate the ledger read_only wrapper, its directory-error classifier and file fingerprint helper. Trace normal read and missing-file behavior, which SQLite errors trigger fallback, and why an existing WAL refuses immutable fallback. Explain the immutable retry checks, what happens if the file changes or a WAL appears, and exhaustion after READ_ATTEMPTS. Which metadata are compared, and does this establish a cryptographic content snapshot? Distinguish application row/schema writes from SQLite sidecars that a read-only connection can leave.",
+      "repository": "pulsar",
+      "split": "held-out",
+      "truth": {
+        "identities": [
+          {
+            "aliases": [
+              "symbol:src/pulsar/app/core/ledger/connection.py#pulsar.app.core.ledger.connection.read_only:function"
+            ],
+            "file": "src/pulsar/app/core/ledger/connection.py",
+            "line": 43,
+            "quote": "def read_only[T](",
+            "required": true,
+            "selector": "symbol:src/pulsar/app/core/ledger/connection.py#read_only:function"
+          },
+          {
+            "aliases": [
+              "symbol:src/pulsar/app/core/ledger/connection.py#pulsar.app.core.ledger.connection._directory_not_writable:function"
+            ],
+            "file": "src/pulsar/app/core/ledger/connection.py",
+            "line": 127,
+            "quote": "def _directory_not_writable(exc: sqlite3.Error) -> bool:",
+            "required": true,
+            "selector": "symbol:src/pulsar/app/core/ledger/connection.py#_directory_not_writable:function"
+          },
+          {
+            "aliases": [
+              "symbol:src/pulsar/app/core/ledger/connection.py#pulsar.app.core.ledger.connection._fingerprint:function"
+            ],
+            "file": "src/pulsar/app/core/ledger/connection.py",
+            "line": 134,
+            "quote": "def _fingerprint(path: Path) -> tuple[int, int, int] | None:",
+            "required": true,
+            "selector": "symbol:src/pulsar/app/core/ledger/connection.py#_fingerprint:function"
+          }
+        ],
+        "limitations": [
+          "Metadata race detection is bounded and does not imply cryptographic snapshot consistency."
+        ],
+        "rubric": [
+          {
+            "evidence": [
+              {
+                "end_line": 92,
+                "excerpt_sha256": "aa2ce3d252c4d6028556feea2a8c97b4dacad59e9ffdcab9000b792999c81e1b",
+                "file": "src/pulsar/app/core/ledger/connection.py",
+                "line": 74,
+                "quote": "wal = path.with_name(f\"{path.name}-wal\")",
+                "revision": "head"
+              },
+              {
+                "end_line": 131,
+                "excerpt_sha256": "df7cdfe5117e770a0cc05fe4f3ca8546ab5e9add52fbac7b1a310732a1a523ca",
+                "file": "src/pulsar/app/core/ledger/connection.py",
+                "line": 127,
+                "quote": "def _directory_not_writable(exc: sqlite3.Error) -> bool:",
+                "revision": "head"
+              }
+            ],
+            "id": "entry",
+            "required_behavior": "Missing database returns the supplied missing value. Normal mode=ro returns body(conn); unrelated OperationalError propagates. Fallback is only for SQLITE_READONLY_DIRECTORY or primary SQLITE_CANTOPEN. An existing WAL raises INVALID_CONFIG rather than ignoring possibly committed rows."
+          },
+          {
+            "evidence": [
+              {
+                "end_line": 21,
+                "excerpt_sha256": "6db6a1b39143f215b563e42296a14773af2d96fff614768cfd6f27438b8278a4",
+                "file": "src/pulsar/app/core/ledger/connection.py",
+                "line": 20,
+                "quote": "# A read that raced a checkpoint (see ``read_only``) is retried this often.",
+                "revision": "head"
+              },
+              {
+                "end_line": 113,
+                "excerpt_sha256": "f21720df9d2d1df4d87cafb6d1083d898148fe521b177446b75bca746b94eb4c",
+                "file": "src/pulsar/app/core/ledger/connection.py",
+                "line": 93,
+                "quote": "before = _fingerprint(path)",
+                "revision": "head"
+              }
+            ],
+            "id": "retry",
+            "required_behavior": "Without WAL the wrapper reads mode=ro&immutable=1. Changed fingerprint after DatabaseError retries; unchanged error becomes INVALID_CONFIG. Successful immutable output is accepted only if fingerprint is unchanged and WAL absent; otherwise retry normal mode first, up to READ_ATTEMPTS=3, then retryable INTERNAL."
+          },
+          {
+            "evidence": [
+              {
+                "end_line": 72,
+                "excerpt_sha256": "8b646815cebca7b83273cfed8ce8ac7d7d19e687ae6113deaa385f00022e2e8f",
+                "file": "src/pulsar/app/core/ledger/connection.py",
+                "line": 50,
+                "quote": "\"\"\"``body`` over a connection that cannot write; ``missing`` if there is no file.",
+                "revision": "head"
+              },
+              {
+                "end_line": 139,
+                "excerpt_sha256": "42a16f29c684a9479c55c6b3515428de8b36f365d532967f6470ac135926f165",
+                "file": "src/pulsar/app/core/ledger/connection.py",
+                "line": 134,
+                "quote": "def _fingerprint(path: Path) -> tuple[int, int, int] | None:",
+                "revision": "head"
+              }
+            ],
+            "id": "boundary",
+            "required_behavior": "Fingerprint is inode, size and mtime_ns (or None if missing), not a cryptographic content snapshot. The read path makes no application row/schema/journal-mode changes, although SQLite may create or leave WAL/SHM lock-state sidecars in writable directories."
+          }
+        ]
+      }
+    }
+  ],
+  "label": "Prospective installed-plugin qualification v2; offline preparation only",
+  "repositories": {
+    "Orbit": "0db9356eef631ada11569d0ca4e1e407fad5bee3",
+    "orbit-graph": "ac6d5b91f973874325bac789e9c433a71c805766",
+    "pulsar": "6d33fb9d4609618c13d46deb2df6af53b7f504a6"
+  },
+  "schema_version": 2,
+  "source_review": {
+    "method": "Pinned Git object reads; no graph queries or provider output used for case selection",
+    "record": "source-review.md",
+    "reviewer": "codex executor ORB-13797",
+    "view": "safe-tool-text-v1; required excerpts contain no shape-masked text; no reconstructed credential claims"
+  }
+}
