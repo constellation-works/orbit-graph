@@ -231,6 +231,15 @@ DESCRIPTIONS = {
                "with callers, entry points and candidate tests.",
 }
 
+# MCP tool annotations: client hints, never authority. Every tool only reads the
+# snapshot, except graph_sync, which builds and may replace (`full`) the
+# episode's private .orbit-graph index. No tool reaches beyond the repository.
+READ_ONLY = {"readOnlyHint": True, "destructiveHint": False, "idempotentHint": True,
+             "openWorldHint": False}
+ANNOTATIONS = dict({tool: READ_ONLY for tool in COMMON_TOOLS + GRAPH_TOOLS},
+                   graph_sync={"readOnlyHint": False, "destructiveHint": True,
+                               "idempotentHint": True, "openWorldHint": False})
+
 
 def input_schema(tool):
     properties = {field: dict(getattr(check, "json_schema", {"type": "string"}))
@@ -801,7 +810,8 @@ class Broker:
         if method == "tools/list":
             self.record({"type": "tools_list", "tools": list(self.tools)})
             return {"tools": [{"name": tool, "description": DESCRIPTIONS[tool],
-                               "inputSchema": input_schema(tool)} for tool in self.tools]}
+                               "inputSchema": input_schema(tool),
+                               "annotations": dict(ANNOTATIONS[tool])} for tool in self.tools]}
         if method == "tools/call":
             return self.call_tool(params)
         if method.startswith("notifications/"):
