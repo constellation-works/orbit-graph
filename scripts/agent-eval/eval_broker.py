@@ -293,7 +293,8 @@ def _preexec():
 
 
 def run_child(argv, cwd, env, timeout_s, capture_limit=MAX_CHILD_CAPTURE, line_limit=None,
-              passthrough=False, parent_fd=None, cancelled=lambda: False, grace_s=KILL_GRACE_S):
+              passthrough=False, parent_fd=None, cancelled=lambda: False, grace_s=KILL_GRACE_S,
+              input_bytes=None):
     """Bounded capture and group cleanup, including unexpected supervision exceptions.
 
     passthrough is only for the broker worker: MCP pipes stay directly connected
@@ -306,12 +307,19 @@ def run_child(argv, cwd, env, timeout_s, capture_limit=MAX_CHILD_CAPTURE, line_l
     terminate = True
     supervision = {"signals": [], "survivors": []}
     try:
+        if input_bytes is not None and (passthrough or len(input_bytes) > MAX_MESSAGE_BYTES):
+            raise ValueError("invalid bounded child input")
         process = subprocess.Popen(argv, cwd=cwd, env=env,
-                                   stdin=None if passthrough else subprocess.DEVNULL,
+                                   stdin=subprocess.PIPE if input_bytes is not None else
+                                   None if passthrough else subprocess.DEVNULL,
                                    stdout=None if passthrough else subprocess.PIPE,
                                    stderr=subprocess.PIPE,
                                    start_new_session=True, preexec_fn=_preexec)
         selector = selectors.DefaultSelector()
+        pending_input = memoryview(input_bytes or b"")
+        if process.stdin is not None:
+            os.set_blocking(process.stdin.fileno(), False)
+            selector.register(process.stdin, selectors.EVENT_WRITE, "in")
         if process.stdout is not None:
             selector.register(process.stdout, selectors.EVENT_READ, "out")
         selector.register(process.stderr, selectors.EVENT_READ, "err")
@@ -332,6 +340,16 @@ def run_child(argv, cwd, env, timeout_s, capture_limit=MAX_CHILD_CAPTURE, line_l
                 terminate = False
                 break
             for key, _ in selector.select(timeout=min(remaining, 0.05)):
+                if key.data == "in":
+                    if pending_input:
+                        try:
+                            pending_input = pending_input[os.write(key.fd, pending_input[:65536]):]
+                        except BlockingIOError:
+                            continue
+                    if not pending_input:
+                        selector.unregister(key.fileobj)
+                        process.stdin.close()
+                    continue
                 if key.data == "parent":
                     stopped = "parent_exit"
                     break
@@ -363,7 +381,7 @@ def run_child(argv, cwd, env, timeout_s, capture_limit=MAX_CHILD_CAPTURE, line_l
             if selector is not None:
                 selector.close()
             if process is not None:
-                for stream in (process.stdout, process.stderr):
+                for stream in (process.stdin, process.stdout, process.stderr):
                     if stream is not None:
                         stream.close()
     return {"exit_code": process.returncode if process is not None else None,
@@ -456,6 +474,8 @@ class Broker:
         self.config = config
         self.arm = config["arm"]
         self.tools = tuple(config["tools"])
+        self.plugin = config.get("plugin")
+        self.hidden_names = HIDDEN_NAMES | ({".orbit"} if config["schema_version"] == 2 else set())
         self.root = config["repo_root"]
         self.limits = config["limits"]
         self.binaries = config["binaries"]
@@ -502,7 +522,7 @@ class Broker:
 
     # -- authorization: the one decision every tools/call passes ----------
     def authorize(self, tool):
-        if tool not in self.tools or tool not in ARM_TOOLS[self.arm]:
+        if tool not in self.tools or (not self.plugin and tool not in ARM_TOOLS[self.arm]):
             raise Refusal("tool_not_permitted",
                           f"{tool!r} is not available in the {self.arm} arm")
 
@@ -606,7 +626,7 @@ class Broker:
         shown = "/".join(parts) or "."
         if stat.S_ISDIR(info.st_mode):
             try:
-                names = sorted(name for name in os.listdir(fd) if name not in HIDDEN_NAMES)
+                names = sorted(name for name in os.listdir(fd) if name not in self.hidden_names)
                 entries = []
                 for name in names:
                     mode = os.stat(name, dir_fd=fd, follow_symlinks=False).st_mode
@@ -669,7 +689,7 @@ class Broker:
         if "glob" in args:
             argv.append(f"--glob={args['glob']}")
         # The last matching glob wins in rg, so the hidden names come after the caller's.
-        argv += ["--glob=!.git", "--glob=!.orbit-graph"]
+        argv += ["--glob=!" + name for name in sorted(self.hidden_names)]
         # Without a path rg searches its cwd (the root) and prints bare relative paths.
         argv += [f"--regexp={args['pattern']}", "--"] + ([path] if path != "." else [])
         result = run_child(argv, self.root, self.child_env, self.deadline_s(),
@@ -777,6 +797,9 @@ class Broker:
             return self.tool_rg(args)
         if tool == "git":
             return self.tool_git(args)
+        if self.plugin:
+            import plugin_profile
+            return plugin_profile.execute(self, tool, args)
         return self.tool_graph(tool, args)
 
     # -- MCP -------------------------------------------------------------
@@ -815,7 +838,14 @@ class Broker:
             self.stop("call_input_budget_exceeded", f"{tool} arguments exceed {limit} bytes")
             return {"content": [{"type": "text", "text": output}], "isError": True}
         try:
-            status, output = self.execute(tool, validate_arguments(tool, arguments))
+            if self.plugin and tool not in ARM_TOOLS["baseline"]:
+                checked = arguments  # product validates its advertised schema
+            else:
+                checked = validate_arguments(tool, arguments)
+                if self.config["schema_version"] == 2 and "path" in checked:
+                    if ".orbit" in split_path(checked["path"]):
+                        raise Refusal("path_refused", "Orbit state is hidden")
+            status, output = self.execute(tool, checked)
         except Refusal as refusal:
             status = "failed"
             output = canonical({"tool": tool, "status": "failed",
@@ -867,9 +897,11 @@ class Broker:
             return {}
         if method == "tools/list":
             self.record({"type": "tools_list", "tools": list(self.tools)})
-            return {"tools": [{"name": tool, "description": DESCRIPTIONS[tool],
+            common = ARM_TOOLS["baseline"] if self.plugin else self.tools
+            listed = [{"name": tool, "description": DESCRIPTIONS[tool],
                                "inputSchema": input_schema(tool),
-                               "annotations": dict(ANNOTATIONS[tool])} for tool in self.tools]}
+                               "annotations": dict(ANNOTATIONS[tool])} for tool in common]
+            return {"tools": listed + (self.plugin["inventory"] if self.plugin else [])}
         if method == "tools/call":
             return self.call_tool(params)
         if method.startswith("notifications/"):
@@ -977,11 +1009,24 @@ def load_config(path):
         config = json.loads(stream.read(1024 * 1024 + 1), object_pairs_hook=_unique,
                             parse_constant=_reject_constant)
     problems = []
-    if not isinstance(config, dict) or set(config) != CONFIG_FIELDS:
+    v2 = isinstance(config, dict) and config.get("schema_version") == 2
+    fields = CONFIG_FIELDS | ({"plugin"} if v2 else set())
+    if not isinstance(config, dict) or set(config) != fields:
         raise ValueError(f"broker config must have exactly {sorted(CONFIG_FIELDS)}")
-    if config["schema_version"] != 1:
+    if config["schema_version"] not in (1, 2):
         problems.append("schema_version")
-    if config["arm"] not in ARM_TOOLS or tuple(config["tools"]) != ARM_TOOLS[config["arm"]]:
+    expected = ARM_TOOLS.get(config["arm"])
+    if v2 and config["arm"] == "graph":
+        import plugin_profile
+        expected = ARM_TOOLS["baseline"] + plugin_profile.TOOLS
+        p = config["plugin"]
+        if (not isinstance(p, dict) or set(p) != {"orbit", "home", "inventory", "policy"}
+                or p["policy"] != plugin_profile.POLICY
+                or plugin_profile.plugin_inventory({"tools": p["inventory"]}) != p["inventory"]):
+            problems.append("plugin")
+    elif v2 and config["plugin"] is not None:
+        problems.append("baseline plugin must be absent")
+    if config["arm"] not in ARM_TOOLS or tuple(config["tools"]) != expected:
         problems.append("arm/tools")
     if not isinstance(config["limits"], dict) or set(config["limits"]) != LIMIT_FIELDS or \
             not all(type(v) is int and v > 0 for v in config["limits"].values()):
@@ -1125,4 +1170,7 @@ def main(argv=None):
 
 
 if __name__ == "__main__":
+    # The profile uses this module's Refusal and supervisor. Keep their identity
+    # when this file is the executable, rather than importing a second copy.
+    sys.modules["eval_broker"] = sys.modules[__name__]
     sys.exit(main())
