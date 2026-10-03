@@ -26,6 +26,8 @@ never effectiveness evidence.
   that deny them (for example `kernel.apparmor_restrict_unprivileged_userns=1`
   without a bwrap AppArmor profile, or a managed sandbox) get a
   `containment_unavailable` refusal and no episode.
+- Linux `pidfd_open` support must be available to the broker supervisor. It
+  watches the provider process, so a transient launching thread may exit safely.
 - `/usr/bin/python3` (verified with 3.12) and `/usr/bin/git`. Both must live under
   `/usr`, because only `/usr` is mounted inside the sandbox.
 - `rg` (ripgrep). Any static binary works; it is bound into the sandbox.
@@ -271,8 +273,19 @@ measures the harness, not the arm.
   tools have `readOnlyHint: true`. Source files and Git remain immutable;
   these hints never change the explicit per-tool approvals above.
   Children run with fixed argv and environments.
-  Each call has a deadline and bounded output, and a timed-out child's whole
-  process group is ended.
+  Each call has a deadline and bounded output. Timeouts and unexpected supervision
+  exceptions clean up the child's process group and produce failed call records;
+  exception diagnostics contain the class, never exception text or a traceback.
+  A supervisor watches provider process death and the episode deadline, and
+  captures worker exit status and at most 16 KiB of worker stderr. The worker
+  inherits only the broker's allowlisted environment. Child failure stderr keeps
+  its existing 2,048-character capture bound, with truncation marked.
+  The raw schema stays at version 1: `broker-calls.jsonl` gains `call_start`,
+  `child`, `supervisor_start` and `broker_exit` diagnostic entries, and
+  `episode.json` gains optional `broker.exits`. Existing sealed artifacts remain
+  readable. Call records and exact provider/broker reconciliation are unchanged;
+  an interrupted call is never synthesized as completed. These diagnostics use
+  the same redacting, private artifact writer as the existing captures.
   Budgets for calls, input bytes, call output and episode output stop the
   episode through a sentinel the runner watches. Tool output is returned as
   data inside a JSON envelope; it is never instructions to the broker.
@@ -324,12 +337,15 @@ Episode status follows ORB-13710; the first matching rule wins:
 8. `tool_inventory_mismatch`
 9. `provider_output_malformed`
 10. `telemetry_mismatch`
-11. `provider_incomplete` (non-zero exit, no completed turn, or a failed turn)
-12. `final_answer_missing`
-13. `invalid` `final_output_oversized`
-14. `invalid` `answer_malformed`
-15. `invalid` `no_tool_calls`
-16. otherwise `ok`
+11. `broker_failed` or `broker_exit_missing` (failed worker/cleanup or incomplete supervision)
+12. `tool_execution_failed` (a subprocess failure, timeout or execution exception;
+    ordinary argument/path refusals remain recoverable agent errors)
+13. `provider_incomplete` (non-zero exit, no completed turn, or a failed turn)
+14. `final_answer_missing`
+15. `invalid` `final_output_oversized`
+16. `invalid` `answer_malformed`
+17. `invalid` `no_tool_calls`
+18. otherwise `ok`
 
 ### Refusals
 

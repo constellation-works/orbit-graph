@@ -196,6 +196,65 @@ class RunnerTests(EpisodeCase):
         self.assertEqual(stat.S_IMODE(os.stat(out).st_mode), 0o700)
         self.assertEqual(eval_runner.load_raw_episode(out)["run_id"], report["run_id"])
 
+    def test_broker_exit_diagnostics_preserve_raw_compatibility_and_fail_closed_audit(self):
+        _, _, _, out = self.episode()
+        artifact = self.assert_outcome(out, "ok", None)
+        self.assertEqual(artifact["broker"]["exits"][0]["exit_code"], 0)
+        self.assertEqual(artifact["broker"]["exits"][0]["cleanup"]["survivors"], [])
+        log, _ = eval_runner.read_broker_log(out / "broker-calls.jsonl")
+        transcript = eval_runner.analyse_transcript((out / "provider.jsonl").read_bytes(),
+                                                    False, artifact["request"]["tools"])
+        supervision = {"terminated_by": None, "stdout_truncated": False, "stderr": b"",
+                       "returncode": 0, "exit": {"code": 0}}
+
+        def decide():
+            return eval_runner.decide(supervision, transcript, log,
+                                      {"text": json.dumps(support.ANSWER), "truncated": False},
+                                      support.LIMITS, None, artifact["output_bytes"], 1)[1]
+        log["exits"][0]["exit_code"] = -signal.SIGKILL
+        self.assertEqual(decide(), "broker_failed")
+        log["exits"] = []
+        self.assertEqual(decide(), "broker_exit_missing")
+        log["calls"].pop()
+        self.assertEqual(decide(), "telemetry_mismatch")
+        # Older sealed episodes lack supervision entries; their schema still reads.
+        old_log = self.work / "old-broker.jsonl"
+        old_log.write_text("\n".join(line for line in (out / "broker-calls.jsonl").read_text().splitlines()
+                                     if json.loads(line)["type"] not in ("supervisor_start", "broker_exit")) + "\n")
+        log, _ = eval_runner.read_broker_log(old_log)
+        self.assertIsNone(decide())
+        diagnostic = {"type": "broker_exit", "stderr": SECRET + " source-diagnostic",
+                      "exit_code": 1, "stopped": None, "error_type": None,
+                      "stderr_truncated": False, "cleanup": {"survivors": []}}
+        redactor = eval_runner.Redactor([SECRET])
+        path = self.work / "redacted-broker.jsonl"
+        eval_runner.write_private(path, json.dumps(diagnostic) + "\n", redactor)
+        projected, _ = eval_runner.read_broker_log(path)
+        self.assertNotIn(SECRET, path.read_text())
+        self.assertIn("[REDACTED]", projected["exits"][0]["stderr"])
+        malformed = self.work / "malformed-broker.jsonl"
+        malformed.write_text(json.dumps(dict(diagnostic, cleanup=["not-an-object"])) + "\n")
+        projected, _ = eval_runner.read_broker_log(malformed)
+        self.assertEqual(projected["malformed_lines"], 1)
+        self.assertEqual(projected["exits"], [])
+
+    def test_graph_execution_failure_cannot_be_hidden_by_a_final_answer(self):
+        graph = self.work / "failing-graph"
+        graph.write_text("#!/usr/bin/python3\nimport sys\n"
+                         "if sys.argv[1] == 'version':\n"
+                         "    print('{\"crate_version\":\"test\"}'); sys.exit(0)\n"
+                         "sys.stderr.write('bounded graph failure\\n'); sys.exit(7)\n")
+        graph.chmod(0o700)
+        code, _, stderr, out = self.episode(
+            [{"call": "graph_sync"}, OK_STEPS[0], OK_STEPS[-1]], arm="graph", graph=str(graph))
+        self.assertEqual(code, 0, stderr)
+        artifact = self.assert_outcome(out, "failed", "tool_execution_failed")
+        self.assertEqual([c["status"] for c in artifact["calls"]], ["failed", "ok"])
+        body = json.loads(artifact["calls"][0]["output"])
+        self.assertEqual(body["exit_code"], 7)
+        self.assertEqual(body["cleanup"]["survivors"], [])
+        self.assertIn("bounded graph failure", body["stderr"])
+
     def test_final_answer_falls_back_to_jsonl_agent_message(self):
         steps = OK_STEPS[:-1] + [{"final": json.dumps(support.ANSWER), "jsonl_only": True}]
         code, _, stderr, out = self.episode(steps)
@@ -822,6 +881,19 @@ class LiveContainmentTests(EpisodeCase):
         self.assertEqual([call["tool"] for call in artifact["calls"]], ["read", "rg", "git"])
         record = eval_runner.public_record(eval_runner.load_raw_episode(out))
         eval_runner.check_public_record(record)
+
+    @unittest.skipUnless(os.environ.get("AGENT_EVAL_ORBIT_GRAPH"), "set AGENT_EVAL_ORBIT_GRAPH")
+    def test_contained_real_graph_broker(self):
+        steps = [{"call": "graph_sync"}, {"call": "search", "arguments": {"query": "price"}},
+                 OK_STEPS[0], OK_STEPS[-1]]
+        code, _, stderr, out = self.episode(
+            steps, arm="graph", graph=os.environ["AGENT_EVAL_ORBIT_GRAPH"],
+            args=["--containment", "bwrap", "--auth-file", "none", "--truth-path", self.truth])
+        self.assertEqual(code, 0, stderr)
+        artifact = self.assert_outcome(out, "ok", None)
+        self.assertTrue(artifact["isolation"]["probe"]["hidden"])
+        self.assertEqual({c["status"] for c in artifact["calls"]}, {"ok"})
+        self.assertEqual(artifact["broker"]["exits"][0]["exit_code"], 0)
 
 
 @unittest.skipUnless(support.RG and os.environ.get("AGENT_EVAL_ORBIT_GRAPH"),
