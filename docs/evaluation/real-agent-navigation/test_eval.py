@@ -232,6 +232,98 @@ class EvaluationTests(unittest.TestCase):
             self.assertEqual(report["episodes"][0]["status"], status)
             self.assertIsNone(report["paired"][0]["wall_delta_graph_minus_baseline_ms"])
 
+    def test_required_and_optional_identity_citations_must_match_declarations(self):
+        required, optional = self.data["cases"][0]["truth"]["identities"]
+        for required_match, optional_match in ((True, False), (True, True), (False, True), (True, None)):
+            with self.subTest(required_match=required_match, optional_match=optional_match):
+                bundle, audits, dirs = self.cohort()
+                def mutate(raw):
+                    raw["answer"]["items"].append(optional["selector"])
+                    citation = required if required_match else optional
+                    raw["answer"]["evidence"][0].update({k: citation[k] for k in ("file", "line", "quote")})
+                    if optional_match is not None:
+                        citation = optional if optional_match else required
+                        raw["answer"]["evidence"].append({"item": optional["selector"],
+                            **{k: citation[k] for k in ("file", "line", "quote")}})
+                    raw["final_output"] = json.dumps(raw["answer"])
+                    raw["output_bytes"] = len(raw["calls"][0]["output"].encode()) + len(raw["final_output"].encode())
+                self.update_raw(bundle, dirs, 0, mutate, audits)
+                row = self.score_cli(bundle, audits)["episodes"][0]
+                self.assertEqual(row["objective_pass"], required_match and optional_match is True)
+                self.assertEqual(row["correct"], required_match and optional_match is True)
+                self.assertTrue(row["semantic_pass"])
+                self.assertEqual(row["identity_precision"], 1)
+                self.assertEqual(row["identity_recall"], 1)
+                self.assertEqual(row["citation_precision"], 1)
+                self.assertEqual(row["citation_coverage"], 0.5 if optional_match is None else 1)
+                self.assertEqual(row["false_positives"], [])
+                self.assertIsNone(row["answer_error"])
+                self.assertIsNone(row["isolation_error"])
+
+    def test_partial_captured_usage_preserves_fields_totals_and_paired_deltas(self):
+        bundle, audits, dirs = self.cohort()
+        development = [case["id"] for case in self.data["cases"] if case["split"] == "development"]
+        heldout = [case["id"] for case in self.data["cases"] if case["split"] == "held-out"]
+        expected_usage = []
+        for index, record in enumerate(bundle["episodes"]):
+            arm, case_id = record["request"]["arm"], record["request"]["case_id"]
+            usage = {"input_tokens": 100 if arm == "baseline" else 80,
+                     "output_tokens": 10 if arm == "baseline" else 12,
+                     "cost_usd": 0.25 if arm == "baseline" else 0.125,
+                     "source": "fixture captured usage"}
+            if case_id == development[0]:
+                usage["output_tokens" if arm == "baseline" else "input_tokens"] = None
+                if arm == "baseline":
+                    usage["cost_usd"] = None
+            elif case_id == development[1]:
+                usage["input_tokens" if arm == "baseline" else "output_tokens"] = None
+                if arm == "graph":
+                    usage["cost_usd"] = None
+            elif case_id == development[2]:
+                usage = None if arm == "baseline" else {
+                    "input_tokens": 0, "output_tokens": 0, "cost_usd": 0, "source": "fixture captured usage"}
+            elif case_id == heldout[0] and arm == "graph":
+                usage.update(input_tokens=None, output_tokens=None, cost_usd=0)
+            def mutate(raw):
+                raw["usage"] = usage
+                raw["usage_raw"] = None if usage is None else {
+                    k: usage[k] for k in ("input_tokens", "output_tokens") if usage[k] is not None}
+            self.update_raw(bundle, dirs, index, mutate, audits)
+            expected_usage.append(usage)
+        self.assertEqual(e.adapt(dirs, "test-only"), bundle)
+        report = self.score_cli(bundle, audits)
+        self.assertEqual([r["usage"] for r in report["episodes"]], expected_usage)
+        self.assertTrue(all(r["correct"] for r in report["episodes"]))
+        for summary in report["summaries"]:
+            with self.subTest(split=summary["split"], arm=summary["arm"]):
+                expected = {"input_tokens": None, "output_tokens": None, "cost_usd": None}
+                if summary["split"] == "held-out":
+                    expected = ({"input_tokens": 500, "output_tokens": 50, "cost_usd": 1.25}
+                                if summary["arm"] == "baseline" else
+                                {"input_tokens": None, "output_tokens": None, "cost_usd": 0.5})
+                self.assertEqual(summary["usage_total"], expected)
+                missing = int(summary["arm"] == "baseline" and summary["split"] != "held-out")
+                self.assertEqual(summary["usage_known"], summary["denominator"] - missing)
+        for pair in report["paired"]:
+            if pair["case_id"] in development:
+                expected = {"input_tokens": None, "output_tokens": None, "cost_usd": None}
+            elif pair["case_id"] == heldout[0]:
+                expected = {"input_tokens": None, "output_tokens": None, "cost_usd": -0.25}
+            else:
+                expected = {"input_tokens": -20, "output_tokens": 2, "cost_usd": -0.125}
+            self.assertEqual(pair["usage_delta_graph_minus_baseline"], expected)
+
+    def test_non_null_captured_token_usage_still_requires_bounded_integers(self):
+        for key in ("input_tokens", "output_tokens"):
+            for value in (-1, True, 1.5, "1", 10**12 + 1):
+                with self.subTest(key=key, value=value):
+                    bundle, audits, dirs = self.cohort()
+                    def mutate(raw):
+                        raw["usage"] = {"input_tokens": None, "output_tokens": None,
+                                        "cost_usd": None, "source": "fixture captured usage", key: value}
+                    self.update_raw(bundle, dirs, 0, mutate, audits)
+                    self.score_cli(bundle, audits, ok=False)
+
     def test_model_tool_request_capture_audit_and_isolation_integrity(self):
         mutations = [lambda r: r["model"].update(name="other-model"),
                      lambda r: r["tool_versions"].update(read="different"),

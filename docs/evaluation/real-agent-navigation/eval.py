@@ -403,7 +403,7 @@ def checked_answer(answer, case, trees):
             "false_positives": sorted(found - set(known)),
             "citation_precision": valid / len(answer["evidence"]) if answer["evidence"] else 0,
             "citation_coverage": len(cited) / len(found) if found else 0,
-            "objective_pass": expected <= identity_valid and found <= set(known)
+            "objective_pass": expected <= found <= identity_valid
             and cited == found and valid == len(answer["evidence"])}
 
 
@@ -534,7 +534,8 @@ def score(data, lock, trees, bundle, audits):
         if usage is not None:
             shape(usage, ["input_tokens", "output_tokens", "cost_usd", "source"], "usage")
             for key in ("input_tokens", "output_tokens"):
-                integer(usage[key], key)
+                if usage[key] is not None:
+                    integer(usage[key], key)
             require(usage["cost_usd"] is None or (type(usage["cost_usd"]) in (int, float)
                     and math.isfinite(usage["cost_usd"]) and usage["cost_usd"] >= 0), "cost")
             text(usage["source"], "usage source")
