@@ -456,3 +456,16 @@ unapproved broker call before the broker sees it. Fixture I/O is bounded
   mid-request or ignores end of input fails fast and leaves no live process.
   It also covers exited leaders with live descendants and closed pipes with
   live children, with independent pidfd cleanup if an assertion fails.
+
+## Installed-plugin profile (schema 2)
+
+The opt-in `installed-plugin-skill-v2` profile uses this same runner, broker and
+supervision to install a pinned graph plugin in each episode's private Orbit
+HOME, discover its actual MCP inventory and supply its unchanged shipped skill.
+It preserves schema-1 CLI-proxy behavior and uses a distinct raw kind and offline
+replay validator. See [the profile contract and operator checks](../../evals/plugin-agent-navigation/README.md).
+`plugin-inspect` captures the real inventory without a provider; schema-2 `run`
+requires pinned source commits and install provenance. Strict profile-2 runs also
+require observable finite cgroup-v2 memory and process ceilings. Historical
+`adapt` deliberately refuses profile-2 captures. No new effectiveness outcomes
+or corpus are provided by this profile.

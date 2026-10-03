@@ -34,6 +34,7 @@ sys.dont_write_bytecode = True
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 import eval_broker as broker  # noqa: E402  (sibling module, same checkout)
+import plugin_profile as plugin  # noqa: E402
 
 RUNNER_VERSION = "1"
 RAW_KIND = "agent-eval-raw-episode"
@@ -168,11 +169,29 @@ def validate_request(request):
     require(isinstance(request, dict), "request must be a JSON object")
     fields = set(request)
     missing = sorted(REQUEST_REQUIRED - fields)
-    unknown = sorted(fields - REQUEST_REQUIRED - REQUEST_OPTIONAL)
+    v2 = request.get("schema_version") == 2
+    optional = REQUEST_OPTIONAL | ({"profile", "plugin", "setup_limits", "source_commits"} if v2 else set())
+    unknown = sorted(fields - REQUEST_REQUIRED - optional)
     require(not missing, f"request is missing {missing}")
     require(not unknown, f"request has unknown fields {unknown}")
-    require(type(request["schema_version"]) is int and request["schema_version"] == 1,
-            "request schema_version must be 1")
+    require(type(request["schema_version"]) is int and request["schema_version"] in (1, 2),
+            "request schema_version must be 1 or 2")
+    if v2:
+        require(request.get("profile") == plugin.PROFILE, "unknown version-2 profile")
+        try:
+            plugin.validate_pin(request.get("plugin"))
+            commits = request.get("source_commits")
+            plugin.check(isinstance(commits, dict) and set(commits) == {"head", "base"}
+                         and all(isinstance(v, str) and re.fullmatch(r"[0-9a-f]{40}", v) for v in commits.values()),
+                         "source_commits must pin full head and base Git commits")
+            setup_limits = request.get("setup_limits")
+            plugin.check(isinstance(setup_limits, dict) and set(setup_limits) == {"wall_ms", "output_bytes"},
+                         "setup_limits must contain wall_ms and output_bytes")
+            for key, low, high in (("wall_ms", 1000, 300000), ("output_bytes", 65536, 16 * 1024 * 1024)):
+                plugin.check(type(setup_limits[key]) is int and low <= setup_limits[key] <= high,
+                             "invalid setup_limits." + key)
+        except ValueError as error:
+            raise Invalid(str(error)) from None
     require(isinstance(request["case_id"], str) and CASE_ID.match(request["case_id"]),
             "case_id must match [A-Za-z0-9._-]{1,128}")
     require(request["arm"] in ARMS, f"arm must be one of {ARMS}")
@@ -191,6 +210,8 @@ def validate_request(request):
         require(type(limits[key]) is int and low <= limits[key] <= high,
                 f"limits.{key} must be an integer in {low}..{high}")
     expected = list(broker.ARM_TOOLS[request["arm"]])
+    if v2 and request["arm"] == "graph":
+        expected = list(broker.ARM_TOOLS["baseline"] + plugin.TOOLS)
     tools = request["tools"]
     require(isinstance(tools, list) and all(isinstance(tool, str) for tool in tools),
             "tools must be a list of tool names")
@@ -509,7 +530,18 @@ class Episode:
         self.args = args
         self.request = request
         self.arm = request["arm"]
+        self.plugin_profile = request["schema_version"] == 2
+        self.treatment = None
+        if self.plugin_profile:
+            for name in ("source_repo", "plugin_repo"):
+                if getattr(args, name, None):
+                    setattr(args, name, os.path.realpath(getattr(args, name)))
         self.contained = args.containment == "bwrap"
+        self.resource_limits = plugin.resource_bounds() if self.plugin_profile else None
+        if self.plugin_profile and self.contained and not all(self.resource_limits.values()):
+            raise CapabilityRefusal("resource_limits_unavailable",
+                                    "profile 2 requires observable finite cgroup-v2 memory.max and pids.max",
+                                    self.resource_limits)
         self.out = Path(os.path.abspath(args.out))
         self.repo = self.out / "snapshot" / "repo"
         self.runtime = self.out / "runtime"
@@ -522,10 +554,15 @@ class Episode:
             "orbit_graph": resolve_binary(args.orbit_graph, "orbit-graph")
             if self.arm == "graph" else None,
             "bwrap": resolve_binary(args.bwrap, "bwrap") if self.contained else None,
+            "orbit": resolve_binary(getattr(args, "orbit", None), "orbit")
+            if self.plugin_profile and self.arm == "graph" else None,
         }
         if self.arm == "graph" and not self.binaries["orbit_graph"]:
             raise CapabilityRefusal("expected_tool_unavailable",
                                     "the graph arm needs --orbit-graph")
+        if self.plugin_profile and self.arm == "graph":
+            require(self.binaries["orbit"] and getattr(args, "plugin_repo", None),
+                    "installed plugin graph arm needs --orbit and --plugin-repo")
         codex = Path(self.binaries["codex"])
         self.codex_root = codex.parent.parent if codex.parent.name == "bin" else codex.parent
         self.code_mode = bool(getattr(args, "allow_code_mode", False))
@@ -592,6 +629,9 @@ class Episode:
             str(HERE.parent.parent), os.path.abspath(self.args.head),
             os.path.abspath(self.args.base) if getattr(self.args, "base", None) else None,
             str(self.out.parent), home, codex_home]
+        if self.plugin_profile:
+            paths += [getattr(self.args, "source_repo", None), getattr(self.args, "plugin_repo", None),
+                      os.environ.get("ORBIT_ROOT")]
         return sorted({os.path.abspath(path) for path in paths if path})
 
     def env(self):
@@ -602,21 +642,27 @@ class Episode:
             env[name] = os.environ[name]
         return env
 
-    def sandbox_prefix(self):
+    def sandbox_prefix(self, installing=False):
         if not self.contained:
             return []
         argv = system_sandbox_argv(self.binaries["bwrap"])
         argv += ["--dir", "/eval", "--dir", SANDBOX["bin"],
-                 "--ro-bind", str(self.repo), SANDBOX["repo"]]
+                 "--bind" if installing else "--ro-bind", str(self.repo), SANDBOX["repo"]]
         if self.arm == "graph":
             argv += ["--bind", str(self.repo / ".orbit-graph"), f"{SANDBOX['repo']}/.orbit-graph"]
+        if self.plugin_profile and self.arm == "graph" and (self.repo / ".orbit").is_dir():
+            # Orbit creates private task/state directories at tool dispatch. Source
+            # stays read-only; this new fixture subtree is hidden by every gateway.
+            argv += ["--bind", str(self.repo / ".orbit"), f"{SANDBOX['repo']}/.orbit"]
         argv += ["--ro-bind", str(self.runtime), SANDBOX["runtime"],
                  "--bind", str(self.state), SANDBOX["state"],
                  "--ro-bind", str(self.codex_root), SANDBOX["codex"],
                  "--ro-bind", self.binaries["rg"], self.tool_in("rg")]
         if self.arm == "graph":
             argv += ["--ro-bind", self.binaries["orbit_graph"], self.tool_in("orbit_graph")]
-        if self.auth_file:
+        if self.binaries.get("orbit"):
+            argv += ["--ro-bind", self.binaries["orbit"], self.tool_in("orbit")]
+        if self.auth_file and not installing:
             argv += ["--ro-bind", self.auth_file, f"{SANDBOX['state']}/codex-home/auth.json"]
         return argv + ["--chdir", SANDBOX["repo"], "--"]
 
@@ -638,6 +684,8 @@ class Episode:
         # Tool names are the validated arm contract, so they are safe TOML keys.
         for tool in self.request["tools"]:
             flags += ["-c", f"{server}.tools.{tool}.approval_mode={json.dumps(TOOL_APPROVAL)}"]
+        if self.treatment is not None:
+            flags += ["-c", "developer_instructions=" + json.dumps(self.treatment["developer_context"])]
         for key, value in sorted(self.settings().items()):
             flags += ["-c", f"{key}={json.dumps(value)}"]
         return flags
@@ -674,9 +722,13 @@ class Episode:
 def prepare_layout(episode):
     require(not os.path.lexists(episode.out), f"output already exists: {episode.out}")
     require(episode.out.parent.is_dir(), f"output parent must exist: {episode.out.parent}")
+    if episode.plugin_profile:
+        usage = shutil.disk_usage(episode.out.parent)
+        require(usage.used / usage.total < 0.8, "disk usage is at least 80%; refusing a new fixture")
     make_private_dir(episode.out)
     for path in (episode.out / "snapshot", episode.runtime, episode.state,
-                 episode.state / "home", episode.state / "codex-home", episode.state / "tmp"):
+                 episode.state / "home", episode.state / "codex-home", episode.state / "tmp",
+                 episode.state / "orbit-home"):
         make_private_dir(path)
     if episode.auth_file:
         # The mount point for the read-only bind of the provider's own store.
@@ -684,9 +736,11 @@ def prepare_layout(episode):
                          os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600))
     shutil.copyfile(HERE / "eval_broker.py", episode.runtime / "eval_broker.py")
     os.chmod(episode.runtime / "eval_broker.py", 0o500)
+    shutil.copyfile(HERE / "plugin_profile.py", episode.runtime / "plugin_profile.py")
+    os.chmod(episode.runtime / "plugin_profile.py", 0o500)
 
 
-def preflight(episode, versions):
+def preflight(episode, versions, deadline=None):
     """Read back the effective feature and MCP inventory under the exact run flags."""
     env = episode.env()
     prefix = episode.sandbox_prefix()
@@ -696,7 +750,8 @@ def preflight(episode, versions):
     def run(args, expect_failure=False):
         """Codex stdout; with expect_failure, (exit code, stderr) of a codex-level failure."""
         argv = prefix + [episode.codex_in(), *args]
-        result = broker.run_child(argv, str(episode.state), env, PREFLIGHT_TIMEOUT_S,
+        timeout = min(PREFLIGHT_TIMEOUT_S, max(0, deadline - time.monotonic())) if deadline else PREFLIGHT_TIMEOUT_S
+        result = broker.run_child(argv, str(episode.state), env, timeout,
                                   capture_limit=1024 * 1024)
         stderr = result["stderr"].decode(errors="replace")
         sandbox_failed = episode.contained and "bwrap:" in stderr[:200]
@@ -1306,6 +1361,10 @@ def decide(supervision, transcript, log, final, limits, sentinel_code, output_by
             # Typed product errors can be recovered from; execution failures cannot.
             if not isinstance(body, dict) or not isinstance(body.get("error", {}), dict):
                 return "failed", "broker_output_malformed", "failed call output is not an envelope"
+            if ("product_reply" in body or "transport" in body) and not plugin.recoverable(body):
+                return "failed", "tool_execution_failed", "installed plugin failed without a recoverable reply"
+            if body.get("error", {}).get("code") == "plugin_transport_failed":
+                return "failed", "tool_execution_failed", "installed host transport failed"
             if (call["status"] == "timeout"
                     or body.get("error", {}).get("code") == "tool_exception"
                     or (any(key in body for key in ("exit_code", "stopped", "cleanup", "stderr"))
@@ -1392,6 +1451,13 @@ def write_broker_config(episode, deadline_unix_ms, snapshot):
                            "orbit_graph": episode.tool_in("orbit_graph")},
               "snapshot": {"base_commit": snapshot["base_commit"],
                            "head_commit": snapshot["head_commit"]}}
+    if episode.plugin_profile:
+        config["schema_version"] = 2
+        config["plugin"] = None if episode.arm == "baseline" else {
+            "orbit": episode.tool_in("orbit"), "home": episode.state_in("orbit-home"),
+            "inventory": episode.treatment["inventory"], "policy": plugin.POLICY}
+        if episode.arm == "graph":
+            config["path_env"] = str(Path(episode.tool_in("orbit")).parent) + ":/usr/bin:/bin"
     path = episode.runtime / "broker-config.json"
     fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o400)
     with os.fdopen(fd, "w") as stream:
@@ -1413,6 +1479,8 @@ def write_probe_spec(episode):
 
 def command_preflight(args):
     request = setup(args)
+    require(request["schema_version"] == 1,
+            "version-2 preflight is part of run; use plugin-inspect to preregister the inventory")
     args.base = None
     episode = Episode(args, request)
     prepare_layout(episode)
@@ -1452,6 +1520,9 @@ def command_run(args):
     deadline = clock + limits["wall_ms"] / 1000
     head_entries = tree_entries(args.head, "head")
     base_entries = tree_entries(args.base, "base")
+    source_provenance = None
+    if episode.plugin_profile:
+        source_provenance = plugin.verify_source(episode, head_entries, base_entries, deadline)
     snapshot = materialize_snapshot(episode.repo, episode.state, episode.binaries["git"],
                                     base_entries, head_entries)
     if snapshot["head"]["content_revision"] != request["source_revision"]:
@@ -1464,6 +1535,13 @@ def command_run(args):
     graph_fresh = not os.path.lexists(graph_dir)
     if episode.arm == "graph":
         make_private_dir(graph_dir)
+    if episode.plugin_profile and episode.arm == "graph":
+        try:
+            episode.treatment = plugin.install(episode, deadline)
+        except ValueError as error:
+            raise CapabilityRefusal("plugin_profile_refused", str(error)) from None
+        # Verify the actual treatment flags too, within the episode setup budget.
+        preflight_evidence = preflight(episode, versions, deadline)
     write_broker_config(episode, int((started_at + limits["wall_ms"] / 1000) * 1000), snapshot)
     probe_spec = write_probe_spec(episode)
     sandbox = episode.sandbox_prefix()
@@ -1525,9 +1603,11 @@ def command_run(args):
     answer = parse_json(final_text.encode(), "final") if status == "ok" else None
     graph_state = None
     if episode.arm == "graph":
-        files = [path for path in graph_dir.rglob("*") if path.is_file()]
+        graph_state_root = episode.state / "orbit-home/.orbit/state/plugins" if episode.plugin_profile else graph_dir
+        files = [path for path in graph_state_root.rglob("*") if path.is_file()]
         graph_state = {"files": len(files), "bytes": sum(path.stat().st_size for path in files)}
-    graph_sync_ms = sum(call["elapsed_ms"] for call in calls if call["tool"] == "graph_sync")
+    graph_sync_ms = sum(call["elapsed_ms"] for call in calls
+                        if call["tool"] in ("graph_sync", "graph_maintain"))
 
     files = {}
     redactor = episode.redactor
@@ -1548,7 +1628,9 @@ def command_run(args):
     run_id = f"aeval-{secrets.token_hex(8)}"
     contained = episode.contained and bool(probe.get("hidden"))
     artifact = {
-        "schema_version": 1, "kind": RAW_KIND, "runner_version": RUNNER_VERSION,
+        "schema_version": request["schema_version"],
+        "kind": plugin.RAW_KIND if episode.plugin_profile else RAW_KIND,
+        "runner_version": "2" if episode.plugin_profile else RUNNER_VERSION,
         "run_id": run_id, "request": request, "request_digest": digest(request),
         "started_at_unix": round(started_at, 3),
         "model": {"provider": "codex-cli", "name": args.model, "version": provider["version"],
@@ -1613,6 +1695,19 @@ def command_run(args):
             "Usage is copied from provider telemetry; cost is never estimated.",
         ],
     }
+    if episode.plugin_profile:
+        artifact["profile"] = plugin.PROFILE
+        artifact["source_provenance"] = source_provenance
+        artifact["resource_limits"] = episode.resource_limits
+        artifact["harness"] = {name: sha256_file(HERE / name) for name in
+                               ("eval_runner.py", "eval_broker.py", "plugin_profile.py")}
+        artifact["treatment"] = episode.treatment
+        artifact["timing"]["plugin_install_ms"] = (episode.treatment or {}).get("install_ms", 0)
+        artifact["setup_output_bytes"] = (episode.treatment or {}).get("setup_output_bytes", 0)
+        if episode.treatment:
+            setup_path = episode.out / "plugin-setup.json"
+            artifact["files"]["plugin-setup.json"] = {"sha256": sha256_file(setup_path),
+                "bytes": setup_path.stat().st_size, "redactions": 0, "truncated": False}
     artifact, redactions = redactor.value(artifact)
     artifact["redactions"] = redactions
     if redactions:
@@ -1707,6 +1802,8 @@ def load_raw_episode(directory):
 
 
 def public_record(artifact):
+    require(artifact["request"]["schema_version"] == 1,
+            "profile-2 captures require evals/plugin-agent-navigation/eval.py")
     isolation = artifact["isolation"]
     require(isolation["contained"] is True and isolation["truth_inaccessible"] is True,
             f"{artifact['run_id']}: an uncontained episode cannot be agent evidence")
@@ -1764,6 +1861,9 @@ def parser():
         sub.add_argument("--rg", required=True, help="ripgrep binary")
         sub.add_argument("--orbit-graph", dest="orbit_graph",
                          help="orbit-graph binary (graph arm only)")
+        sub.add_argument("--orbit", help="installed Orbit host binary (profile 2 graph arm)")
+        sub.add_argument("--source-repo", help="local Git source repository for profile-2 commit verification")
+        sub.add_argument("--plugin-repo", help="local Git repository holding the pinned plugin commit")
         sub.add_argument("--python", default="/usr/bin/python3", help="python3 for the broker")
         sub.add_argument("--containment", choices=("bwrap", "none"), default="bwrap",
                          help="bwrap: OS confinement (required for agent evidence); none: "
@@ -1784,6 +1884,15 @@ def parser():
     episode_options(commands.add_parser("preflight", help="verify containment; no episode"),
                     False)
     episode_options(commands.add_parser("run", help="run one episode"), True)
+    inspect = commands.add_parser("plugin-inspect", help="capture pinned real installed inventory; no provider")
+    inspect.add_argument("--plugin-repo", required=True)
+    inspect.add_argument("--plugin-commit", required=True)
+    inspect.add_argument("--orbit", required=True)
+    inspect.add_argument("--orbit-graph", required=True)
+    inspect.add_argument("--out", required=True)
+    inspect.add_argument("--git", default="/usr/bin/git")
+    inspect.add_argument("--containment", choices=("bwrap", "none"), default="bwrap")
+    inspect.add_argument("--bwrap", default="bwrap")
     adapt = commands.add_parser("adapt", help="raw artifacts -> ORB-13710 public bundle")
     adapt.add_argument("--episode", action="append", required=True,
                        help="episode directory, repeatable, any order")
@@ -1794,7 +1903,7 @@ def parser():
 def main(argv=None):
     args = parser().parse_args(argv)
     handlers = {"revision": command_revision, "preflight": command_preflight,
-                "run": command_run, "adapt": command_adapt}
+                "run": command_run, "adapt": command_adapt, "plugin-inspect": plugin.inspect}
     try:
         result = handlers[args.command](args)
     except CapabilityRefusal as refusal:
@@ -1802,7 +1911,7 @@ def main(argv=None):
         print(json.dumps(refuse(os.path.abspath(out) if out else None, refusal), indent=2,
                          sort_keys=True))
         return EXIT_REFUSED
-    except (Invalid, OSError, KeyError, TypeError) as error:
+    except (ValueError, OSError, KeyError, TypeError) as error:
         print(json.dumps({"error": {"code": "invalid", "message": str(error)[:2000]}}),
               file=sys.stderr)
         return EXIT_INVALID
@@ -1811,4 +1920,5 @@ def main(argv=None):
 
 
 if __name__ == "__main__":
+    sys.modules["eval_runner"] = sys.modules[__name__]
     sys.exit(main())
