@@ -578,9 +578,14 @@ whose run was submitted with that task; any other pair is refused and reported
 `failed` with `orbit_refused`. Graph also fails closed when the answer names a
 different task, run or workspace, has another `schema_version`, is malformed,
 or carries a commit ID that is not a full lowercase SHA. The answer's
-`repository` must match the routed repository: exactly for a GitHub
-`owner/name`, while for a non-GitHub `git:` digest Graph checks only its shape,
-because it does not recompute Orbit's digest of the origin URL. A null
+`repository` must equal the identity Graph recomputes from the routed
+repository's configured `remote.origin.url`, the way Orbit derives it: a GitHub
+origin is `owner/name`, and any other origin is `git:` followed by the
+lowercase hex SHA-256 of the exact URL (trimmed, as `git config --get` prints
+it). A different identity is excluded, however well-formed. Without an origin
+URL Orbit names a repository by a digest of its Git directory path, which
+Graph does not reproduce, so that answer is excluded too; the routed
+repository must also already match the workspace's `git_remote`. A null
 `repository` is excluded, as the host could not identify where the run
 delivered. Orbit's plugin sandbox lets the backend write only its own state,
 not the inherited `TMPDIR` or `/tmp`, and Orbit 0.25.1's delivery read needs a
@@ -610,9 +615,14 @@ descend from `base_sha`; Graph never trusts the host's answer alone:
   must be reachable from the branch.
 - A `pull_request` landing whose `head_sha` is unreachable, as after a squash,
   imports `landed_commit` only when that commit is on the branch, has a single
-  parent at or after `base_sha`, and changes exactly the same paths as
-  `base_sha..head_sha`. Graph imports that landed commit's range, with
-  `landing.verified_by: landed_commit_paths`.
+  parent at or after `base_sha`, and makes exactly the tree changes of
+  `base_sha..head_sha`: the same paths, each with the same Git object ID and
+  file mode before and after (renames are compared as a deletion and an
+  addition). Graph imports that landed commit's range, with
+  `landing.verified_by: landed_commit_tree_entries`. A landed commit that
+  changes the same paths to other contents or modes is excluded. So is one
+  whose parent changed a delivered path after `base_sha`: its equivalence to
+  the delivery cannot be verified, even when it ends at the head's content.
 
 A landed answer that fails these checks is `excluded`. A missing commit object
 is `failed`, because fetching may fix it. The delivery ID stays

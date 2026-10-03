@@ -184,9 +184,12 @@ Only a host-reported `delivery_status: landed` whose commits Git verifies on the
 landing branch is imported. `committed` (no verified landing), `no_change`,
 `in_progress`, `not_delivered`, `unavailable`, a task with no current run, an
 answer for another workspace or repository, and landed evidence Git cannot
-confirm are `excluded` with a reason naming the status or check. A squash
-landing is accepted only when `landed_commit` is on the branch, builds on
-`base_sha` and changes exactly the paths of `base_sha..head_sha`. A foreign
+confirm are `excluded` with a reason naming the status or check. The answer's
+`repository` must equal the identity recomputed from the routed `origin`
+(`owner/name` on GitHub, else `git:` and the SHA-256 of the exact origin URL).
+A squash landing is accepted only when `landed_commit` is on the branch, builds
+on `base_sha` and makes exactly the tree changes of `base_sha..head_sha` (same
+paths, object IDs and modes on both sides). A foreign
 task/run pair, which Orbit refuses with `invalid_input`, is `failed`. So are an
 answer naming another task or run, an unsupported `schema_version`, malformed
 evidence and a missing local commit. `failed` is counted in `coverage.failed`
