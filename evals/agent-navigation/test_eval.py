@@ -3,8 +3,12 @@ import copy
 from contextlib import redirect_stderr, redirect_stdout
 import io
 import json
+import os
 from pathlib import Path
+import signal
 import shutil
+import subprocess
+import sys
 import tempfile
 import unittest
 
@@ -34,6 +38,59 @@ class EvaluationTests(unittest.TestCase):
                 code = study.main(["score", "--input", str(path)])
             return code, out.getvalue(), err.getvalue()
 
+    def cli_entry(self, raw_text):
+        with tempfile.TemporaryDirectory(dir=self.scratch) as directory:
+            path = Path(directory) / "episodes.json"
+            path.write_text(raw_text)
+            with subprocess.Popen(
+                [sys.executable, "-B", str(study.ROOT / "eval.py"), "score", "--input", str(path)],
+                cwd=directory, env={"PATH": os.defpath, "HOME": directory},
+                stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, start_new_session=True,
+            ) as process:
+                try:
+                    out, err = process.communicate(timeout=10)
+                except subprocess.TimeoutExpired:
+                    os.killpg(process.pid, signal.SIGTERM)
+                    try:
+                        process.communicate(timeout=1)
+                    except subprocess.TimeoutExpired:
+                        os.killpg(process.pid, signal.SIGKILL)
+                        process.communicate()
+                    raise
+                self.assertEqual(path.read_text(), raw_text, "scoring must preserve captured input bytes")
+                return process.returncode, out, err
+
+    def capture_answer(self, episode, answer):
+        episode["answer"] = answer
+        episode["final_output"] = study.canonical(answer).decode()
+        episode["output_bytes"] = sum(len(c["output"].encode()) for c in episode["calls"]) + len(episode["final_output"].encode())
+        study.seal(episode)
+
+    def test_cli_retains_duplicate_citation_failure_and_complete_cohort(self):
+        raw = self.bundle()
+        episode = raw["episodes"][1]
+        episode["answer"]["evidence"] *= 2
+        self.capture_answer(episode, episode["answer"])
+        code, out, err = self.cli_entry(json.dumps(raw))
+        self.assertEqual((code, err), (0, ""))
+        report = json.loads(out)
+        row = report["cases"][1]
+        self.assertEqual((row["status"], row["error"]), ("ok", None))
+        self.assertEqual(row["answer_error"], "invalid citation item")
+        self.assertFalse(row["correct"])
+        self.assertFalse(row["correct_abstention"])
+        self.assertEqual(row["missed"], self.data["cases"][0]["truth"]["items"])
+        self.assertEqual(len(report["cases"]), 24)
+        self.assertEqual(len(report["pairs"]), 12)
+        self.assertTrue(report["cases"][-1]["correct"])
+        self.assertEqual(report["pairs"][0]["correct_delta_graph_minus_baseline"], 0)
+        aggregate = report["aggregate"]["development"]["graph"]
+        self.assertEqual((aggregate["episodes"], aggregate["correct"], aggregate["failures"]), (4, 3, 1))
+        self.assertEqual(sum(arm["episodes"] for split in report["aggregate"].values() for arm in split.values()), 24)
+        self.assertEqual(row["wall_ms"], episode["wall_ms"])
+        self.assertEqual(row["tool_calls"], len(episode["calls"]))
+        self.assertEqual(row["output_bytes"], episode["output_bytes"])
+
     def test_entry_point_accepts_complete_bundle(self):
         code, out, err = self.entry(json.dumps(self.bundle()))
         self.assertEqual((code, err), (0, ""))
@@ -58,8 +115,9 @@ class EvaluationTests(unittest.TestCase):
                 self.assertEqual((code, out), (1, ""))
                 self.assertTrue(json.loads(err)["error"]["message"])
 
-    def test_absent_and_invalid_evidence_fail_even_if_truth_answer_is_correct(self):
-        for change in ("missing", "wrong_quote", "wrong_line", "unknown_symbol", "duplicate", "wrong_file"):
+    def test_absent_and_invalid_evidence_never_earn_correct_grade(self):
+        for change in ("missing", "wrong_quote", "wrong_line", "unknown_symbol", "duplicate", "wrong_file",
+                       "duplicate_citation", "unsupported_citation", "missing_selector", "missing_item_evidence"):
             with self.subTest(change=change):
                 raw = self.bundle()
                 episode = raw["episodes"][1]
@@ -76,11 +134,89 @@ class EvaluationTests(unittest.TestCase):
                     answer["items"][0] = "symbol:src/lib.rs#invented:function"
                 elif change == "duplicate":
                     answer["items"] *= 2
-                episode["final_output"] = study.canonical(answer).decode()
-                episode["output_bytes"] = sum(len(c["output"].encode()) for c in episode["calls"]) + len(episode["final_output"].encode())
-                study.seal(episode)
-                code, out, _ = self.entry(json.dumps(raw))
+                elif change == "duplicate_citation":
+                    answer["evidence"] *= 2
+                elif change == "unsupported_citation":
+                    answer["items"][0] = answer["evidence"][0]["item"] = "symbol:src/lib.rs#invented:function"
+                elif change == "missing_selector":
+                    answer["evidence"][0].pop("item")
+                elif change == "missing_item_evidence":
+                    answer["items"].append("symbol:src/lib.rs#invoice:function")
+                self.capture_answer(episode, answer)
+                code, out, err = self.cli_entry(json.dumps(raw))
+                self.assertEqual((code, err), (0, ""))
+                report = json.loads(out)
+                self.assertEqual(len(report["cases"]), 24)
+                self.assertFalse(report["cases"][1]["correct"])
+                self.assertTrue(report["cases"][1]["answer_error"])
+                self.assertEqual(report["aggregate"]["development"]["graph"]["failures"], 1)
+
+    def test_structurally_captured_invalid_answers_are_episode_failures(self):
+        for answer in (None, [], {}, {"items": [], "abstain": "yes", "reason": "", "evidence": []},
+                       {"items": [], "abstain": False, "reason": "", "evidence": []},
+                       {"items": [], "abstain": True, "reason": "", "evidence": []}):
+            with self.subTest(answer=answer):
+                raw = self.bundle()
+                self.capture_answer(raw["episodes"][1], answer)
+                code, out, err = self.cli_entry(json.dumps(raw))
+                self.assertEqual((code, err), (0, ""))
+                row = json.loads(out)["cases"][1]
+                self.assertTrue(row["answer_error"])
+                self.assertFalse(row["correct"])
+                self.assertFalse(row["correct_abstention"])
+
+    def test_invalid_abstention_never_earns_correct_abstention(self):
+        raw = self.bundle()
+        episode = raw["episodes"][10]
+        episode["answer"]["reason"] = " "
+        self.capture_answer(episode, episode["answer"])
+        code, out, err = self.cli_entry(json.dumps(raw))
+        self.assertEqual((code, err), (0, ""))
+        report = json.loads(out)
+        self.assertTrue(report["cases"][10]["answer_error"])
+        self.assertFalse(report["cases"][10]["correct"])
+        self.assertFalse(report["cases"][10]["correct_abstention"])
+        self.assertEqual(report["aggregate"]["held-out"]["graph"]["episodes"], 8)
+        self.assertEqual(report["aggregate"]["held-out"]["graph"]["correct_abstentions"], 1)
+
+    def test_invalid_answer_does_not_hide_later_collection_rejection(self):
+        modifications = [
+            ("hash", lambda e: e.update(record_sha256="0" * 64)),
+            ("request", lambda e: e["request"].update(prompt="different prompt")),
+            ("model", lambda e: e["model"].update(name="another model")),
+            ("truth", lambda e: e["isolation"].update(truth_inaccessible=False)),
+            ("warm", lambda e: e["isolation"].update(cold_start=False)),
+            ("shared", lambda e: e["isolation"].update(cache_id="scripted-cache-0")),
+            ("version", lambda e: e["tool_versions"].update(rg="another-version")),
+            ("run_id", lambda e: e.update(run_id="scripted-00")),
+            ("tool", lambda e: e["calls"][0].update(tool="outside-contract")),
+            ("truncated", lambda e: e["calls"][0].update(status="truncated")),
+            ("wall", lambda e: e.update(wall_ms=study.LIMITS["wall_ms"] + 1)),
+            ("accounting", lambda e: e.update(output_bytes=e["output_bytes"] + 1)),
+            ("calls", lambda e: e.update(calls=e["calls"] * 41)),
+            ("capture", lambda e: e["calls"][0].update(output="x" * 16385)),
+            ("answer_capture", lambda e: e.update(answer={})),
+            ("duplicate_json_key", lambda e: e.update(final_output='{"items":[],"items":[]}')),
+            ("malformed_final", lambda e: e.update(final_output="not JSON")),
+            ("unknown_field", lambda e: e.update(unexpected=True)),
+        ]
+        for label, modify in modifications + [("order", None)]:
+            with self.subTest(label=label):
+                raw = self.bundle()
+                raw["episodes"][1]["answer"]["evidence"] *= 2
+                self.capture_answer(raw["episodes"][1], raw["episodes"][1]["answer"])
+                if label == "order":
+                    raw["episodes"][4], raw["episodes"][5] = raw["episodes"][5], raw["episodes"][4]
+                else:
+                    episode = raw["episodes"][5]
+                    modify(episode)
+                    if label in {"duplicate_json_key", "malformed_final"}:
+                        episode["output_bytes"] = sum(len(c["output"].encode()) for c in episode["calls"]) + len(episode["final_output"].encode())
+                    if label != "hash":
+                        study.seal(episode)
+                code, out, err = self.cli_entry(json.dumps(raw))
                 self.assertEqual((code, out), (1, ""))
+                self.assertEqual(json.loads(err)["error"]["code"], "invalid_evaluation")
 
     def test_answer_must_match_raw_capture(self):
         raw = self.bundle()

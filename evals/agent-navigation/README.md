@@ -13,10 +13,11 @@ python3 -B evals/agent-navigation/eval.py check
 ```
 
 `check` validates independent truth, frozen corpus/split hashes, complete paired
-requests, checked-in scripted artifact parity and 19 behavioral tests including
+requests, checked-in scripted artifact parity and 23 behavioral tests including
 negative subcases. It runs the same inexpensive gate as CI and `make ci-fast`.
-Tests use ephemeral directories under `.orbit/tmp/`; no product/provider process
-is started. `validate` and `score` only read files and emit JSON. All commands
+Tests use ephemeral directories under `.orbit/tmp/` and exercise the scorer CLI
+in child Python processes; no product/provider process is started.
+`validate` and `score` only read files and emit JSON. All commands
 emit JSON on stdout; errors emit a structured error on stderr and exit 1.
 
 ## Pre-registration and independently checkable truth
@@ -77,10 +78,10 @@ say scripted/not executed. They demonstrate incorrect abstention, a false
 positive, failed/timeout/invalid episodes, correct unsupported abstentions and
 null usage. These are not agent-effectiveness or graph-tool measurements.
 
-Regenerate only after an intended contract change, then review both artifacts:
+After an intended report change, regenerate only the derived result and review
+its diff; leave the frozen raw smoke episodes unchanged:
 
 ```sh
-python3 -B evals/agent-navigation/eval.py smoke > evals/agent-navigation/smoke-episodes.json
 python3 -B evals/agent-navigation/eval.py score --input evals/agent-navigation/smoke-episodes.json > evals/agent-navigation/smoke-result.json
 python3 -B evals/agent-navigation/eval.py check
 ```
@@ -107,11 +108,19 @@ Agent answers have exactly `items`, `abstain`, `reason`, `evidence`. Every item
 is a unique `symbol:path#name:function` or Rust `symbol:path#name:test` selector with a citation containing
 `item`, `file`, positive `line`, and exact definition-line `quote`. Abstentions
 require empty items/evidence and a specific reason. A valid failure is always
-incorrect and stays in the denominator. Missing pairs, missing citations,
-invalid truth, malformed records, unknown fields, changed requests/hashes and
-inconsistent accounting refuse the entire score (exit 1, no success report).
-An invalid agent reply must be retained as `status: invalid`, `answer: null`,
-`final_output: <raw reply>`, and error details; it is not a missing record.
+incorrect and stays in the denominator. A captured, parsed answer that violates
+the answer contract (including missing, duplicate or unsupported citations)
+also stays in the report as incorrect, with a nonempty `answer_error`.
+The scorer preserves raw `status`, `error`, captures and telemetry; it never
+deduplicates or repairs answers. `answer_error` is null when validation passed
+or was not attempted for a raw failed/timeout/invalid episode. Invalid answers
+receive no credit for identities or abstention and miss every expected identity.
+Missing pairs, invalid truth, malformed records, unknown collection fields,
+changed requests/hashes, answer/capture mismatches and inconsistent accounting
+refuse the entire score (exit 1, no success report). Unparseable agent replies
+must be captured as `status: invalid`, `answer: null`, `final_output: <raw reply>`,
+and error details; they are not missing records. Do not relabel or reseal an
+existing capture merely because scoring finds an invalid answer.
 
 Limits: 2 MiB input JSON, 8..32 cases, 32 answer items/citations, 40 sequential
 calls per episode, 16 KiB each call input/output or raw final text, 128 KiB total
@@ -124,8 +133,10 @@ a hash in external provenance. Never label a truncated final reply `ok`.
 The scorer reports per-case correctness, false positives, missed identities,
 abstentions/correct abstentions, failures/errors, wall time, calls including
 failed calls, bytes and nullable usage. Split/arm aggregates and paired deltas
-include failures. It does not impute missing tokens/costs or authenticate
-operator assertions; raw transcript/provenance review is part of any real result.
+retain every episode; `failures` counts raw failed/timeout/invalid episodes and
+captured answers with validation errors. It does not impute missing tokens/costs
+or authenticate operator assertions; raw transcript/provenance review is part
+of any real result.
 
 ## Operator runner: real paired agents without solutions
 
@@ -238,8 +249,9 @@ agents. An authorized supervising operator follows this protocol:
    ```
 
    If admission/start fails, include a failed episode with an explicit cause,
-   observed time/calls/bytes and null usage. Malformed answer => invalid episode;
-   timeout => timeout episode. Do not drop or replace unsuccessful runs. Publish
+   observed time/calls/bytes and null usage. Unparseable answer => raw invalid episode;
+   parsed but contract-invalid answer => scorer `answer_error`, with raw status
+   preserved; timeout => timeout episode. Do not drop or replace unsuccessful runs. Publish
    sanitized bounded raw episodes, result, source/plan/binary hashes and independent
    host attestation together. Real episodes and interpretation remain follow-on
    work; these smoke artifacts cannot satisfy the pre-registered success criterion.
