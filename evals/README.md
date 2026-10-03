@@ -10,6 +10,11 @@ they are not current file locations. Archived explorer service/UI recipes also
 require their historical binary, retired by ORB-13255; relocation does not
 rerun those measurements or certify that tooling against the current workspace.
 
+* **[Integrated readiness and measured agent navigation](readiness-20261003/README.md)** —
+  final-candidate Linux CLI/MCP and delivery evidence, plus immutable 24 synthetic
+  and 16 real provider episodes. Held-out accuracy is equal across arms; failures
+  are retained and agent benefit is not established.
+
 * **Recommendation evaluation** — below: `orbit-graph evaluate`'s chronological,
   fail-closed backtest of change-destination recommendations.
 * **[Live commit-text evaluation](commit-text-live.md)** — `evaluate --live`
@@ -24,10 +29,12 @@ rerun those measurements or certify that tooling against the current workspace.
 
 * **[Paired agent navigation](agent-navigation/README.md)** — a frozen Rust/Python
   fixture corpus, independent truth, operator episode plan and fail-closed scorer.
-  Checked-in results are scripted smoke only; real agent effectiveness is unmeasured.
+  Its checked-in smoke is scripted; historical provider captures are reported
+  separately in the integrated readiness report, without an effectiveness claim.
 * **[Real repository paired navigation](real-agent-navigation/README.md)** —
   frozen source views and requests, source-reviewed truth and an offline scorer.
-  Real agent effectiveness is unmeasured.
+  Historical provider captures and authentic semantic audits are reported
+  separately in the integrated readiness report; agent benefit is not established.
 
 ## Recommendation evaluation
 

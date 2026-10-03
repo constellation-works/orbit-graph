@@ -1,0 +1,3045 @@
+{
+  "schema_version": 1,
+  "task_id": "ORB-13773",
+  "run_id": "jrun-20261003-0550-c2",
+  "measured_date": "2026-10-03",
+  "conclusion": {
+    "linux_candidate": "bounded_readiness_demonstrated_on_exact_host_binary",
+    "agent_benefit_established": false,
+    "superiority_claim_permitted": false,
+    "live_install_performed": false,
+    "provider_calls_during_certification": 0
+  },
+  "candidate": {
+    "schema_version": 1,
+    "run_id": "jrun-20261003-0550-c2",
+    "candidate": "da5009b7bf8f1a328aa3923252b3b049b1e8bd17",
+    "archive_sha256": "6ddf2deda2efa37c1641d6b5dc89c9920d1276a7b49af6d9e9fb19c8fda54e2b",
+    "orbit_path": "/home/daniel/.orbit/bin/orbit",
+    "orbit_sha256": "6481d488a87955a3f8c29bbee029b8ef1f07babc502c8d1000c37a0850df0972",
+    "graph_path": "/home/daniel/workspace/constellation/codebases/orbit-graph/.orbit/state/worktrees/orbit-jrun-20261003-0550-c2/.orbit/tmp/certification/target/debug/orbit-graph",
+    "graph_sha256": "22f0580ca89f7aab5930194dd24d5946a05ba3beda20ccf93e194a19cb147a8b",
+    "clean_status_before": "",
+    "exports": [
+      {
+        "kind": "pristine",
+        "source": "/home/daniel/workspace/constellation/codebases/orbit-graph/.orbit/state/worktrees/orbit-jrun-20261003-0550-c2/.orbit/tmp/certification/export-da5009b7bf8f1a328aa3923252b3b049b1e8bd17-pristine",
+        "source_manifest_sha256": "162b695ec204aca3bca996f47632874f31f6b3bb5c198d55e8a89a9b96bde6a7",
+        "binary_sha256": null
+      },
+      {
+        "kind": "bound",
+        "source": "/home/daniel/workspace/constellation/codebases/orbit-graph/.orbit/state/worktrees/orbit-jrun-20261003-0550-c2/.orbit/tmp/certification/export-da5009b7bf8f1a328aa3923252b3b049b1e8bd17-bound",
+        "source_manifest_sha256": "59b41656899605763366433e078eac2bbb38a176ec50e8c9b40ce2fd16453f43",
+        "binary_sha256": "22f0580ca89f7aab5930194dd24d5946a05ba3beda20ccf93e194a19cb147a8b"
+      }
+    ],
+    "tree": "17a83857dc0d52539909119b40e582088448fe16",
+    "starting_status_short": "",
+    "rustc": "rustc 1.96.0 (ac68faa20 2026-05-25)",
+    "cargo": "cargo 1.96.0 (30a34c682 2026-05-25)",
+    "cargo_deny": "0.19.9",
+    "cargo_nextest": "0.9.146",
+    "nextest_archive_sha256": "682c21b777c333e96fd532e114d3a5a894e0729ab88d94c0a9f20f8419695428",
+    "host": "Linux 6.8.0-142-generic x86_64",
+    "orbit_version": "0.25.1",
+    "orbit_release_caveat": "Measured host binary includes orbit.workflow.run.delivery after the tagged0.25.1 release; version alone is insufficient.",
+    "graph_contracts": {
+      "crate_version": "0.10.0",
+      "extractor_version": 24,
+      "history_schema_version": 5,
+      "plugin_schema_version": 1,
+      "store_schema_version": 2
+    },
+    "build_environment": {
+      "CARGO_TARGET_DIR": "/home/daniel/workspace/constellation/codebases/orbit-graph/.orbit/state/worktrees/orbit-jrun-20261003-0550-c2/.orbit/tmp/certification/target",
+      "TMPDIR": "/home/daniel/workspace/constellation/codebases/orbit-graph/.orbit/state/worktrees/orbit-jrun-20261003-0550-c2/.orbit/tmp/certification/temp",
+      "CARGO_INCREMENTAL": "0",
+      "RUSTC_WRAPPER": "",
+      "RUSTC_WORKSPACE_WRAPPER": ""
+    },
+    "disk_used_percent_before_build": 26.28
+  },
+  "validation": [
+    {
+      "command": "sh docs/standards/check.sh",
+      "outcome": "passed",
+      "exit_code": 0,
+      "role": "required_repository_gate",
+      "log_artifact": "certification/logs/gate-01.json"
+    },
+    {
+      "command": "scripts/check-dependency-direction.sh",
+      "outcome": "passed",
+      "exit_code": 0,
+      "role": "required_repository_gate",
+      "log_artifact": "certification/logs/gate-02.json"
+    },
+    {
+      "command": "scripts/check-terminal-guard.sh",
+      "outcome": "passed",
+      "exit_code": 0,
+      "role": "required_repository_gate",
+      "log_artifact": "certification/logs/gate-03.json"
+    },
+    {
+      "command": "scripts/check-orphan-modules.sh",
+      "outcome": "passed",
+      "exit_code": 0,
+      "role": "required_repository_gate",
+      "log_artifact": "certification/logs/gate-04.json"
+    },
+    {
+      "command": "scripts/test-repo-gates.sh",
+      "outcome": "passed",
+      "exit_code": 0,
+      "role": "required_repository_gate",
+      "log_artifact": "certification/logs/gate-05.json"
+    },
+    {
+      "command": "python3 -B evals/agent-navigation/eval.py check",
+      "outcome": "passed",
+      "exit_code": 0,
+      "role": "required_repository_gate",
+      "log_artifact": "certification/logs/gate-06.json"
+    },
+    {
+      "command": "cargo deny --locked check",
+      "outcome": "denied",
+      "exit_code": 1,
+      "role": "required_repository_gate",
+      "log_artifact": "certification/logs/gate-07.json"
+    },
+    {
+      "command": "cargo fmt --all --check",
+      "outcome": "passed",
+      "exit_code": 0,
+      "role": "required_repository_gate",
+      "log_artifact": "certification/logs/gate-08.json"
+    },
+    {
+      "command": "cargo clippy --workspace --all-targets --locked -- -D warnings",
+      "outcome": "passed",
+      "exit_code": 0,
+      "role": "required_repository_gate",
+      "log_artifact": "certification/logs/gate-09.json"
+    },
+    {
+      "command": "cargo nextest run --workspace --locked --no-tests=fail",
+      "outcome": "passed",
+      "exit_code": 0,
+      "role": "required_repository_gate",
+      "log_artifact": "certification/logs/gate-10.json"
+    },
+    {
+      "command": "cargo test --workspace --doc --locked",
+      "outcome": "passed",
+      "exit_code": 0,
+      "role": "required_repository_gate",
+      "log_artifact": "certification/logs/gate-11.json"
+    },
+    {
+      "command": "cargo doc --workspace --no-deps --locked",
+      "outcome": "passed",
+      "exit_code": 0,
+      "role": "required_repository_gate",
+      "log_artifact": "certification/logs/gate-12.json"
+    },
+    {
+      "command": "cargo build --workspace --locked",
+      "outcome": "passed",
+      "exit_code": 0,
+      "role": "required_repository_gate",
+      "log_artifact": "certification/logs/gate-13.json"
+    },
+    {
+      "command": "git diff --check",
+      "outcome": "passed",
+      "exit_code": 0,
+      "role": "required_repository_gate",
+      "log_artifact": "certification/logs/gate-14.json"
+    },
+    {
+      "command": "cargo deny --locked check",
+      "outcome": "denied",
+      "exit_code": 1,
+      "role": "unchanged_clean_baseline",
+      "log_artifact": "certification/logs/baseline-deny.json"
+    },
+    {
+      "command": "cargo deny --locked check --config .orbit/tmp/certification/deny.toml",
+      "outcome": "passed",
+      "exit_code": 0,
+      "role": "same_policy_scratch_advisory_cache",
+      "log_artifact": "certification/logs/isolated-deny.json"
+    },
+    {
+      "command": "cargo test -p orbit-graph-cli --test plugin_integration --test plugin_v2 --locked -- --ignored",
+      "outcome": "passed",
+      "exit_code": 0,
+      "role": "strict_installed_fixture",
+      "log_artifact": "certification/logs/installed-cli-mcp.json"
+    },
+    {
+      "command": "/home/daniel/.orbit/bin/orbit plugin validate --first-party /home/daniel/workspace/constellation/codebases/orbit-graph/.orbit/state/worktrees/orbit-jrun-20261003-0550-c2/.orbit/tmp/certification/export-da5009b7bf8f1a328aa3923252b3b049b1e8bd17-pristine",
+      "outcome": "passed",
+      "exit_code": 0,
+      "role": "fresh_pristine_export",
+      "log_artifact": "certification/logs/pristine-validate.json"
+    },
+    {
+      "command": "/home/daniel/.orbit/bin/orbit plugin test --first-party /home/daniel/workspace/constellation/codebases/orbit-graph/.orbit/state/worktrees/orbit-jrun-20261003-0550-c2/.orbit/tmp/certification/export-da5009b7bf8f1a328aa3923252b3b049b1e8bd17-pristine",
+      "outcome": "passed",
+      "exit_code": 0,
+      "role": "fresh_pristine_export",
+      "log_artifact": "certification/logs/pristine-test.json"
+    },
+    {
+      "command": "/home/daniel/.orbit/bin/orbit plugin validate /home/daniel/workspace/constellation/codebases/orbit-graph/.orbit/state/worktrees/orbit-jrun-20261003-0550-c2/.orbit/tmp/certification/export-da5009b7bf8f1a328aa3923252b3b049b1e8bd17-bound",
+      "outcome": "passed",
+      "exit_code": 0,
+      "role": "fresh_bound_export",
+      "log_artifact": "certification/logs/bound-validate.json"
+    },
+    {
+      "command": "/home/daniel/.orbit/bin/orbit plugin test /home/daniel/workspace/constellation/codebases/orbit-graph/.orbit/state/worktrees/orbit-jrun-20261003-0550-c2/.orbit/tmp/certification/export-da5009b7bf8f1a328aa3923252b3b049b1e8bd17-bound",
+      "outcome": "passed",
+      "exit_code": 0,
+      "role": "fresh_bound_export",
+      "log_artifact": "certification/logs/bound-test.json"
+    },
+    {
+      "command": "/home/daniel/.orbit/bin/orbit plugin test /home/daniel/workspace/constellation/codebases/orbit-graph/.orbit/state/worktrees/orbit-jrun-20261003-0550-c2/.orbit/tmp/certification/export-da5009b7bf8f1a328aa3923252b3b049b1e8bd17-bound",
+      "outcome": "passed",
+      "exit_code": 0,
+      "role": "matching_installed_source",
+      "log_artifact": "certification/logs/bound-installed-test.json"
+    },
+    {
+      "command": "/home/daniel/.orbit/bin/orbit plugin upgrade graph /home/daniel/workspace/constellation/codebases/orbit-graph/.orbit/state/worktrees/orbit-jrun-20261003-0550-c2/.orbit/tmp/certification/export-da5009b7bf8f1a328aa3923252b3b049b1e8bd17-bound",
+      "outcome": "passed",
+      "exit_code": 0,
+      "role": "private_upgrade",
+      "log_artifact": "certification/logs/bound-upgrade.json"
+    },
+    {
+      "command": "python3 -B evals/agent-navigation/eval.py score --input /home/daniel/workspace/constellation/codebases/orbit-graph/.orbit/tmp/ORB-13709-synthetic-cohort-01/bundle.json",
+      "outcome": "passed",
+      "exit_code": 0,
+      "role": "offline_score_reproduction",
+      "log_artifact": "certification/logs/synthetic-score.json"
+    },
+    {
+      "command": "python3 -B evals/real-agent-navigation/eval.py score --repo orbit-graph=/home/daniel/workspace/constellation/codebases/orbit-graph --repo Orbit=/home/daniel/workspace/constellation/codebases/orbit --repo pulsar=/home/daniel/workspace/constellation/codebases/pulsar --records /home/daniel/workspace/constellation/codebases/orbit-graph/.orbit/tmp/ORB-13709-real-cohort-01/records-3486e4b.json --audits /home/daniel/workspace/constellation/codebases/orbit-graph/.orbit/tmp/ORB-13709-real-cohort-01/audits-3486e4b.json",
+      "outcome": "passed",
+      "exit_code": 0,
+      "role": "offline_score_reproduction",
+      "log_artifact": "certification/logs/real-score.json"
+    },
+    {
+      "command": "git diff --check",
+      "outcome": "passed",
+      "exit_code": 0,
+      "role": "final_diff",
+      "log_artifact": "certification/logs/final-review.json"
+    },
+    {
+      "command": "cargo deny --locked check",
+      "outcome": "passed",
+      "exit_code": 0,
+      "role": "operator_followup_required_gate",
+      "tested_head": "da5009b7bf8f1a328aa3923252b3b049b1e8bd17",
+      "task_id": "ORB-13773",
+      "run_id": "jrun-20261003-0550-c2",
+      "source_artifact": "/home/daniel/workspace/constellation/codebases/orbit-graph/.orbit/tmp/ORB-13709-integrated-deny-da5009b.json",
+      "source_artifact_sha256": "b8135f457eefe2a765a6fde5d75c948aee83890b520bca242a5267728603f4f8",
+      "stdout": "advisories ok, bans ok, licenses ok, sources ok\n",
+      "stderr": ""
+    }
+  ],
+  "gate_counts": {
+    "regular_passed": 698,
+    "regular_ignored": 3,
+    "separately_installed_passed": 3,
+    "doctests_passed": 14,
+    "repo_seeded_gate_cases_passed": 52,
+    "scripted_eval_cases": 12,
+    "scripted_eval_tests_passed": 23,
+    "pristine_conformance_passed": 44,
+    "bound_conformance_passed": 44,
+    "installed_bound_conformance_passed": 44,
+    "operator_host_runner_tests": 72,
+    "operator_host_runner_skips": 0
+  },
+  "advisory_gate": {
+    "required_outcome": "passed",
+    "baseline_outcome": "same_denial_on_clean_da5009b",
+    "error": "failed to obtain lock file /home/daniel/.cargo/advisory-dbs/db.lock: attempted to take an exclusive lock on a read-only path",
+    "alternate_outcome": "passed",
+    "config_change": "Only advisory db-path points into ignored scratch; original advisory/license/ban/source policies preserved.",
+    "worker_initial_outcome": "denied",
+    "normal_host_followup_outcome": "passed",
+    "normal_host_followup_source_artifact": "/home/daniel/workspace/constellation/codebases/orbit-graph/.orbit/tmp/ORB-13709-integrated-deny-da5009b.json",
+    "normal_host_followup_source_sha256": "b8135f457eefe2a765a6fde5d75c948aee83890b520bca242a5267728603f4f8",
+    "error_scope": "original_worker_attempt_and_clean_baseline_only"
+  },
+  "operator_followup": {
+    "supplied_by": "Operator follow-up evidence for ORB-13773",
+    "task_id": "ORB-13773",
+    "run_id": "jrun-20261003-0550-c2",
+    "candidate_commit": "da5009b7bf8f1a328aa3923252b3b049b1e8bd17",
+    "normal_host_gate": {
+      "command": "cargo deny --locked check",
+      "outcome": "passed",
+      "exit_code": 0,
+      "role": "operator_followup_required_gate",
+      "tested_head": "da5009b7bf8f1a328aa3923252b3b049b1e8bd17",
+      "task_id": "ORB-13773",
+      "run_id": "jrun-20261003-0550-c2",
+      "source_artifact": "/home/daniel/workspace/constellation/codebases/orbit-graph/.orbit/tmp/ORB-13709-integrated-deny-da5009b.json",
+      "source_artifact_sha256": "b8135f457eefe2a765a6fde5d75c948aee83890b520bca242a5267728603f4f8",
+      "stdout": "advisories ok, bans ok, licenses ok, sources ok\n",
+      "stderr": ""
+    },
+    "prepared_bound_export": {
+      "path": "/home/daniel/workspace/constellation/codebases/orbit-graph/.orbit/tmp/ORB-13709-handoff-da5009b/source",
+      "source_worker_export": "/home/daniel/workspace/constellation/codebases/orbit-graph/.orbit/state/worktrees/orbit-jrun-20261003-0550-c2/.orbit/tmp/certification/export-da5009b7bf8f1a328aa3923252b3b049b1e8bd17-bound",
+      "binary_path": "/home/daniel/workspace/constellation/codebases/orbit-graph/.orbit/tmp/ORB-13709-handoff-da5009b/source/.orbit-plugin/bin/orbit-graph.bin",
+      "binary_sha256": "22f0580ca89f7aab5930194dd24d5946a05ba3beda20ccf93e194a19cb147a8b",
+      "binary_bytes": 159596144,
+      "manifest_path": "/home/daniel/workspace/constellation/codebases/orbit-graph/.orbit/tmp/ORB-13709-handoff-da5009b/source/.orbit-plugin/plugin.yaml",
+      "manifest_sha256": "59b41656899605763366433e078eac2bbb38a176ec50e8c9b40ce2fd16453f43",
+      "provenance_artifact": "/home/daniel/workspace/constellation/codebases/orbit-graph/.orbit/tmp/ORB-13709-handoff-da5009b/provenance.json",
+      "provenance_sha256": "95abfe41158714206aa9f1537804a4cf065053c3ced6965d7dbb4f5b06aa6806",
+      "copied_files": 45,
+      "copied_bytes": 159751519,
+      "copy_verification": {
+        "performed_by_task_id": "ORB-13780",
+        "performed_by_run_id": "jrun-20261003-0626-c2",
+        "comparison": "Every listed file SHA-256, byte count and mode matched the stable copy, provenance inventory and worker export.",
+        "files_matched": 45,
+        "mismatches": 0
+      },
+      "host_validation": {
+        "artifact": "/home/daniel/workspace/constellation/codebases/orbit-graph/.orbit/tmp/ORB-13709-handoff-da5009b/host-graph-validation.json",
+        "artifact_sha256": "fca7aef0bee72dc28a0da7acf5cd180e77318ea97a637fd33b46daca48ff4392",
+        "binary_path": "/home/daniel/workspace/constellation/codebases/orbit-graph/.orbit/tmp/ORB-13709-handoff-da5009b/source/.orbit-plugin/bin/orbit-graph.bin",
+        "candidate_commit": "da5009b7bf8f1a328aa3923252b3b049b1e8bd17",
+        "passed_tests": 6,
+        "checks": [
+          {
+            "command": "python3 -B -m unittest discover -s scripts/agent-eval/tests -k RealGraph -v",
+            "exit_code": 0,
+            "passed_tests": 3
+          },
+          {
+            "command": "python3 -B -m unittest discover -s scripts/agent-eval/tests -k LiveContainment -v",
+            "exit_code": 0,
+            "passed_tests": 3
+          }
+        ]
+      }
+    },
+    "separate_actual_plugin_evaluation": {
+      "profile": "profile13776",
+      "status": "in_progress_at_reconciliation",
+      "certified": false,
+      "included_in_evaluations": false
+    }
+  },
+  "installed_plugin": {
+    "tools": [
+      "version",
+      "status",
+      "recommend",
+      "maintain",
+      "search",
+      "show",
+      "refs",
+      "callees",
+      "impact",
+      "trace",
+      "deps",
+      "overview",
+      "changes"
+    ],
+    "surfaces": [
+      "orbit tool run graph.<verb> --input ... --full",
+      "graph_<verb> via orbit mcp serve"
+    ],
+    "strict_delivery_required": true,
+    "fixture_provenance": "Private HOME and Orbit roots; host run/checkpoint records seeded by integration fixture, not produced by a real executor. Public callbacks and Git landing verification execute normally.",
+    "positive": [
+      "all13 manifest tools match CLI requests and MCP tools/list",
+      "nonempty recommendations and query results",
+      "live task text and lexical hybrid search",
+      "history_sync and graph_sync",
+      "landed fixture delivery inserted over CLI, replayed already_indexed over MCP",
+      "task_ids follows current run"
+    ],
+    "negative": [
+      "ordinary caller maintain denied capability_denied on CLI and MCP",
+      "unlanded run excluded",
+      "foreign task/run binding refused with invalid_input",
+      "bare run_ids retired and rejected",
+      "unknown search field rejected"
+    ],
+    "sandbox": {
+      "grants": [
+        "fs",
+        "orbit_tools"
+      ],
+      "network": null,
+      "env_pass": null,
+      "unsandboxed": false
+    },
+    "upgrade_grants_preserved": true,
+    "installed_manifest_digest": "59b41656899605763366433e078eac2bbb38a176ec50e8c9b40ce2fd16453f43",
+    "certified_orbit_version": "0.25.1"
+  },
+  "actual_executor_delivery": {
+    "schema_version": 1,
+    "run_id": "jrun-20261003-0550-c2",
+    "candidate": "da5009b7bf8f1a328aa3923252b3b049b1e8bd17",
+    "operator_evidence_file_sha256": "3696e4948164add8a8a1d80fb6c9742a40a10e1002880e9f9056ace030cdc107",
+    "operator_graph_binary_sha256": "af2fe5682eaa4871b0c6aa5ef4572253076cecc9c43da59d2ccbe65e3579293b",
+    "worker_graph_binary_sha256": "22f0580ca89f7aab5930194dd24d5946a05ba3beda20ccf93e194a19cb147a8b",
+    "same_source_distinct_builds": true,
+    "provenance": "operator supplied ordinary public callbacks through final candidate backend; no installed wrapper or seeded host records",
+    "inserted": 4,
+    "excluded": 2,
+    "failed": 0,
+    "idempotent_replay": 4,
+    "public_observation_spot_check": {
+      "task_id": "ORB-13170",
+      "run_id": "jrun-20260926-1851-c3",
+      "base_sha": "68cf190610f4ab7f80b81523591f3d80702a1d5b",
+      "head_sha": "87b35250d556a0887f7f6f9190dd09cc359cab2f",
+      "landed_commit": "3f9563fed4ec0267d131fd6940c2751ae5c0840e",
+      "reachable_from_candidate": true,
+      "matching_postimage_paths": [
+        ".github/workflows/ci.yml",
+        "ARCHITECTURE.md",
+        "CONTRIBUTING.md",
+        "Cargo.toml",
+        "Makefile",
+        "crates/orbit-graph-cli/Cargo.toml",
+        "crates/orbit-graph-cli/src/command/evaluate.rs",
+        "crates/orbit-graph-cli/src/command/mod.rs",
+        "crates/orbit-graph-cli/src/main.rs",
+        "crates/orbit-graph-cli/tests/plugin_integration.rs",
+        "crates/orbit-graph-explorer/Cargo.toml",
+        "crates/orbit-graph-explorer/README.md",
+        "crates/orbit-graph-explorer/src/lib.rs",
+        "crates/orbit-graph-explorer/src/main.rs",
+        "crates/orbit-graph-explorer/tests/derived_artifacts.rs",
+        "crates/orbit-graph/Cargo.toml",
+        "crates/orbit-graph/src/evaluation.rs",
+        "crates/orbit-graph/src/lib.rs",
+        "deny.toml",
+        "docs/evaluation/README.md",
+        "docs/evaluation/change-explorer/samples/README.md",
+        "docs/evaluation/change-explorer/samples/direct-call.html",
+        "docs/evaluation/change-explorer/samples/direct-call.json",
+        "docs/usage.md",
+        "scripts/check-dependency-direction.sh",
+        "scripts/check-orphan-modules.sh",
+        "scripts/check-terminal-guard.sh",
+        "scripts/test-repo-gates.sh"
+      ]
+    },
+    "coverage_complete": false,
+    "evidence_artifact": "certification/actual-delivery-evidence.json",
+    "verification_artifact": "certification/actual-delivery-verification.json",
+    "public_observation_artifact": "certification/public-delivery-observation.json",
+    "requests_and_outcomes": [
+      {
+        "task_id": "ORB-13170",
+        "run_id": "jrun-20260926-1851-c3",
+        "delivery_id": "orbit-run:jrun-20260926-1851-c3:ORB-13170",
+        "landing": {
+          "method": "pull_request",
+          "verified_by": "landed_commit_tree_entries"
+        },
+        "status": "inserted",
+        "task_ids": [
+          "ORB-13170"
+        ]
+      },
+      {
+        "task_id": "ORB-13159",
+        "run_id": "jrun-20260926-1928-c6",
+        "delivery_id": "orbit-run:jrun-20260926-1928-c6:ORB-13159",
+        "landing": {
+          "method": "pull_request",
+          "verified_by": "landed_commit_tree_entries"
+        },
+        "status": "inserted",
+        "task_ids": [
+          "ORB-13159"
+        ]
+      },
+      {
+        "task_id": "ORB-13158",
+        "run_id": "jrun-20260926-1900-c3",
+        "delivery_id": "orbit-run:jrun-20260926-1900-c3:ORB-13158",
+        "landing": {
+          "method": "pull_request",
+          "verified_by": "landed_commit_tree_entries"
+        },
+        "status": "inserted",
+        "task_ids": [
+          "ORB-13158"
+        ]
+      },
+      {
+        "task_id": "ORB-13157",
+        "run_id": "jrun-20260926-1832-c3",
+        "reason": "landed_commit leaves different contents or modes than head_sha at the delivered paths, so it is not verified as this delivery's squash",
+        "status": "excluded"
+      },
+      {
+        "task_id": "ORB-13156",
+        "run_id": "jrun-20260926-1812-c3",
+        "delivery_id": "orbit-run:jrun-20260926-1812-c3:ORB-13156",
+        "landing": {
+          "method": "pull_request",
+          "verified_by": "landed_commit_tree_entries"
+        },
+        "status": "inserted",
+        "task_ids": [
+          "ORB-13156"
+        ]
+      },
+      {
+        "task_id": "ORB-13229",
+        "run_id": "jrun-20260926-1928-c5",
+        "reason": "landed_commit leaves different contents or modes than head_sha at the delivered paths, so it is not verified as this delivery's squash",
+        "status": "excluded"
+      }
+    ]
+  },
+  "evaluations": {
+    "classification": "Historical provider captures through confined CLI broker proxy; neither cohort tests the final installed bundled-plugin skill treatment. Synthetic scorer agent_effectiveness_evidence=true labels agent rather than scripted captures; it is not a benefit or superiority verdict.",
+    "model": {
+      "name": "gpt-6.1-sol",
+      "provider": "codex-cli0.160.0",
+      "settings": {
+        "model_reasoning_effort": "medium",
+        "code_mode_host": "enabled"
+      },
+      "provider_sha256": "12eb3e81114588aca3b7998f4f19e8997b056aca08e57a7ca7c8a3ec8c652aad",
+      "server_weights_revision": null
+    },
+    "navigation_graph_source": "ef8979d7870c0b8b8dc1622cfe4d871cd7490f97",
+    "navigation_graph_sha256": "465fd959e509a972f65225ac6c053026f63e92fbd17c8ef679cc58abb7307b2d",
+    "synthetic": {
+      "episodes": 24,
+      "pairs": 12,
+      "runner_source_commit": "8b7d7482216ad8b63c7045b53701655db0d15804",
+      "scorer_commit": "ce7405d3511c6a23d009b71ba17a73a1351d9a69",
+      "scorer_file": "evals/agent-navigation/eval.py",
+      "scorer_file_sha256": "523ff1b2d1bfc8a591d16cffd8e4fb84628d6224b8cd621cb80d4a9c761d54bd",
+      "score": {
+        "schema_version": 1,
+        "study_kind": "agent",
+        "agent_effectiveness_evidence": true,
+        "corpus_sha256": "2f98c3eb9ca92b625d6c1859bf02a6a988c8e3b93c189852e7fe11483c747e24",
+        "episodes_sha256": "f63a2c94d41094743003a488ba72c3300430e70c5414998f53e415fbb502392f",
+        "cases": [
+          {
+            "case_id": "rust-01",
+            "split": "development",
+            "arm": "baseline",
+            "status": "ok",
+            "error": null,
+            "answer_error": null,
+            "correct": true,
+            "false_positives": [],
+            "missed": [],
+            "abstained": false,
+            "correct_abstention": false,
+            "wall_ms": 23513,
+            "tool_calls": 3,
+            "failed_calls": 0,
+            "output_bytes": 1354,
+            "usage": {
+              "cost_usd": null,
+              "input_tokens": 54640,
+              "output_tokens": 287,
+              "source": "codex exec --json turn.completed.usage"
+            }
+          },
+          {
+            "case_id": "rust-01",
+            "split": "development",
+            "arm": "graph",
+            "status": "failed",
+            "error": {
+              "code": "telemetry_mismatch",
+              "message": "broker calls do not match the provider's reported tool calls"
+            },
+            "answer_error": null,
+            "correct": false,
+            "false_positives": [],
+            "missed": [
+              "symbol:src/lib.rs#price:function"
+            ],
+            "abstained": false,
+            "correct_abstention": false,
+            "wall_ms": 25760,
+            "tool_calls": 4,
+            "failed_calls": 1,
+            "output_bytes": 2470,
+            "usage": {
+              "cost_usd": null,
+              "input_tokens": 54783,
+              "output_tokens": 348,
+              "source": "codex exec --json turn.completed.usage"
+            }
+          },
+          {
+            "case_id": "rust-02",
+            "split": "held-out",
+            "arm": "graph",
+            "status": "ok",
+            "error": null,
+            "answer_error": null,
+            "correct": true,
+            "false_positives": [],
+            "missed": [],
+            "abstained": false,
+            "correct_abstention": false,
+            "wall_ms": 26027,
+            "tool_calls": 3,
+            "failed_calls": 0,
+            "output_bytes": 1338,
+            "usage": {
+              "cost_usd": null,
+              "input_tokens": 66991,
+              "output_tokens": 393,
+              "source": "codex exec --json turn.completed.usage"
+            }
+          },
+          {
+            "case_id": "rust-02",
+            "split": "held-out",
+            "arm": "baseline",
+            "status": "ok",
+            "error": null,
+            "answer_error": "invalid citation item",
+            "correct": false,
+            "false_positives": [],
+            "missed": [
+              "symbol:src/lib.rs#invoice:function"
+            ],
+            "abstained": false,
+            "correct_abstention": false,
+            "wall_ms": 29398,
+            "tool_calls": 8,
+            "failed_calls": 1,
+            "output_bytes": 3209,
+            "usage": {
+              "cost_usd": null,
+              "input_tokens": 80342,
+              "output_tokens": 479,
+              "source": "codex exec --json turn.completed.usage"
+            }
+          },
+          {
+            "case_id": "rust-03",
+            "split": "held-out",
+            "arm": "baseline",
+            "status": "ok",
+            "error": null,
+            "answer_error": null,
+            "correct": true,
+            "false_positives": [],
+            "missed": [],
+            "abstained": false,
+            "correct_abstention": false,
+            "wall_ms": 19264,
+            "tool_calls": 3,
+            "failed_calls": 0,
+            "output_bytes": 1592,
+            "usage": {
+              "cost_usd": null,
+              "input_tokens": 54811,
+              "output_tokens": 270,
+              "source": "codex exec --json turn.completed.usage"
+            }
+          },
+          {
+            "case_id": "rust-03",
+            "split": "held-out",
+            "arm": "graph",
+            "status": "ok",
+            "error": null,
+            "answer_error": null,
+            "correct": true,
+            "false_positives": [],
+            "missed": [],
+            "abstained": false,
+            "correct_abstention": false,
+            "wall_ms": 33857,
+            "tool_calls": 2,
+            "failed_calls": 0,
+            "output_bytes": 1189,
+            "usage": {
+              "cost_usd": null,
+              "input_tokens": 68589,
+              "output_tokens": 283,
+              "source": "codex exec --json turn.completed.usage"
+            }
+          },
+          {
+            "case_id": "rust-04",
+            "split": "development",
+            "arm": "graph",
+            "status": "failed",
+            "error": {
+              "code": "telemetry_mismatch",
+              "message": "broker calls do not match the provider's reported tool calls"
+            },
+            "answer_error": null,
+            "correct": false,
+            "false_positives": [],
+            "missed": [
+              "symbol:src/lib.rs#test_invoice:test",
+              "symbol:src/lib.rs#test_preview:test"
+            ],
+            "abstained": false,
+            "correct_abstention": false,
+            "wall_ms": 28916,
+            "tool_calls": 6,
+            "failed_calls": 0,
+            "output_bytes": 2382,
+            "usage": {
+              "cost_usd": null,
+              "input_tokens": 56413,
+              "output_tokens": 497,
+              "source": "codex exec --json turn.completed.usage"
+            }
+          },
+          {
+            "case_id": "rust-04",
+            "split": "development",
+            "arm": "baseline",
+            "status": "ok",
+            "error": null,
+            "answer_error": null,
+            "correct": true,
+            "false_positives": [],
+            "missed": [],
+            "abstained": false,
+            "correct_abstention": false,
+            "wall_ms": 48877,
+            "tool_calls": 13,
+            "failed_calls": 5,
+            "output_bytes": 4517,
+            "usage": {
+              "cost_usd": null,
+              "input_tokens": 114565,
+              "output_tokens": 643,
+              "source": "codex exec --json turn.completed.usage"
+            }
+          },
+          {
+            "case_id": "rust-05",
+            "split": "held-out",
+            "arm": "baseline",
+            "status": "ok",
+            "error": null,
+            "answer_error": null,
+            "correct": true,
+            "false_positives": [],
+            "missed": [],
+            "abstained": false,
+            "correct_abstention": false,
+            "wall_ms": 24798,
+            "tool_calls": 6,
+            "failed_calls": 0,
+            "output_bytes": 2786,
+            "usage": {
+              "cost_usd": null,
+              "input_tokens": 69603,
+              "output_tokens": 361,
+              "source": "codex exec --json turn.completed.usage"
+            }
+          },
+          {
+            "case_id": "rust-05",
+            "split": "held-out",
+            "arm": "graph",
+            "status": "failed",
+            "error": {
+              "code": "telemetry_mismatch",
+              "message": "broker calls do not match the provider's reported tool calls"
+            },
+            "answer_error": null,
+            "correct": false,
+            "false_positives": [],
+            "missed": [
+              "symbol:src/lib.rs#price:function"
+            ],
+            "abstained": false,
+            "correct_abstention": false,
+            "wall_ms": 33015,
+            "tool_calls": 5,
+            "failed_calls": 0,
+            "output_bytes": 2093,
+            "usage": {
+              "cost_usd": null,
+              "input_tokens": 64943,
+              "output_tokens": 343,
+              "source": "codex exec --json turn.completed.usage"
+            }
+          },
+          {
+            "case_id": "rust-06",
+            "split": "held-out",
+            "arm": "graph",
+            "status": "ok",
+            "error": null,
+            "answer_error": null,
+            "correct": true,
+            "false_positives": [],
+            "missed": [],
+            "abstained": true,
+            "correct_abstention": true,
+            "wall_ms": 21672,
+            "tool_calls": 3,
+            "failed_calls": 0,
+            "output_bytes": 1316,
+            "usage": {
+              "cost_usd": null,
+              "input_tokens": 54455,
+              "output_tokens": 277,
+              "source": "codex exec --json turn.completed.usage"
+            }
+          },
+          {
+            "case_id": "rust-06",
+            "split": "held-out",
+            "arm": "baseline",
+            "status": "ok",
+            "error": null,
+            "answer_error": null,
+            "correct": true,
+            "false_positives": [],
+            "missed": [],
+            "abstained": true,
+            "correct_abstention": true,
+            "wall_ms": 15593,
+            "tool_calls": 1,
+            "failed_calls": 0,
+            "output_bytes": 451,
+            "usage": {
+              "cost_usd": null,
+              "input_tokens": 42244,
+              "output_tokens": 208,
+              "source": "codex exec --json turn.completed.usage"
+            }
+          },
+          {
+            "case_id": "python-01",
+            "split": "development",
+            "arm": "baseline",
+            "status": "ok",
+            "error": null,
+            "answer_error": null,
+            "correct": true,
+            "false_positives": [],
+            "missed": [],
+            "abstained": false,
+            "correct_abstention": false,
+            "wall_ms": 20429,
+            "tool_calls": 3,
+            "failed_calls": 0,
+            "output_bytes": 1288,
+            "usage": {
+              "cost_usd": null,
+              "input_tokens": 56253,
+              "output_tokens": 258,
+              "source": "codex exec --json turn.completed.usage"
+            }
+          },
+          {
+            "case_id": "python-01",
+            "split": "development",
+            "arm": "graph",
+            "status": "ok",
+            "error": null,
+            "answer_error": null,
+            "correct": true,
+            "false_positives": [],
+            "missed": [],
+            "abstained": false,
+            "correct_abstention": false,
+            "wall_ms": 22866,
+            "tool_calls": 4,
+            "failed_calls": 0,
+            "output_bytes": 2063,
+            "usage": {
+              "cost_usd": null,
+              "input_tokens": 54592,
+              "output_tokens": 291,
+              "source": "codex exec --json turn.completed.usage"
+            }
+          },
+          {
+            "case_id": "python-02",
+            "split": "held-out",
+            "arm": "graph",
+            "status": "ok",
+            "error": null,
+            "answer_error": "invalid citation item",
+            "correct": false,
+            "false_positives": [],
+            "missed": [
+              "symbol:shop.py#invoice:function"
+            ],
+            "abstained": false,
+            "correct_abstention": false,
+            "wall_ms": 20252,
+            "tool_calls": 4,
+            "failed_calls": 0,
+            "output_bytes": 1785,
+            "usage": {
+              "cost_usd": null,
+              "input_tokens": 54675,
+              "output_tokens": 334,
+              "source": "codex exec --json turn.completed.usage"
+            }
+          },
+          {
+            "case_id": "python-02",
+            "split": "held-out",
+            "arm": "baseline",
+            "status": "ok",
+            "error": null,
+            "answer_error": "invalid citation item",
+            "correct": false,
+            "false_positives": [],
+            "missed": [
+              "symbol:shop.py#invoice:function"
+            ],
+            "abstained": false,
+            "correct_abstention": false,
+            "wall_ms": 25606,
+            "tool_calls": 4,
+            "failed_calls": 0,
+            "output_bytes": 1788,
+            "usage": {
+              "cost_usd": null,
+              "input_tokens": 65602,
+              "output_tokens": 424,
+              "source": "codex exec --json turn.completed.usage"
+            }
+          },
+          {
+            "case_id": "python-03",
+            "split": "held-out",
+            "arm": "baseline",
+            "status": "ok",
+            "error": null,
+            "answer_error": null,
+            "correct": true,
+            "false_positives": [],
+            "missed": [],
+            "abstained": false,
+            "correct_abstention": false,
+            "wall_ms": 18110,
+            "tool_calls": 2,
+            "failed_calls": 0,
+            "output_bytes": 1072,
+            "usage": {
+              "cost_usd": null,
+              "input_tokens": 56101,
+              "output_tokens": 216,
+              "source": "codex exec --json turn.completed.usage"
+            }
+          },
+          {
+            "case_id": "python-03",
+            "split": "held-out",
+            "arm": "graph",
+            "status": "ok",
+            "error": null,
+            "answer_error": null,
+            "correct": true,
+            "false_positives": [],
+            "missed": [],
+            "abstained": false,
+            "correct_abstention": false,
+            "wall_ms": 20552,
+            "tool_calls": 3,
+            "failed_calls": 0,
+            "output_bytes": 1223,
+            "usage": {
+              "cost_usd": null,
+              "input_tokens": 55798,
+              "output_tokens": 268,
+              "source": "codex exec --json turn.completed.usage"
+            }
+          },
+          {
+            "case_id": "python-04",
+            "split": "development",
+            "arm": "graph",
+            "status": "ok",
+            "error": null,
+            "answer_error": null,
+            "correct": true,
+            "false_positives": [],
+            "missed": [],
+            "abstained": false,
+            "correct_abstention": false,
+            "wall_ms": 32225,
+            "tool_calls": 5,
+            "failed_calls": 0,
+            "output_bytes": 2741,
+            "usage": {
+              "cost_usd": null,
+              "input_tokens": 66646,
+              "output_tokens": 453,
+              "source": "codex exec --json turn.completed.usage"
+            }
+          },
+          {
+            "case_id": "python-04",
+            "split": "development",
+            "arm": "baseline",
+            "status": "ok",
+            "error": null,
+            "answer_error": null,
+            "correct": true,
+            "false_positives": [],
+            "missed": [],
+            "abstained": false,
+            "correct_abstention": false,
+            "wall_ms": 29278,
+            "tool_calls": 6,
+            "failed_calls": 0,
+            "output_bytes": 2835,
+            "usage": {
+              "cost_usd": null,
+              "input_tokens": 81042,
+              "output_tokens": 449,
+              "source": "codex exec --json turn.completed.usage"
+            }
+          },
+          {
+            "case_id": "python-05",
+            "split": "held-out",
+            "arm": "baseline",
+            "status": "ok",
+            "error": null,
+            "answer_error": null,
+            "correct": true,
+            "false_positives": [],
+            "missed": [],
+            "abstained": false,
+            "correct_abstention": false,
+            "wall_ms": 27232,
+            "tool_calls": 4,
+            "failed_calls": 1,
+            "output_bytes": 1808,
+            "usage": {
+              "cost_usd": null,
+              "input_tokens": 64094,
+              "output_tokens": 300,
+              "source": "codex exec --json turn.completed.usage"
+            }
+          },
+          {
+            "case_id": "python-05",
+            "split": "held-out",
+            "arm": "graph",
+            "status": "ok",
+            "error": null,
+            "answer_error": null,
+            "correct": true,
+            "false_positives": [],
+            "missed": [],
+            "abstained": false,
+            "correct_abstention": false,
+            "wall_ms": 23329,
+            "tool_calls": 5,
+            "failed_calls": 0,
+            "output_bytes": 2004,
+            "usage": {
+              "cost_usd": null,
+              "input_tokens": 54679,
+              "output_tokens": 333,
+              "source": "codex exec --json turn.completed.usage"
+            }
+          },
+          {
+            "case_id": "python-06",
+            "split": "held-out",
+            "arm": "graph",
+            "status": "ok",
+            "error": null,
+            "answer_error": null,
+            "correct": true,
+            "false_positives": [],
+            "missed": [],
+            "abstained": true,
+            "correct_abstention": true,
+            "wall_ms": 24884,
+            "tool_calls": 3,
+            "failed_calls": 0,
+            "output_bytes": 1261,
+            "usage": {
+              "cost_usd": null,
+              "input_tokens": 66668,
+              "output_tokens": 324,
+              "source": "codex exec --json turn.completed.usage"
+            }
+          },
+          {
+            "case_id": "python-06",
+            "split": "held-out",
+            "arm": "baseline",
+            "status": "ok",
+            "error": null,
+            "answer_error": null,
+            "correct": true,
+            "false_positives": [],
+            "missed": [],
+            "abstained": true,
+            "correct_abstention": true,
+            "wall_ms": 19497,
+            "tool_calls": 3,
+            "failed_calls": 0,
+            "output_bytes": 1343,
+            "usage": {
+              "cost_usd": null,
+              "input_tokens": 53777,
+              "output_tokens": 270,
+              "source": "codex exec --json turn.completed.usage"
+            }
+          }
+        ],
+        "pairs": [
+          {
+            "case_id": "rust-01",
+            "split": "development",
+            "correct_delta_graph_minus_baseline": -1,
+            "wall_ms_delta_graph_minus_baseline": 2247,
+            "calls_delta_graph_minus_baseline": 1,
+            "bytes_delta_graph_minus_baseline": 1116
+          },
+          {
+            "case_id": "rust-02",
+            "split": "held-out",
+            "correct_delta_graph_minus_baseline": 1,
+            "wall_ms_delta_graph_minus_baseline": -3371,
+            "calls_delta_graph_minus_baseline": -5,
+            "bytes_delta_graph_minus_baseline": -1871
+          },
+          {
+            "case_id": "rust-03",
+            "split": "held-out",
+            "correct_delta_graph_minus_baseline": 0,
+            "wall_ms_delta_graph_minus_baseline": 14593,
+            "calls_delta_graph_minus_baseline": -1,
+            "bytes_delta_graph_minus_baseline": -403
+          },
+          {
+            "case_id": "rust-04",
+            "split": "development",
+            "correct_delta_graph_minus_baseline": -1,
+            "wall_ms_delta_graph_minus_baseline": -19961,
+            "calls_delta_graph_minus_baseline": -7,
+            "bytes_delta_graph_minus_baseline": -2135
+          },
+          {
+            "case_id": "rust-05",
+            "split": "held-out",
+            "correct_delta_graph_minus_baseline": -1,
+            "wall_ms_delta_graph_minus_baseline": 8217,
+            "calls_delta_graph_minus_baseline": -1,
+            "bytes_delta_graph_minus_baseline": -693
+          },
+          {
+            "case_id": "rust-06",
+            "split": "held-out",
+            "correct_delta_graph_minus_baseline": 0,
+            "wall_ms_delta_graph_minus_baseline": 6079,
+            "calls_delta_graph_minus_baseline": 2,
+            "bytes_delta_graph_minus_baseline": 865
+          },
+          {
+            "case_id": "python-01",
+            "split": "development",
+            "correct_delta_graph_minus_baseline": 0,
+            "wall_ms_delta_graph_minus_baseline": 2437,
+            "calls_delta_graph_minus_baseline": 1,
+            "bytes_delta_graph_minus_baseline": 775
+          },
+          {
+            "case_id": "python-02",
+            "split": "held-out",
+            "correct_delta_graph_minus_baseline": 0,
+            "wall_ms_delta_graph_minus_baseline": -5354,
+            "calls_delta_graph_minus_baseline": 0,
+            "bytes_delta_graph_minus_baseline": -3
+          },
+          {
+            "case_id": "python-03",
+            "split": "held-out",
+            "correct_delta_graph_minus_baseline": 0,
+            "wall_ms_delta_graph_minus_baseline": 2442,
+            "calls_delta_graph_minus_baseline": 1,
+            "bytes_delta_graph_minus_baseline": 151
+          },
+          {
+            "case_id": "python-04",
+            "split": "development",
+            "correct_delta_graph_minus_baseline": 0,
+            "wall_ms_delta_graph_minus_baseline": 2947,
+            "calls_delta_graph_minus_baseline": -1,
+            "bytes_delta_graph_minus_baseline": -94
+          },
+          {
+            "case_id": "python-05",
+            "split": "held-out",
+            "correct_delta_graph_minus_baseline": 0,
+            "wall_ms_delta_graph_minus_baseline": -3903,
+            "calls_delta_graph_minus_baseline": 1,
+            "bytes_delta_graph_minus_baseline": 196
+          },
+          {
+            "case_id": "python-06",
+            "split": "held-out",
+            "correct_delta_graph_minus_baseline": 0,
+            "wall_ms_delta_graph_minus_baseline": 5387,
+            "calls_delta_graph_minus_baseline": 0,
+            "bytes_delta_graph_minus_baseline": -82
+          }
+        ],
+        "aggregate": {
+          "development": {
+            "baseline": {
+              "episodes": 4,
+              "correct": 4,
+              "false_positives": 0,
+              "abstentions": 0,
+              "correct_abstentions": 0,
+              "failures": 0,
+              "wall_ms_total": 122097,
+              "tool_calls_total": 25,
+              "output_bytes_total": 9994,
+              "usage_observed": 4
+            },
+            "graph": {
+              "episodes": 4,
+              "correct": 2,
+              "false_positives": 0,
+              "abstentions": 0,
+              "correct_abstentions": 0,
+              "failures": 2,
+              "wall_ms_total": 109767,
+              "tool_calls_total": 19,
+              "output_bytes_total": 9656,
+              "usage_observed": 4
+            }
+          },
+          "held-out": {
+            "baseline": {
+              "episodes": 8,
+              "correct": 6,
+              "false_positives": 0,
+              "abstentions": 2,
+              "correct_abstentions": 2,
+              "failures": 2,
+              "wall_ms_total": 179498,
+              "tool_calls_total": 31,
+              "output_bytes_total": 14049,
+              "usage_observed": 8
+            },
+            "graph": {
+              "episodes": 8,
+              "correct": 6,
+              "false_positives": 0,
+              "abstentions": 2,
+              "correct_abstentions": 2,
+              "failures": 2,
+              "wall_ms_total": 203588,
+              "tool_calls_total": 28,
+              "output_bytes_total": 12209,
+              "usage_observed": 8
+            }
+          }
+        },
+        "limitations": [
+          "Fixture-only; no production generalization or statistical power.",
+          "Operator telemetry and isolation attestations require independent audit.",
+          "Usage absent is null; no imputed tokens or costs."
+        ]
+      },
+      "capture_summary": {
+        "cohort": "synthetic-01",
+        "episodes": 24,
+        "scoring_status": "refused",
+        "scoring_error": "invalid_evaluation: invalid citation item",
+        "retry_replacements": 0,
+        "arms": {
+          "baseline": {
+            "episodes": 12,
+            "execution_status": {
+              "ok": 12
+            },
+            "tool_calls": 56,
+            "wall_ms": 301595,
+            "output_bytes": 24043,
+            "input_tokens": 793074,
+            "output_tokens": 4165,
+            "cost_usd": null,
+            "tool_inventory_used": {
+              "read": 17,
+              "rg": 10,
+              "git": 29
+            }
+          },
+          "graph": {
+            "episodes": 12,
+            "execution_status": {
+              "failed": 3,
+              "ok": 9
+            },
+            "tool_calls": 47,
+            "wall_ms": 313355,
+            "output_bytes": 21865,
+            "input_tokens": 719232,
+            "output_tokens": 4144,
+            "cost_usd": null,
+            "tool_inventory_used": {
+              "rg": 10,
+              "git": 19,
+              "read": 17,
+              "search": 1
+            }
+          }
+        }
+      },
+      "harness_failures": {
+        "baseline": 0,
+        "graph": 3
+      },
+      "invalid_citation_answers": {
+        "baseline": 2,
+        "graph": 1
+      },
+      "all_correct": {
+        "baseline": "10/12",
+        "graph": "8/12"
+      },
+      "score_reproduced_exactly": true
+    },
+    "real": {
+      "episodes": 16,
+      "pairs": 8,
+      "development_pairs": 3,
+      "held_out_pairs": 5,
+      "runner_source_commit": "8362cc9a635500002f9cb4f8875b1961b5338406",
+      "scorer_commit": "3486e4b1857bcc34c38fa75bd828b727fa6d2d30",
+      "scorer_file": "evals/real-agent-navigation/eval.py",
+      "scorer_file_sha256": "a6e933cbb17e13dc482f89277be3becf03eb791ea0a68332260205ba8364b769",
+      "score": {
+        "audits_sha256": "f16413f61051afb8a2bf8c95ff8d77efe81ac26a432b46d50c4a95e36907f493",
+        "corpus_sha256": "fcd754711b1b477eabd19f660c215d84430794c9fc90075b8b2d9a2ca74af21b",
+        "effectiveness_claim_permitted": false,
+        "episodes": [
+          {
+            "answer_error": null,
+            "arm": "baseline",
+            "calls": 12,
+            "case_id": "graph-inbound-identity",
+            "citation_coverage": 1.0,
+            "citation_precision": 1.0,
+            "correct": false,
+            "error": null,
+            "false_positives": [
+              "symbol:crates/orbit-graph/src/query/impact.rs#query::impact::inbound_ref_neighbors:function",
+              "symbol:crates/orbit-graph/src/query/mod.rs#query::INBOUND_TARGET_MATCH:constant",
+              "symbol:crates/orbit-graph/src/query/refs.rs#query::refs::query_refs:function"
+            ],
+            "identity_precision": 0.0,
+            "identity_recall": 0.0,
+            "isolation_error": null,
+            "objective_pass": false,
+            "output_bytes": 90873,
+            "semantic_pass": true,
+            "setup_ms": 249,
+            "split": "development",
+            "status": "ok",
+            "tool_errors": 0,
+            "usage": {
+              "cost_usd": null,
+              "input_tokens": 109857,
+              "output_tokens": 1151,
+              "source": "codex exec --json turn.completed.usage"
+            },
+            "wall_ms": 46471,
+            "within_budget": true
+          },
+          {
+            "answer_error": null,
+            "arm": "graph",
+            "calls": 12,
+            "case_id": "graph-inbound-identity",
+            "citation_coverage": 1.0,
+            "citation_precision": 1.0,
+            "correct": true,
+            "error": null,
+            "false_positives": [],
+            "identity_precision": 1.0,
+            "identity_recall": 1.0,
+            "isolation_error": null,
+            "objective_pass": true,
+            "output_bytes": 79477,
+            "semantic_pass": true,
+            "setup_ms": 288,
+            "split": "development",
+            "status": "ok",
+            "tool_errors": 0,
+            "usage": {
+              "cost_usd": null,
+              "input_tokens": 117419,
+              "output_tokens": 1053,
+              "source": "codex exec --json turn.completed.usage"
+            },
+            "wall_ms": 46862,
+            "within_budget": true
+          },
+          {
+            "answer_error": null,
+            "arm": "graph",
+            "calls": 12,
+            "case_id": "graph-sync-preserved-timestamp",
+            "citation_coverage": 1.0,
+            "citation_precision": 1.0,
+            "correct": false,
+            "error": null,
+            "false_positives": [],
+            "identity_precision": 1.0,
+            "identity_recall": 0.6666666666666666,
+            "isolation_error": null,
+            "objective_pass": false,
+            "output_bytes": 57705,
+            "semantic_pass": false,
+            "setup_ms": 242,
+            "split": "held-out",
+            "status": "ok",
+            "tool_errors": 1,
+            "usage": {
+              "cost_usd": null,
+              "input_tokens": 131481,
+              "output_tokens": 949,
+              "source": "codex exec --json turn.completed.usage"
+            },
+            "wall_ms": 50986,
+            "within_budget": true
+          },
+          {
+            "answer_error": null,
+            "arm": "baseline",
+            "calls": 8,
+            "case_id": "graph-sync-preserved-timestamp",
+            "citation_coverage": 1.0,
+            "citation_precision": 1.0,
+            "correct": false,
+            "error": null,
+            "false_positives": [],
+            "identity_precision": 1.0,
+            "identity_recall": 0.6666666666666666,
+            "isolation_error": null,
+            "objective_pass": false,
+            "output_bytes": 59411,
+            "semantic_pass": false,
+            "setup_ms": 226,
+            "split": "held-out",
+            "status": "ok",
+            "tool_errors": 0,
+            "usage": {
+              "cost_usd": null,
+              "input_tokens": 116845,
+              "output_tokens": 832,
+              "source": "codex exec --json turn.completed.usage"
+            },
+            "wall_ms": 38060,
+            "within_budget": true
+          },
+          {
+            "answer_error": null,
+            "arm": "baseline",
+            "calls": 9,
+            "case_id": "graph-impact-test-selection",
+            "citation_coverage": 1.0,
+            "citation_precision": 1.0,
+            "correct": true,
+            "error": null,
+            "false_positives": [],
+            "identity_precision": 1.0,
+            "identity_recall": 1.0,
+            "isolation_error": null,
+            "objective_pass": true,
+            "output_bytes": 84355,
+            "semantic_pass": true,
+            "setup_ms": 262,
+            "split": "held-out",
+            "status": "ok",
+            "tool_errors": 0,
+            "usage": {
+              "cost_usd": null,
+              "input_tokens": 121088,
+              "output_tokens": 889,
+              "source": "codex exec --json turn.completed.usage"
+            },
+            "wall_ms": 43226,
+            "within_budget": true
+          },
+          {
+            "answer_error": null,
+            "arm": "graph",
+            "calls": 9,
+            "case_id": "graph-impact-test-selection",
+            "citation_coverage": 1.0,
+            "citation_precision": 1.0,
+            "correct": true,
+            "error": null,
+            "false_positives": [],
+            "identity_precision": 1.0,
+            "identity_recall": 1.0,
+            "isolation_error": null,
+            "objective_pass": true,
+            "output_bytes": 77342,
+            "semantic_pass": true,
+            "setup_ms": 217,
+            "split": "held-out",
+            "status": "ok",
+            "tool_errors": 0,
+            "usage": {
+              "cost_usd": null,
+              "input_tokens": 144443,
+              "output_tokens": 915,
+              "source": "codex exec --json turn.completed.usage"
+            },
+            "wall_ms": 40764,
+            "within_budget": true
+          },
+          {
+            "answer_error": null,
+            "arm": "graph",
+            "calls": 16,
+            "case_id": "orbit-crew-resolution-entrypoints",
+            "citation_coverage": 0,
+            "citation_precision": 0,
+            "correct": false,
+            "error": {
+              "code": "telemetry_mismatch",
+              "message": "provider call 'item_18' (graph_sync): provider error has no broker result; provider call 'item_19' (search): provider error has no broker result; provider call 'item_20' (search): provider error has no broker result; provider call 'item_21' (git): provider error has no broker result"
+            },
+            "false_positives": [],
+            "identity_precision": 0,
+            "identity_recall": 0,
+            "isolation_error": null,
+            "objective_pass": false,
+            "output_bytes": 77886,
+            "semantic_pass": false,
+            "setup_ms": 1551,
+            "split": "development",
+            "status": "failed",
+            "tool_errors": 0,
+            "usage": {
+              "cost_usd": null,
+              "input_tokens": 294497,
+              "output_tokens": 2199,
+              "source": "codex exec --json turn.completed.usage"
+            },
+            "wall_ms": 102168,
+            "within_budget": true
+          },
+          {
+            "answer_error": null,
+            "arm": "baseline",
+            "calls": 12,
+            "case_id": "orbit-crew-resolution-entrypoints",
+            "citation_coverage": 0,
+            "citation_precision": 0,
+            "correct": false,
+            "error": {
+              "code": "telemetry_mismatch",
+              "message": "provider call 'item_13' (git): provider error has no broker result; provider call 'item_14' (read): provider error has no broker result; provider call 'item_15' (rg): provider error has no broker result; provider call 'item_16' (read): provider error has no broker result; provider call 'item_17' (git): provider error has no broker result"
+            },
+            "false_positives": [],
+            "identity_precision": 0,
+            "identity_recall": 0,
+            "isolation_error": null,
+            "objective_pass": false,
+            "output_bytes": 78613,
+            "semantic_pass": false,
+            "setup_ms": 1395,
+            "split": "development",
+            "status": "failed",
+            "tool_errors": 0,
+            "usage": {
+              "cost_usd": null,
+              "input_tokens": 207972,
+              "output_tokens": 1802,
+              "source": "codex exec --json turn.completed.usage"
+            },
+            "wall_ms": 77300,
+            "within_budget": true
+          },
+          {
+            "answer_error": null,
+            "arm": "baseline",
+            "calls": 15,
+            "case_id": "pulsar-publication-ledger-callbacks",
+            "citation_coverage": 0,
+            "citation_precision": 0,
+            "correct": false,
+            "error": {
+              "code": "telemetry_mismatch",
+              "message": "provider call 'item_17' (git): provider error has no broker result; provider call 'item_18' (git): provider error has no broker result; provider call 'item_19' (git): provider error has no broker result; provider call 'item_20' (git): provider error has no broker result; provider call 'item_21' (git): provider error has no broker result"
+            },
+            "false_positives": [],
+            "identity_precision": 0,
+            "identity_recall": 0,
+            "isolation_error": null,
+            "objective_pass": false,
+            "output_bytes": 87600,
+            "semantic_pass": false,
+            "setup_ms": 120,
+            "split": "held-out",
+            "status": "failed",
+            "tool_errors": 1,
+            "usage": {
+              "cost_usd": null,
+              "input_tokens": 245573,
+              "output_tokens": 2973,
+              "source": "codex exec --json turn.completed.usage"
+            },
+            "wall_ms": 111105,
+            "within_budget": true
+          },
+          {
+            "answer_error": null,
+            "arm": "graph",
+            "calls": 14,
+            "case_id": "pulsar-publication-ledger-callbacks",
+            "citation_coverage": 0,
+            "citation_precision": 0,
+            "correct": false,
+            "error": {
+              "code": "telemetry_mismatch",
+              "message": "provider call 'item_15' (git): provider error has no broker result; provider call 'item_16' (git): provider error has no broker result; provider call 'item_17' (git): provider error has no broker result; provider call 'item_18' (git): provider error has no broker result; provider call 'item_19' (git): provider error has no broker result"
+            },
+            "false_positives": [],
+            "identity_precision": 0,
+            "identity_recall": 0,
+            "isolation_error": null,
+            "objective_pass": false,
+            "output_bytes": 77047,
+            "semantic_pass": false,
+            "setup_ms": 98,
+            "split": "held-out",
+            "status": "failed",
+            "tool_errors": 0,
+            "usage": {
+              "cost_usd": null,
+              "input_tokens": 238667,
+              "output_tokens": 2358,
+              "source": "codex exec --json turn.completed.usage"
+            },
+            "wall_ms": 90990,
+            "within_budget": true
+          },
+          {
+            "answer_error": null,
+            "arm": "graph",
+            "calls": 14,
+            "case_id": "pulsar-media-deferred-callbacks",
+            "citation_coverage": 1.0,
+            "citation_precision": 1.0,
+            "correct": false,
+            "error": null,
+            "false_positives": [
+              "symbol:src/pulsar/app/core/channels/x/adapter.py#XChannel.upload:method",
+              "symbol:src/pulsar/app/core/channels/x/client.py#XClient.upload_media:method",
+              "symbol:src/pulsar/app/core/publishing/media.py#_load_base64:function",
+              "symbol:src/pulsar/app/core/publishing/media.py#_load_path:function",
+              "symbol:src/pulsar/app/core/publishing/publisher.py#Publisher.publish:method",
+              "symbol:src/pulsar/app/ops.py#publish_report:function"
+            ],
+            "identity_precision": 0.5714285714285714,
+            "identity_recall": 1.0,
+            "isolation_error": null,
+            "objective_pass": false,
+            "output_bytes": 88865,
+            "semantic_pass": false,
+            "setup_ms": 111,
+            "split": "held-out",
+            "status": "ok",
+            "tool_errors": 0,
+            "usage": {
+              "cost_usd": null,
+              "input_tokens": 132854,
+              "output_tokens": 2281,
+              "source": "codex exec --json turn.completed.usage"
+            },
+            "wall_ms": 83770,
+            "within_budget": true
+          },
+          {
+            "answer_error": null,
+            "arm": "baseline",
+            "calls": 20,
+            "case_id": "pulsar-media-deferred-callbacks",
+            "citation_coverage": 1.0,
+            "citation_precision": 1.0,
+            "correct": false,
+            "error": null,
+            "false_positives": [
+              "symbol:src/pulsar/app/core/channels/x/adapter.py#XChannel.upload:method",
+              "symbol:src/pulsar/app/core/channels/x/client.py#XClient.upload_media:method",
+              "symbol:src/pulsar/app/core/publishing/media.py#_load_base64:function",
+              "symbol:src/pulsar/app/core/publishing/media.py#_load_path:function",
+              "symbol:src/pulsar/app/ops.py#publish_report:function"
+            ],
+            "identity_precision": 0.6153846153846154,
+            "identity_recall": 1.0,
+            "isolation_error": null,
+            "objective_pass": false,
+            "output_bytes": 107999,
+            "semantic_pass": false,
+            "setup_ms": 99,
+            "split": "held-out",
+            "status": "ok",
+            "tool_errors": 0,
+            "usage": {
+              "cost_usd": null,
+              "input_tokens": 184086,
+              "output_tokens": 2207,
+              "source": "codex exec --json turn.completed.usage"
+            },
+            "wall_ms": 87580,
+            "within_budget": true
+          },
+          {
+            "answer_error": null,
+            "arm": "baseline",
+            "calls": 9,
+            "case_id": "pulsar-bounded-error-commit",
+            "citation_coverage": 1.0,
+            "citation_precision": 1.0,
+            "correct": false,
+            "error": null,
+            "false_positives": [
+              "symbol:src/pulsar/app/core/channels/x/client.py#PROVIDER_DETAIL_LIMIT_BYTES:constant",
+              "symbol:src/pulsar/app/core/channels/x/client.py#XClient.request:method",
+              "symbol:src/pulsar/app/core/channels/x/client.py#_detail_text:function",
+              "symbol:src/pulsar/app/core/channels/x/client.py#_log_provider_body:function",
+              "symbol:src/pulsar/app/core/channels/x/client.py#_redact_provider:function",
+              "symbol:src/pulsar/app/core/channels/x/client.py#_selected_error_body:function",
+              "symbol:src/pulsar/app/core/channels/x/client.py#_serialized_detail:function",
+              "symbol:tests/test_xapi.py#test_http_errors_map_to_codes:test",
+              "symbol:tests/test_xapi.py#test_oversized_processing_info_redacts_detail_message_and_log:test",
+              "symbol:tests/test_xapi.py#test_provider_text_in_an_error_message_is_bounded:test",
+              "symbol:tests/test_xapi.py#test_upload_video_processing_failure_preserves_x_detail:test"
+            ],
+            "identity_precision": 0.3888888888888889,
+            "identity_recall": 1.0,
+            "isolation_error": null,
+            "objective_pass": false,
+            "output_bytes": 55134,
+            "semantic_pass": true,
+            "setup_ms": 89,
+            "split": "development",
+            "status": "ok",
+            "tool_errors": 2,
+            "usage": {
+              "cost_usd": null,
+              "input_tokens": 89943,
+              "output_tokens": 2843,
+              "source": "codex exec --json turn.completed.usage"
+            },
+            "wall_ms": 96155,
+            "within_budget": true
+          },
+          {
+            "answer_error": null,
+            "arm": "graph",
+            "calls": 9,
+            "case_id": "pulsar-bounded-error-commit",
+            "citation_coverage": 1.0,
+            "citation_precision": 1.0,
+            "correct": false,
+            "error": null,
+            "false_positives": [
+              "symbol:src/pulsar/app/core/channels/x/client.py#PROVIDER_DETAIL_LIMIT_BYTES:constant",
+              "symbol:src/pulsar/app/core/channels/x/client.py#XClient.request:method",
+              "symbol:src/pulsar/app/core/channels/x/client.py#_detail_text:function",
+              "symbol:src/pulsar/app/core/channels/x/client.py#_log_provider_body:function",
+              "symbol:src/pulsar/app/core/channels/x/client.py#_redact_provider:function",
+              "symbol:src/pulsar/app/core/channels/x/client.py#_selected_error_body:function",
+              "symbol:src/pulsar/app/core/channels/x/client.py#_serialized_detail:function",
+              "symbol:tests/test_xapi.py#test_http_errors_map_to_codes:test",
+              "symbol:tests/test_xapi.py#test_oversized_processing_info_redacts_detail_message_and_log:test",
+              "symbol:tests/test_xapi.py#test_provider_text_in_an_error_message_is_bounded:test",
+              "symbol:tests/test_xapi.py#test_upload_video_processing_failure_preserves_x_detail:test"
+            ],
+            "identity_precision": 0.3888888888888889,
+            "identity_recall": 1.0,
+            "isolation_error": null,
+            "objective_pass": false,
+            "output_bytes": 75398,
+            "semantic_pass": false,
+            "setup_ms": 111,
+            "split": "development",
+            "status": "ok",
+            "tool_errors": 0,
+            "usage": {
+              "cost_usd": null,
+              "input_tokens": 96887,
+              "output_tokens": 2603,
+              "source": "codex exec --json turn.completed.usage"
+            },
+            "wall_ms": 89440,
+            "within_budget": true
+          },
+          {
+            "answer_error": null,
+            "arm": "graph",
+            "calls": 12,
+            "case_id": "pulsar-channel-dispatch-abstention",
+            "citation_coverage": 1.0,
+            "citation_precision": 1.0,
+            "correct": false,
+            "error": null,
+            "false_positives": [
+              "symbol:src/pulsar/app/runtime.py#LocalRuntime.channel:method",
+              "symbol:tests/test_publisher.py#GatedChannel.create:method",
+              "symbol:tests/test_publisher.py#bound_to:function"
+            ],
+            "identity_precision": 0.6666666666666666,
+            "identity_recall": 0.8333333333333334,
+            "isolation_error": null,
+            "objective_pass": false,
+            "output_bytes": 76805,
+            "semantic_pass": false,
+            "setup_ms": 84,
+            "split": "held-out",
+            "status": "ok",
+            "tool_errors": 0,
+            "usage": {
+              "cost_usd": null,
+              "input_tokens": 125777,
+              "output_tokens": 1522,
+              "source": "codex exec --json turn.completed.usage"
+            },
+            "wall_ms": 56331,
+            "within_budget": true
+          },
+          {
+            "answer_error": null,
+            "arm": "baseline",
+            "calls": 15,
+            "case_id": "pulsar-channel-dispatch-abstention",
+            "citation_coverage": 1.0,
+            "citation_precision": 1.0,
+            "correct": false,
+            "error": null,
+            "false_positives": [
+              "symbol:src/pulsar/app/core/publishing/publisher.py#Publisher.prepare:method",
+              "symbol:src/pulsar/app/runtime.py#LocalRuntime.channel:method",
+              "symbol:tests/test_publisher.py#GatedChannel.create:method"
+            ],
+            "identity_precision": 0.625,
+            "identity_recall": 0.8333333333333334,
+            "isolation_error": null,
+            "objective_pass": false,
+            "output_bytes": 90087,
+            "semantic_pass": true,
+            "setup_ms": 110,
+            "split": "held-out",
+            "status": "ok",
+            "tool_errors": 0,
+            "usage": {
+              "cost_usd": null,
+              "input_tokens": 167012,
+              "output_tokens": 1715,
+              "source": "codex exec --json turn.completed.usage"
+            },
+            "wall_ms": 72531,
+            "within_budget": true
+          }
+        ],
+        "follow_up_larger_independent_repo_cohort": false,
+        "limitations": [
+          "Exploratory task holdout within three repositories; no superiority or independent-repository generalization.",
+          "Manual attributed semantics, not automated behavior proof; hashes do not authenticate reviewer identity.",
+          "Speed is descriptive, restricted to both-correct pairs, including cold setup; unknown usage/cost stays null."
+        ],
+        "paired": [
+          {
+            "accuracy_delta_graph_minus_baseline": 1,
+            "both_correct": false,
+            "bytes_delta_graph_minus_baseline": -11396,
+            "calls_delta_graph_minus_baseline": 0,
+            "case_id": "graph-inbound-identity",
+            "false_positives_delta_graph_minus_baseline": -3,
+            "speed_ratio_baseline_over_graph": null,
+            "split": "development",
+            "tool_errors_delta_graph_minus_baseline": 0,
+            "usage_delta_graph_minus_baseline": {
+              "cost_usd": null,
+              "input_tokens": 7562,
+              "output_tokens": -98
+            },
+            "wall_delta_graph_minus_baseline_ms": null
+          },
+          {
+            "accuracy_delta_graph_minus_baseline": 0,
+            "both_correct": false,
+            "bytes_delta_graph_minus_baseline": -1706,
+            "calls_delta_graph_minus_baseline": 4,
+            "case_id": "graph-sync-preserved-timestamp",
+            "false_positives_delta_graph_minus_baseline": 0,
+            "speed_ratio_baseline_over_graph": null,
+            "split": "held-out",
+            "tool_errors_delta_graph_minus_baseline": 1,
+            "usage_delta_graph_minus_baseline": {
+              "cost_usd": null,
+              "input_tokens": 14636,
+              "output_tokens": 117
+            },
+            "wall_delta_graph_minus_baseline_ms": null
+          },
+          {
+            "accuracy_delta_graph_minus_baseline": 0,
+            "both_correct": true,
+            "bytes_delta_graph_minus_baseline": -7013,
+            "calls_delta_graph_minus_baseline": 0,
+            "case_id": "graph-impact-test-selection",
+            "false_positives_delta_graph_minus_baseline": 0,
+            "speed_ratio_baseline_over_graph": 1.0603964282209792,
+            "split": "held-out",
+            "tool_errors_delta_graph_minus_baseline": 0,
+            "usage_delta_graph_minus_baseline": {
+              "cost_usd": null,
+              "input_tokens": 23355,
+              "output_tokens": 26
+            },
+            "wall_delta_graph_minus_baseline_ms": -2462
+          },
+          {
+            "accuracy_delta_graph_minus_baseline": 0,
+            "both_correct": false,
+            "bytes_delta_graph_minus_baseline": -727,
+            "calls_delta_graph_minus_baseline": 4,
+            "case_id": "orbit-crew-resolution-entrypoints",
+            "false_positives_delta_graph_minus_baseline": 0,
+            "speed_ratio_baseline_over_graph": null,
+            "split": "development",
+            "tool_errors_delta_graph_minus_baseline": 0,
+            "usage_delta_graph_minus_baseline": {
+              "cost_usd": null,
+              "input_tokens": 86525,
+              "output_tokens": 397
+            },
+            "wall_delta_graph_minus_baseline_ms": null
+          },
+          {
+            "accuracy_delta_graph_minus_baseline": 0,
+            "both_correct": false,
+            "bytes_delta_graph_minus_baseline": -10553,
+            "calls_delta_graph_minus_baseline": -1,
+            "case_id": "pulsar-publication-ledger-callbacks",
+            "false_positives_delta_graph_minus_baseline": 0,
+            "speed_ratio_baseline_over_graph": null,
+            "split": "held-out",
+            "tool_errors_delta_graph_minus_baseline": -1,
+            "usage_delta_graph_minus_baseline": {
+              "cost_usd": null,
+              "input_tokens": -6906,
+              "output_tokens": -615
+            },
+            "wall_delta_graph_minus_baseline_ms": null
+          },
+          {
+            "accuracy_delta_graph_minus_baseline": 0,
+            "both_correct": false,
+            "bytes_delta_graph_minus_baseline": -19134,
+            "calls_delta_graph_minus_baseline": -6,
+            "case_id": "pulsar-media-deferred-callbacks",
+            "false_positives_delta_graph_minus_baseline": 1,
+            "speed_ratio_baseline_over_graph": null,
+            "split": "held-out",
+            "tool_errors_delta_graph_minus_baseline": 0,
+            "usage_delta_graph_minus_baseline": {
+              "cost_usd": null,
+              "input_tokens": -51232,
+              "output_tokens": 74
+            },
+            "wall_delta_graph_minus_baseline_ms": null
+          },
+          {
+            "accuracy_delta_graph_minus_baseline": 0,
+            "both_correct": false,
+            "bytes_delta_graph_minus_baseline": 20264,
+            "calls_delta_graph_minus_baseline": 0,
+            "case_id": "pulsar-bounded-error-commit",
+            "false_positives_delta_graph_minus_baseline": 0,
+            "speed_ratio_baseline_over_graph": null,
+            "split": "development",
+            "tool_errors_delta_graph_minus_baseline": -2,
+            "usage_delta_graph_minus_baseline": {
+              "cost_usd": null,
+              "input_tokens": 6944,
+              "output_tokens": -240
+            },
+            "wall_delta_graph_minus_baseline_ms": null
+          },
+          {
+            "accuracy_delta_graph_minus_baseline": 0,
+            "both_correct": false,
+            "bytes_delta_graph_minus_baseline": -13282,
+            "calls_delta_graph_minus_baseline": -3,
+            "case_id": "pulsar-channel-dispatch-abstention",
+            "false_positives_delta_graph_minus_baseline": 0,
+            "speed_ratio_baseline_over_graph": null,
+            "split": "held-out",
+            "tool_errors_delta_graph_minus_baseline": 0,
+            "usage_delta_graph_minus_baseline": {
+              "cost_usd": null,
+              "input_tokens": -41235,
+              "output_tokens": -193
+            },
+            "wall_delta_graph_minus_baseline_ms": null
+          }
+        ],
+        "records_sha256": "dd17f7e8b363519e21da90bd3161e7967d57772d84985528858a7c595b0c421e",
+        "schema_version": 1,
+        "study_kind": "agent",
+        "summaries": [
+          {
+            "accuracy": 0.125,
+            "arm": "baseline",
+            "calls_total": 100,
+            "denominator": 8,
+            "episode_errors": 2,
+            "false_positives": 22,
+            "output_bytes_total": 654072,
+            "split": "all",
+            "tool_errors": 3,
+            "usage_known": 8,
+            "usage_total": {
+              "cost_usd": null,
+              "input_tokens": 1242376,
+              "output_tokens": 14412
+            },
+            "wall_ms_total": 572428
+          },
+          {
+            "accuracy": 0.25,
+            "arm": "graph",
+            "calls_total": 98,
+            "denominator": 8,
+            "episode_errors": 2,
+            "false_positives": 20,
+            "output_bytes_total": 610525,
+            "split": "all",
+            "tool_errors": 1,
+            "usage_known": 8,
+            "usage_total": {
+              "cost_usd": null,
+              "input_tokens": 1282025,
+              "output_tokens": 13880
+            },
+            "wall_ms_total": 561311
+          },
+          {
+            "accuracy": 0.0,
+            "arm": "baseline",
+            "calls_total": 33,
+            "denominator": 3,
+            "episode_errors": 1,
+            "false_positives": 14,
+            "output_bytes_total": 224620,
+            "split": "development",
+            "tool_errors": 2,
+            "usage_known": 3,
+            "usage_total": {
+              "cost_usd": null,
+              "input_tokens": 407772,
+              "output_tokens": 5796
+            },
+            "wall_ms_total": 219926
+          },
+          {
+            "accuracy": 0.3333333333333333,
+            "arm": "graph",
+            "calls_total": 37,
+            "denominator": 3,
+            "episode_errors": 1,
+            "false_positives": 11,
+            "output_bytes_total": 232761,
+            "split": "development",
+            "tool_errors": 0,
+            "usage_known": 3,
+            "usage_total": {
+              "cost_usd": null,
+              "input_tokens": 508803,
+              "output_tokens": 5855
+            },
+            "wall_ms_total": 238470
+          },
+          {
+            "accuracy": 0.2,
+            "arm": "baseline",
+            "calls_total": 67,
+            "denominator": 5,
+            "episode_errors": 1,
+            "false_positives": 8,
+            "output_bytes_total": 429452,
+            "split": "held-out",
+            "tool_errors": 1,
+            "usage_known": 5,
+            "usage_total": {
+              "cost_usd": null,
+              "input_tokens": 834604,
+              "output_tokens": 8616
+            },
+            "wall_ms_total": 352502
+          },
+          {
+            "accuracy": 0.2,
+            "arm": "graph",
+            "calls_total": 61,
+            "denominator": 5,
+            "episode_errors": 1,
+            "false_positives": 9,
+            "output_bytes_total": 377764,
+            "split": "held-out",
+            "tool_errors": 1,
+            "usage_known": 5,
+            "usage_total": {
+              "cost_usd": null,
+              "input_tokens": 773222,
+              "output_tokens": 8025
+            },
+            "wall_ms_total": 322841
+          }
+        ]
+      },
+      "capture_summary": {
+        "cohort": "real-01",
+        "captured_at": "2026-10-03T05:01:48.151852+00:00",
+        "capture_complete": true,
+        "episodes": [
+          {
+            "episode": "00-graph-inbound-identity-baseline",
+            "artifact_sha256": "1bde069d6e3d3afd50828d4cafb2f81404619e33585be2bc698431790d5fd153",
+            "episode_file_sha256": "b32260c5c2f5f364a5e35d6ce3b1d772802a47ea9060818fc69f908503a9c4d3",
+            "status": "ok",
+            "error": null,
+            "tool_calls": 12,
+            "wall_ms": 46471
+          },
+          {
+            "episode": "01-graph-inbound-identity-graph",
+            "artifact_sha256": "d087837c6a4b330a2f24b6f4ae8d04f5ac0d4f83b85d52fb0d0781f8622b5d73",
+            "episode_file_sha256": "dd044420cef29610507d9e9a0053b8fcfb7da0c735fa69b4ded50ae483cf7479",
+            "status": "ok",
+            "error": null,
+            "tool_calls": 12,
+            "wall_ms": 46862
+          },
+          {
+            "episode": "02-graph-sync-preserved-timestamp-graph",
+            "artifact_sha256": "54f4aadb2c483ec7239415c91f5a9013e516e9eb2a33edb03846a5f7f6ac85a3",
+            "episode_file_sha256": "9d7ab0da9e2094263760c1135cf88b2977bf168ed0eb1f85f5847473c4f07132",
+            "status": "ok",
+            "error": null,
+            "tool_calls": 12,
+            "wall_ms": 50986
+          },
+          {
+            "episode": "03-graph-sync-preserved-timestamp-baseline",
+            "artifact_sha256": "4d41b08242974da86a3af78f58b8bc1553638d8d4837a1ee8e871ac9df162b54",
+            "episode_file_sha256": "ad8baff82f5e1fac7629c4a214797b1873410275c5b6ad273a6bf08e20fd64cf",
+            "status": "ok",
+            "error": null,
+            "tool_calls": 8,
+            "wall_ms": 38060
+          },
+          {
+            "episode": "04-graph-impact-test-selection-baseline",
+            "artifact_sha256": "331a4c53c521ef6a103bf4e61dc8a4b604aa85417c3ce3a05f4b7448f1cbe557",
+            "episode_file_sha256": "d37e93934c4f7fe9239137e2f633c65b58037d872fda65170d74c6ecec062256",
+            "status": "ok",
+            "error": null,
+            "tool_calls": 9,
+            "wall_ms": 43226
+          },
+          {
+            "episode": "05-graph-impact-test-selection-graph",
+            "artifact_sha256": "13a7e4ccd0a1dfbf0b4386a0ca407f5104ea7eec5a22d9d95588fc463847ddf3",
+            "episode_file_sha256": "94573326d7af614684b7648ff724e7352eca4b82347c9d6bd1d666b1cf449d35",
+            "status": "ok",
+            "error": null,
+            "tool_calls": 9,
+            "wall_ms": 40764
+          },
+          {
+            "episode": "06-orbit-crew-resolution-entrypoints-graph",
+            "artifact_sha256": "79e5b7bdb2937b6434ec63d9d544257711c930b96c25384d0f930fa4e9418f28",
+            "episode_file_sha256": "3d33f62b98240a60f30bb136d850d1971671e42614ad7ea53147c439966fdf03",
+            "status": "failed",
+            "error": {
+              "code": "telemetry_mismatch",
+              "message": "provider call 'item_18' (graph_sync): provider error has no broker result; provider call 'item_19' (search): provider error has no broker result; provider call 'item_20' (search): provider error has no broker result; provider call 'item_21' (git): provider error has no broker result"
+            },
+            "tool_calls": 16,
+            "wall_ms": 102168
+          },
+          {
+            "episode": "07-orbit-crew-resolution-entrypoints-baseline",
+            "artifact_sha256": "0d745fdf42ca78cc3a3e0906f7fbbe0d80a4b6aecc76fef7bf088bb7f316c4a5",
+            "episode_file_sha256": "11309bcabcb098a4ded2858dbe87cf039e4c275673fe44a544a63144f79106ec",
+            "status": "failed",
+            "error": {
+              "code": "telemetry_mismatch",
+              "message": "provider call 'item_13' (git): provider error has no broker result; provider call 'item_14' (read): provider error has no broker result; provider call 'item_15' (rg): provider error has no broker result; provider call 'item_16' (read): provider error has no broker result; provider call 'item_17' (git): provider error has no broker result"
+            },
+            "tool_calls": 12,
+            "wall_ms": 77300
+          },
+          {
+            "episode": "08-pulsar-publication-ledger-callbacks-baseline",
+            "artifact_sha256": "8045565b1d5b7f4dd796e96bd9ade541d1cb9579353c239b24a43efdb50be999",
+            "episode_file_sha256": "5e6c6ee5fe020dd7225a7cc7d4e1108e85048dcf40a5ac4b7fe7f5ce4f6c5360",
+            "status": "failed",
+            "error": {
+              "code": "telemetry_mismatch",
+              "message": "provider call 'item_17' (git): provider error has no broker result; provider call 'item_18' (git): provider error has no broker result; provider call 'item_19' (git): provider error has no broker result; provider call 'item_20' (git): provider error has no broker result; provider call 'item_21' (git): provider error has no broker result"
+            },
+            "tool_calls": 15,
+            "wall_ms": 111105
+          },
+          {
+            "episode": "09-pulsar-publication-ledger-callbacks-graph",
+            "artifact_sha256": "dc47d73cdc4a145dd9095db34ed1e54f1aee59cc6c34b7419049b0768909c97f",
+            "episode_file_sha256": "4f3456db48b5d178e5d741ec9527094febf22e3ae2d51930742305cb3ea3715b",
+            "status": "failed",
+            "error": {
+              "code": "telemetry_mismatch",
+              "message": "provider call 'item_15' (git): provider error has no broker result; provider call 'item_16' (git): provider error has no broker result; provider call 'item_17' (git): provider error has no broker result; provider call 'item_18' (git): provider error has no broker result; provider call 'item_19' (git): provider error has no broker result"
+            },
+            "tool_calls": 14,
+            "wall_ms": 90990
+          },
+          {
+            "episode": "10-pulsar-media-deferred-callbacks-graph",
+            "artifact_sha256": "73043266169e43a015c7494f21af61c49a80281f814c54078168bbd02a86ffdb",
+            "episode_file_sha256": "fe9b5f7bd967d8bfee8288f54467b2a41c75d7e21e70b03ede3bc95c19d50132",
+            "status": "ok",
+            "error": null,
+            "tool_calls": 14,
+            "wall_ms": 83770
+          },
+          {
+            "episode": "11-pulsar-media-deferred-callbacks-baseline",
+            "artifact_sha256": "f4fefd6238cce00be7fbcf8dcfeefa1c93804820c340bcebff019c6a21c2d833",
+            "episode_file_sha256": "e2845f58f1aaef973f16f3f31695727f09cd2340de62971fafabc44f1e5df6ba",
+            "status": "ok",
+            "error": null,
+            "tool_calls": 20,
+            "wall_ms": 87580
+          },
+          {
+            "episode": "12-pulsar-bounded-error-commit-baseline",
+            "artifact_sha256": "b72f3f00e5e0bee36a6a311cec743e4bf380184631f4a5243f7df749e4939e22",
+            "episode_file_sha256": "191fdce4c099a71923dac27da2b606ccdb84bdd86a4b87e0e27d9f5e6bd07416",
+            "status": "ok",
+            "error": null,
+            "tool_calls": 9,
+            "wall_ms": 96155
+          },
+          {
+            "episode": "13-pulsar-bounded-error-commit-graph",
+            "artifact_sha256": "a80cf2d1aad6b25d710dd26d1b0d71d8d8ea46661dcb688c8aa095befb41d3d5",
+            "episode_file_sha256": "1d5509a12eabc69f5538750fb8775ab9f81116b1537375ca313b04f63cbf4683",
+            "status": "ok",
+            "error": null,
+            "tool_calls": 9,
+            "wall_ms": 89440
+          },
+          {
+            "episode": "14-pulsar-channel-dispatch-abstention-graph",
+            "artifact_sha256": "f3c310c22410244b0bd265f29c9ec2065ec9da3139204eb93eeba2241da566de",
+            "episode_file_sha256": "1dd1efd34b873256f27e417bf26f8a6b3f6ce7549f38c6e44051769b7099f7df",
+            "status": "ok",
+            "error": null,
+            "tool_calls": 12,
+            "wall_ms": 56331
+          },
+          {
+            "episode": "15-pulsar-channel-dispatch-abstention-baseline",
+            "artifact_sha256": "73231d7890dc8f5789829346bef864bb750bb6d2a7a0a492d591d310d31da25d",
+            "episode_file_sha256": "a710473bd6401bd22cca2d06155a35e5562333b7a940e00b8818227bc879d013",
+            "status": "ok",
+            "error": null,
+            "tool_calls": 15,
+            "wall_ms": 72531
+          }
+        ],
+        "arms": {
+          "baseline": {
+            "episodes": 8,
+            "statuses": {
+              "ok": 6,
+              "failed": 2
+            },
+            "tools": {
+              "rg": 29,
+              "read": 57,
+              "git": 14
+            },
+            "wall_ms": 572428,
+            "output_bytes": 654072,
+            "input_tokens": 1242376,
+            "output_tokens": 14412,
+            "cost_usd": null
+          },
+          "graph": {
+            "episodes": 8,
+            "statuses": {
+              "ok": 6,
+              "failed": 2
+            },
+            "tools": {
+              "rg": 28,
+              "read": 52,
+              "git": 14,
+              "graph_sync": 2,
+              "search": 2
+            },
+            "wall_ms": 561311,
+            "output_bytes": 610525,
+            "input_tokens": 1282025,
+            "output_tokens": 13880,
+            "cost_usd": null
+          }
+        },
+        "all_raw_file_hashes_verified": true,
+        "semantic_reviews": 12,
+        "semantic_pass_count": 6,
+        "review_blinding": "Operator saw arm labels; no claim of blinded or independent human audit.",
+        "scoring_status": "original canonical adapter refused new runner redactions field; repair ORB-13771 pending; no objective/combined score claimed",
+        "raw_mutations": false
+      },
+      "semantic_reviews": 12,
+      "reviewer": "Codex/sol operator ORB-13709",
+      "review_blinded": false,
+      "original_judgments_preserved": true,
+      "semantic_review_notes_file_sha256": "e2a6d13c5c3305068ce3c35570559df3a15fa04677d0471cd8d0f14cb03184c5",
+      "audits_file_sha256": "c82bd4325246c5ca53534ebed11a73139aa08a20d4d2355d009599b974f5bb09",
+      "audits_canonical_sha256": "f16413f61051afb8a2bf8c95ff8d77efe81ac26a432b46d50c4a95e36907f493",
+      "records_json_file_sha256": "1b4fdfbe0ae496baeb6e55670a294e9babd03139528b7c02aa3a2ffb1aa9841b",
+      "records_canonical_sha256": "dd17f7e8b363519e21da90bd3161e7967d57772d84985528858a7c595b0c421e",
+      "all_correct": {
+        "baseline": "1/8",
+        "graph": "2/8"
+      },
+      "held_out_correct": {
+        "baseline": "1/5",
+        "graph": "1/5"
+      },
+      "harness_failures": {
+        "baseline": 2,
+        "graph": 2
+      },
+      "failure_cases": [
+        "orbit-crew-resolution-entrypoints",
+        "pulsar-publication-ledger-callbacks"
+      ],
+      "both_correct_pairs": 1,
+      "score_reproduced_exactly": true,
+      "follow_up_rule": {
+        "requirements": [
+          "agent cohort",
+          "no isolation error",
+          "no heldout pair accuracy regression",
+          "at least1 net additional correct heldout answer",
+          "zero graph heldout oracle false positives"
+        ],
+        "observed_net_additional_correct_heldout": 0,
+        "observed_graph_heldout_oracle_false_positives": 9,
+        "eligible": false
+      }
+    },
+    "raw_capture_bindings": [
+      {
+        "cohort": "ORB-13709-synthetic-cohort-01",
+        "raw_episodes_verified": 24,
+        "raw_files_verified": 144,
+        "preregistration_files_verified": 130,
+        "episodes": [
+          {
+            "directory": "00-rust-01-baseline",
+            "run_id": "aeval-4c5e2ba33e0e0a19",
+            "artifact_sha256": "166a87067aad9dd1a7d315f59e377e113376a2a2a0767db8a812cf58f63ed13f",
+            "episode_file_sha256": "fff24985238cfbc923fe0afb8fe882fe3af26fe5ae3447e40409e0d9028f4907",
+            "status": "ok",
+            "error": null,
+            "calls": 3,
+            "wall_ms": 23513
+          },
+          {
+            "directory": "01-rust-01-graph",
+            "run_id": "aeval-19d11c9fc1e3c40c",
+            "artifact_sha256": "7322f212b65b753ef1ff7a238fa665ea3969abb0b683cf973f0ad0aa51050c54",
+            "episode_file_sha256": "8ba6b6beabe0cf6e818d6ce3f6973ab4a454d616b7534340325b1e4ed8811088",
+            "status": "failed",
+            "error": {
+              "code": "telemetry_mismatch",
+              "message": "broker calls do not match the provider's reported tool calls"
+            },
+            "calls": 4,
+            "wall_ms": 25760
+          },
+          {
+            "directory": "02-rust-02-graph",
+            "run_id": "aeval-e90783921447ab5c",
+            "artifact_sha256": "d56ee43393993a0d0e53dee7c1bb533803711c0fc9e5b7e8695815f1e5bc28fb",
+            "episode_file_sha256": "dd46a092bd920c2fda3a9b0ab35b3ba0f7d7dc58fef2c2cda8fde64b907c4f16",
+            "status": "ok",
+            "error": null,
+            "calls": 3,
+            "wall_ms": 26027
+          },
+          {
+            "directory": "03-rust-02-baseline",
+            "run_id": "aeval-50e34ef08229aef5",
+            "artifact_sha256": "0fe261cd4f7a445dde0138bfee1f170bb3b4c516bb66d32c4f49b7e04c266f3e",
+            "episode_file_sha256": "b067d7e5070dd19e847c13dc0c44104533bfe09a3b0c9a53a80d09f18d3de00c",
+            "status": "ok",
+            "error": null,
+            "calls": 8,
+            "wall_ms": 29398
+          },
+          {
+            "directory": "04-rust-03-baseline",
+            "run_id": "aeval-ea3d091974ba8b21",
+            "artifact_sha256": "f52dc037fc814d1030e89950fa315e4d27da8e4f88bf6ae39bd5a5fcf5186a01",
+            "episode_file_sha256": "918ac5a4e519d589ffe7c74918476d517b6f5c4d80e0234bb81478d9205636c8",
+            "status": "ok",
+            "error": null,
+            "calls": 3,
+            "wall_ms": 19264
+          },
+          {
+            "directory": "05-rust-03-graph",
+            "run_id": "aeval-e8d2a839ce1ae246",
+            "artifact_sha256": "af3e59871e38ccbf5ced8598b02738ec9e1df3f675be1aea094edbabc589c727",
+            "episode_file_sha256": "43325cba876428e8fe948b5a11303e46fb606463c08391ead675ca7430478c45",
+            "status": "ok",
+            "error": null,
+            "calls": 2,
+            "wall_ms": 33857
+          },
+          {
+            "directory": "06-rust-04-graph",
+            "run_id": "aeval-37b891f325a41f44",
+            "artifact_sha256": "d958d44195ecda9291de5592dbbff996eecda1d05434568452c98f0ae04b50d9",
+            "episode_file_sha256": "54cb2474de1518056f67f08a56903d44c211052af00de2e0687bb41d714cd2a4",
+            "status": "failed",
+            "error": {
+              "code": "telemetry_mismatch",
+              "message": "broker calls do not match the provider's reported tool calls"
+            },
+            "calls": 6,
+            "wall_ms": 28916
+          },
+          {
+            "directory": "07-rust-04-baseline",
+            "run_id": "aeval-9d1f23fce0db2f08",
+            "artifact_sha256": "bafa7cbf92a6d02aed8a7f77d1faea8718d8286524bd79001c20b0956d00a757",
+            "episode_file_sha256": "34417e86d5a4000faa55499663aa9749e72aec55ca3be70545579a6c32bab963",
+            "status": "ok",
+            "error": null,
+            "calls": 13,
+            "wall_ms": 48877
+          },
+          {
+            "directory": "08-rust-05-baseline",
+            "run_id": "aeval-87ca5849a7b515a3",
+            "artifact_sha256": "5c606126b7f3f5d8c6903c3f83a3c85190df4f01b32a45f8666c1c8493ff4bf9",
+            "episode_file_sha256": "08cf0b5eca7902cbc4b9d95a4dca2705b1f2c01bc3e9251be4e2411040a89d39",
+            "status": "ok",
+            "error": null,
+            "calls": 6,
+            "wall_ms": 24798
+          },
+          {
+            "directory": "09-rust-05-graph",
+            "run_id": "aeval-22172ecc723982ee",
+            "artifact_sha256": "8517c8f8fb488ab01c2edaab7fbce6bd88e3a8d7ef127c67b424fd7045dd1d42",
+            "episode_file_sha256": "193afee598e9adc0a57a2f0b3c3332fba2129ddf367af35fff03172af248eeb2",
+            "status": "failed",
+            "error": {
+              "code": "telemetry_mismatch",
+              "message": "broker calls do not match the provider's reported tool calls"
+            },
+            "calls": 5,
+            "wall_ms": 33015
+          },
+          {
+            "directory": "10-rust-06-graph",
+            "run_id": "aeval-6abbf6797cdaa710",
+            "artifact_sha256": "83dd76255eb9d2e5beb1d40a9f1805b9116910f7f48f6da579df573633977066",
+            "episode_file_sha256": "907193d8ccb6e7f7dd4c9de9312ad0bc0be4797755c7080bef9df6643eb89b7f",
+            "status": "ok",
+            "error": null,
+            "calls": 3,
+            "wall_ms": 21672
+          },
+          {
+            "directory": "11-rust-06-baseline",
+            "run_id": "aeval-db99eeebfb491c3d",
+            "artifact_sha256": "e3822a9ef3e04b806839f52c3be5e7e088aaed4085e95a2c5a1133129a9420de",
+            "episode_file_sha256": "b289318df57dc7a644f39e7785b43d392b82da5b4941495bd85a8869ff4c7474",
+            "status": "ok",
+            "error": null,
+            "calls": 1,
+            "wall_ms": 15593
+          },
+          {
+            "directory": "12-python-01-baseline",
+            "run_id": "aeval-db5f179590ead344",
+            "artifact_sha256": "e10d8a609eac484e9747cdb6e00b8bb2afe1a5397446b15ad2f15e0473a8b3d3",
+            "episode_file_sha256": "019e6d32ca29a5c040778aab041d9bdf9ba00146c47d6193491fc96fe97e07de",
+            "status": "ok",
+            "error": null,
+            "calls": 3,
+            "wall_ms": 20429
+          },
+          {
+            "directory": "13-python-01-graph",
+            "run_id": "aeval-3adc7c4e0c215e3d",
+            "artifact_sha256": "bbb488e7ba7680c71bce4eff2ec1318d42d8aaad07774445bc62a1a545b734ce",
+            "episode_file_sha256": "954f3aaca91c06407ff737266c79f50fa325c2bae1cd4747c12a9076fd03accc",
+            "status": "ok",
+            "error": null,
+            "calls": 4,
+            "wall_ms": 22866
+          },
+          {
+            "directory": "14-python-02-graph",
+            "run_id": "aeval-7b82541f14d8ba0d",
+            "artifact_sha256": "6b0a247b64e508537d5a40b3c50cf622a9a1ce1d82274a014a2addbfc9aa9cdb",
+            "episode_file_sha256": "5d27f5284e450912bbe9a38db854843dcea461d29ee333a34e9d88165a582f83",
+            "status": "ok",
+            "error": null,
+            "calls": 4,
+            "wall_ms": 20252
+          },
+          {
+            "directory": "15-python-02-baseline",
+            "run_id": "aeval-19e747c892d45b1c",
+            "artifact_sha256": "9f4496c67a268417a57913c25ccaf4d640f43bfae5823483a27d0d940c0043ea",
+            "episode_file_sha256": "0fabbbca5e65496bd4d1d79410e8faba131bd6d0a705beff6e971054da607cd4",
+            "status": "ok",
+            "error": null,
+            "calls": 4,
+            "wall_ms": 25606
+          },
+          {
+            "directory": "16-python-03-baseline",
+            "run_id": "aeval-4b45604f0faa8c6e",
+            "artifact_sha256": "9b4fb6af850ddfb1f35c893577add2d18e547c99255dd1eb17728c056bde0304",
+            "episode_file_sha256": "9725870691ab9bc3086aa494a294ca9725a21fababd970b2639202248e4bee12",
+            "status": "ok",
+            "error": null,
+            "calls": 2,
+            "wall_ms": 18110
+          },
+          {
+            "directory": "17-python-03-graph",
+            "run_id": "aeval-c23e8f8857b8b460",
+            "artifact_sha256": "fc8f18936292c3471eae0981c80c7bdb2db8f277e7b9ed470e66b699e0fe0e5e",
+            "episode_file_sha256": "f8d7c7e42ad1bde469ecfb7728d0786bebba4b73b0c37d71f9f128fe7d294f51",
+            "status": "ok",
+            "error": null,
+            "calls": 3,
+            "wall_ms": 20552
+          },
+          {
+            "directory": "18-python-04-graph",
+            "run_id": "aeval-7d22764f2229d3e5",
+            "artifact_sha256": "e57d837da66752d24131c0dd9c4250d3339812703bc38b438748c752967657e4",
+            "episode_file_sha256": "fb527de324305c63dc5f97238e1f5059cf33370479ff5b1401e7f4d417514e6b",
+            "status": "ok",
+            "error": null,
+            "calls": 5,
+            "wall_ms": 32225
+          },
+          {
+            "directory": "19-python-04-baseline",
+            "run_id": "aeval-bd5ea15129c8c3ac",
+            "artifact_sha256": "a8a1a8b4fa1b3d54832105c2b53963fcc8694b4f1a5426c9aea91ae50cbe83a2",
+            "episode_file_sha256": "367eb2a51c2171b8cb34d68f5b2735f50f25982a81fa9a89d439883773f68bfa",
+            "status": "ok",
+            "error": null,
+            "calls": 6,
+            "wall_ms": 29278
+          },
+          {
+            "directory": "20-python-05-baseline",
+            "run_id": "aeval-376315ee2f7b96eb",
+            "artifact_sha256": "6b2bdc0d3622a2f49a7d4874c4ead51c01d2e77b75b83ea1471a3604957a680a",
+            "episode_file_sha256": "b05a227e96dea84f083ad9944c07d3ffeaa627856ffe8bc583d57d0700ca187f",
+            "status": "ok",
+            "error": null,
+            "calls": 4,
+            "wall_ms": 27232
+          },
+          {
+            "directory": "21-python-05-graph",
+            "run_id": "aeval-9cb132764bdc9829",
+            "artifact_sha256": "9c1e8c996ca26b6f84bac5ee9bb3a9536d7bf4ab3dfca2ddf12c1d042ae68a0a",
+            "episode_file_sha256": "3f89d64641633fde1a1eef361bd684d757191942269a6c8e1049c79f0230d03a",
+            "status": "ok",
+            "error": null,
+            "calls": 5,
+            "wall_ms": 23329
+          },
+          {
+            "directory": "22-python-06-graph",
+            "run_id": "aeval-384885560646e0de",
+            "artifact_sha256": "3560477b6bd9dd83fb2cab454a234c5a07a99f5f088ce086668d86a294cbe251",
+            "episode_file_sha256": "7a77836a4c815a6fe1eeef9d152da910c279ab17adce3c32c21289a559701960",
+            "status": "ok",
+            "error": null,
+            "calls": 3,
+            "wall_ms": 24884
+          },
+          {
+            "directory": "23-python-06-baseline",
+            "run_id": "aeval-10c6de49b0221434",
+            "artifact_sha256": "d9d710d0f9c9ce0172668bb21b2cc1934a156fada420d094d4998540f1d9f8f7",
+            "episode_file_sha256": "1a67e7feeec09f62b35c6bbd8ab05a4d6fc64f26d490a8a7f37e09da813463c5",
+            "status": "ok",
+            "error": null,
+            "calls": 3,
+            "wall_ms": 19497
+          }
+        ]
+      },
+      {
+        "cohort": "ORB-13709-real-cohort-01",
+        "raw_episodes_verified": 16,
+        "raw_files_verified": 96,
+        "preregistration_files_verified": 46,
+        "episodes": [
+          {
+            "directory": "00-graph-inbound-identity-baseline",
+            "run_id": "aeval-72b80f64aa02b338",
+            "artifact_sha256": "1bde069d6e3d3afd50828d4cafb2f81404619e33585be2bc698431790d5fd153",
+            "episode_file_sha256": "b32260c5c2f5f364a5e35d6ce3b1d772802a47ea9060818fc69f908503a9c4d3",
+            "status": "ok",
+            "error": null,
+            "calls": 12,
+            "wall_ms": 46471
+          },
+          {
+            "directory": "01-graph-inbound-identity-graph",
+            "run_id": "aeval-dbdf6f29ef15b521",
+            "artifact_sha256": "d087837c6a4b330a2f24b6f4ae8d04f5ac0d4f83b85d52fb0d0781f8622b5d73",
+            "episode_file_sha256": "dd044420cef29610507d9e9a0053b8fcfb7da0c735fa69b4ded50ae483cf7479",
+            "status": "ok",
+            "error": null,
+            "calls": 12,
+            "wall_ms": 46862
+          },
+          {
+            "directory": "02-graph-sync-preserved-timestamp-graph",
+            "run_id": "aeval-f18fb173d0b5faf3",
+            "artifact_sha256": "54f4aadb2c483ec7239415c91f5a9013e516e9eb2a33edb03846a5f7f6ac85a3",
+            "episode_file_sha256": "9d7ab0da9e2094263760c1135cf88b2977bf168ed0eb1f85f5847473c4f07132",
+            "status": "ok",
+            "error": null,
+            "calls": 12,
+            "wall_ms": 50986
+          },
+          {
+            "directory": "03-graph-sync-preserved-timestamp-baseline",
+            "run_id": "aeval-31f258c79713ab4c",
+            "artifact_sha256": "4d41b08242974da86a3af78f58b8bc1553638d8d4837a1ee8e871ac9df162b54",
+            "episode_file_sha256": "ad8baff82f5e1fac7629c4a214797b1873410275c5b6ad273a6bf08e20fd64cf",
+            "status": "ok",
+            "error": null,
+            "calls": 8,
+            "wall_ms": 38060
+          },
+          {
+            "directory": "04-graph-impact-test-selection-baseline",
+            "run_id": "aeval-0c5cacc2dcda1d84",
+            "artifact_sha256": "331a4c53c521ef6a103bf4e61dc8a4b604aa85417c3ce3a05f4b7448f1cbe557",
+            "episode_file_sha256": "d37e93934c4f7fe9239137e2f633c65b58037d872fda65170d74c6ecec062256",
+            "status": "ok",
+            "error": null,
+            "calls": 9,
+            "wall_ms": 43226
+          },
+          {
+            "directory": "05-graph-impact-test-selection-graph",
+            "run_id": "aeval-8879743f47f5a0f4",
+            "artifact_sha256": "13a7e4ccd0a1dfbf0b4386a0ca407f5104ea7eec5a22d9d95588fc463847ddf3",
+            "episode_file_sha256": "94573326d7af614684b7648ff724e7352eca4b82347c9d6bd1d666b1cf449d35",
+            "status": "ok",
+            "error": null,
+            "calls": 9,
+            "wall_ms": 40764
+          },
+          {
+            "directory": "06-orbit-crew-resolution-entrypoints-graph",
+            "run_id": "aeval-cfe4c0c85b96622c",
+            "artifact_sha256": "79e5b7bdb2937b6434ec63d9d544257711c930b96c25384d0f930fa4e9418f28",
+            "episode_file_sha256": "3d33f62b98240a60f30bb136d850d1971671e42614ad7ea53147c439966fdf03",
+            "status": "failed",
+            "error": {
+              "code": "telemetry_mismatch",
+              "message": "provider call 'item_18' (graph_sync): provider error has no broker result; provider call 'item_19' (search): provider error has no broker result; provider call 'item_20' (search): provider error has no broker result; provider call 'item_21' (git): provider error has no broker result"
+            },
+            "calls": 16,
+            "wall_ms": 102168
+          },
+          {
+            "directory": "07-orbit-crew-resolution-entrypoints-baseline",
+            "run_id": "aeval-e4c2b7e52282dc92",
+            "artifact_sha256": "0d745fdf42ca78cc3a3e0906f7fbbe0d80a4b6aecc76fef7bf088bb7f316c4a5",
+            "episode_file_sha256": "11309bcabcb098a4ded2858dbe87cf039e4c275673fe44a544a63144f79106ec",
+            "status": "failed",
+            "error": {
+              "code": "telemetry_mismatch",
+              "message": "provider call 'item_13' (git): provider error has no broker result; provider call 'item_14' (read): provider error has no broker result; provider call 'item_15' (rg): provider error has no broker result; provider call 'item_16' (read): provider error has no broker result; provider call 'item_17' (git): provider error has no broker result"
+            },
+            "calls": 12,
+            "wall_ms": 77300
+          },
+          {
+            "directory": "08-pulsar-publication-ledger-callbacks-baseline",
+            "run_id": "aeval-31e3d3845abe5643",
+            "artifact_sha256": "8045565b1d5b7f4dd796e96bd9ade541d1cb9579353c239b24a43efdb50be999",
+            "episode_file_sha256": "5e6c6ee5fe020dd7225a7cc7d4e1108e85048dcf40a5ac4b7fe7f5ce4f6c5360",
+            "status": "failed",
+            "error": {
+              "code": "telemetry_mismatch",
+              "message": "provider call 'item_17' (git): provider error has no broker result; provider call 'item_18' (git): provider error has no broker result; provider call 'item_19' (git): provider error has no broker result; provider call 'item_20' (git): provider error has no broker result; provider call 'item_21' (git): provider error has no broker result"
+            },
+            "calls": 15,
+            "wall_ms": 111105
+          },
+          {
+            "directory": "09-pulsar-publication-ledger-callbacks-graph",
+            "run_id": "aeval-aaaab500ea5d2f2f",
+            "artifact_sha256": "dc47d73cdc4a145dd9095db34ed1e54f1aee59cc6c34b7419049b0768909c97f",
+            "episode_file_sha256": "4f3456db48b5d178e5d741ec9527094febf22e3ae2d51930742305cb3ea3715b",
+            "status": "failed",
+            "error": {
+              "code": "telemetry_mismatch",
+              "message": "provider call 'item_15' (git): provider error has no broker result; provider call 'item_16' (git): provider error has no broker result; provider call 'item_17' (git): provider error has no broker result; provider call 'item_18' (git): provider error has no broker result; provider call 'item_19' (git): provider error has no broker result"
+            },
+            "calls": 14,
+            "wall_ms": 90990
+          },
+          {
+            "directory": "10-pulsar-media-deferred-callbacks-graph",
+            "run_id": "aeval-124f354eea3cc843",
+            "artifact_sha256": "73043266169e43a015c7494f21af61c49a80281f814c54078168bbd02a86ffdb",
+            "episode_file_sha256": "fe9b5f7bd967d8bfee8288f54467b2a41c75d7e21e70b03ede3bc95c19d50132",
+            "status": "ok",
+            "error": null,
+            "calls": 14,
+            "wall_ms": 83770
+          },
+          {
+            "directory": "11-pulsar-media-deferred-callbacks-baseline",
+            "run_id": "aeval-83d9f0e6f7a57ab4",
+            "artifact_sha256": "f4fefd6238cce00be7fbcf8dcfeefa1c93804820c340bcebff019c6a21c2d833",
+            "episode_file_sha256": "e2845f58f1aaef973f16f3f31695727f09cd2340de62971fafabc44f1e5df6ba",
+            "status": "ok",
+            "error": null,
+            "calls": 20,
+            "wall_ms": 87580
+          },
+          {
+            "directory": "12-pulsar-bounded-error-commit-baseline",
+            "run_id": "aeval-06583b7414318a6d",
+            "artifact_sha256": "b72f3f00e5e0bee36a6a311cec743e4bf380184631f4a5243f7df749e4939e22",
+            "episode_file_sha256": "191fdce4c099a71923dac27da2b606ccdb84bdd86a4b87e0e27d9f5e6bd07416",
+            "status": "ok",
+            "error": null,
+            "calls": 9,
+            "wall_ms": 96155
+          },
+          {
+            "directory": "13-pulsar-bounded-error-commit-graph",
+            "run_id": "aeval-55fc81dda53e5c5a",
+            "artifact_sha256": "a80cf2d1aad6b25d710dd26d1b0d71d8d8ea46661dcb688c8aa095befb41d3d5",
+            "episode_file_sha256": "1d5509a12eabc69f5538750fb8775ab9f81116b1537375ca313b04f63cbf4683",
+            "status": "ok",
+            "error": null,
+            "calls": 9,
+            "wall_ms": 89440
+          },
+          {
+            "directory": "14-pulsar-channel-dispatch-abstention-graph",
+            "run_id": "aeval-a0ce97d390c7f5c6",
+            "artifact_sha256": "f3c310c22410244b0bd265f29c9ec2065ec9da3139204eb93eeba2241da566de",
+            "episode_file_sha256": "1dd1efd34b873256f27e417bf26f8a6b3f6ce7549f38c6e44051769b7099f7df",
+            "status": "ok",
+            "error": null,
+            "calls": 12,
+            "wall_ms": 56331
+          },
+          {
+            "directory": "15-pulsar-channel-dispatch-abstention-baseline",
+            "run_id": "aeval-5cc7f9e4f0b03414",
+            "artifact_sha256": "73231d7890dc8f5789829346bef864bb750bb6d2a7a0a492d591d310d31da25d",
+            "episode_file_sha256": "a710473bd6401bd22cca2d06155a35e5562333b7a940e00b8818227bc879d013",
+            "status": "ok",
+            "error": null,
+            "calls": 15,
+            "wall_ms": 72531
+          }
+        ]
+      }
+    ],
+    "input_artifacts": [
+      {
+        "file": "raw-captures-manifest.json",
+        "artifact": "certification/inputs/raw-captures-manifest.json",
+        "sha256": "b9d67f04972269fd430cb257b63abf4ceda15049f368bcce10fce683000599cb",
+        "bytes": 777
+      },
+      {
+        "file": "raw-captures.tar.gz.part-01",
+        "artifact": "certification/inputs/raw-captures.tar.gz.part-01",
+        "sha256": "7d3b7a1546ea53c0b80b9641e476d2a3d7759084cae281485aca83e7fafdb6fe",
+        "bytes": 700000
+      },
+      {
+        "file": "raw-captures.tar.gz.part-02",
+        "artifact": "certification/inputs/raw-captures.tar.gz.part-02",
+        "sha256": "f343c46ad1e1e2a43f1d33350b27c6cc987b14c767c880997f5cbfe0d6296227",
+        "bytes": 562766
+      },
+      {
+        "file": "real-audits.json",
+        "artifact": "certification/inputs/real-audits.json",
+        "sha256": "c82bd4325246c5ca53534ebed11a73139aa08a20d4d2355d009599b974f5bb09",
+        "bytes": 49227
+      },
+      {
+        "file": "real-capture-summary.json",
+        "artifact": "certification/inputs/real-capture-summary.json",
+        "sha256": "bc1fd812f4091430bbea5ecd8c2513bab96aefbef095283a93e70c39e54d8ca3",
+        "bytes": 8459
+      },
+      {
+        "file": "real-original-adapt-attempt.json",
+        "artifact": "certification/inputs/real-original-adapt-attempt.json",
+        "sha256": "fcd0a96d408633607724ba62114f38301f94d1b1d76c1d17aa55a860befb4452",
+        "bytes": 231
+      },
+      {
+        "file": "real-preregistration.json",
+        "artifact": "certification/inputs/real-preregistration.json",
+        "sha256": "4513112550f7a387c12ce0a74ea5e74f496c090c13dc05ea00c61ba38c3f521b",
+        "bytes": 9004
+      },
+      {
+        "file": "real-records.json.gz",
+        "artifact": "certification/inputs/real-records.json.gz",
+        "sha256": "c51dc65b3b8d79437d4c1bd1e1a2c3fec1552c2d108ee9d5834352890d266c06",
+        "bytes": 335393
+      },
+      {
+        "file": "real-score-attempt.json",
+        "artifact": "certification/inputs/real-score-attempt.json",
+        "sha256": "df415d1f5f37384f2c8d5233c3876af9077dd1c211abaf15ed6e3ff5d8fe62ac",
+        "bytes": 1303
+      },
+      {
+        "file": "real-score.json",
+        "artifact": "certification/inputs/real-score.json",
+        "sha256": "5d6197c7fba23c248943a1c343f63ff51ed4dc25ced4f30ef820d4b13c194602",
+        "bytes": 25975
+      },
+      {
+        "file": "real-semantic-review-notes.json",
+        "artifact": "certification/inputs/real-semantic-review-notes.json",
+        "sha256": "e2a6d13c5c3305068ce3c35570559df3a15fa04677d0471cd8d0f14cb03184c5",
+        "bytes": 47111
+      },
+      {
+        "file": "synthetic-bundle.json",
+        "artifact": "certification/inputs/synthetic-bundle.json",
+        "sha256": "427f7adc7bcf6854fc67d1c26171f3bc680fd3c6379d5a54732d7167ec83a3f2",
+        "bytes": 153845
+      },
+      {
+        "file": "synthetic-capture-summary.json",
+        "artifact": "certification/inputs/synthetic-capture-summary.json",
+        "sha256": "6ceb5ab98b383ca2105545fb02646140358fe3b054368b12fed3cdd2b17d3e21",
+        "bytes": 939
+      },
+      {
+        "file": "synthetic-original-score-attempt.json",
+        "artifact": "certification/inputs/synthetic-original-score-attempt.json",
+        "sha256": "4e2a90fa8fca094d8e2ab12c51e441e5ba4b9912be0d8b900acb106bfab72064",
+        "bytes": 241
+      },
+      {
+        "file": "synthetic-preregistration.json",
+        "artifact": "certification/inputs/synthetic-preregistration.json",
+        "sha256": "5628fb8322a308540d6caff67e047e3580037cda7fe954b9186ff63594477cbf",
+        "bytes": 16755
+      },
+      {
+        "file": "synthetic-score.json",
+        "artifact": "certification/inputs/synthetic-score.json",
+        "sha256": "8593edbe6b7062b78f739d641128ec4bf3ec455e8ffab7580c34b5da180a88c3",
+        "bytes": 19418
+      }
+    ],
+    "raw_archive": {
+      "schema_version": 1,
+      "archive_sha256": "5f4cb27c586bd79daa482a4e989ca5afad396e3697eb4df2319fb630bc0d0252",
+      "archive_bytes": 1262766,
+      "parts": [
+        {
+          "artifact": "certification/inputs/raw-captures.tar.gz.part-01",
+          "bytes": 700000,
+          "sha256": "7d3b7a1546ea53c0b80b9641e476d2a3d7759084cae281485aca83e7fafdb6fe"
+        },
+        {
+          "artifact": "certification/inputs/raw-captures.tar.gz.part-02",
+          "bytes": 562766,
+          "sha256": "f343c46ad1e1e2a43f1d33350b27c6cc987b14c767c880997f5cbfe0d6296227"
+        }
+      ],
+      "reassemble": "Concatenate parts in the listed order and verify archive_sha256 before extracting. Contains original episode.json and six hashed capture files for each of all40 episodes; source snapshots remain pinned by frozen corpora."
+    },
+    "verification_artifact": "certification/input-verification.json",
+    "limitations": [
+      "All failed and invalid episodes remain in denominators; no retries, replacements, truth edits, raw rewrites or provider reruns.",
+      "Five real heldout tasks share the same three repositories with development tasks; twelve synthetic pairs use tiny Rust/Python fixtures.",
+      "Graph exposure was broker CLI tools, not installed plugin callbacks, scheduling, task recommendation or bundled skill loading. Synthetic graph arm used one search among47 calls; real graph arm used2 sync and2 search among98 calls.",
+      "Unblinded source judgments are attributed evidence, not an independent blind audit; hashes bind content and do not authenticate reviewer identity.",
+      "Oracle false_positives include real out-of-set symbols and namespace formatting differences; counts22/20 are not fabricated-claim counts.",
+      "Provider input/output token totals observed for all40 episodes; cost and server weights revision unknown. No inference about billing or cost-effectiveness.",
+      "Real paired speed restricted to one both-correct pair; totals include cold setup and failures. No supported speedup/general effectiveness claim.",
+      "Canonical real scorer disallows effectiveness claims and does not meet preregistered follow-up eligibility. Final candidate repairs have behavioral validation, not new provider effectiveness evidence."
+    ]
+  },
+  "repairs": [
+    {
+      "task_id": "ORB-13737",
+      "commit": "9afc4c32489af23c22f96471c099c5fbfe93381c",
+      "result": "Four doctest examples now fence enclosing Git discovery; all14 doctests passed under scratch TMPDIR."
+    },
+    {
+      "task_id": "ORB-13738",
+      "commit": "4f4521c89e1cbd39a3b59b3c57b5857fa312e375",
+      "result": "Diagnostic-prefixed Orbit callback refusals preserve structured codes."
+    },
+    {
+      "task_id": "ORB-13745",
+      "commit": "8b7d7482216ad8b63c7045b53701655db0d15804",
+      "result": "Confined broker supports real Codex tool requests and validates returned containment."
+    },
+    {
+      "task_id": "ORB-13748",
+      "commit": "204db7e81493fb91c7ded2a6f92738d4599276e5",
+      "result": "Citation association and partial telemetry stay strict."
+    },
+    {
+      "task_id": "ORB-13762",
+      "commit": "7887d14a37721616ee0acbf4f7e53466da64742f",
+      "result": "Parallel calls are matched without order-dependent telemetry rejection; historical failures remain."
+    },
+    {
+      "task_id": "ORB-13757",
+      "commit": "8362cc9a635500002f9cb4f8875b1961b5338406",
+      "result": "Graph cache mutation annotations and exited fixture cleanup corrected."
+    },
+    {
+      "task_id": "ORB-13764",
+      "commit": "66171967bac34a6f574a7d06821a687b77c11ca8",
+      "result": "Invalid citations fail an episode while the complete cohort is retained."
+    },
+    {
+      "task_id": "ORB-13769",
+      "commit": "a3dafc0625a1748460d7551e9678a3d9f0b15480",
+      "result": "Broker transport diagnostics, bounded errors and process supervision added; does not retroactively recover historical failed answers."
+    },
+    {
+      "task_id": "ORB-13771",
+      "commit": "1c5326161c096155e9b8e6516ece601687ed1469",
+      "result": "Canonical adapter accepts and verifies aggregate raw redaction metadata; existing records and12 audits now score."
+    },
+    {
+      "task_id": "ORB-13763",
+      "commit": "da5009b7bf8f1a328aa3923252b3b049b1e8bd17",
+      "result": "Public task/run delivery observation replaces operator-only run.show; installed positive/negative fixtures and actual historical backend evidence available."
+    }
+  ],
+  "remaining_risks": [
+    "Public delivery read absent from tagged Orbit0.25.1 and CI-pinned0.25.0; strict installed test passes against this measured host, not those release binaries.",
+    "Bounded task_runs/task_ids import cannot enumerate all retries or prove complete historical coverage; actual evidence preserves2 squash content exclusions.",
+    "Historical broker failures remain failures after repairs; no new provider cohort authorized.",
+    "changes writes plugin snapshot/scratch caches under existing decision D6 (STD-01@2 R31); do not extend old eleven-tool read-only checks to changes.",
+    "macOS, dashboard, scheduled routines, official git+ installation and live upgrade were not exercised here."
+  ],
+  "historical_candidate": {
+    "task_id": "ORB-13712",
+    "run_id": "jrun-20261003-0153-c2",
+    "source": "ac6d5b91f973874325bac789e9c433a71c805766",
+    "report_archived_at": "https://github.com/constellation-works/orbit-graph/blob/da5009b7bf8f1a328aa3923252b3b049b1e8bd17/docs/plugin-readiness.md",
+    "orbit_sha256": "f9bf822eab881ae8a9a81605929f026db79cd742231354420c888326d87891c9",
+    "graph_sha256": "fdbfff46d20e3fcf367c81efd0d01143a43df50134ed8c87bc0e615e37bac6d1",
+    "delivered_run_import": "incomplete_then",
+    "doctests": "4failed_then",
+    "conformance": "42/42then",
+    "current_claim": "Superseded; historical hashes and failures retained, not recast as current measurements."
+  },
+  "reconciliation": {
+    "baseline": "clean",
+    "delivery_paths": [
+      "docs/plugin-readiness.md",
+      "docs/plugin.md",
+      "evals/README.md",
+      "evals/readiness-20261003/README.md",
+      "evals/readiness-20261003/results.json"
+    ],
+    "new_file_selectors": [
+      "file:evals/readiness-20261003/README.md",
+      "file:evals/readiness-20261003/results.json"
+    ],
+    "all_paths_within_existing_durable_selectors": true,
+    "outside_scope_delivery_paths": [],
+    "scratch_root": ".orbit/tmp/certification",
+    "run_owned_nondeliverable_paths_outside_scratch": [],
+    "committed": false,
+    "artifact": "certification/reconciliation.json"
+  }
+}
