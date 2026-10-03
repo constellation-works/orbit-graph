@@ -24,26 +24,46 @@ different tag, or its SHA-256 is not the `--backend-sha256` the manifest binds
 
 ## 2. Install the plugin
 
-Install from a tagged release, and bundle the executable built from the same
-tag. Every Orbit service then runs that binary, whatever its `PATH` is:
+Use the full procedure in [docs/plugin.md](https://github.com/constellation-works/orbit-graph/blob/main/docs/plugin.md#install)
+and check [the Linux readiness report](https://github.com/constellation-works/orbit-graph/blob/main/docs/plugin-readiness.md)
+for the tested candidate and remaining gaps. Prepare an export and binary from
+the same immutable revision before changing host state. For a local export,
+remove `metadata.origin` and bundle with the default SHA-256 binding before
+installation; tools then register as `graph.*`.
+
+For a tagged first-party source, build from a clean checkout at that tag.
+After the operator authorizes host installation, choose `add` for a new
+install or `upgrade` for an existing one, then bundle the matching binary:
 
 ```sh
-cargo install --git https://github.com/constellation-works/orbit-graph --tag <tag> --locked orbit-graph-cli
-orbit plugin add git+https://github.com/constellation-works/orbit-graph#<tag> --enable --grant fs,orbit_tools
-plugin_root=$(orbit plugin show graph | sed -n 's/^Install path: //p')
+cargo build --release --locked -p orbit-graph-cli
+orbit plugin add git+https://github.com/constellation-works/orbit-graph#<tag>
+# Existing install: orbit plugin upgrade graph git+https://github.com/constellation-works/orbit-graph#<tag>
+plugin_root=$(orbit plugin show graph --format json | python3 -c 'import json,sys; print(json.load(sys.stdin)["install_path"])')
 # Run the bundler from an orbit-graph source checkout.
-sh scripts/bundle-plugin-binary.sh --unbound --binary "$HOME/.cargo/bin/orbit-graph" "$plugin_root"
-orbit plugin test "$plugin_root"
+sh scripts/bundle-plugin-binary.sh --unbound --binary "$PWD/target/release/orbit-graph" "$plugin_root"
+mkdir -p .orbit/tmp
+check_source=$(mktemp -d "$PWD/.orbit/tmp/graph-plugin-check.XXXXXX")
+cp -R "$plugin_root" "$check_source/.orbit-plugin"
+orbit plugin validate --first-party "$check_source"
+orbit plugin test --first-party "$check_source"
+# Separate host consent, after reviewing the digest and requested roots:
+orbit plugin enable graph --grant fs,orbit_tools
 ```
 
 - `--unbound` keeps the release's `--allow-unbound-backend` override, which
   every response reports as `backend_override`. Without it the bundler binds
   the tree to the executable's SHA-256, and the tree must then be approved
-  again with `orbit plugin add <tree> --force`, which a `git+` install cannot
-  do in place.
+  again from a prepared `.orbit-plugin/` source export with
+  `orbit plugin add <export> --force`, which a `git+` install cannot do in place.
 
 - The `fs` and `orbit_tools` grants are required. The plugin requests no
-  network access.
+  network access. `enable --grant` records the complete set, replacing any
+  previous set. An upgrade can preserve existing grants when permission
+  requests are unchanged; widened requests disable it without new consent.
+- Orbit 0.25.1 cannot test the installed version directory directly, since
+  its manifest is at the top level. Test the matching source export, or the
+  `.orbit-plugin/` wrapper above. Conformance does not prove live callbacks.
 - `orbit plugin add` and `orbit plugin upgrade` replace the whole installed
   tree, so repeat the bundle step after either.
 - Without a bundled binary, the launcher falls back to the first `orbit-graph`
