@@ -1046,9 +1046,17 @@ fn describe_status(status: ExitStatus) -> String {
 }
 
 /// Orbit's structured refusal on a failed `orbit tool run`: a JSON object
-/// on stderr with a string `code` and an `error` (or `message`).
+/// on stderr with a string `code` and an `error` (or `message`). Diagnostic
+/// lines may precede the object, which must start on its own line and consume
+/// the remaining stderr. Embedded JSON, multiple documents and trailing text
+/// are not refusal framing; a malformed first object is never skipped.
 fn orbit_refusal(tool: &str, stderr: &[u8]) -> Option<GraphError> {
-    let refusal: Value = serde_json::from_slice(stderr.trim_ascii()).ok()?;
+    let mut document = stderr.trim_ascii();
+    while !document.starts_with(b"{") {
+        let newline = document.iter().position(|byte| *byte == b'\n')?;
+        document = document[newline + 1..].trim_ascii_start();
+    }
+    let refusal: Value = serde_json::from_slice(document).ok()?;
     let code = string_field(&refusal, "code")?;
     let message = string_field(&refusal, "error")
         .or_else(|| string_field(&refusal, "message"))

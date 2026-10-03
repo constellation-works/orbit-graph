@@ -77,6 +77,14 @@ fn installed_v2_plugin_serves_every_tool_over_cli_and_mcp() {
         "authoritative task sync",
     );
     assert_task_sync(&sync);
+    // The outer operator may invoke maintenance, while the installed plugin's
+    // callback still cannot read operator-only workflow runs.
+    let run_sync = json!({"operation":"orbit_sync", "workspace":"graph-v2-test", "run_ids":["jrun-graph-v2-nonexistent"]});
+    let denied = json_output(
+        fixture.cli_tool("maintain", &run_sync, true),
+        "CLI run callback denial",
+    );
+    assert_run_callback_denied(&denied);
 
     let mut agent = Mcp::start(&fixture, false);
     let version = agent.call("version", json!({}));
@@ -123,6 +131,9 @@ fn installed_v2_plugin_serves_every_tool_over_cli_and_mcp() {
     let sync = mcp.call("maintain", task_sync);
     assert_ne!(sync["isError"], true, "{sync}");
     assert_task_sync(&sync["structuredContent"]);
+    let denied = mcp.call("maintain", run_sync);
+    assert_ne!(denied["isError"], true, "{denied}");
+    assert_run_callback_denied(&denied["structuredContent"]);
     let malformed = mcp.call("search", json!({"query": "parse", "unknown_field": true}));
     assert_eq!(malformed["isError"], true, "{malformed}");
     assert!(
@@ -147,6 +158,27 @@ fn assert_task_sync(value: &Value) {
     assert_eq!(value["coverage"]["failed"], 0, "{value}");
     assert_eq!(value["coverage"]["discovered_unique_runs"], 0, "{value}");
     assert_eq!(value["outcomes"], json!([]), "{value}");
+    assert_eq!(value["status"]["verified_deliveries"], 0, "{value}");
+}
+
+fn assert_run_callback_denied(value: &Value) {
+    assert_eq!(value["coverage"]["failed"], 1, "{value}");
+    assert_eq!(value["coverage"]["excluded"], 0, "{value}");
+    assert_eq!(
+        value["outcomes"].as_array().expect("run outcomes").len(),
+        1,
+        "{value}"
+    );
+    assert_eq!(
+        value["outcomes"][0]["run_id"], "jrun-graph-v2-nonexistent",
+        "{value}"
+    );
+    assert_eq!(value["outcomes"][0]["status"], "failed", "{value}");
+    let error = &value["outcomes"][0]["error"];
+    assert_eq!(error["code"], "orbit_refused", "{value}");
+    assert_eq!(error["orbit"]["code"], "capability_denied", "{value}");
+    assert_eq!(error["orbit"]["tool"], "orbit.workflow.run.show", "{value}");
+    assert_eq!(error["retryable"], false, "{value}");
     assert_eq!(value["status"]["verified_deliveries"], 0, "{value}");
 }
 
