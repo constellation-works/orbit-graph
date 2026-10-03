@@ -20,7 +20,7 @@ require_binaries
 
 GENERATED_AT="${GENERATED_AT:-2026-09-13T00:00:00Z}"
 DEPTH="${DEPTH:-1}"
-dest="${DEST:-$REPO_ROOT/docs/evaluation/change-explorer/reports}"
+dest="${DEST:-$REPO_ROOT/evals/change-explorer/reports}"
 mkdir -p "$dest"
 
 # The two "most consequential changed symbols" each study report analyses.

@@ -892,12 +892,12 @@ product-level boundary — bound defaults, cache behavior, and stated
 non-goals. It does not restate the resolver and language-coverage findings
 from real-repository evaluation: those nine findings, ordered by how much
 they distort an answer, live at
-[`docs/evaluation/change-explorer/README.md#limitations-handoff`](../evaluation/change-explorer/README.md#limitations-handoff)
+[`evals/change-explorer/README.md#limitations-handoff`](../../evals/change-explorer/README.md#limitations-handoff)
 and are being actively revised by ORB-12422 against the resolver fixes in
 ORB-12416/ORB-12417; read that document directly rather than a copy of it.
 
 - **Extractor blind spots and language coverage.** See
-  [the evaluation's limitations](../evaluation/change-explorer/README.md#limitations-handoff)
+  [the evaluation's limitations](../../evals/change-explorer/README.md#limitations-handoff)
   for the current, evolving list — Rust cross-file resolution degrading to
   name-only matching, intra-file renames with body edits never paired, nested functions
   invisible to the graph, runtime/subprocess invocation associated by program

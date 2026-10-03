@@ -412,7 +412,7 @@ keeps its own schema version, 1.
 
 The synthetic adversarial executable fixture runs in CI. The bounded real Orbit
 prospective input, measured result, and its no-superiority limitation are
-documented in [`docs/evaluation/`](evaluation/README.md).
+documented in [`evals/`](../evals/README.md).
 
 ## Live Git commit-text evaluation
 
@@ -438,7 +438,7 @@ recall@k, and MRR@k. A metric with no cases or no relevant truth is `null`.
 
 Like `recommend`, a live query may write a best-effort target-symbol cache
 beside the history index. That cache is not history evidence. The recorded
-runs are in [`docs/evaluation/`](evaluation/README.md).
+runs are in [`evals/`](../evals/README.md).
 
 ## Language coverage
 

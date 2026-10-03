@@ -1,5 +1,9 @@
 # Demo: exploring a real change end to end
 
+This archived walkthrough records the explorer service/UI before its retirement
+in ORB-13255. Commands, output and measurements below describe that historical
+version. Navigation links resolve to the moved evidence or the original source.
+
 A scripted walkthrough of the seven steps a developer follows to understand
 one Git change with `orbit-graph-explorer`: **open a comparison, build the
 snapshots, read the change list, inspect potential impact, follow source
@@ -14,7 +18,7 @@ machine that ran it; budget under ten even on a slower one, since the
 one-time cost is the two cold index builds in step 1.
 
 Prerequisites: follow
-[`crates/orbit-graph-explorer/README.md`](../../../crates/orbit-graph-explorer/README.md)
+[`crates/orbit-graph-explorer/README.md`](https://github.com/constellation-works/orbit-graph/blob/5a09f60141fc8a10728fdd5d32cdb8c11eefe2d5/crates/orbit-graph-explorer/README.md)
 to install the binary first. This walkthrough uses `curl` for the JSON
 routes so it runs the same in a terminal or a CI log; open the printed URL in
 a browser to see the same evidence in the three-pane UI instead.
@@ -160,7 +164,7 @@ naming_heuristic heuristic_match symbol:crates/orbit-graph-explorer/tests/explor
 Two candidates, one from each of two disclosed sources: an import
 relationship and a naming heuristic. Neither is presented as coverage —
 that claim is never made by this tool (see
-[Evidence categories](../../design/change-explorer.md#evidence-categories)).
+[Evidence categories](../../docs/design/change-explorer.md#evidence-categories)).
 
 - `screenshots/04-candidate-tests.png` / `screenshots/04-candidate-tests-narrow.png` — pending.
 
@@ -272,7 +276,7 @@ truncated/unsupported/excluded scope — either as JSON over HTTP or as the
 Stop the service when finished (`Ctrl-C`, or `kill` the process started
 above); both snapshot trees and their indexes are removed with it unless
 `--cache-dir`/the default cache kept them (see
-[the explorer README's cache section](../../../crates/orbit-graph-explorer/README.md#cache-directory-and-clean)).
+[the explorer README's cache section](https://github.com/constellation-works/orbit-graph/blob/5a09f60141fc8a10728fdd5d32cdb8c11eefe2d5/crates/orbit-graph-explorer/README.md#cache-directory-and-clean)).
 
 ## Screenshot backlog
 
@@ -285,6 +289,6 @@ its UI timing. Whoever next has a headless browser available should:
    printed URL instead of `curl`.
 2. Capture each pending file at both a desktop width (≥1280px) and a narrow
    width (≤480px), per the mandatory-fallback rule in
-   [the UI sketch](../../design/change-explorer.md#ui-sketch): the plain-table
+   [the UI sketch](../../docs/design/change-explorer.md#ui-sketch): the plain-table
    fallback must be legible at both.
 3. Save them into `screenshots/` using the file names listed under each step.

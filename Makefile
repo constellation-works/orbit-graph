@@ -1,5 +1,5 @@
 .DEFAULT_GOAL := help
-.PHONY: help build release run dev check test fmt fmt-check clippy doc tree ci ci-fast ci-lint standards-check structure deny install uninstall clean watch plugin-bundle plugin-check goldens
+.PHONY: help build release run dev check test fmt fmt-check clippy doc tree ci ci-fast ci-lint standards-check structure deny install uninstall clean watch plugin-bundle plugin-check goldens agent-evaluation-check
 
 CARGO ?= cargo
 BINARY := orbit-graph
@@ -118,7 +118,7 @@ ci-fast: fmt-check standards-check structure agent-evaluation-check
 ci-lint: clippy
 
 agent-evaluation-check:
-	python3 -B docs/evaluation/agent-navigation/eval.py check
+	python3 -B evals/agent-navigation/eval.py check
 
 standards-check:
 	sh docs/standards/check.sh

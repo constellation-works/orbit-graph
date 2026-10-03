@@ -26,7 +26,7 @@
 set -euo pipefail
 
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
-REPO_ROOT="${REPO_ROOT:-$(cd "$here/../../../.." && pwd -P)}"
+REPO_ROOT="${REPO_ROOT:-$(cd "$here/../../.." && pwd -P)}"
 SCRATCH="${SCRATCH:?set SCRATCH to a scratch directory}"
 CODEBASES="${CODEBASES:-$HOME/workspace/constellation/codebases}"
 GRAPH="${GRAPH:-$REPO_ROOT/target/release/orbit-graph}"

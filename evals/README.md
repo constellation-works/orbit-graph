@@ -2,6 +2,14 @@
 
 This directory holds these unrelated evaluations.
 
+The tracked evaluation tree moved from `docs/evaluation/` to `evals/` without
+changing frozen corpora, locks, source snapshots or recorded results. Current
+commands and navigation links use the new paths. Old paths inside captured
+output and historical delivery claims describe the checkout used at the time;
+they are not current file locations. Archived explorer service/UI recipes also
+require their historical binary, retired by ORB-13255; relocation does not
+rerun those measurements or certify that tooling against the current workspace.
+
 * **Recommendation evaluation** — below: `orbit-graph evaluate`'s chronological,
   fail-closed backtest of change-destination recommendations.
 * **[Live commit-text evaluation](commit-text-live.md)** — `evaluate --live`
@@ -17,6 +25,9 @@ This directory holds these unrelated evaluations.
 * **[Paired agent navigation](agent-navigation/README.md)** — a frozen Rust/Python
   fixture corpus, independent truth, operator episode plan and fail-closed scorer.
   Checked-in results are scripted smoke only; real agent effectiveness is unmeasured.
+* **[Real repository paired navigation](real-agent-navigation/README.md)** —
+  frozen source views and requests, source-reviewed truth and an offline scorer.
+  Real agent effectiveness is unmeasured.
 
 ## Recommendation evaluation
 
@@ -95,7 +106,7 @@ Reproduce from a checkout containing the named commits:
 
 ```sh
 orbit-graph --format json evaluate \
-  --input docs/evaluation/orbit-prospective-20260907-input.json
+  --input evals/orbit-prospective-20260907-input.json
 ```
 
 Wall-clock latency varies by machine; compare the stable corpus digest,

@@ -51,7 +51,7 @@ them).
   [change recommendations](docs/design/change-recommendations.md),
   [change explorer](docs/design/change-explorer.md),
   [changes command](docs/design/changes-command/4_decisions.md)
-- [Evaluation](docs/evaluation/README.md) ·
+- [Evaluation](evals/README.md) ·
   [Contributing](CONTRIBUTING.md) · [Provenance](PROVENANCE.md)
 
 ## License

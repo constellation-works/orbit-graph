@@ -8,7 +8,7 @@
 set -euo pipefail
 
 # Repository holding the explorer under evaluation (this checkout).
-REPO_ROOT="${REPO_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../../../.." && pwd -P)}"
+REPO_ROOT="${REPO_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd -P)}"
 # Scratch root. Must not be inside REPO_ROOT: the evaluation must leave no
 # untracked artifacts in the worktree.
 SCRATCH="${SCRATCH:-/tmp/orb-12393}"

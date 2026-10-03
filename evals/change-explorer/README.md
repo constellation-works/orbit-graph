@@ -422,21 +422,21 @@ Ordered by how much they distort an answer.
 
 ```sh
 cargo build --workspace --locked --release
-docs/evaluation/change-explorer/scripts/clone-corpora.sh
-docs/evaluation/change-explorer/scripts/corpus-sizes.sh
-docs/evaluation/change-explorer/scripts/fixture-corpus.sh
+evals/change-explorer/scripts/clone-corpora.sh
+evals/change-explorer/scripts/corpus-sizes.sh
+evals/change-explorer/scripts/fixture-corpus.sh
 for s in 1 2 3 4 5; do
-  docs/evaluation/change-explorer/scripts/baseline.sh        "$s"
-  docs/evaluation/change-explorer/scripts/service-study.sh   "$s"
-  docs/evaluation/change-explorer/scripts/service-study.sh   "$s" --warm
-  docs/evaluation/change-explorer/scripts/summarize-study.sh "$s"
-  docs/evaluation/change-explorer/scripts/bounds-probe.sh    "$s"
-  docs/evaluation/change-explorer/scripts/performance.sh     "$s" 25
+  evals/change-explorer/scripts/baseline.sh        "$s"
+  evals/change-explorer/scripts/service-study.sh   "$s"
+  evals/change-explorer/scripts/service-study.sh   "$s" --warm
+  evals/change-explorer/scripts/summarize-study.sh "$s"
+  evals/change-explorer/scripts/bounds-probe.sh    "$s"
+  evals/change-explorer/scripts/performance.sh     "$s" 25
 done
-docs/evaluation/change-explorer/scripts/progress-cancel.sh 2
-docs/evaluation/change-explorer/scripts/closure-gap-probe.sh
-docs/evaluation/change-explorer/scripts/span-overlap.sh 3 crates/orbit-types/src/task/model.rs
-docs/evaluation/change-explorer/scripts/export-reports.sh
+evals/change-explorer/scripts/progress-cancel.sh 2
+evals/change-explorer/scripts/closure-gap-probe.sh
+evals/change-explorer/scripts/span-overlap.sh 3 crates/orbit-types/src/task/model.rs
+evals/change-explorer/scripts/export-reports.sh
 ```
 
 Budget roughly 45 minutes of wall clock on a machine like the one in

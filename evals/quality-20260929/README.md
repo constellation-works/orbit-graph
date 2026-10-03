@@ -126,9 +126,9 @@ did not establish a stable gain.
 Run the same harness against two source checkouts or clean exports:
 
 ```sh
-python3 docs/evaluation/quality-20260929/benchmarks/inbound/run.py /path/to/baseline --offline
-python3 docs/evaluation/quality-20260929/benchmarks/inbound/run.py /path/to/current --offline
-python3 docs/evaluation/quality-20260929/benchmarks/inbound/sql_only.py
+python3 evals/quality-20260929/benchmarks/inbound/run.py /path/to/baseline --offline
+python3 evals/quality-20260929/benchmarks/inbound/run.py /path/to/current --offline
+python3 evals/quality-20260929/benchmarks/inbound/sql_only.py
 ```
 
 `run.py` creates and retains a temporary locked Cargo project, prints its path,

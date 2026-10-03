@@ -210,11 +210,11 @@ slower and answers a strictly larger question set. Agent commands, not human eff
 
 ```sh
 cargo build --workspace --locked --release
-docs/evaluation/change-explorer/scripts/clone-corpora.sh
-docs/evaluation/change-explorer/scripts/baseline.sh        4
-docs/evaluation/change-explorer/scripts/service-study.sh   4
-docs/evaluation/change-explorer/scripts/service-study.sh   4 --warm
-docs/evaluation/change-explorer/scripts/summarize-study.sh 4
-docs/evaluation/change-explorer/scripts/bounds-probe.sh    4
-docs/evaluation/change-explorer/scripts/export-reports.sh  4
+evals/change-explorer/scripts/clone-corpora.sh
+evals/change-explorer/scripts/baseline.sh        4
+evals/change-explorer/scripts/service-study.sh   4
+evals/change-explorer/scripts/service-study.sh   4 --warm
+evals/change-explorer/scripts/summarize-study.sh 4
+evals/change-explorer/scripts/bounds-probe.sh    4
+evals/change-explorer/scripts/export-reports.sh  4
 ```

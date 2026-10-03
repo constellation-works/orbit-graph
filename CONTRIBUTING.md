@@ -15,7 +15,7 @@ scripts/check-dependency-direction.sh
 scripts/check-terminal-guard.sh
 scripts/check-orphan-modules.sh
 scripts/test-repo-gates.sh
-python3 -B docs/evaluation/agent-navigation/eval.py check
+python3 -B evals/agent-navigation/eval.py check
 cargo deny --locked check
 cargo fmt --all --check
 cargo clippy --workspace --all-targets --locked -- -D warnings
@@ -56,7 +56,7 @@ change-report generation time and its three wall-clock timings are normalized.
 Fixed Git trees, identities and timestamps keep commit IDs deterministic.
 
 The committed `direct-call` JSON sample under
-`docs/evaluation/change-explorer/samples/` is checked against the change
+`evals/change-explorer/samples/` is checked against the change
 analysis library. After an intended report output change (including an
 `EXTRACTOR_VERSION` or crate version bump), regenerate it with
 `UPDATE_GOLDENS=1 cargo test -p orbit-graph-changes --test derived_artifacts --locked`

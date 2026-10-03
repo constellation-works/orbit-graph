@@ -317,11 +317,11 @@ in [`performance.md`](performance.md). Agent commands, not human effort.
 
 ```sh
 cargo build --workspace --locked --release
-docs/evaluation/change-explorer/scripts/clone-corpora.sh
-docs/evaluation/change-explorer/scripts/baseline.sh        2
-docs/evaluation/change-explorer/scripts/service-study.sh   2
-docs/evaluation/change-explorer/scripts/service-study.sh   2 --warm
-docs/evaluation/change-explorer/scripts/summarize-study.sh 2
-docs/evaluation/change-explorer/scripts/bounds-probe.sh    2
-docs/evaluation/change-explorer/scripts/export-reports.sh  2
+evals/change-explorer/scripts/clone-corpora.sh
+evals/change-explorer/scripts/baseline.sh        2
+evals/change-explorer/scripts/service-study.sh   2
+evals/change-explorer/scripts/service-study.sh   2 --warm
+evals/change-explorer/scripts/summarize-study.sh 2
+evals/change-explorer/scripts/bounds-probe.sh    2
+evals/change-explorer/scripts/export-reports.sh  2
 ```

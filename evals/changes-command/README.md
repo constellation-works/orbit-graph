@@ -71,7 +71,7 @@ costs:
   symbol.
 
 What remains is a ~150 ms floor per traversal inside `orbit_graph`'s impact
-query. See [decision D1](../../design/changes-command/4_decisions.md#d1-cost-analysis-not-indexing-dominates-every-call-is-budgeted)
+query. See [decision D1](../../docs/design/changes-command/4_decisions.md#d1-cost-analysis-not-indexing-dominates-every-call-is-budgeted)
 and its follow-up.
 
 ## Study 2
@@ -144,7 +144,7 @@ Range `1ca6416e0ba2` → `5a5b45fec9a8`, the `orbit workspace teardown` handler.
   reference per caller and target. The caller is right and the cited line is
   a different arm. At the default profile the dispatcher is found (94 callers)
   but not among the 10 kept, because `fuzzy_name` sorts last. Recorded as a
-  follow-up in [D11](../../design/changes-command/4_decisions.md#d11-follow-ups).
+  follow-up in [D11](../../docs/design/changes-command/4_decisions.md#d11-follow-ups).
 - **`cli_command_handler` entry points: none**, as before. No entry point in
   either study was classified by that rule.
 
@@ -253,8 +253,8 @@ Range `ab6135e11aeb` → `156dc93d940e`, `TaskComplexity` and its consumers.
 
 ```sh
 cargo build --release -p orbit-graph-cli --locked
-SCRATCH=<scratch dir> docs/evaluation/changes-command/scripts/run-study.sh 2
-SCRATCH=<scratch dir> docs/evaluation/changes-command/scripts/run-study.sh 3
+SCRATCH=<scratch dir> evals/changes-command/scripts/run-study.sh 2
+SCRATCH=<scratch dir> evals/changes-command/scripts/run-study.sh 3
 # Every candidate test and caller of TaskComplexity (study 3):
 cd <scratch dir>/repos/orbit && orbit-graph changes \
   ab6135e11aeba511c7dbb2c20e766c78d166c208..156dc93d940ee60c4b1c7cd84db620e128977ff2 \

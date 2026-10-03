@@ -74,7 +74,7 @@ Installed CLI coverage uses `orbit tool run graph.<verb> --input ... --full`;
 MCP uses `graph_<verb>` through `orbit mcp serve`. This report does not separately
 certify every derived human command rendering.
 
-The [existing Mac report](evaluation/quality-20260929/README.md) describes other
+The [existing Mac report](../evals/quality-20260929/README.md) describes other
 commits and Orbit 0.25.0. It was read without modification and is not a Linux
 measurement or proof of this candidate's missing delivered-run coverage.
 

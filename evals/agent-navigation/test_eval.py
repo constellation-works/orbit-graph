@@ -16,7 +16,7 @@ class EvaluationTests(unittest.TestCase):
     def setUpClass(cls):
         cls.data, cls.trees = study.corpus()
         cls.raw = study.smoke(cls.data, cls.trees)
-        cls.scratch = study.ROOT.parents[2] / ".orbit/tmp/agent-navigation-tests"
+        cls.scratch = study.ROOT.parents[1] / ".orbit/tmp/agent-navigation-tests"
         cls.scratch.mkdir(parents=True, exist_ok=True)
 
     def bundle(self):
