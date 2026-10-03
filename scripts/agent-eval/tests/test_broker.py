@@ -1,10 +1,12 @@
 """Broker behaviour through its real stdio MCP entry point."""
 import json
 import os
+import signal
 import subprocess
 import sys
 import time
 import unittest
+from unittest import mock
 
 sys.dont_write_bytecode = True
 import support  # noqa: E402
@@ -51,7 +53,7 @@ class BrokerTests(unittest.TestCase):
         names = [tool["name"] for tool in graph.request("tools/list")["result"]["tools"]]
         self.assertEqual(names, list(eval_broker.ARM_TOOLS["graph"]))
 
-    def test_tool_annotations_declare_the_only_mutation(self):
+    def test_tool_annotations_declare_private_state_mutations(self):
         client, _ = self.client("graph", graph=str(support.FAKE_GRAPH))
         listed = {tool["name"]: tool["annotations"]
                   for tool in client.request("tools/list")["result"]["tools"]}
@@ -60,9 +62,10 @@ class BrokerTests(unittest.TestCase):
             self.assertEqual(set(hints), {"readOnlyHint", "destructiveHint", "idempotentHint",
                                           "openWorldHint"}, name)
             self.assertFalse(hints["openWorldHint"], name)
-            # graph_sync writes (and with `full` replaces) the private .orbit-graph index.
-            self.assertEqual(hints["readOnlyHint"], name != "graph_sync", name)
+            # changes builds disposable snapshot indexes even with --no-cache.
+            self.assertEqual(hints["readOnlyHint"], name not in ("graph_sync", "changes"), name)
             self.assertEqual(hints["destructiveHint"], name == "graph_sync", name)
+            self.assertTrue(hints["idempotentHint"], name)
 
     def test_baseline_refuses_graph_calls_without_counting_them(self):
         client, state = self.client("baseline")
@@ -244,6 +247,30 @@ class BrokerTests(unittest.TestCase):
         pid = int((self.work / "slow.sh.pid").read_text())
         self.assertFalse(support.alive(pid), "background grandchild survived the timeout")
 
+    @unittest.skipUnless(os.environ.get("AGENT_EVAL_ORBIT_GRAPH"),
+                         "set AGENT_EVAL_ORBIT_GRAPH for real graph mutation checks")
+    def test_real_graph_mutations_preserve_source_and_git(self):
+        repo, snapshot = support.snapshot_repo(self.work / "real-graph")
+        config, _ = support.broker_config(self.work / "real-broker", repo, snapshot,
+                                          arm="graph", graph=os.environ["AGENT_EVAL_ORBIT_GRAPH"])
+        client = support.McpClient(config)
+        self.addCleanup(client.terminate)
+
+        def source_and_git():
+            return {str(path.relative_to(repo)): path.read_bytes()
+                    for path in repo.rglob("*") if path.is_file()
+                    and ".orbit-graph" not in path.relative_to(repo).parts}
+
+        original = source_and_git()
+        client.request("initialize")
+        for tool, arguments in (("graph_sync", {}), ("graph_sync", {"full": True}),
+                                ("changes", {}), ("changes", {})):
+            with self.subTest(tool=tool, arguments=arguments):
+                body, is_error = client.call(tool, arguments)
+                self.assertFalse(is_error, body)
+                self.assertEqual(source_and_git(), original)
+        self.assertEqual(client.close(), 0)
+
 
 class FixtureBoundsTests(unittest.TestCase):
     """The MCP fixture itself: a stalled or dead broker fails fast and is reaped."""
@@ -260,13 +287,84 @@ class FixtureBoundsTests(unittest.TestCase):
         with self.assertRaises(ProcessLookupError):
             os.killpg(pid, 0)  # the whole group is gone, not just the leader
 
+    def descendant(self, leader_stays=False):
+        # The child acknowledges its TERM handler before the leader reports its
+        # PID. It has separate pipes, so MCP EOF cannot imply group exit.
+        child_code = ("import os, signal, time; "
+                      "signal.signal(signal.SIGTERM, signal.SIG_IGN); "
+                      "print(os.getpid(), flush=True); time.sleep(600)")
+        code = ("import json, os, subprocess, sys, time\n"
+                f"child = subprocess.Popen([sys.executable, '-B', '-c', {child_code!r}], "
+                "stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)\n"
+                "print(json.dumps(int(child.stdout.readline())), flush=True)\n"
+                "sys.stdin.readline()\n"
+                "os.close(0); os.close(1)\n" +
+                ("time.sleep(600)\n" if leader_stays else ""))
+        client = self.stalled(code)
+        pid = client.read()
+        # The independent failure guard uses a stable kernel handle, never a
+        # bare PID/group after the fixture under test might have reaped it.
+        fd = os.pidfd_open(pid)
+
+        def cleanup_child():
+            try:
+                signal.pidfd_send_signal(fd, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+            finally:
+                os.close(fd)
+
+        self.addCleanup(cleanup_child)
+        client.send_raw("\n")
+        return client, pid
+
+    def assert_descendant_gone(self, client, pid):
+        deadline = time.monotonic() + 2
+        while support.alive(pid) and time.monotonic() < deadline:
+            time.sleep(0.02)
+        self.assertFalse(support.alive(pid), "owned descendant survived fixture teardown")
+        self.assertIsNotNone(client.process.returncode)
+        self.assertFalse(support.alive(client.process.pid))
+        self.assertEqual(eval_broker.live_group_members(client.process.pid), [])
+        # Repeated cleanup cannot signal a group after its leader was reaped.
+        with mock.patch.object(os, "killpg", wraps=os.killpg) as signal_group:
+            self.assertEqual(client.terminate(), client.process.returncode)
+            signal_group.assert_not_called()
+
+    def test_close_sweeps_descendant_after_leader_exit(self):
+        client, pid = self.descendant()
+        self.assertTrue(eval_broker.wait_leader(client.process.pid, 2))  # WNOWAIT
+        started = time.monotonic()
+        self.assertEqual(client.close(timeout_s=0.2), 0)
+        self.assertLess(time.monotonic() - started, 5)
+        self.assert_descendant_gone(client, pid)
+
+    def test_eof_sweeps_descendant_after_leader_exit(self):
+        client, pid = self.descendant()
+        self.assertTrue(eval_broker.wait_leader(client.process.pid, 2))
+        started = time.monotonic()
+        with self.assertRaises(EOFError):
+            client.read()  # Error diagnostics must not reap the leader either.
+        self.assertEqual(client.terminate(), 0)
+        self.assertLess(time.monotonic() - started, 5)
+        self.assert_descendant_gone(client, pid)
+
+    def test_closed_pipes_with_live_leader_sweep_descendant(self):
+        client, pid = self.descendant(leader_stays=True)
+        started = time.monotonic()
+        with self.assertRaises(EOFError):
+            client.read()
+        self.assertLess(client.close(timeout_s=0.2), 0)
+        self.assertLess(time.monotonic() - started, 5)
+        self.assert_descendant_gone(client, pid)
+
     def test_broker_that_never_replies_times_out_and_is_reaped(self):
         client = self.stalled("import time; time.sleep(600)")
         started = time.monotonic()
         with self.assertRaises(TimeoutError):
             client.request("initialize", {})
         self.assertLess(time.monotonic() - started, 5)
-        self.assertEqual(client.terminate(), -9)
+        self.assertEqual(client.terminate(), -signal.SIGTERM)
         self.assert_reaped(client)
 
     def test_broker_that_never_reads_cannot_block_a_send(self):

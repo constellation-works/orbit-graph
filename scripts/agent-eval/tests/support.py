@@ -23,6 +23,7 @@ RG = shutil.which("rg")
 # broker's exit after its stdin closes.
 MCP_TIMEOUT_S = 30.0
 CLOSE_TIMEOUT_S = 10.0
+TERMINATE_GRACE_S = 0.5
 MAX_REPLY_BYTES = 8 * 1024 * 1024
 FAKE_CODEX = TESTS / "fake_codex.py"
 FAKE_BWRAP = TESTS / "fake_bwrap.py"
@@ -97,7 +98,8 @@ class McpClient:
     Reads and writes have a deadline and check the process, so a hung or dead
     broker fails the test instead of hanging the suite. The broker runs in its
     own process group; `terminate` kills and reaps it on every path (STD-03 R18),
-    and tests register it with addCleanup.
+    and tests register it with addCleanup. Only this client may reap the leader:
+    WNOWAIT observations reserve its PID/group until the sweep is finished.
     """
 
     def __init__(self, config_path=None, argv=None, timeout_s=MCP_TIMEOUT_S):
@@ -110,11 +112,20 @@ class McpClient:
         self.buffer = b""
         self.next_id = 0
 
+    def _exit_code(self):
+        """Observe exit without releasing ownership of the process group."""
+        if self.process.returncode is not None:
+            return self.process.returncode  # already reaped; never signal again
+        info = os.waitid(os.P_PID, self.process.pid, os.WEXITED | os.WNOHANG | os.WNOWAIT)
+        if info is None:
+            return None
+        return info.si_status if info.si_code == os.CLD_EXITED else -info.si_status
+
     def _remaining(self, deadline, action):
         remaining = deadline - time.monotonic()
         if remaining <= 0:
             raise TimeoutError(f"broker pid {self.process.pid}: no {action} within "
-                               f"{self.timeout_s}s (exit {self.process.poll()})")
+                               f"{self.timeout_s}s (exit {self._exit_code()})")
         return min(remaining, 0.25)
 
     def send_raw(self, data):
@@ -140,7 +151,7 @@ class McpClient:
             chunk = os.read(fd, 65536)
             if not chunk:
                 raise EOFError(f"broker pid {self.process.pid} closed stdout "
-                               f"(exit {self.process.poll()})")
+                               f"(exit {self._exit_code()})")
             self.buffer += chunk
             if len(self.buffer) > MAX_REPLY_BYTES:
                 raise ValueError(f"MCP reply exceeds {MAX_REPLY_BYTES} bytes")
@@ -164,25 +175,47 @@ class McpClient:
             self.process.stdin.close()
         except OSError:
             pass
-        try:
-            self.process.wait(timeout=timeout_s)
-        except subprocess.TimeoutExpired:
-            pass
+        deadline = time.monotonic() + timeout_s
+        while self._exit_code() is None and time.monotonic() < deadline:
+            time.sleep(min(0.02, max(0, deadline - time.monotonic())))
         return self.terminate()
 
     def terminate(self):
-        """Kill the broker's group if it is still running, reap it, close pipes. Idempotent."""
-        if self.process.poll() is None:
+        """TERM, bounded grace, KILL survivors, then bounded reap. Idempotent."""
+        def signal_group(sig):
+            # ChildProcessError refuses a signal if another caller reaped the
+            # leader. A zombie retained with WNOWAIT still reserves the PGID.
+            self._exit_code()
             try:
-                os.killpg(self.process.pid, signal.SIGKILL)
+                os.killpg(self.process.pid, sig)
             except ProcessLookupError:
                 pass
-            self.process.wait()
-        for stream in (self.process.stdin, self.process.stdout):
-            try:
-                stream.close()
-            except OSError:
-                pass
+
+        def settled(timeout_s):
+            deadline = time.monotonic() + timeout_s
+            while True:
+                members = eval_broker.live_group_members(self.process.pid)
+                if members == []:
+                    return True
+                if time.monotonic() >= deadline:
+                    return False  # an unknown group probe counts as survival
+                time.sleep(0.02)
+
+        try:
+            if self.process.returncode is None:
+                signal_group(signal.SIGTERM)
+                if not settled(TERMINATE_GRACE_S):
+                    signal_group(signal.SIGKILL)
+                group_settled = settled(CLOSE_TIMEOUT_S)
+                self.process.wait(timeout=CLOSE_TIMEOUT_S)  # release identity last
+                if not group_settled:
+                    raise TimeoutError(f"broker group {self.process.pid} did not settle")
+        finally:
+            for stream in (self.process.stdin, self.process.stdout):
+                try:
+                    stream.close()
+                except OSError:
+                    pass
         return self.process.returncode
 
 

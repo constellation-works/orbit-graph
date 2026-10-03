@@ -231,14 +231,16 @@ DESCRIPTIONS = {
                "with callers, entry points and candidate tests.",
 }
 
-# MCP tool annotations: client hints, never authority. Every tool only reads the
-# snapshot, except graph_sync, which builds and may replace (`full`) the
-# episode's private .orbit-graph index. No tool reaches beyond the repository.
+# MCP tool annotations: client hints, never authority. Source and Git stay
+# immutable. graph_sync builds/replaces the private index; changes writes
+# disposable snapshot indexes in private TMPDIR even with --no-cache.
 READ_ONLY = {"readOnlyHint": True, "destructiveHint": False, "idempotentHint": True,
              "openWorldHint": False}
 ANNOTATIONS = dict({tool: READ_ONLY for tool in COMMON_TOOLS + GRAPH_TOOLS},
                    graph_sync={"readOnlyHint": False, "destructiveHint": True,
-                               "idempotentHint": True, "openWorldHint": False})
+                               "idempotentHint": True, "openWorldHint": False},
+                   changes={"readOnlyHint": False, "destructiveHint": False,
+                            "idempotentHint": True, "openWorldHint": False})
 
 
 def input_schema(tool):
