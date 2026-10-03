@@ -53,6 +53,14 @@ impl GraphDbPath {
 /// use orbit_graph::{EXTRACTOR_VERSION, resolve_worktree_db_path};
 ///
 /// let dir = tempfile::tempdir()?;
+/// # // Bound Git discovery and ignore configuration to this fixture.
+/// # let mut git_options = git2::RepositoryInitOptions::new();
+/// # git_options.initial_head("main").external_template(false);
+/// # let repo = git2::Repository::init_opts(dir.path(), &git_options)?;
+/// # repo.config()?.open_level(git2::ConfigLevel::Local)?.set_str(
+/// #     "core.excludesFile",
+/// #     if cfg!(windows) { "NUL" } else { "/dev/null" },
+/// # )?;
 /// let db_path = resolve_worktree_db_path(dir.path())?;
 /// assert_eq!(db_path.branch(), "HEAD");
 /// assert_eq!(db_path.extractor_version(), EXTRACTOR_VERSION);
