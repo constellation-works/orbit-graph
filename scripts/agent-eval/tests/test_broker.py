@@ -373,6 +373,8 @@ class BrokerTests(unittest.TestCase):
         config, state = support.broker_config(self.work, self.repo, self.snapshot)
         runtime = self.work / "zero-on-term-broker.py"
         source = (support.TOOL / "eval_broker.py").read_text()
+        (self.work / "reply_provenance.py").write_bytes(
+            (support.TOOL / "reply_provenance.py").read_bytes())
         runtime.write_text(source.replace("raise SystemExit(128 + signum)", "raise SystemExit(0)"))
         client = support.McpClient(argv=[sys.executable, "-B", str(runtime), "--config", str(config)])
         self.addCleanup(client.terminate)
@@ -393,6 +395,8 @@ class BrokerTests(unittest.TestCase):
         source = (support.TOOL / "eval_broker.py").read_text()
         boundary = '\n                self.record({"type": "reply", "seq": requests, "calls": self.calls})'
         self.assertEqual(source.count(boundary), 1)
+        (self.work / "reply_provenance.py").write_bytes(
+            (support.TOOL / "reply_provenance.py").read_bytes())
         runtime.write_text(source.replace(boundary, boundary +
             '\n                if request_id == 41: os.kill(os.getpid(), signal.SIGSTOP)'))
         client = support.McpClient(argv=[sys.executable, "-B", str(runtime), "--config", str(config)])
@@ -442,6 +446,8 @@ class BrokerTests(unittest.TestCase):
         config, state = support.broker_config(self.work, self.repo, self.snapshot)
         runtime = self.work / "fault-broker.py"
         source = (support.TOOL / "eval_broker.py").read_text()
+        (self.work / "reply_provenance.py").write_bytes(
+            (support.TOOL / "reply_provenance.py").read_bytes())
         runtime.write_text(source.replace(
             "        broker.serve(sys.stdin.buffer, sys.stdout.buffer)",
             "        sys.stderr.write('diagnostic' * 10000)\n"
@@ -472,6 +478,8 @@ class BrokerTests(unittest.TestCase):
         runtime = self.work / "leaking-broker.py"
         pid_path = self.work / "descendant.pid"
         source = (support.TOOL / "eval_broker.py").read_text()
+        (self.work / "reply_provenance.py").write_bytes(
+            (support.TOOL / "reply_provenance.py").read_bytes())
         runtime.write_text(source.replace(
             "        broker.serve(sys.stdin.buffer, sys.stdout.buffer)",
             "        descendant = subprocess.Popen(['/usr/bin/sleep', '600'],\n"

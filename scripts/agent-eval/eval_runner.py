@@ -35,9 +35,11 @@ HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 import eval_broker as broker  # noqa: E402  (sibling module, same checkout)
 import plugin_profile as plugin  # noqa: E402
+import reply_provenance as replies  # noqa: E402
 
-RUNNER_VERSION = "4"
-LIFECYCLE_CONTRACTS = {"3": broker.EXITED_LIFECYCLE_CONTRACT, "4": broker.LIFECYCLE_CONTRACT}
+RUNNER_VERSION = "5"
+LIFECYCLE_CONTRACTS = {"3": broker.EXITED_LIFECYCLE_CONTRACT, "4": broker.LIFECYCLE_CONTRACT,
+                       "5": broker.LIFECYCLE_CONTRACT}
 RAW_KIND = "agent-eval-raw-episode"
 CACHE_POLICY = "cold-per-episode-including-graph-setup"
 ARMS = ("baseline", "graph")
@@ -100,11 +102,7 @@ ETC_ENTRIES = ("/etc/resolv.conf", "/etc/hosts", "/etc/host.conf", "/etc/gai.con
                "/etc/nsswitch.conf", "/etc/passwd", "/etc/group", "/etc/ssl",
                "/etc/ca-certificates", "/etc/pki", "/etc/ld.so.cache", "/etc/localtime",
                "/etc/alternatives")
-CREDENTIAL_SHAPES = (
-    re.compile(r"(?i)\bbearer\s+[A-Za-z0-9._~+/=-]{8,}"),
-    re.compile(r"(?<![A-Za-z0-9_-])sk-[A-Za-z0-9_-]{16,}"),
-    re.compile(r"\beyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}"),
-)
+CREDENTIAL_SHAPES = replies.SHAPES
 
 
 class Invalid(ValueError):
@@ -306,43 +304,7 @@ def content_revision(entries, label, sink=None):
 # Private files, redaction and the disposable Git snapshot.
 
 
-class Redactor:
-    """Masks live secret values and high-confidence credential shapes (STD-05 R13/R14)."""
-
-    def __init__(self, values):
-        self.values = sorted({value for value in values if len(value) >= 8}, key=len,
-                             reverse=True)
-
-    def text(self, text):
-        count = 0
-        for value in self.values:
-            if value in text:
-                count += text.count(value)
-                text = text.replace(value, "[REDACTED]")
-        for pattern in CREDENTIAL_SHAPES:
-            text, hits = pattern.subn("[REDACTED]", text)
-            count += hits
-        return text, count
-
-    def value(self, value):
-        """Redact every string inside a JSON value; return (value, count)."""
-        if isinstance(value, str):
-            return self.text(value)
-        if isinstance(value, list):
-            total, items = 0, []
-            for item in value:
-                item, count = self.value(item)
-                items.append(item)
-                total += count
-            return items, total
-        if isinstance(value, dict):
-            total, result = 0, {}
-            for key, item in value.items():
-                item, count = self.value(item)
-                result[key] = item
-                total += count
-            return result, total
-        return value, 0
+Redactor = replies.Redactor
 
 
 def make_private_dir(path):
@@ -737,6 +699,8 @@ def prepare_layout(episode):
                          os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600))
     shutil.copyfile(HERE / "eval_broker.py", episode.runtime / "eval_broker.py")
     os.chmod(episode.runtime / "eval_broker.py", 0o500)
+    shutil.copyfile(HERE / "reply_provenance.py", episode.runtime / "reply_provenance.py")
+    os.chmod(episode.runtime / "reply_provenance.py", 0o500)
     shutil.copyfile(HERE / "plugin_profile.py", episode.runtime / "plugin_profile.py")
     os.chmod(episode.runtime / "plugin_profile.py", 0o500)
 
@@ -1183,7 +1147,8 @@ def reconcile_calls(transcript, calls):
 def read_broker_log(path):
     log = {"starts": [], "initialized": False, "tools_listed": [], "calls": [], "refusals": [],
            "budget": [], "protocol_errors": 0, "malformed_lines": 0, "truncated": False,
-           "supervisors": [], "exits": [], "lifecycle_contracts": [], "lifecycle_events": []}
+           "supervisors": [], "exits": [], "lifecycle_contracts": [], "lifecycle_events": [],
+           "reply_contracts": [], "reply_provenance": [], "audit_redactions": 0}
     try:
         fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC)
     except FileNotFoundError:
@@ -1204,6 +1169,15 @@ def read_broker_log(path):
             log["malformed_lines"] += 1
             continue
         kind = entry.get("type")
+        redactions = entry.get("audit_redactions", 0)
+        if type(redactions) is not int or redactions < 0:
+            log["malformed_lines"] += 1
+        else:
+            log["audit_redactions"] += redactions
+        if "reply_contract" in entry:
+            log["reply_contracts"].append(entry["reply_contract"])
+        if kind == "call" and "reply_provenance" in entry:
+            log["reply_provenance"].append(entry["reply_provenance"])
         if kind in ("request", "reply", "call_start", "call", "stop"):
             log["lifecycle_events"].append({key: entry[key] for key in
                 ("type", "seq", "reason", "requests", "replies", "calls", "output_bytes")
@@ -1533,6 +1507,7 @@ def write_broker_config(episode, deadline_unix_ms, snapshot):
                            "head_commit": snapshot["head_commit"]}}
     if episode.plugin_profile:
         config["schema_version"] = 2
+        config["reply_contract"] = episode.reply_contract
         config["plugin"] = None if episode.arm == "baseline" else {
             "orbit": episode.tool_in("orbit"), "home": episode.state_in("orbit-home"),
             "inventory": episode.treatment["inventory"], "policy": plugin.POLICY}
@@ -1622,6 +1597,10 @@ def command_run(args):
             raise CapabilityRefusal("plugin_profile_refused", str(error)) from None
         # Verify the actual treatment flags too, within the episode setup budget.
         preflight_evidence = preflight(episode, versions, deadline)
+    if episode.plugin_profile:
+        episode.reply_contract = {"version": replies.CONTRACT, "policy": episode.redactor.policy,
+            "source_binding": replies.source_binding(request,
+                {"head": snapshot["head"], "base": snapshot["base"]}, source_provenance)}
     write_broker_config(episode, int((started_at + limits["wall_ms"] / 1000) * 1000), snapshot)
     probe_spec = write_probe_spec(episode)
     sandbox = episode.sandbox_prefix()
@@ -1712,7 +1691,8 @@ def command_run(args):
     artifact = {
         "schema_version": request["schema_version"],
         "kind": plugin.RAW_KIND if episode.plugin_profile else RAW_KIND,
-        "runner_version": RUNNER_VERSION, "lifecycle_contract": broker.LIFECYCLE_CONTRACT,
+        "runner_version": RUNNER_VERSION if episode.plugin_profile else "4",
+        "lifecycle_contract": broker.LIFECYCLE_CONTRACT,
         "run_id": run_id, "request": request, "request_digest": digest(request),
         "started_at_unix": round(started_at, 3),
         "model": {"provider": "codex-cli", "name": args.model, "version": provider["version"],
@@ -1778,11 +1758,14 @@ def command_run(args):
         ],
     }
     if episode.plugin_profile:
+        artifact["reply_contract"] = episode.reply_contract
+        artifact["reply_provenance"] = log["reply_provenance"]
         artifact["profile"] = plugin.PROFILE
         artifact["source_provenance"] = source_provenance
         artifact["resource_limits"] = episode.resource_limits
         artifact["harness"] = {name: sha256_file(HERE / name) for name in
-                               ("eval_runner.py", "eval_broker.py", "plugin_profile.py")}
+                               ("eval_runner.py", "eval_broker.py", "plugin_profile.py",
+                                "reply_provenance.py")}
         artifact["treatment"] = episode.treatment
         artifact["timing"]["plugin_install_ms"] = (episode.treatment or {}).get("install_ms", 0)
         artifact["setup_output_bytes"] = (episode.treatment or {}).get("setup_output_bytes", 0)

@@ -14,6 +14,7 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "scripts/agent-eval"))
 import eval_runner as runner
 import plugin_profile as plugin
+import reply_provenance as replies
 
 
 def require(value, message):
@@ -140,6 +141,7 @@ def load_episode(directory, diagnostic=False):
     log, _ = runner.read_broker_log(directory / "broker-calls.jsonl")
     log["truncated"] = log["truncated"] or artifact["files"]["broker-calls.jsonl"]["truncated"]
     require(log["calls"] == artifact["calls"] and artifact["calls_dropped"] == 0, "call evidence differs")
+    replies.verify_capture(artifact, log)
     transcript = runner.analyse_transcript((directory / "provider.jsonl").read_bytes(),
                                            artifact["files"]["provider.jsonl"]["truncated"], request["tools"])
     require(transcript["usage"] == artifact["usage"], "usage differs")

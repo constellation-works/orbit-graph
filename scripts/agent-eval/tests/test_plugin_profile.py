@@ -266,6 +266,16 @@ class InstalledPluginTests(EpisodeCase):
         # Only this synthetic fixture is resealed. Historical contract selection
         # must not award the new benefit even with complete new lifecycle facts.
         historical = copy.deepcopy(artifact)
+        historical.pop("reply_contract")
+        historical.pop("reply_provenance")
+        entries = [json.loads(line) for line in (out / "broker-calls.jsonl").read_text().splitlines()]
+        for entry in entries:
+            entry.pop("reply_contract", None)
+            entry.pop("reply_provenance", None)
+        (out / "broker-calls.jsonl").write_text("".join(json.dumps(e) + "\n" for e in entries))
+        historical["files"]["broker-calls.jsonl"].update(
+            sha256=runner.sha256_file(out / "broker-calls.jsonl"),
+            bytes=(out / "broker-calls.jsonl").stat().st_size)
         historical["runner_version"] = "2"
         del historical["lifecycle_contract"]
         historical.update(status="failed", answer=None,

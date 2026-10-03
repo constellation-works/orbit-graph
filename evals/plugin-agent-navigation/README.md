@@ -213,7 +213,7 @@ install a global plugin. Host variables do not enter the private fixture.
 
 ### Lifecycle version boundary and operator handoff
 
-New captures use runner version 4 and
+Runner version 4 captures use
 `lifecycle_contract: eof-idle-at-term-observation-v2`, retaining schema 2 and
 this profile. Replay selects that contract explicitly. Runner version 2 without
 a contract retains historical cancellation failures; runner version 3 with the
@@ -230,5 +230,30 @@ The operator must repeat strict zero-skip admission on the exact revised hashes,
 then run a new small synthetic actual-Codex rehearsal in both arms before new
 measurements. A fake-provider pass alone is insufficient actual-client evidence.
 Keep all 12 current outcomes and the original scoring attempt under the frozen
-contract, including redacted-treatment refusals. Source-output redaction repair
-is a separate change; no accepted old score is required for prospective review.
+contract, including redacted-treatment refusals. The prospective source-output
+repair below does not change that historical refusal; no accepted old score is required for prospective review.
+
+### Prospective reply provenance
+
+New schema-2 captures use runner 5 / broker 4 and `safe-tool-text-v1`, while
+retaining the runner-4 lifecycle contract. The [source-reply contract](../../scripts/agent-eval/README.md#prospective-source-reply-provenance-runner-5)
+documents exact bytes, transformation spans, source identity, cost accounting,
+private host-value fingerprints and the capture-producer trust boundary.
+The preregistration's `harness` now includes `reply_provenance.py` alongside the
+runner, broker and plugin profile. Pin all four source hashes before admission.
+
+Replay accepts planned pre-delivery transformations only when their complete
+proof matches the source binding, broker log and measured call bytes. Provider
+results still undergo the same exact-result reconciliation; failures stay
+failures. All late redactions still refuse, including provider-generated
+credentials. Historical runner-2/3/4 captures keep their original behavior, and
+new proof fields under a historical version are refused. Schema 1 remains on its
+historical writer/adapter path.
+
+The operator must run the strict suite above with zero skips, then explicitly
+admit a new synthetic actual-client rehearsal in each arm at those same hashes.
+Worker fake-provider runs are not real-client or effectiveness evidence. A host
+namespace denial leaves this admission outstanding; it cannot justify weakening
+containment. Preserve all twelve frozen old episodes, their failures and original
+redacted-treatment refusal. Future measurements require a new preregistration,
+not resealing or rescoring the old cohort.

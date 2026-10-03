@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Allowlisted stdio MCP tool broker for one agent-navigation episode.
 
-The runner copies this single file into an episode's runtime directory and the
-provider starts it as its only MCP server. It exposes the arm's tools and
+The runner stages this broker and its shared reply-provenance module in each
+episode's runtime directory. The provider starts it as its only MCP server. It exposes the arm's tools and
 nothing else: bounded reads, an rg search with a fixed argument vector,
 structured read-only Git history, and (graph arm only) orbit-graph queries.
 Every value an agent supplies is validated data; nothing it supplies, and
@@ -28,8 +28,10 @@ import time
 
 sys.dont_write_bytecode = True
 
+import reply_provenance as replies
+
 BROKER_NAME = "agent-eval-broker"
-BROKER_VERSION = "3"
+BROKER_VERSION = "4"
 EXITED_LIFECYCLE_CONTRACT = "eof-exited-at-term-observation-v1"
 LIFECYCLE_CONTRACT = "eof-idle-at-term-observation-v2"
 MAX_LIFECYCLE_LOG = 64 * 1024 * 1024
@@ -501,6 +503,9 @@ def end_group(process, terminate, grace_s=KILL_GRACE_S):
 class Broker:
     def __init__(self, config):
         self.config = config
+        self.reply_contract = config.get("reply_contract")
+        self.redactor = (replies.Redactor(policy=self.reply_contract["policy"])
+                         if self.reply_contract else None)
         self.arm = config["arm"]
         self.tools = tuple(config["tools"])
         self.plugin = config.get("plugin")
@@ -508,6 +513,7 @@ class Broker:
         self.root = config["repo_root"]
         self.limits = config["limits"]
         self.binaries = config["binaries"]
+        self.views = []
         self.calls = 0
         self.refusals = 0
         self.protocol_errors = 0
@@ -533,6 +539,10 @@ class Broker:
             if self.protocol_errors > MAX_PROTOCOL_ERRORS:
                 self.stop("protocol_error_budget_exceeded", "too many malformed MCP messages")
                 return
+        if self.redactor:
+            entry, count = self.redactor.value(entry)
+            if count:
+                entry["audit_redactions"] = count
         os.write(self.log, (canonical(entry) + "\n").encode())
 
     def stop(self, code, message):
@@ -561,7 +571,8 @@ class Broker:
 
     # -- paging ----------------------------------------------------------
     def page(self, envelope, text, offset):
-        """Fit envelope + text[offset:offset+k] into call_bytes, k maximal."""
+        """Fit the final safe envelope + text[offset:offset+k], k maximal."""
+        text = self.mask_view(text, "page-input")
         limit = self.limits["call_bytes"]
         offset = min(offset, len(text))
         low, high = 0, len(text) - offset
@@ -573,11 +584,11 @@ class Broker:
                         output=text[offset:end])
             return canonical(body)
 
-        if len(render(high).encode()) <= limit:
+        if self.output_size(render(high)) <= limit:
             return render(high)
         while low < high:
             middle = (low + high + 1) // 2
-            if len(render(middle).encode()) <= limit:
+            if self.output_size(render(middle)) <= limit:
                 low = middle
             else:
                 high = middle - 1
@@ -683,14 +694,13 @@ class Broker:
                                     window, start, len(lines), numbered=True)
 
     def fit_lines(self, envelope, window, start, total, numbered):
-        """Return as many whole lines as fit call_bytes; long lines are cut and marked."""
+        """Fit whole lines in the final envelope; cut and mark an oversized first line."""
         limit = self.limits["call_bytes"]
+        window = [self.mask_view(line, "read-line") for line in window]
         window = [line if len(line) <= MAX_LINE_CHARS else
                   line[:MAX_LINE_CHARS] + " [line cut at %d chars]" % MAX_LINE_CHARS
                   for line in window]
-        taken = len(window)
-        while True:
-            chosen = window[:taken]
+        def render(chosen):
             rendered = [f"{start + index}\t{line}" if numbered else line
                         for index, line in enumerate(chosen)]
             end = start + len(chosen) - 1
@@ -698,9 +708,32 @@ class Broker:
                                                                    start <= total else None)
             body = dict(envelope, start_line=start, end_line=end if chosen else None,
                         next_start_line=following, content="\n".join(rendered))
-            text = canonical(body)
-            if len(text.encode()) <= limit or taken == 0:
+            return canonical(body)
+
+        taken = len(window)
+        while True:
+            text = render(window[:taken])
+            if self.output_size(text) <= limit:
                 return text
+            if taken == 0:
+                return text  # the final guard handles an unpageable envelope
+            if taken == 1 and self.redactor:
+                # Line continuations cannot address the middle of a line. Keep
+                # the existing explicit cut semantics, and advance to the next
+                # line rather than returning an empty page forever.
+                def cut(count):
+                    return render([window[0][:count] + f" [line cut at {count} chars]"])
+
+                low, high = 0, min(len(window[0]), MAX_LINE_CHARS)
+                if self.output_size(cut(0)) > limit:
+                    return text  # no room for even the cut disclosure
+                while low < high:
+                    middle = (low + high + 1) // 2
+                    if self.output_size(cut(middle)) <= limit:
+                        low = middle
+                    else:
+                        high = middle - 1
+                return cut(low)
             taken = taken // 2
 
     def tool_rg(self, args):
@@ -710,7 +743,9 @@ class Broker:
         matches = args.get("max_matches", 100)
         argv = [self.binaries["rg"], "--no-config", "--no-ignore-parent", "--hidden",
                 "--line-number", "--with-filename", "--no-heading", "--color=never",
-                "--sort=path", "--max-filesize=4M", "--max-columns=400", "--max-columns-preview"]
+                "--sort=path", "--max-filesize=4M"]
+        if not self.redactor:
+            argv += ["--max-columns=400", "--max-columns-preview"]
         if args.get("fixed_strings"):
             argv.append("--fixed-strings")
         if args.get("ignore_case"):
@@ -854,6 +889,7 @@ class Broker:
                       f"more than {self.limits['tool_calls']} tool calls")
             return self.tool_error("tool_call_budget_exceeded", "tool call budget exhausted")
         self.calls += 1
+        self.views = []
         self.record({"type": "call_start", "seq": self.calls, "tool": tool})
         started = time.monotonic()
         raw_input = canonical(arguments) if _jsonable(arguments) else repr(arguments)
@@ -863,7 +899,8 @@ class Broker:
             output = canonical({"tool": tool, "status": "failed",
                                 "error": {"code": "call_input_budget_exceeded",
                                           "message": f"arguments exceed {limit} bytes"}})
-            self.finish_call(tool, captured, output, "truncated", started)
+            output, proof = self.safe_output(output)
+            self.finish_call(tool, captured, output, "truncated", started, proof)
             self.stop("call_input_budget_exceeded", f"{tool} arguments exceed {limit} bytes")
             return {"content": [{"type": "text", "text": output}], "isError": True}
         try:
@@ -884,23 +921,68 @@ class Broker:
             output = canonical({"tool": tool, "status": status,
                                 "error": {"code": "tool_exception",
                                           "type": type(error).__name__[:64]}})
+        output, proof = self.safe_output(output)
         remaining = self.limits["output_bytes"] - self.output_bytes
-        if len(output.encode()) > remaining:
-            output = output.encode()[:max(0, remaining)].decode("utf-8", errors="ignore")
-            self.finish_call(tool, raw_input, output, "truncated", started)
-            self.stop("output_budget_exceeded",
-                      f"tool output exceeds the {self.limits['output_bytes']}-byte episode budget")
+        delivery_limit = min(remaining, self.limits["call_bytes"]) if self.redactor else remaining
+        if len(output.encode()) > delivery_limit:
+            output = output.encode()[:max(0, delivery_limit)].decode("utf-8", errors="ignore")
+            if proof is not None:
+                proof["delivered_sha256"] = replies.sha(output)
+                proof["delivered_bytes"] = len(output.encode())
+                proof["truncated"] = True
+            self.finish_call(tool, raw_input, output, "truncated", started, proof)
+            code = "output_budget_exceeded" if delivery_limit == remaining else "call_output_truncated"
+            self.stop(code, f"tool output exceeds the {delivery_limit}-byte delivery bound")
             return {"content": [{"type": "text", "text": output}], "isError": True}
-        self.finish_call(tool, raw_input, output, status, started)
+        self.finish_call(tool, raw_input, output, status, started, proof)
         if status == "truncated":
             self.stop("call_output_truncated", f"{tool} output exceeded the capture bound")
         return {"content": [{"type": "text", "text": output}], "isError": status != "ok"}
 
-    def finish_call(self, tool, raw_input, output, status, started):
+    def mask_view(self, text, role):
+        # Mask before paging/line cuts, so a cut cannot reveal a credential prefix.
+        if not self.redactor:
+            return text
+        safe, proof = self.redactor.transform(text)
+        if proof["spans"]:
+            self.views.append({"role": role, "text": proof, "safe_text": safe})
+        return safe
+
+    def transform_output(self, output):
+        """Render exactly the delivered view, without changing proof/view state.
+
+        Bound producers use this same transformation while fitting candidates;
+        JSON escaping, redaction expansion and disclosure all consume bytes.
+        """
+        if not self.redactor:
+            return output, None
+        body = json.loads(output)
+        body["text_view"] = {"contract": replies.CONTRACT, "source_metadata": "original",
+                             "redacted": bool(self.views or self.redactor.text(output)[1])}
+        return self.redactor.transform(canonical(body))
+
+    def output_size(self, output):
+        return len(self.transform_output(output)[0].encode())
+
+    def safe_output(self, output):
+        safe, text = self.transform_output(output)
+        if not self.redactor:
+            return safe, None
+        return safe, {"seq": self.calls, "views": self.views,
+                      "contract_sha256": replies.digest(self.reply_contract),
+                      "text": text, "safe_output": safe, "delivered_sha256": replies.sha(safe),
+                      "delivered_bytes": len(safe.encode()), "truncated": False}
+
+    def finish_call(self, tool, raw_input, output, status, started, proof=None):
         self.output_bytes += len(output.encode())
-        self.record({"type": "call", "seq": self.calls, "tool": tool, "input": raw_input,
-                     "output": output, "status": status,
-                     "elapsed_ms": int((time.monotonic() - started) * 1000)})
+        entry = {"type": "call", "seq": self.calls, "tool": tool, "input": raw_input,
+                 "output": output, "status": status,
+                 "elapsed_ms": int((time.monotonic() - started) * 1000)}
+        if proof is not None:
+            proof["call_sha256"] = replies.digest({k: entry[k] for k in
+                ("tool", "input", "output", "status", "elapsed_ms")})
+            entry["reply_provenance"] = proof
+        self.record(entry)
 
     @staticmethod
     def tool_error(code, message):
@@ -940,7 +1022,8 @@ class Broker:
     def serve(self, stdin, stdout):
         requests = replies = 0
         self.record({"type": "start", "arm": self.arm, "tools": list(self.tools),
-                     "identity": start_identity()})
+                     "identity": start_identity(),
+                     **({"reply_contract": self.reply_contract} if self.reply_contract else {})})
         while True:
             line = stdin.readline(MAX_MESSAGE_BYTES + 1)
             if not line:
@@ -985,8 +1068,7 @@ class Broker:
         self.record({"type": "stop", "reason": "stdin_eof", "requests": requests,
                      "replies": replies, "calls": self.calls, "output_bytes": self.output_bytes})
 
-    @staticmethod
-    def reply(stdout, request_id, result=None, error=None):
+    def reply(self, stdout, request_id, result=None, error=None):
         if not (request_id is None or isinstance(request_id, (str, int))) or \
                 isinstance(request_id, bool):
             request_id = None
@@ -995,6 +1077,10 @@ class Broker:
             body["error"] = {"code": error[0], "message": error[1]}
         else:
             body["result"] = result
+        if self.redactor:
+            body, count = self.redactor.value(body)
+            if count:
+                self.record({"type": "wire_redaction", "audit_redactions": count})
         stdout.write((canonical(body) + "\n").encode())
         stdout.flush()
 
@@ -1050,6 +1136,9 @@ def load_config(path):
     problems = []
     v2 = isinstance(config, dict) and config.get("schema_version") == 2
     fields = CONFIG_FIELDS | ({"plugin"} if v2 else set())
+    if v2 and "reply_contract" in config:
+        fields.add("reply_contract")
+        replies.validate_contract(config["reply_contract"])
     if not isinstance(config, dict) or set(config) != fields:
         raise ValueError(f"broker config must have exactly {sorted(CONFIG_FIELDS)}")
     if config["schema_version"] not in (1, 2):
