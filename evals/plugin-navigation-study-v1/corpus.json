@@ -1,0 +1,726 @@
+{
+  "cases": [
+    {
+      "base_snapshot": "orbit-graph",
+      "head_snapshot": "orbit-graph",
+      "id": "graph-live-source-bounds",
+      "original_source_revision": "ac6d5b91f973874325bac789e9c433a71c805766",
+      "prompt": "A graph query reads a live file that may have become a FIFO or grown after indexing. Locate the shared regular-file opener and the capped full-source reader. Explain how opening avoids a FIFO hang, how the file type is checked, and both the before-read and during-read size checks. Contrast the bounded show-window reader: locate it and its read-length helper, explain its span validation, at-most-three-byte UTF-8 lookahead and zero-budget behavior. Do not claim the window reads or validates the entire live file.",
+      "repository": "orbit-graph",
+      "split": "development",
+      "truth": {
+        "identities": [
+          {
+            "aliases": [
+              "symbol:crates/orbit-graph/src/query/source.rs#query::source::RegularSource::open:method"
+            ],
+            "file": "crates/orbit-graph/src/query/source.rs",
+            "line": 102,
+            "owner_evidence": {
+              "end_line": 102,
+              "excerpt_sha256": "37caa6749e73a7b567983646dd40f253fae4485c0a5dac3538503fed08196c45",
+              "file": "crates/orbit-graph/src/query/source.rs",
+              "line": 101,
+              "quote": "impl RegularSource {",
+              "revision": "head"
+            },
+            "quote": "fn open(path: &Path, operation: &'static str) -> Result<Self, GraphError> {",
+            "required": true,
+            "selector": "symbol:crates/orbit-graph/src/query/source.rs#RegularSource::open:method"
+          },
+          {
+            "aliases": [
+              "symbol:crates/orbit-graph/src/query/source.rs#query::source::RegularSource::read_capped:method"
+            ],
+            "file": "crates/orbit-graph/src/query/source.rs",
+            "line": 162,
+            "owner_evidence": {
+              "end_line": 162,
+              "excerpt_sha256": "9ec11537d3d0debd2101baaebbf8fe07b246eeadfde1335ead386d789bbc9ba5",
+              "file": "crates/orbit-graph/src/query/source.rs",
+              "line": 101,
+              "quote": "impl RegularSource {",
+              "revision": "head"
+            },
+            "quote": "fn read_capped(&mut self, operation: &'static str, path: &Path) -> Result<Vec<u8>, GraphError> {",
+            "required": true,
+            "selector": "symbol:crates/orbit-graph/src/query/source.rs#RegularSource::read_capped:method"
+          },
+          {
+            "aliases": [
+              "symbol:crates/orbit-graph/src/query/source.rs#query::source::read_show_window:function"
+            ],
+            "file": "crates/orbit-graph/src/query/source.rs",
+            "line": 38,
+            "quote": "pub(super) fn read_show_window(",
+            "required": true,
+            "selector": "symbol:crates/orbit-graph/src/query/source.rs#read_show_window:function"
+          },
+          {
+            "aliases": [
+              "symbol:crates/orbit-graph/src/query/source.rs#query::source::show_read_len:function"
+            ],
+            "file": "crates/orbit-graph/src/query/source.rs",
+            "line": 184,
+            "quote": "fn show_read_len(span_len: usize, max_bytes: usize) -> usize {",
+            "required": true,
+            "selector": "symbol:crates/orbit-graph/src/query/source.rs#show_read_len:function"
+          },
+          {
+            "aliases": [
+              "symbol:crates/orbit-graph/src/query/source.rs#query::source::bounded_source_len:function"
+            ],
+            "file": "crates/orbit-graph/src/query/source.rs",
+            "line": 202,
+            "quote": "fn bounded_source_len(source: &[u8], max_bytes: usize, entire_span: bool) -> usize {",
+            "required": false,
+            "selector": "symbol:crates/orbit-graph/src/query/source.rs#bounded_source_len:function"
+          }
+        ],
+        "limitations": [
+          "Unix opening details; no guarantee of a stable file against arbitrary concurrent writes."
+        ],
+        "rubric": [
+          {
+            "evidence": [
+              {
+                "end_line": 135,
+                "excerpt_sha256": "8a3b1a8e4e563b8b94eb541f34200062072cc4de472c08c8709974ea18205524",
+                "file": "crates/orbit-graph/src/query/source.rs",
+                "line": 102,
+                "quote": "fn open(path: &Path, operation: &'static str) -> Result<Self, GraphError> {",
+                "revision": "head"
+              }
+            ],
+            "id": "open",
+            "required_behavior": "Uses O_NONBLOCK (and CLOEXEC) on Unix, opens then checks descriptor metadata for regular file, refusing special files before body reads and clearing nonblock for regular files."
+          },
+          {
+            "evidence": [
+              {
+                "end_line": 182,
+                "excerpt_sha256": "ae54178d9d5dbe75b0625b0f8545d0d42a80a733f49c50758d787c8f47d352aa",
+                "file": "crates/orbit-graph/src/query/source.rs",
+                "line": 162,
+                "quote": "fn read_capped(&mut self, operation: &'static str, path: &Path) -> Result<Vec<u8>, GraphError> {",
+                "revision": "head"
+              }
+            ],
+            "id": "cap",
+            "required_behavior": "read_capped refuses initial length over MAX_FILE_BYTES, then reads at most cap+1 and refuses growth beyond the cap."
+          },
+          {
+            "evidence": [
+              {
+                "end_line": 80,
+                "excerpt_sha256": "4aafabb06b70b52e728feb57ba47d85a3c05d1bbacf515b2cd9c2ef7aae0349b",
+                "file": "crates/orbit-graph/src/query/source.rs",
+                "line": 38,
+                "quote": "pub(super) fn read_show_window(",
+                "revision": "head"
+              },
+              {
+                "end_line": 222,
+                "excerpt_sha256": "3a16cbc4375e284dae81526739a9b1373c31f6754352e20340c0799a5d22a3a4",
+                "file": "crates/orbit-graph/src/query/source.rs",
+                "line": 184,
+                "quote": "fn show_read_len(span_len: usize, max_bytes: usize) -> usize {",
+                "revision": "head"
+              }
+            ],
+            "id": "window",
+            "required_behavior": "Validates converted span start<=end<=live length; reads only span or budget plus up to three trailing bytes; zero budget/span reads zero; this is local UTF-8 boundary handling, not whole-file validity."
+          }
+        ]
+      }
+    },
+    {
+      "base_snapshot": "orbit-graph",
+      "head_snapshot": "orbit-graph",
+      "id": "graph-trait-name-resolution",
+      "original_source_revision": "ac6d5b91f973874325bac789e9c433a71c805766",
+      "prompt": "Locate the implementor query entry, its selector-to-trait-name helper, and its SQL lookup. Explain which selector variants can name a trait and what file/directory/command selectors return. Explain qualified-name shortening, exact case-sensitive trailing-segment matching (including underscores), accepted relation kinds and result ordering. Can a symbol selector file or namespace uniquely distinguish two traits with the same short name here? State the source-supported limitation.",
+      "repository": "orbit-graph",
+      "split": "development",
+      "truth": {
+        "identities": [
+          {
+            "aliases": [
+              "symbol:crates/orbit-graph/src/query/implementors.rs#query::implementors::run:function"
+            ],
+            "file": "crates/orbit-graph/src/query/implementors.rs",
+            "line": 15,
+            "quote": "pub(crate) fn run(graph: &Graph, sel: &Selector) -> Result<ImplementorsResult, GraphError> {",
+            "required": true,
+            "selector": "symbol:crates/orbit-graph/src/query/implementors.rs#run:function"
+          },
+          {
+            "aliases": [
+              "symbol:crates/orbit-graph/src/query/implementors.rs#query::implementors::trait_name_from_selector:function"
+            ],
+            "file": "crates/orbit-graph/src/query/implementors.rs",
+            "line": 34,
+            "quote": "fn trait_name_from_selector(sel: &Selector) -> Option<String> {",
+            "required": true,
+            "selector": "symbol:crates/orbit-graph/src/query/implementors.rs#trait_name_from_selector:function"
+          },
+          {
+            "aliases": [
+              "symbol:crates/orbit-graph/src/query/implementors.rs#query::implementors::query_implementors:function"
+            ],
+            "file": "crates/orbit-graph/src/query/implementors.rs",
+            "line": 49,
+            "quote": "fn query_implementors(conn: &Connection, name: &str) -> Result<Vec<Implementor>, GraphError> {",
+            "required": true,
+            "selector": "symbol:crates/orbit-graph/src/query/implementors.rs#query_implementors:function"
+          },
+          {
+            "aliases": [
+              "symbol:crates/orbit-graph/src/query/implementors.rs#query::implementors::trailing_segment:function"
+            ],
+            "file": "crates/orbit-graph/src/query/implementors.rs",
+            "line": 45,
+            "quote": "fn trailing_segment(name: &str) -> String {",
+            "required": false,
+            "selector": "symbol:crates/orbit-graph/src/query/implementors.rs#trailing_segment:function"
+          }
+        ],
+        "limitations": [
+          "Structural relations lookup, not proof of runtime dispatch or full trait resolution."
+        ],
+        "rubric": [
+          {
+            "evidence": [
+              {
+                "end_line": 47,
+                "excerpt_sha256": "2403df74606f291b93a665920effa4119f9820bf9b341a6f63d1c42b8109e22d",
+                "file": "crates/orbit-graph/src/query/implementors.rs",
+                "line": 15,
+                "quote": "pub(crate) fn run(graph: &Graph, sel: &Selector) -> Result<ImplementorsResult, GraphError> {",
+                "revision": "head"
+              }
+            ],
+            "id": "selectors",
+            "required_behavior": "Only Symbol.symbol and Module.qualified yield a trailing :: segment, trimmed; empty names or File/Dir/Command yield no trait identity and run returns empty implementors."
+          },
+          {
+            "evidence": [
+              {
+                "end_line": 85,
+                "excerpt_sha256": "4471361fca8d8a10522bd03bdd9749833d856d00c11f3d3f56876a13090da95d",
+                "file": "crates/orbit-graph/src/query/implementors.rs",
+                "line": 49,
+                "quote": "fn query_implementors(conn: &Connection, name: &str) -> Result<Vec<Implementor>, GraphError> {",
+                "revision": "head"
+              }
+            ],
+            "id": "sql",
+            "required_behavior": "Lookup admits impl and implements; BINARY equality or literal :: suffix, not SQL LIKE wildcard matching; orders def_file, from_qualified, id."
+          },
+          {
+            "evidence": [
+              {
+                "end_line": 64,
+                "excerpt_sha256": "354d8eb18a6127dcc5686d1978685cf922887aaad9447cb92449da3faa2e5e1d",
+                "file": "crates/orbit-graph/src/query/implementors.rs",
+                "line": 34,
+                "quote": "fn trait_name_from_selector(sel: &Selector) -> Option<String> {",
+                "revision": "head"
+              }
+            ],
+            "id": "uncertainty",
+            "required_behavior": "File from Symbol and full namespace are not used to disambiguate; same-short-name traits may contribute together, so this is not unique semantic resolution."
+          }
+        ]
+      }
+    },
+    {
+      "base_snapshot": "Orbit",
+      "head_snapshot": "Orbit",
+      "id": "orbit-artifact-text-policy",
+      "original_source_revision": "0db9356eef631ada11569d0ca4e1e407fad5bee3",
+      "prompt": "Locate the tool-input sanitizer, action policy selector, and string sanitizer used for persisted task inputs. For TaskUpdate distinguish free-text fields and acceptance_criteria from context/context_files paths. Explain how whole-token credentials differ from embedded secrets, and how path-only text is treated. Locate response finishing and explain when redaction details are added and an audit is emitted; do not claim all arbitrary input fields are recursively sanitized.",
+      "repository": "Orbit",
+      "split": "held-out",
+      "truth": {
+        "identities": [
+          {
+            "aliases": [
+              "symbol:crates/orbit-core/src/adapter/tool_host/artifact_redaction.rs#adapter::tool_host::artifact_redaction::sanitize_tool_input:function"
+            ],
+            "file": "crates/orbit-core/src/adapter/tool_host/artifact_redaction.rs",
+            "line": 86,
+            "quote": "pub(super) fn sanitize_tool_input(",
+            "required": true,
+            "selector": "symbol:crates/orbit-core/src/adapter/tool_host/artifact_redaction.rs#sanitize_tool_input:function"
+          },
+          {
+            "aliases": [
+              "symbol:crates/orbit-core/src/adapter/tool_host/artifact_redaction.rs#adapter::tool_host::artifact_redaction::policy_for_action:function"
+            ],
+            "file": "crates/orbit-core/src/adapter/tool_host/artifact_redaction.rs",
+            "line": 221,
+            "quote": "fn policy_for_action(action: OrbitBuiltinAction) -> ActionPolicy {",
+            "required": true,
+            "selector": "symbol:crates/orbit-core/src/adapter/tool_host/artifact_redaction.rs#policy_for_action:function"
+          },
+          {
+            "aliases": [
+              "symbol:crates/orbit-core/src/adapter/tool_host/artifact_redaction.rs#adapter::tool_host::artifact_redaction::sanitize_string:function"
+            ],
+            "file": "crates/orbit-core/src/adapter/tool_host/artifact_redaction.rs",
+            "line": 493,
+            "quote": "fn sanitize_string(",
+            "required": true,
+            "selector": "symbol:crates/orbit-core/src/adapter/tool_host/artifact_redaction.rs#sanitize_string:function"
+          },
+          {
+            "aliases": [
+              "symbol:crates/orbit-core/src/adapter/tool_host/artifact_redaction.rs#adapter::tool_host::artifact_redaction::finish_tool_response:function"
+            ],
+            "file": "crates/orbit-core/src/adapter/tool_host/artifact_redaction.rs",
+            "line": 117,
+            "quote": "pub(super) fn finish_tool_response(",
+            "required": true,
+            "selector": "symbol:crates/orbit-core/src/adapter/tool_host/artifact_redaction.rs#finish_tool_response:function"
+          }
+        ],
+        "limitations": [
+          "Do not infer guarantees for fields/actions outside this policy or that PathOnly removes all secrets."
+        ],
+        "rubric": [
+          {
+            "evidence": [
+              {
+                "end_line": 115,
+                "excerpt_sha256": "30593760ec573ea6c1befe282246a924f78da08926b5352795c369926469ced3",
+                "file": "crates/orbit-core/src/adapter/tool_host/artifact_redaction.rs",
+                "line": 86,
+                "quote": "pub(super) fn sanitize_tool_input(",
+                "revision": "head"
+              },
+              {
+                "end_line": 255,
+                "excerpt_sha256": "ef5469cd9e235a26530dcd883a05fd8a69cd99119103864d52dd76d7551bdc3a",
+                "file": "crates/orbit-core/src/adapter/tool_host/artifact_redaction.rs",
+                "line": 241,
+                "quote": "OrbitBuiltinAction::TaskUpdate => ActionPolicy {",
+                "revision": "head"
+              }
+            ],
+            "id": "fields",
+            "required_behavior": "TaskUpdate free text: title, description, plan, execution_summary, note, comment; acceptance_criteria array; context_files/context are PathOnly. Sanitizer visits declared policy fields, not arbitrary recursive JSON."
+          },
+          {
+            "evidence": [
+              {
+                "end_line": 544,
+                "excerpt_sha256": "70fc115fbd104af0347b28565134cf7ed912a08ee8182a7fbcd39dd6170c7656",
+                "file": "crates/orbit-core/src/adapter/tool_host/artifact_redaction.rs",
+                "line": 493,
+                "quote": "fn sanitize_string(",
+                "revision": "head"
+              }
+            ],
+            "id": "modes",
+            "required_behavior": "Free rejects high-confidence whole-token credentials with SensitiveInput; otherwise redacts embedded patterns/environment and home paths. PathOnly redacts home directory only; it does not apply the free-text credential refusal."
+          },
+          {
+            "evidence": [
+              {
+                "end_line": 152,
+                "excerpt_sha256": "a259a3f63e4e52649ebbfb8e891a265860e359d91171b77038d10617f3a26a95",
+                "file": "crates/orbit-core/src/adapter/tool_host/artifact_redaction.rs",
+                "line": 117,
+                "quote": "pub(super) fn finish_tool_response(",
+                "revision": "head"
+              },
+              {
+                "end_line": 372,
+                "excerpt_sha256": "8d5d0c350bc4d78015b27686fe602d5dfa4671a882713b1ca92a178bce9c1c8a",
+                "file": "crates/orbit-core/src/adapter/tool_host/artifact_redaction.rs",
+                "line": 357,
+                "quote": "fn is_covered_mutating_action(action: OrbitBuiltinAction) -> bool {",
+                "revision": "head"
+              }
+            ],
+            "id": "report",
+            "required_behavior": "Only covered mutating actions add response redactions_applied and redactions; audit events emitted only when report has changes."
+          }
+        ]
+      }
+    },
+    {
+      "base_snapshot": "Orbit",
+      "head_snapshot": "Orbit",
+      "id": "orbit-reverse-log-boundaries",
+      "original_source_revision": "0db9356eef631ada11569d0ca4e1e407fad5bee3",
+      "prompt": "Investigate newest-first log reading. Locate the block reader, raw-line iterator, and UTF-8 decoder, plus the focused trailing-newline regression. Explain how a line spanning blocks is assembled and emitted newest first; state actual behavior for a final newline, internal blank lines, CRLF and invalid UTF-8. Resolve the discrepancy between the type documentation and executable behavior about an empty line after a final newline, citing the regression. Does fixed block size imply bounded total memory for an arbitrarily long line?",
+      "repository": "Orbit",
+      "split": "held-out",
+      "truth": {
+        "identities": [
+          {
+            "aliases": [
+              "symbol:crates/orbit-common/src/fs/reverse_lines.rs#fs::reverse_lines::ReverseLines::read_block:method"
+            ],
+            "file": "crates/orbit-common/src/fs/reverse_lines.rs",
+            "line": 54,
+            "owner_evidence": {
+              "end_line": 54,
+              "excerpt_sha256": "1c5510a72e3e59cdb72dec8f644a0db6f22db45137da15b929d231606cd154b9",
+              "file": "crates/orbit-common/src/fs/reverse_lines.rs",
+              "line": 30,
+              "quote": "impl<R: Read + Seek> ReverseLines<R> {",
+              "revision": "head"
+            },
+            "quote": "fn read_block(&mut self) -> io::Result<()> {",
+            "required": true,
+            "selector": "symbol:crates/orbit-common/src/fs/reverse_lines.rs#ReverseLines::read_block:method"
+          },
+          {
+            "aliases": [
+              "symbol:crates/orbit-common/src/fs/reverse_lines.rs#fs::reverse_lines::ReverseLines::next_raw:method"
+            ],
+            "file": "crates/orbit-common/src/fs/reverse_lines.rs",
+            "line": 75,
+            "owner_evidence": {
+              "end_line": 75,
+              "excerpt_sha256": "315937b7ecdc40c0fe5523d83484dfea276d373633ba65fbca8f3ffef2fbb4a8",
+              "file": "crates/orbit-common/src/fs/reverse_lines.rs",
+              "line": 30,
+              "quote": "impl<R: Read + Seek> ReverseLines<R> {",
+              "revision": "head"
+            },
+            "quote": "fn next_raw(&mut self) -> io::Result<Option<Vec<u8>>> {",
+            "required": true,
+            "selector": "symbol:crates/orbit-common/src/fs/reverse_lines.rs#ReverseLines::next_raw:method"
+          },
+          {
+            "aliases": [
+              "symbol:crates/orbit-common/src/fs/reverse_lines.rs#fs::reverse_lines::decode_line:function"
+            ],
+            "file": "crates/orbit-common/src/fs/reverse_lines.rs",
+            "line": 108,
+            "quote": "fn decode_line(mut raw: Vec<u8>) -> io::Result<String> {",
+            "required": true,
+            "selector": "symbol:crates/orbit-common/src/fs/reverse_lines.rs#decode_line:function"
+          },
+          {
+            "aliases": [
+              "symbol:crates/orbit-common/src/fs/tests/reverse_lines.rs#fs::tests::reverse_lines::a_trailing_newline_ends_the_last_line_rather_than_adding_one:test"
+            ],
+            "file": "crates/orbit-common/src/fs/tests/reverse_lines.rs",
+            "line": 25,
+            "quote": "fn a_trailing_newline_ends_the_last_line_rather_than_adding_one() {",
+            "required": true,
+            "selector": "symbol:crates/orbit-common/src/fs/tests/reverse_lines.rs#a_trailing_newline_ends_the_last_line_rather_than_adding_one:test"
+          }
+        ],
+        "limitations": [
+          "A local seekable reader, not a live append-following or globally memory-bounded service."
+        ],
+        "rubric": [
+          {
+            "evidence": [
+              {
+                "end_line": 93,
+                "excerpt_sha256": "0744e0f6b8d6d994a95c4b7ce19f8fa289f6b9377ca22dddc3d732356ba45ab6",
+                "file": "crates/orbit-common/src/fs/reverse_lines.rs",
+                "line": 54,
+                "quote": "fn read_block(&mut self) -> io::Result<()> {",
+                "revision": "head"
+              }
+            ],
+            "id": "blocks",
+            "required_behavior": "Reads backwards from pos, appends carry, retains leading partial segment, pops pending lines newest first. Carry can grow with an arbitrarily long line; block size is not a total memory bound."
+          },
+          {
+            "evidence": [
+              {
+                "end_line": 16,
+                "excerpt_sha256": "4be7004ce8acbd9dde900ea19463c85147798c939075b04206e37398312b6392",
+                "file": "crates/orbit-common/src/fs/reverse_lines.rs",
+                "line": 12,
+                "quote": "/// Iterates a seekable reader's lines from last to first.",
+                "revision": "head"
+              },
+              {
+                "end_line": 93,
+                "excerpt_sha256": "bddcf6c2c630a83e0268fe24b3f14046935952754ccb6e78a6d65697b1549f99",
+                "file": "crates/orbit-common/src/fs/reverse_lines.rs",
+                "line": 75,
+                "quote": "fn next_raw(&mut self) -> io::Result<Option<Vec<u8>>> {",
+                "revision": "head"
+              },
+              {
+                "end_line": 30,
+                "excerpt_sha256": "5e3fdb0f9b5f44b7e63dcbd65d994b9aeae2ad45731d03f8090736f4bf5e3d48",
+                "file": "crates/orbit-common/src/fs/tests/reverse_lines.rs",
+                "line": 13,
+                "quote": "fn yields_lines_newest_first_for_every_block_size() {",
+                "revision": "head"
+              }
+            ],
+            "id": "ending",
+            "required_behavior": "next_raw skips one final empty remainder despite type documentation saying it is yielded; test shows a\\nb\\n -> b,a and newline-only -> one empty line; internal empty lines remain."
+          },
+          {
+            "evidence": [
+              {
+                "end_line": 113,
+                "excerpt_sha256": "d9dbb503b48933213442b05bc992a61f9449b28033dfba87a708634dcd394da9",
+                "file": "crates/orbit-common/src/fs/reverse_lines.rs",
+                "line": 99,
+                "quote": "fn next(&mut self) -> Option<Self::Item> {",
+                "revision": "head"
+              },
+              {
+                "end_line": 41,
+                "excerpt_sha256": "97d88db8708abb85fa7772cf5cbf0cf51539a6cc2e6cfcee009d96be913fb910",
+                "file": "crates/orbit-common/src/fs/tests/reverse_lines.rs",
+                "line": 34,
+                "quote": "fn invalid_utf8_is_an_error_only_when_reached() {",
+                "revision": "head"
+              }
+            ],
+            "id": "decode",
+            "required_behavior": "Removes one trailing CR; invalid UTF-8 gives InvalidData when that line is reached, not when an earlier valid newest line is decoded."
+          }
+        ]
+      }
+    },
+    {
+      "base_snapshot": "pulsar",
+      "head_snapshot": "pulsar",
+      "id": "pulsar-read-metering",
+      "original_source_revision": "6d33fb9d4609618c13d46deb2df6af53b7f504a6",
+      "prompt": "Locate Reader.mentions, its shared paid-read helper, and cost helper. Explain admission against max_posts before the channel call and ledger recording after success using fetched count. For mentions explain own-post filtering, replied annotation and whether filtering reduces the recorded/returned cost. Explain what happens on a channel exception and why this check-then-record path cannot guarantee a strict budget under concurrent reads. Do not execute any provider read.",
+      "repository": "pulsar",
+      "split": "held-out",
+      "truth": {
+        "identities": [
+          {
+            "aliases": [
+              "symbol:src/pulsar/app/core/engagement/reader.py#pulsar.app.core.engagement.reader.Reader.mentions:method"
+            ],
+            "file": "src/pulsar/app/core/engagement/reader.py",
+            "line": 72,
+            "owner_evidence": {
+              "end_line": 72,
+              "excerpt_sha256": "ed6c4a9390934287159ecb8930328390ad4bf4094f09090c182cdf9afbfec5e9",
+              "file": "src/pulsar/app/core/engagement/reader.py",
+              "line": 55,
+              "quote": "class Reader:",
+              "revision": "head"
+            },
+            "quote": "async def mentions(",
+            "required": true,
+            "selector": "symbol:src/pulsar/app/core/engagement/reader.py#Reader.mentions:method"
+          },
+          {
+            "aliases": [
+              "symbol:src/pulsar/app/core/engagement/reader.py#pulsar.app.core.engagement.reader.Reader._read:method"
+            ],
+            "file": "src/pulsar/app/core/engagement/reader.py",
+            "line": 124,
+            "owner_evidence": {
+              "end_line": 124,
+              "excerpt_sha256": "7fd77d530282520c37dcf821923e7a1383a80ed5de73261b7b69ca882c766393",
+              "file": "src/pulsar/app/core/engagement/reader.py",
+              "line": 55,
+              "quote": "class Reader:",
+              "revision": "head"
+            },
+            "quote": "async def _read[T](",
+            "required": true,
+            "selector": "symbol:src/pulsar/app/core/engagement/reader.py#Reader._read:method"
+          },
+          {
+            "aliases": [
+              "symbol:src/pulsar/app/core/engagement/reader.py#pulsar.app.core.engagement.reader.Reader._cost:method"
+            ],
+            "file": "src/pulsar/app/core/engagement/reader.py",
+            "line": 121,
+            "owner_evidence": {
+              "end_line": 121,
+              "excerpt_sha256": "4beca79e8371546bd4010f581ef8e0e0c0659e692704d075f2561b190e8846d0",
+              "file": "src/pulsar/app/core/engagement/reader.py",
+              "line": 55,
+              "quote": "class Reader:",
+              "revision": "head"
+            },
+            "quote": "def _cost[T](self, bound: Bound, page: Page[T]) -> float:",
+            "required": true,
+            "selector": "symbol:src/pulsar/app/core/engagement/reader.py#Reader._cost:method"
+          }
+        ],
+        "limitations": [
+          "No measured billing evidence or guarantee that providers never bill errors; these are local control-flow semantics."
+        ],
+        "rubric": [
+          {
+            "evidence": [
+              {
+                "end_line": 16,
+                "excerpt_sha256": "a9dcc01988256a1b1d9a340bcd0da56ad9b960eb6995d262f5b2f4778659e092",
+                "file": "src/pulsar/app/core/engagement/reader.py",
+                "line": 1,
+                "quote": "\"\"\"``Reader``: one paid read, budgeted and recorded.",
+                "revision": "head"
+              },
+              {
+                "end_line": 157,
+                "excerpt_sha256": "76dfbf4cf2f35a001485bbea2e56e2ea347996fd64e679849ed1adad8c1f5cf8",
+                "file": "src/pulsar/app/core/engagement/reader.py",
+                "line": 124,
+                "quote": "async def _read[T](",
+                "revision": "head"
+              }
+            ],
+            "id": "meter",
+            "required_behavior": "Checks estimated maximum cost using max_posts, awaits call, then records page.fetched and its price. Channel exception bypasses record_read; this separate check/read/record has a concurrency overshoot risk."
+          },
+          {
+            "evidence": [
+              {
+                "end_line": 97,
+                "excerpt_sha256": "8e854e7f917af41d2ca858253619a49b6abb9245b33656fbd2870405b9bde87f",
+                "file": "src/pulsar/app/core/engagement/reader.py",
+                "line": 72,
+                "quote": "async def mentions(",
+                "revision": "head"
+              },
+              {
+                "end_line": 122,
+                "excerpt_sha256": "fa94aec0ae823228557d1ecae820f258cc838137203949e0d63fab8d6f754684",
+                "file": "src/pulsar/app/core/engagement/reader.py",
+                "line": 121,
+                "quote": "def _cost[T](self, bound: Bound, page: Page[T]) -> float:",
+                "revision": "head"
+              },
+              {
+                "end_line": 157,
+                "excerpt_sha256": "1bbd32b3a36827e31dbf2ebfdb3c78d5e153f9ec902a30e658f30f753ebe2f0c",
+                "file": "src/pulsar/app/core/engagement/reader.py",
+                "line": 148,
+                "quote": "kind=kind,",
+                "revision": "head"
+              }
+            ],
+            "id": "mentions",
+            "required_behavior": "Filters own author from displayed mentions and annotates replied_to for remaining post ids; _cost still uses page.fetched, so filtering does not lower recorded or returned billed cost."
+          }
+        ]
+      }
+    },
+    {
+      "base_snapshot": "pulsar",
+      "head_snapshot": "pulsar",
+      "id": "pulsar-text-weight-normalization",
+      "original_source_revision": "6d33fb9d4609618c13d46deb2df6af53b7f504a6",
+      "prompt": "Locate the X text validator, weighted-length calculator and code-point weighing helper. Explain NFC normalization, fixed URL weight, and light-range versus other code-point weight. Explain why validating decomposed Unicode can return the original spelling even though length was computed on NFC text; distinguish strip-for-emptiness from changing stored text. Explain control-character, maximum-length and secret checks, their order, and how URL presence affects estimated post price. State whether the source supports claiming exact twitter-text URL equivalence.",
+      "repository": "pulsar",
+      "split": "held-out",
+      "truth": {
+        "identities": [
+          {
+            "aliases": [
+              "symbol:src/pulsar/app/core/channels/x/text.py#pulsar.app.core.channels.x.text.validate_text:function"
+            ],
+            "file": "src/pulsar/app/core/channels/x/text.py",
+            "line": 57,
+            "quote": "def validate_text(text: object, prices: Prices | None = None) -> TextReport:",
+            "required": true,
+            "selector": "symbol:src/pulsar/app/core/channels/x/text.py#validate_text:function"
+          },
+          {
+            "aliases": [
+              "symbol:src/pulsar/app/core/channels/x/text.py#pulsar.app.core.channels.x.text.weighted_length:function"
+            ],
+            "file": "src/pulsar/app/core/channels/x/text.py",
+            "line": 25,
+            "quote": "def weighted_length(text: str) -> int:",
+            "required": true,
+            "selector": "symbol:src/pulsar/app/core/channels/x/text.py#weighted_length:function"
+          },
+          {
+            "aliases": [
+              "symbol:src/pulsar/app/core/channels/x/text.py#pulsar.app.core.channels.x.text._weigh:function"
+            ],
+            "file": "src/pulsar/app/core/channels/x/text.py",
+            "line": 37,
+            "quote": "def _weigh(segment: str) -> int:",
+            "required": true,
+            "selector": "symbol:src/pulsar/app/core/channels/x/text.py#_weigh:function"
+          },
+          {
+            "aliases": [
+              "symbol:src/pulsar/app/core/channels/x/text.py#pulsar.app.core.channels.x.text.contains_url:function"
+            ],
+            "file": "src/pulsar/app/core/channels/x/text.py",
+            "line": 45,
+            "quote": "def contains_url(text: str) -> bool:",
+            "required": false,
+            "selector": "symbol:src/pulsar/app/core/channels/x/text.py#contains_url:function"
+          }
+        ],
+        "limitations": [
+          "Code-point/regex approximation; no claim of full grapheme or twitter-text conformance."
+        ],
+        "rubric": [
+          {
+            "evidence": [
+              {
+                "end_line": 47,
+                "excerpt_sha256": "7e85cc8a60ebdded908d9d7bcc66a1a9c0f8f291af95fdb40d2b9d0a9ae9f41a",
+                "file": "src/pulsar/app/core/channels/x/text.py",
+                "line": 15,
+                "quote": "# Close enough to twitter-text's URL extraction for length/cost purposes.",
+                "revision": "head"
+              }
+            ],
+            "id": "weight",
+            "required_behavior": "Normalizes NFC inside weighted_length; each URL match weighs 23; listed light ranges weigh 1 and other code points 2. URL regex comment says approximation, not exact twitter-text equivalence."
+          },
+          {
+            "evidence": [
+              {
+                "end_line": 86,
+                "excerpt_sha256": "7fce2dd83b66bb4399839a06da77e6ca387650cb55e90ebe6cffbe918aedc54f",
+                "file": "src/pulsar/app/core/channels/x/text.py",
+                "line": 57,
+                "quote": "def validate_text(text: object, prices: Prices | None = None) -> TextReport:",
+                "revision": "head"
+              }
+            ],
+            "id": "validation",
+            "required_behavior": "Rejects absent/non-string or whitespace-only text, disallowed controls (newline/tab allowed), excess weighted length, then secrets. strip is only emptiness check; report.text remains original input."
+          },
+          {
+            "evidence": [
+              {
+                "end_line": 86,
+                "excerpt_sha256": "feb4588666098be52e34ab033201233604758f213305f3f0f88eb18f799ce07b",
+                "file": "src/pulsar/app/core/channels/x/text.py",
+                "line": 80,
+                "quote": "has_url = contains_url(text)",
+                "revision": "head"
+              }
+            ],
+            "id": "price",
+            "required_behavior": "URL presence from contains_url selects (prices or default Prices()).for_post(has_url=has_url); normalized length does not replace original report text."
+          }
+        ]
+      }
+    }
+  ],
+  "label": "Fresh installed-plugin six-pair qualification; offline preparation, no measurements",
+  "repositories": {
+    "Orbit": "0db9356eef631ada11569d0ca4e1e407fad5bee3",
+    "orbit-graph": "ac6d5b91f973874325bac789e9c433a71c805766",
+    "pulsar": "6d33fb9d4609618c13d46deb2df6af53b7f504a6"
+  },
+  "schema_version": 1,
+  "source_review": "codex / ORB-13781; pinned source inspection before any graph queries or provider output"
+}

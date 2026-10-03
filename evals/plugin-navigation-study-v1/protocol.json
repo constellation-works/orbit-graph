@@ -1,0 +1,98 @@
+{
+  "failures": "Keep failed/invalid/timeout in all denominators. No reruns/replacements; integrity refusal blocks scoring rather than dropping episodes.",
+  "follow_up": "Only consider a separately authorized fresh cohort if strict genuine complete evidence, graph held-out correctness >= baseline, at least one held-out improvement and no held-out graph unsupported identities. No automatic authorization or superiority claim.",
+  "limitations": [
+    "Six purposive questions are descriptive, not powered for superiority/p-values/generalization.",
+    "Graph development repositories and Orbit/pulsar held-out repositories are disjoint within this study, but all three were inspected in prior work; no unseen-repository generalization.",
+    "Different installed plugin plus shipped skill treatment, not a successful extension/relabel of old 24+16 episodes.",
+    "Questions chosen from source, never graph results. Semantic and additional-symbol judgments are attributed human review, not automated truth. Blind arms where possible; record any unblinding.",
+    "Frozen corpus/rubric/limits are supplied now; exact provider/tool/runner/backend/inventory/skill pins and transfer/run approval remain operator prerequisites.",
+    "Hash seals establish local integrity, not authentication or capture origin; require operator custody and external pre-run freeze.",
+    "Historical source pins stay unchanged; repaired runtime binary qualification (including ORB-13783) gates later live execution."
+  ],
+  "limits": {
+    "answer_items": 32,
+    "call_bytes": 65536,
+    "output_bytes": 1048576,
+    "tool_calls": 60,
+    "wall_ms": 300000
+  },
+  "metrics": [
+    "per-case required identity recall and citation coverage, independently reviewed semantic pass and combined correctness",
+    "all accuracy denominator 6 per arm; held-out 4 per arm; development 2 per arm",
+    "status and error counts; graph adoption among all 6 and among successful graph episodes, with attempted/successful call counts",
+    "cold plugin install, source/setup, provider, graph_sync and total wall; calls, returned output bytes and separate setup bytes",
+    "nullable observed input/cached/output/total tokens and USD with observed/total counts; missing is not zero",
+    "paired speed deltas/ratios only on both-correct pairs"
+  ],
+  "order": [
+    {
+      "arm": "baseline",
+      "case_id": "graph-live-source-bounds",
+      "order": 0
+    },
+    {
+      "arm": "graph",
+      "case_id": "graph-live-source-bounds",
+      "order": 1
+    },
+    {
+      "arm": "graph",
+      "case_id": "graph-trait-name-resolution",
+      "order": 2
+    },
+    {
+      "arm": "baseline",
+      "case_id": "graph-trait-name-resolution",
+      "order": 3
+    },
+    {
+      "arm": "baseline",
+      "case_id": "orbit-artifact-text-policy",
+      "order": 4
+    },
+    {
+      "arm": "graph",
+      "case_id": "orbit-artifact-text-policy",
+      "order": 5
+    },
+    {
+      "arm": "graph",
+      "case_id": "orbit-reverse-log-boundaries",
+      "order": 6
+    },
+    {
+      "arm": "baseline",
+      "case_id": "orbit-reverse-log-boundaries",
+      "order": 7
+    },
+    {
+      "arm": "baseline",
+      "case_id": "pulsar-read-metering",
+      "order": 8
+    },
+    {
+      "arm": "graph",
+      "case_id": "pulsar-read-metering",
+      "order": 9
+    },
+    {
+      "arm": "graph",
+      "case_id": "pulsar-text-weight-normalization",
+      "order": 10
+    },
+    {
+      "arm": "baseline",
+      "case_id": "pulsar-text-weight-normalization",
+      "order": 11
+    }
+  ],
+  "profile": "installed-plugin-skill-v2",
+  "reason_bytes": 4096,
+  "repetitions": 1,
+  "schema_version": 1,
+  "setup_limits": {
+    "output_bytes": 8388608,
+    "wall_ms": 60000
+  }
+}
