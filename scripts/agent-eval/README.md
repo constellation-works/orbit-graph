@@ -339,7 +339,14 @@ Episode status follows ORB-13710; the first matching rule wins:
 10. `telemetry_mismatch`
 11. `broker_failed` or `broker_exit_missing` (failed worker/cleanup or incomplete supervision)
 12. `tool_execution_failed` (a subprocess failure, timeout or execution exception;
-    ordinary argument/path refusals remain recoverable agent errors)
+    ordinary broker argument/path refusals remain recoverable agent errors).
+    A graph query's typed CLI `index_missing` error is also recoverable through
+    `graph_sync`: exit 1, complete `{code, error}` JSON on stderr, empty stdout,
+    no timeout/exception/cleanup signals, and no survivors are required. Its
+    call retains `failed` status and all measured costs; the episode remains
+    eligible for final-answer grading. Other nonzero CLI errors (including
+    generic `graph_error`, timeout, incompatible index and unknown codes) stay
+    fail-closed. Missing, malformed or truncated evidence cannot qualify.
 13. `provider_incomplete` (non-zero exit, no completed turn, or a failed turn)
 14. `final_answer_missing`
 15. `invalid` `final_output_oversized`
