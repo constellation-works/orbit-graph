@@ -259,6 +259,127 @@ class RunnerTests(EpisodeCase):
         self.assertIsNone(artifact["usage"])
         self.assertIsNone(artifact["usage_raw"])
 
+    def test_provider_broker_parallel_completions_preserve_measurements(self):
+        cases = [("graph", [OK_STEPS[1], OK_STEPS[2], OK_STEPS[0],
+                            {"call": "search", "arguments": {"query": "price"}}], [0, 2, 1, 3]),
+                 ("baseline", [OK_STEPS[0], {"call": "read", "arguments": {"path": "README.md"}},
+                               OK_STEPS[0]], [2, 1, 0]),
+                 ("baseline", [OK_STEPS[0], {"call": "read", "arguments": {"path": "absent"}}],
+                  [1, 0])]
+        for arm, calls, order in cases:
+            with self.subTest(arm=arm, calls=calls):
+                _, _, _, sequential = self.episode(calls + OK_STEPS[-1:], arm=arm)
+                reference = self.assert_outcome(sequential, "ok", None)
+                code, report, stderr, out = self.episode(
+                    [{"parallel": calls, "completion_order": order}, OK_STEPS[-1]], arm=arm)
+                self.assertEqual(code, 0, stderr)
+                artifact = self.assert_outcome(out, "ok", None)
+                self.assertEqual(report["tool_calls"], len(calls))
+                self.assertEqual(artifact["calls_dropped"], 0)
+
+                def measured(episode, directory):
+                    return [{k: c[k].replace(str(directory / "snapshot" / "repo"), "<repository>")
+                             for k in ("tool", "input", "output", "status")}
+                            for c in episode["calls"]]
+
+                self.assertEqual(measured(artifact, out), measured(reference, sequential))
+                broker_log, _ = eval_runner.read_broker_log(out / "broker-calls.jsonl")
+                self.assertEqual(artifact["calls"], broker_log["calls"])
+                self.assertEqual(artifact["output_bytes"], reference["output_bytes"])
+                self.assertEqual(artifact["answer"], reference["answer"])
+                self.assertEqual(artifact["transcript"]["mcp_calls"],
+                                 [{"tool": calls[i]["call"],
+                                   "status": "completed" if artifact["calls"][i]["status"] == "ok"
+                                             else "failed"} for i in order])
+                # Sealed/raw and public schemas stay readable with the new audit.
+                record = eval_runner.public_record(eval_runner.load_raw_episode(
+                    self.forge_contained(out)))
+                eval_runner.check_public_record(record)
+                self.assertEqual(record["calls"], artifact["calls"])
+
+    def test_provider_broker_mismatched_call_reports_fail_closed(self):
+        cases = [("missing", {"omit_completed": True}, "incomplete"),
+                 ("duplicate", {"duplicate_completed": True}, "duplicate"),
+                 ("arguments", {"completed": {"arguments": {"path": "README.md"}}}, "arguments"),
+                 ("tool", {"completed": {"tool": "rg"}}, "tool"),
+                 ("id", {"completed": {"id": "unexpected"}}, "unexpected"),
+                 ("no id", {"omit_fields": ["id"]}, "id"),
+                 ("long id", {"completed": {"id": "x" * 129}}, "id"),
+                 ("invalid id", {"completed": {"id": "\ud800"}}, "id"),
+                 ("no arguments", {"omit_fields": ["arguments"]}, "arguments"),
+                 ("no result", {"omit_fields": ["result"]}, "result"),
+                 ("invalid output", {"completed": {"result": {
+                     "content": [{"type": "text", "text": "\ud800"}]}}}, "UTF-8"),
+                 ("extra content", {"completed": {"result": {
+                     "content": [{"type": "text", "text": "a"},
+                                 {"type": "text", "text": "b"}]}}}, "result"),
+                 ("structured result", {"completed": {"result": {
+                     "content": [{"type": "text", "text": "a"}],
+                     "structured_content": {"unexpected": True}}}}, "structured"),
+                 ("isError", {"completed": {"result": {
+                     "content": [{"type": "text", "text": "a"}], "isError": True}}}, "isError"),
+                 ("altered output", {"completed": {"result": {
+                     "content": [{"type": "text", "text": "altered"}]}}}, "unmatched"),
+                 ("altered status", {"completed": {"status": "failed"}}, "unmatched"),
+                 ("invalid status", {"completed": {"status": "in_progress"}}, "status"),
+                 ("error", {"completed": {"error": {"message": "transport failed"}}}, "error"),
+                 ("no start", {"omit_started": True}, "unexpected"),
+                 ("different start", {"started": {"arguments": {"path": "README.md"}}},
+                  "arguments"),
+                 ("broker arguments", {"started": {"arguments": {"path": "README.md"}},
+                                       "completed": {"arguments": {"path": "README.md"}}},
+                  "unmatched"),
+                 ("argument types", {"arguments": {"path": "src/lib.rs", "start_line": 1},
+                                     "started": {"arguments": {"path": "src/lib.rs",
+                                                                 "start_line": True}},
+                                     "completed": {"arguments": {"path": "src/lib.rs",
+                                                                   "start_line": True}}},
+                  "unmatched")]
+        for name, overrides, diagnostic in cases:
+            with self.subTest(name=name):
+                code, _, stderr, out = self.episode([dict(OK_STEPS[0], **overrides),
+                                                     OK_STEPS[-1]])
+                self.assertEqual(code, 0, stderr)
+                artifact = self.assert_outcome(out, "failed", "telemetry_mismatch")
+                self.assertIn(diagnostic, artifact["error"]["message"])
+
+    def test_provider_broker_duplicate_names_do_not_hide_substitutions(self):
+        calls = [OK_STEPS[0], {"call": "read", "arguments": {"path": "README.md"}}]
+        cases = [[calls[0], dict(calls[1], completed={"arguments": calls[0]["arguments"]})],
+                 [dict(calls[0], result_from=1), dict(calls[1], result_from=0)],
+                 [calls[0], dict(calls[1], started={"id": "item_1"},
+                                completed={"id": "item_1"})],
+                 [dict(calls[0], duplicate_completed=True), dict(calls[1], omit_completed=True)]]
+        for corrupted in cases:
+            with self.subTest(calls=corrupted):
+                code, _, stderr, out = self.episode(
+                    [{"parallel": corrupted, "completion_order": [1, 0]}, OK_STEPS[-1]])
+                self.assertEqual(code, 0, stderr)
+                self.assert_outcome(out, "failed", "telemetry_mismatch")
+
+    def test_provider_broker_unexpected_completion_is_rejected(self):
+        # The old subsequence check accepted this extra report of an allowed tool.
+        extra = {"id": "extra", "type": "mcp_tool_call", "server": "eval_broker", "tool": "read",
+                 "arguments": {"path": "README.md"}, "status": "in_progress"}
+        steps = [OK_STEPS[0], {"emit": {"type": "item.started", "item": extra}},
+                 {"emit": {"type": "item.completed", "item": dict(extra, status="completed",
+                      result={"content": [{"type": "text", "text": "invented"}]})}}, OK_STEPS[-1]]
+        code, _, stderr, out = self.episode(steps)
+        self.assertEqual(code, 0, stderr)
+        artifact = self.assert_outcome(out, "failed", "telemetry_mismatch")
+        self.assertIn("unexpected", artifact["error"]["message"])
+
+    def test_provider_broker_malformed_and_partial_transcripts_fail_closed(self):
+        for raw, partial in (("{not json", False), ('{"type":"a","type":"b"}', False),
+                             ("[]", False), ('{"value":NaN}', False), ('{"type":"turn.completed"}',
+                                                                       True)):
+            with self.subTest(raw=raw, partial=partial):
+                code, _, stderr, out = self.episode(
+                    OK_STEPS + [{"emit_raw": raw, "newline": not partial}],
+                    no_turn_completed=partial)
+                self.assertEqual(code, 0, stderr)
+                self.assert_outcome(out, "failed", "provider_output_malformed")
+
     # -- adapter -----------------------------------------------------------
     def test_adapter_refuses_uncontained_and_tampered_episodes(self):
         _, _, _, out = self.episode()

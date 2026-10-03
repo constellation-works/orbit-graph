@@ -15,6 +15,7 @@ Standard library only; Linux. Never reads corpus answers or truth.
 """
 import argparse
 import calendar
+from collections import Counter
 import hashlib
 import json
 import os
@@ -920,6 +921,87 @@ def sweep_broker(starts):
 # Transcript, broker log and answer analysis.
 
 
+def audit_mcp_item(kind, item, pending, completed, summary):
+    """Bind lifecycle events by provider ID; keep compact exact-match fingerprints.
+
+    Provider IDs are not broker request IDs. They detect replayed or altered
+    lifecycle events; tool/arguments/status/result match the broker independently.
+    Fingerprints avoid duplicating bounded tool payloads in the audit summary.
+    """
+    def invalid(message):
+        if len(summary["call_audit_errors"]) < 50:
+            summary["call_audit_errors"].append(message)
+
+    identity = item.get("id")
+    try:
+        valid_id = isinstance(identity, str) and bool(identity) and len(identity.encode()) <= 128
+    except UnicodeError:
+        valid_id = False
+    if not valid_id:
+        invalid("provider call id must be a non-empty string of at most 128 bytes")
+        return
+    label = f"provider call {identity!r} ({item['tool']})"
+    if not isinstance(item.get("arguments"), dict):
+        invalid(f"{label}: missing or malformed arguments")
+        return
+    try:
+        key = (item["tool"], digest(item["arguments"]))
+    except (ValueError, RecursionError):
+        invalid(f"{label}: arguments cannot be canonicalized")
+        return
+    if kind == "item.started":
+        if identity in pending or identity in completed:
+            invalid(f"{label}: duplicate start id")
+        elif item.get("status") != "in_progress":
+            invalid(f"{label}: invalid started status")
+        else:
+            pending[identity] = key
+        return
+    if kind == "item.completed":
+        if identity in completed:
+            invalid(f"{label}: duplicate completion id")
+            return
+        completed.add(identity)
+        started = pending.pop(identity, None)
+    elif kind == "item.updated":
+        started = pending.get(identity)
+    else:
+        invalid(f"{label}: unexpected lifecycle event {kind}")
+        return
+    if started is None:
+        invalid(f"{label}: unexpected event without a pending start")
+    elif started != key:
+        invalid(f"{label}: tool or arguments differ from its start")
+    if kind != "item.completed":
+        return
+    status, result = item.get("status"), item.get("result")
+    if status not in ("completed", "failed"):
+        invalid(f"{label}: invalid completed status")
+        return
+    if item.get("error") is not None:
+        invalid(f"{label}: provider error has no broker result")
+        return
+    content = result.get("content") if isinstance(result, dict) else None
+    if not isinstance(content, list) or len(content) != 1 or \
+            not isinstance(content[0], dict) or content[0].get("type") != "text" or \
+            not isinstance(content[0].get("text"), str):
+        invalid(f"{label}: missing or malformed text result")
+        return
+    if "isError" in result and (type(result["isError"]) is not bool or
+                                 result["isError"] != (status == "failed")):
+        invalid(f"{label}: result isError disagrees with completed status")
+        return
+    if result.get("structured_content") is not None or result.get("structuredContent") is not None:
+        invalid(f"{label}: unexpected structured result")
+        return
+    try:
+        output_hash = sha256_bytes(content[0]["text"].encode())
+    except UnicodeError:
+        invalid(f"{label}: result is not valid UTF-8 text")
+        return
+    summary["mcp_call_audit"].append((*key, status, output_hash))
+
+
 def analyse_transcript(raw, truncated, tools):
     """Audit provider JSONL; `tools` are the arm's broker tools, the only permitted calls."""
     lines = raw.split(b"\n")
@@ -928,7 +1010,8 @@ def analyse_transcript(raw, truncated, tools):
                "partial_line": bool(partial), "truncated": truncated, "turns_started": 0,
                "turns_completed": 0, "turn_failures": [], "errors": [], "thread_id": None,
                "unbrokered": [], "mcp_calls": [], "approval_denied": [], "last_agent_message": None,
-               "usage": None}
+               "usage": None, "mcp_call_audit": [], "call_audit_errors": []}
+    pending, completed = {}, set()
     usage = {}
     for line in lines:
         if not line.strip():
@@ -987,6 +1070,8 @@ def analyse_transcript(raw, truncated, tools):
             if kind == "item.completed" and item_type == "agent_message":
                 text = item.get("text")
                 summary["last_agent_message"] = text if isinstance(text, str) else None
+            if item_type == "mcp_tool_call" and not violation:
+                audit_mcp_item(kind, item, pending, completed, summary)
             if kind == "item.completed" and item_type == "mcp_tool_call" and not violation:
                 summary["mcp_calls"].append({"tool": str(item.get("tool"))[:64],
                                              "status": str(item.get("status"))[:32]})
@@ -995,6 +1080,10 @@ def analyse_transcript(raw, truncated, tools):
                 if APPROVAL_DENIED in message and len(summary["approval_denied"]) < 50:
                     summary["approval_denied"].append({"tool": str(item.get("tool"))[:64],
                                                        "message": message[:300]})
+    for identity, (tool, _) in pending.items():
+        if len(summary["call_audit_errors"]) >= 50:
+            break
+        summary["call_audit_errors"].append(f"incomplete provider call {identity!r} ({tool})")
     if usage:
         summary["usage_raw"] = usage
         if "input_tokens" in usage or "output_tokens" in usage:
@@ -1002,6 +1091,37 @@ def analyse_transcript(raw, truncated, tools):
                                 "output_tokens": usage.get("output_tokens"),
                                 "cost_usd": None, "source": USAGE_SOURCE}
     return summary
+
+
+def reconcile_calls(transcript, calls):
+    """One-to-one multiset match, independent of either stream's completion order.
+
+    Broker measurements remain authoritative and unchanged. Identical calls
+    must match with their full multiplicity; a tool-name set is insufficient.
+    """
+    if transcript["call_audit_errors"]:
+        return "; ".join(transcript["call_audit_errors"][:5])
+    expected = Counter()
+    for index, call in enumerate(calls):
+        try:
+            arguments = parse_json(call["input"].encode(), "broker call input")
+            require(call["status"] in {"ok", "failed", "timeout", "truncated"}
+                    and isinstance(call["output"], str), "invalid broker call status or output")
+            key = (call["tool"], digest(arguments),
+                   "completed" if call["status"] == "ok" else "failed",
+                   sha256_bytes(call["output"].encode()))
+            expected[key] += 1
+        except (Invalid, AttributeError, TypeError, ValueError, RecursionError):
+            return f"broker call {index + 1}: malformed measured input, status or output"
+    reported = Counter(transcript["mcp_call_audit"])
+    missing, unexpected = expected - reported, reported - expected
+    if missing or unexpected:
+        missing_tools = sorted({key[0] for key in missing})
+        unexpected_tools = sorted({key[0] for key in unexpected})
+        return f"unmatched calls: missing {sum(missing.values())} broker call(s) {missing_tools}; " \
+            f"unexpected {sum(unexpected.values())} provider call(s) {unexpected_tools}; " \
+            "tool, arguments, status and text result must match exactly"
+    return None
 
 
 def read_broker_log(path):
@@ -1015,10 +1135,13 @@ def read_broker_log(path):
         data = stream.read(MAX_BROKER_LOG + 1)
     if len(data) > MAX_BROKER_LOG:
         data, log["truncated"] = data[:MAX_BROKER_LOG], True
+    if data and not data.endswith(b"\n"):
+        log["malformed_lines"] += 1
     for line in data.splitlines():
         try:
-            entry = json.loads(line, object_pairs_hook=broker._unique)
-        except ValueError:
+            entry = json.loads(line, object_pairs_hook=broker._unique,
+                               parse_constant=broker._reject_constant)
+        except (ValueError, RecursionError):
             entry = None
         if not isinstance(entry, dict):
             log["malformed_lines"] += 1
@@ -1117,10 +1240,11 @@ def decide(supervision, transcript, log, final, limits, sentinel_code, output_by
         return "failed", "tool_inventory_mismatch", "the broker served differing tool lists"
     if transcript["malformed_lines"] or transcript["partial_line"]:
         return "failed", "provider_output_malformed", "provider JSONL contains malformed lines"
-    if not is_subsequence([call["tool"] for call in calls],
-                          [call["tool"] for call in transcript["mcp_calls"]]):
-        return "failed", "telemetry_mismatch", \
-            "broker calls do not match the provider's reported tool calls"
+    if log["truncated"] or log["malformed_lines"]:
+        return "failed", "broker_output_malformed", "broker JSONL is malformed or truncated"
+    mismatch = reconcile_calls(transcript, calls)
+    if mismatch:
+        return "failed", "telemetry_mismatch", mismatch
     if supervision["returncode"] != 0 or transcript["turns_completed"] < 1 or \
             transcript["turn_failures"]:
         return "failed", "provider_incomplete", \
@@ -1144,11 +1268,6 @@ def decide(supervision, transcript, log, final, limits, sentinel_code, output_by
     if wall_ms > limits["wall_ms"]:
         return "timeout", "wall_time_exceeded", "the episode exceeded its wall-time limit"
     return "ok", None, None
-
-
-def is_subsequence(needle, haystack):
-    iterator = iter(haystack)
-    return all(any(item == candidate for candidate in iterator) for item in needle)
 
 
 def seal(record, field):
