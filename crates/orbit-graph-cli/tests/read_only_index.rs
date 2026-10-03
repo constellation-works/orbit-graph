@@ -704,6 +704,7 @@ fn observation_guard_keeps_cleanup_nonblocking_and_queries_observational() {
     run_json(repo.path(), &["sync"]);
     let index = repo.path().join(".orbit-graph");
     let older = plant(&index, &format!("main.{}.db", EXTRACTOR_VERSION - 1));
+    let older_path = older.canonicalize().expect("canonical older database");
     let directory = fs::File::open(&index).expect("open index directory");
     directory.lock().expect("hold observation guard");
     let before = snapshot(&index);
@@ -712,7 +713,7 @@ fn observation_guard_keeps_cleanup_nonblocking_and_queries_observational() {
     let plan = run_json(repo.path(), &["clean"]);
     assert!(
         plan["kept"].as_array().expect("kept").iter().any(|item| {
-            item["path"] == json!(older.display().to_string()) && item["reason"] == "locked"
+            item["path"] == json!(older_path.display().to_string()) && item["reason"] == "locked"
         }),
         "{plan}"
     );
