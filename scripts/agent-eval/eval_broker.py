@@ -300,11 +300,15 @@ def _preexec():
 
 def run_child(argv, cwd, env, timeout_s, capture_limit=MAX_CHILD_CAPTURE, line_limit=None,
               passthrough=False, parent_fd=None, cancelled=lambda: False, grace_s=KILL_GRACE_S,
-              input_bytes=None, on_spawn=lambda process: None):
+              input_bytes=None, on_spawn=lambda process: None, input_exchange=None):
     """Bounded capture and group cleanup, including unexpected supervision exceptions.
 
     passthrough is only for the broker worker: MCP pipes stay directly connected
     to the provider while this process drains the worker's diagnostic stream.
+    An optional input_exchange supplies start bytes, sent(), receive(chunk) and
+    eof(). receive returns bounded next-input bytes, b"" to wait, or None to
+    close stdin. All phases, final EOF and process exit share this deadline and
+    cleanup path. Ordinary input_bytes retains its immediate-EOF behavior.
     """
     started = time.monotonic()
     out, err = bytearray(), bytearray()
@@ -314,6 +318,10 @@ def run_child(argv, cwd, env, timeout_s, capture_limit=MAX_CHILD_CAPTURE, line_l
     supervision = {"signals": [], "survivors": []}
     stderr_eof = False
     try:
+        if input_exchange is not None:
+            if input_bytes is not None or passthrough:
+                raise ValueError("incompatible child input modes")
+            input_bytes = input_exchange.start
         if input_bytes is not None and (passthrough or len(input_bytes) > MAX_MESSAGE_BYTES):
             raise ValueError("invalid bounded child input")
         process = subprocess.Popen(argv, cwd=cwd, env=env,
@@ -356,7 +364,10 @@ def run_child(argv, cwd, env, timeout_s, capture_limit=MAX_CHILD_CAPTURE, line_l
                             continue
                     if not pending_input:
                         selector.unregister(key.fileobj)
-                        process.stdin.close()
+                        if input_exchange is None:
+                            process.stdin.close()
+                        else:
+                            input_exchange.sent()
                     continue
                 if key.data == "parent":
                     stopped = "parent_exit"
@@ -365,6 +376,8 @@ def run_child(argv, cwd, env, timeout_s, capture_limit=MAX_CHILD_CAPTURE, line_l
                 if not chunk:
                     if key.data == "err":
                         stderr_eof = True
+                    elif input_exchange is not None:
+                        input_exchange.eof()
                     selector.unregister(key.fileobj)
                     open_streams -= 1
                     continue
@@ -379,6 +392,17 @@ def run_child(argv, cwd, env, timeout_s, capture_limit=MAX_CHILD_CAPTURE, line_l
                     stopped = "truncated"
                 elif line_limit is not None and out.count(b"\n") >= line_limit:
                     stopped = "line_limit"
+                elif input_exchange is not None:
+                    if pending_input:
+                        raise ValueError("reply before input was sent")
+                    next_input = input_exchange.receive(chunk)
+                    if next_input is None:
+                        process.stdin.close()
+                    elif next_input:
+                        if process.stdin.closed or len(next_input) > MAX_MESSAGE_BYTES:
+                            raise ValueError("invalid exchange input")
+                        pending_input = memoryview(next_input)
+                        selector.register(process.stdin, selectors.EVENT_WRITE, "in")
     except Exception as error:
         # Never persist exception text: it may embed env, argv or source data.
         error_type = type(error).__name__[:64]

@@ -181,11 +181,14 @@ class SafeBudgetTests(unittest.TestCase):
         orbit = self.work / 'private-orbit'
         # A stdio fixture only: no installation, service or host state.
         orbit.write_text(f'#!{sys.executable}\n' + '''import json, sys
-sys.stdin.read()
+assert json.loads(sys.stdin.readline())['method'] == 'initialize'
 print(json.dumps({'jsonrpc': '2.0', 'id': 1, 'result': {
-    'protocolVersion': '2024-11-05', 'serverInfo': {'name': 'orbit-mcp'}}}))
+    'protocolVersion': '2024-11-05', 'serverInfo': {'name': 'orbit-mcp'}, 'capabilities': {}}}), flush=True)
+assert json.loads(sys.stdin.readline())['method'] == 'notifications/initialized'
+assert json.loads(sys.stdin.readline())['id'] == 2
 print(json.dumps({'jsonrpc': '2.0', 'id': 2, 'result': {
-    'isError': False, 'content': [{'type': 'text', 'text': PAYLOAD}]}}))
+    'isError': False, 'content': [{'type': 'text', 'text': PAYLOAD}]}}), flush=True)
+assert sys.stdin.read() == ''
 '''.replace('PAYLOAD', repr(product_text)))
         orbit.chmod(0o700)
         client, state, redactor = self.client('fixture\n', 'graph', values, orbit)
@@ -207,7 +210,7 @@ print(json.dumps({'jsonrpc': '2.0', 'id': 2, 'result': {
             self.assertLessEqual(len(broker.canonical(full).encode()), 1024)
         self.assertGreater(len(broker.canonical(dict(full, text_view=body['text_view'])).encode()), 1024)
         rows = [{'jsonrpc': '2.0', 'id': 1, 'result': {
-                    'protocolVersion': '2024-11-05', 'serverInfo': {'name': 'orbit-mcp'}}},
+                    'protocolVersion': '2024-11-05', 'serverInfo': {'name': 'orbit-mcp'}, 'capabilities': {}}},
                 {'jsonrpc': '2.0', 'id': 2, 'result': {'isError': False,
                     'content': [{'type': 'text', 'text': product_text}]}}]
         self.assertEqual(full['transport']['stdout_sha256'],

@@ -59,39 +59,75 @@ def clean(result):
             and not result["stderr_truncated"])
 
 
+class McpExchange:
+    """Exactly initialize -> initialized/call -> matching result -> stdin EOF.
+
+    The supervisor bounds aggregate wire bytes and the entire session lifetime.
+    Reject unsolicited messages, JSON-RPC errors and incomplete frames; product
+    isError results remain intact for the caller. Continue checking through stdout
+    EOF so a duplicate or malformed trailer cannot turn into successful evidence.
+    """
+    def __init__(self, method, params):
+        self.start = self.encode({"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {
+            "protocolVersion": "2024-11-05", "capabilities": {},
+            "clientInfo": {"name": PROFILE, "version": "2"}}})
+        self.call = (self.encode({"jsonrpc": "2.0", "method": "notifications/initialized", "params": {}})
+                     + self.encode({"jsonrpc": "2.0", "id": 2, "method": method, "params": params}))
+        check(len(self.call) <= broker.MAX_MESSAGE_BYTES, "MCP request exceeds input bound")
+        self.phase, self.pending, self.reply = "send_init", bytearray(), None
+
+    @staticmethod
+    def encode(message):
+        return (broker.canonical(message) + "\n").encode()
+
+    def sent(self):
+        check(self.phase in {"send_init", "send_call"}, "unexpected MCP write")
+        self.phase = "init" if self.phase == "send_init" else "call"
+
+    def receive(self, chunk):
+        self.pending.extend(chunk)
+        if b"\n" not in self.pending:
+            check(self.phase in {"init", "call"}, "unexpected MCP trailer")
+            return b""
+        line, _, tail = self.pending.partition(b"\n")
+        # No second response is legal before the next request, or after id 2.
+        check(not tail, "unexpected MCP transcript")
+        self.pending.clear()
+        row = json.loads(line.decode("utf-8"), object_pairs_hook=broker._unique,
+                         parse_constant=broker._reject_constant)
+        check(isinstance(row, dict) and set(row) == {"jsonrpc", "id", "result"}
+              and row["jsonrpc"] == "2.0" and type(row["id"]) is int
+              and isinstance(row["result"], dict), "invalid MCP response")
+        if self.phase == "init":
+            check(row["id"] == 1, "unexpected initialize id")
+            init = row["result"]
+            check(isinstance(init.get("serverInfo"), dict)
+                  and init["serverInfo"].get("name") == "orbit-mcp", "unexpected host")
+            check(init.get("protocolVersion") == "2024-11-05", "unexpected protocol")
+            check(isinstance(init.get("capabilities"), dict), "missing server capabilities")
+            self.phase = "send_call"
+            return self.call
+        check(self.phase == "call" and row["id"] == 2, "unexpected call response")
+        self.reply, self.phase = row["result"], "done"
+        return None
+
+    def eof(self):
+        check(self.phase == "done" and not self.pending, "incomplete MCP transcript")
+
+
 def mcp(orbit, repo, env, method, params, timeout, operator=False, prefix=()):
-    """One bounded real stdio session. EOF closes the host after the awaited request.
+    """One bounded stdio session, holding stdin until both replies are validated.
 
     No shell, inherited environment or persistent operator connection. Full wire
     output and stderr remain in the returned transport evidence, even on errors.
     """
-    messages = [
-        {"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {
-            "protocolVersion": "2024-11-05", "capabilities": {},
-            "clientInfo": {"name": PROFILE, "version": "2"}}},
-        {"jsonrpc": "2.0", "method": "notifications/initialized", "params": {}},
-        {"jsonrpc": "2.0", "id": 2, "method": method, "params": params}]
+    exchange = McpExchange(method, params)
     argv = [*prefix, orbit, "mcp", "serve", "--workspace", WORKSPACE]
     if operator:
         argv.append("--operator")
     result = broker.run_child(argv, repo, env, timeout, capture_limit=MAX_SETUP_OUTPUT,
-                              input_bytes=("\n".join(broker.canonical(x) for x in messages)
-                                           + "\n").encode())
-    reply = None
-    if clean(result):
-        try:
-            rows = [json.loads(line, object_pairs_hook=broker._unique,
-                               parse_constant=broker._reject_constant)
-                    for line in result["stdout"].splitlines()]
-            check(len(rows) == 2 and [row.get("id") for row in rows] == [1, 2],
-                  "unexpected MCP transcript")
-            check(rows[0]["result"]["serverInfo"]["name"] == "orbit-mcp", "unexpected host")
-            check(rows[0]["result"]["protocolVersion"] == "2024-11-05", "unexpected protocol")
-            reply = rows[1]["result"]
-            check(isinstance(reply, dict), "missing MCP result")
-        except (ValueError, TypeError, KeyError):
-            reply = None
-    return reply, result
+                              input_exchange=exchange)
+    return (exchange.reply if clean(result) and not result["supervision"]["signals"] else None), result
 
 
 def plugin_inventory(reply):

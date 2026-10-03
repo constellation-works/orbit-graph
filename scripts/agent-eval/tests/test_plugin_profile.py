@@ -5,6 +5,8 @@ import json
 import os
 from pathlib import Path
 import sys
+import textwrap
+import time
 import unittest
 from unittest import mock
 
@@ -14,6 +16,205 @@ from test_runner import EpisodeCase, bwrap_unavailable
 import plugin_profile as plugin
 
 SPEC = importlib.util.spec_from_file_location("plugin_eval", support.REPO / "evals/plugin-agent-navigation/eval.py")
+
+
+class McpExchangeTests(unittest.TestCase):
+    def setUp(self):
+        self.work = support.scratch()
+        self.addCleanup(support.remove, self.work)
+        self.host = self.work / "host.py"
+        self.host.write_text("#!/usr/bin/python3\n" + textwrap.dedent('''
+            import json, os, select, signal, subprocess, sys, time
+            mode = os.environ.get("MODE", "slow")
+            def send(value):
+                print(json.dumps(value), flush=True)
+            def read():
+                line = b""
+                while not line.endswith(b"\\n"):
+                    part = os.read(0, 1)
+                    if not part:
+                        sys.exit(3)
+                    line += part
+                return json.loads(line)
+            init = read()
+            assert init["id"] == 1 and init["method"] == "initialize"
+            ready = {"jsonrpc": "2.0", "id": 1, "result": {
+                "serverInfo": {"name": "orbit-mcp", "version": "fixture"},
+                "protocolVersion": "2024-11-05", "capabilities": {}}}
+            if mode == "init_hang":
+                time.sleep(30)
+            if mode == "init_refused":
+                send({"jsonrpc": "2.0", "id": 1, "error": {"code": -1, "message": "no"}})
+                # Assert that no call was dispatched after refusal, even on EOF.
+                if os.read(0, 1):
+                    open("unexpected-call", "w").close()
+                sys.exit(0)
+            if mode == "bad_host":
+                ready["result"]["serverInfo"]["name"] = "other"
+            if mode == "bad_protocol":
+                ready["result"]["protocolVersion"] = "other"
+            if mode == "bad_capabilities":
+                ready["result"]["capabilities"] = []
+            if mode == "early_call":
+                print(json.dumps(ready) + '\\n' + '{"jsonrpc":"2.0","id":2,"result":{}}', flush=True)
+                time.sleep(30)
+            # Detect pipelining before the initialize response.
+            if mode == "sequence":
+                assert not select.select([0], [], [], .05)[0]
+            send(ready)
+            assert read()["method"] == "notifications/initialized"
+            assert read()["id"] == 2
+            if mode == "missing":
+                sys.exit(0)
+            if mode == "hang_descendant":
+                child = subprocess.Popen([sys.executable, "-c",
+                    "import signal,time; signal.signal(signal.SIGTERM, signal.SIG_IGN); time.sleep(30)"],
+                    stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                with open("descendant.pid", "w") as stream:
+                    stream.write(str(child.pid))
+                time.sleep(30)
+            if mode == "hang":
+                time.sleep(30)
+            if mode == "stdout_flood":
+                os.write(1, b"x" * (5 * 1024 * 1024))
+                time.sleep(30)
+            if mode == "stderr_flood":
+                os.write(2, b"x" * (300 * 1024))
+            result = {"jsonrpc": "2.0", "id": 2, "result": {"full": "delayed reply"}}
+            if mode == "product_error":
+                result["result"] = {"isError": True, "content": [{"type": "text", "text": "no"}]}
+            if mode == "wrong_id":
+                result["id"] = 3
+            if mode == "bool_id":
+                result["id"] = True
+            if mode == "float_id":
+                result["id"] = 2.0
+            if mode == "rpc_error":
+                result = {"jsonrpc": "2.0", "id": 2, "error": {"code": -1, "message": "no"}}
+            if mode == "both":
+                result["error"] = {"code": -1, "message": "no"}
+            if mode == "bad_version":
+                result["jsonrpc"] = "1.0"
+            if mode == "bad_result":
+                result["result"] = []
+            malformed = {"malformed": b"{bad\\n", "array": b"[]\\n",
+                         "constant": b'{"jsonrpc":"2.0","id":2,"result":{"v":NaN}}\\n',
+                         "duplicate_key": b'{"jsonrpc":"2.0","id":2,"id":2,"result":{}}\\n',
+                         "utf8": b"\\xff\\n", "partial": b'{"jsonrpc":"2.0"'}
+            if mode in malformed:
+                os.write(1, malformed[mode])
+                sys.exit(0)
+            # Model a host whose EOF drain is shorter than its tool operation.
+            # The old batch closes stdin here and exits zero without id 2.
+            if select.select([0], [], [], .2)[0]:
+                assert os.read(0, 1) == b""
+                print("EOF drain expired before tool reply", file=sys.stderr)
+                sys.exit(0)
+            if mode == "split":
+                for byte in (json.dumps(result) + "\\n").encode():
+                    os.write(1, bytes([byte]))
+                    time.sleep(.001)
+            else:
+                send(result)
+            assert os.read(0, 1) == b""
+            if mode == "duplicate":
+                send(result)
+            if mode == "trailer":
+                os.write(1, b"x")
+            if mode == "exit_hang":
+                time.sleep(30)
+            if mode == "nonzero":
+                sys.exit(9)
+            if mode == "descendant":
+                child = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(30)"],
+                                         stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+                                         stderr=subprocess.DEVNULL)
+                open("descendant.pid", "w").write(str(child.pid))
+        '''))
+        self.host.chmod(0o700)
+
+    def call(self, mode="slow", **kwargs):
+        return plugin.mcp(str(self.host), str(self.work), {"PATH": "/usr/bin:/bin", "MODE": mode},
+                          "tools/list", {}, kwargs.pop("timeout", 3), **kwargs)
+
+    def test_delayed_reply_survives_eof_drain(self):
+        reply, transport = self.call()
+        self.assertTrue(plugin.clean(transport), transport)
+        self.assertEqual(reply, {"full": "delayed reply"}, transport)
+        self.assertEqual([json.loads(row)["id"] for row in transport["stdout"].splitlines()], [1, 2])
+        self.assertEqual(transport["supervision"], {"signals": [], "survivors": []})
+
+    def test_sequence_split_frames_and_product_error(self):
+        for mode in ("sequence", "split", "product_error"):
+            with self.subTest(mode=mode):
+                reply, transport = self.call(mode)
+                self.assertTrue(plugin.clean(transport), transport)
+                self.assertIsNotNone(reply, transport)
+                if mode == "product_error":
+                    self.assertTrue(reply["isError"])
+
+    def test_invalid_replies_never_succeed(self):
+        for mode in ("init_refused", "bad_host", "bad_protocol", "bad_capabilities", "early_call",
+                     "missing", "wrong_id", "bool_id", "float_id", "rpc_error", "both",
+                     "bad_version", "bad_result", "malformed", "array", "constant",
+                     "duplicate_key", "utf8", "partial", "duplicate", "trailer", "nonzero"):
+            with self.subTest(mode=mode):
+                reply, transport = self.call(mode)
+                self.assertIsNone(reply, transport)
+                self.assertEqual(transport["supervision"]["survivors"], [])
+                self.assertFalse((self.work / "unexpected-call").exists())
+
+    def test_deadline_covers_initialize_call_and_exit(self):
+        for mode in ("init_hang", "hang", "exit_hang"):
+            with self.subTest(mode=mode):
+                reply, transport = self.call(mode, timeout=.5)
+                self.assertIsNone(reply)
+                self.assertEqual(transport["stopped"], "timeout", transport)
+                self.assertEqual(transport["supervision"]["survivors"], [])
+                self.assertLess(transport["elapsed_ms"], 2500)
+
+    def test_output_caps_and_descendant_cleanup(self):
+        for mode in ("stdout_flood", "stderr_flood", "descendant"):
+            with self.subTest(mode=mode):
+                reply, transport = self.call(mode)
+                self.assertIsNone(reply, transport)
+                self.assertLessEqual(len(transport["stdout"]), plugin.MAX_SETUP_OUTPUT)
+                self.assertLessEqual(len(transport["stderr"]), broker.MAX_STDERR_CAPTURE)
+                self.assertEqual(transport["supervision"]["survivors"], [])
+                if mode == "descendant":
+                    self.assertFalse(support.alive(int((self.work / "descendant.pid").read_text())))
+                elif mode == "stdout_flood":
+                    self.assertEqual(transport["stopped"], "truncated")
+                else:
+                    self.assertTrue(transport["stderr_truncated"])
+
+    def test_exchange_cancellation_and_parent_exit(self):
+        for reason in ("cancelled", "parent_exit"):
+            with self.subTest(reason=reason):
+                read_fd, write_fd = os.pipe()
+                start = time.monotonic()
+                parent_closed = False
+                def cancelled():
+                    nonlocal parent_closed
+                    if time.monotonic() - start > .2:
+                        if reason == "parent_exit" and not parent_closed:
+                            os.close(write_fd)
+                            parent_closed = True
+                        return reason == "cancelled"
+                    return False
+                try:
+                    transport = broker.run_child([str(self.host)], str(self.work),
+                        {"PATH": "/usr/bin:/bin", "MODE": "hang_descendant"}, 3,
+                        input_exchange=plugin.McpExchange("tools/list", {}),
+                        cancelled=cancelled, parent_fd=read_fd, grace_s=.1)
+                finally:
+                    os.close(read_fd)
+                    if not parent_closed:
+                        os.close(write_fd)
+                self.assertEqual(transport["stopped"], reason, transport)
+                self.assertEqual(transport["supervision"]["survivors"], [])
+                self.assertFalse(support.alive(int((self.work / "descendant.pid").read_text())))
+                self.assertIn("SIGKILL", transport["supervision"]["signals"])
 
 
 class PluginPolicyTests(unittest.TestCase):

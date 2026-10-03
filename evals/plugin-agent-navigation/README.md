@@ -213,6 +213,28 @@ install a global plugin. Host variables do not enter the private fixture.
 
 ### Lifecycle version boundary and operator handoff
 
+The prospective MCP client sends `initialize` alone, validates its JSON-RPC ID,
+protocol, host and capabilities, then sends `notifications/initialized` and the
+single call. It holds stdin open until the complete matching call result arrives.
+Only then does it send EOF and await host exit. One wall deadline covers all
+phases and shutdown; existing byte limits and process-group cleanup apply.
+Malformed, unsolicited, duplicate, partial, wrong-ID and JSON-RPC error replies
+fail the exchange. A product `isError` result is retained intact. Trailing output,
+nonzero exit and cleanup signals cannot produce a successful reply.
+
+This fixes premature EOF starting the host's bounded drain while a slow plugin
+operation is still running (ORB-13802). It changes the broker/profile source
+hashes without changing capture schemas or lifecycle/scoring rules. Freeze new
+harness hashes for future use; do not replace a sealed cohort's pins or outcomes.
+The original v2 study requires its exact archived evaluator and dependencies:
+the 148-file `eee73b5a00a1e327caa0b40232eb0f87ff1b0969` replay archive attached
+to ORB-13709 has SHA-256
+`cd7e308169c1a8517fdd6a24339bde17cb4f2ab29762d489915529c1ea9f1c9c`.
+Run historical replay/scoring from that archive against the original frozen
+inputs. Current-source lock refusal is intentional; never update corpus locks
+to make historical captures pass. The original ten successful and two failed
+v2 observations remain unchanged.
+
 Runner version 4 captures use
 `lifecycle_contract: eof-idle-at-term-observation-v2`, retaining schema 2 and
 this profile. Replay selects that contract explicitly. Runner version 2 without
