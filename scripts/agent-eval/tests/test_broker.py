@@ -393,12 +393,12 @@ class BrokerTests(unittest.TestCase):
         config, state = support.broker_config(self.work, self.repo, self.snapshot)
         runtime = self.work / "buffered-broker.py"
         source = (support.TOOL / "eval_broker.py").read_text()
-        boundary = '\n                self.record({"type": "reply", "seq": requests, "calls": self.calls})'
+        boundary = "\n        stdout.flush()"
         self.assertEqual(source.count(boundary), 1)
         (self.work / "reply_provenance.py").write_bytes(
             (support.TOOL / "reply_provenance.py").read_bytes())
         runtime.write_text(source.replace(boundary, boundary +
-            '\n                if request_id == 41: os.kill(os.getpid(), signal.SIGSTOP)'))
+            '\n        if request_id == 41: os.kill(os.getpid(), signal.SIGSTOP)'))
         client = support.McpClient(argv=[sys.executable, "-B", str(runtime), "--config", str(config)])
         self.addCleanup(client.terminate)
         client.request("initialize")
@@ -442,6 +442,94 @@ class BrokerTests(unittest.TestCase):
                 pass
             os.close(fd)
 
+    def held_reply_client(self, name, boundary, before):
+        """A runtime copy whose worker stops itself at one reply() boundary for request 42.
+
+        The SIGSTOP is a test probe only. Kernel stop state and the logged
+        supervisor observation order client teardown, with no sleeps or retries.
+        """
+        config, state = support.broker_config(self.work, self.repo, self.snapshot)
+        source = (support.TOOL / "eval_broker.py").read_text()
+        self.assertEqual(source.count(boundary), 1)
+        probe = "\n        if request_id == 42: os.kill(os.getpid(), signal.SIGSTOP)"
+        runtime = self.work / name
+        runtime.write_text(source.replace(boundary, probe + boundary if before else boundary + probe))
+        (self.work / "reply_provenance.py").write_bytes(
+            (support.TOOL / "reply_provenance.py").read_bytes())
+        client = support.McpClient(argv=[sys.executable, "-B", str(runtime), "--config", str(config)])
+        self.addCleanup(client.terminate)
+        client.request("initialize")
+        identity = next(e["identity"] for e in support.log_entries(state) if e["type"] == "start")
+        fd = os.pidfd_open(identity["pid"])
+
+        def release():
+            try:
+                signal.pidfd_send_signal(fd, signal.SIGCONT)
+                signal.pidfd_send_signal(fd, signal.SIGTERM)
+            except ProcessLookupError:
+                pass
+            os.close(fd)
+        self.addCleanup(release)  # runs before client.terminate
+        client.send_raw(json.dumps({"jsonrpc": "2.0", "id": 42, "method": "tools/call",
+                                    "params": {"name": "read",
+                                               "arguments": {"path": "src/lib.rs"}}}) + "\n")
+        return client, state, identity["pid"], fd
+
+    def teardown_held_worker(self, client, state, pid, fd):
+        """Wait for the probe stop, then EOF + supervisor TERM; resume after the observation."""
+        deadline = time.monotonic() + 10
+        while True:
+            with open(f"/proc/{pid}/stat") as stream:
+                if stream.read().rsplit(")", 1)[1].split()[0] == "T":
+                    break
+            self.assertLess(time.monotonic(), deadline)
+        client.process.stdin.close()
+        os.kill(client.process.pid, signal.SIGTERM)
+        while not any(e["type"] == "supervisor_signal" for e in support.log_entries(state)):
+            self.assertLess(time.monotonic(), deadline)
+        signal.pidfd_send_signal(fd, signal.SIGCONT)
+
+    def test_teardown_right_after_final_flushed_reply_keeps_its_checkpoint(self):
+        # A client may tear down as soon as it holds its final response. Stop
+        # the worker the instant that response is flushed, before it can log
+        # anything else: the idle checkpoint must already cover the exchange.
+        client, state, pid, fd = self.held_reply_client(
+            "flushed-reply-broker.py", "\n        stdout.flush()", before=False)
+        reply = client.read()
+        self.assertEqual(reply["id"], 42)
+        self.assertFalse(reply["result"]["isError"])
+        self.teardown_held_worker(client, state, pid, fd)
+        self.assertEqual(client.close(), 0)
+        log, _ = support.eval_runner.read_broker_log(state / "calls.jsonl")
+        observation = log["exits"][0]["lifecycle"]["signals"][0]
+        self.assertFalse(observation["worker_exited_zero"])
+        self.assertTrue(observation["input_eof"])
+        self.assertEqual(observation["checkpoint"], {"requests": 2, "calls": 1})
+        self.assertFalse(log["exits"][0]["lifecycle"]["drain_expired"])
+        self.assertEqual(log["exits"][0]["cleanup"], {"signals": [], "survivors": []})
+        self.assertTrue(eval_broker.orderly_broker_exit(log["exits"][0]))
+        self.assertTrue(support.eval_runner.complete_broker_lifecycle(log))
+        self.assertEqual(log["lifecycle_events"][-1],
+                         {"type": "stop", "reason": "stdin_eof", "requests": 2, "replies": 2,
+                          "calls": 1, "output_bytes": len(log["calls"][0]["output"].encode())})
+
+    def test_published_reply_that_is_never_flushed_does_not_qualify(self):
+        # Stop after the checkpoint is published but before the response is
+        # written, then remove its reader: the justified drain must still fail.
+        client, state, pid, fd = self.held_reply_client(
+            "unflushed-reply-broker.py", "\n        stdout.write(data)", before=True)
+        client.process.stdout.close()
+        self.teardown_held_worker(client, state, pid, fd)
+        self.assertEqual(client.close(), 1)
+        log, _ = support.eval_runner.read_broker_log(state / "calls.jsonl")
+        observation = log["exits"][0]["lifecycle"]["signals"][0]
+        self.assertTrue(observation["input_eof"])
+        self.assertEqual(observation["checkpoint"], {"requests": 2, "calls": 1})
+        self.assertNotEqual(log["exits"][0]["exit_code"], 0)
+        self.assertFalse(any(e["type"] == "stop" for e in log["lifecycle_events"]))
+        self.assertFalse(eval_broker.orderly_broker_exit(log["exits"][0]))
+        self.assertFalse(support.eval_runner.complete_broker_lifecycle(log))
+
     def test_worker_stderr_is_drained_bounded_and_exit_is_recorded(self):
         config, state = support.broker_config(self.work, self.repo, self.snapshot)
         runtime = self.work / "fault-broker.py"
@@ -469,9 +557,14 @@ class BrokerTests(unittest.TestCase):
         self.assertEqual(client.close(), 1)
         entries = support.log_entries(state)
         self.assertEqual(sum(e["type"] == "call" for e in entries), 1)
-        self.assertEqual(sum(e["type"] == "reply" for e in entries), 1)  # initialize only
+        # The checkpoint is published before the write; only exit zero and the
+        # stop's reply count prove a flush, and the broken pipe yields neither.
+        self.assertEqual(sum(e["type"] == "reply" for e in entries), 2)
         self.assertFalse(any(e["type"] == "stop" for e in entries))
+        self.assertNotEqual(entries[-1]["exit_code"], 0)
         self.assertFalse(eval_broker.orderly_broker_exit(entries[-1]))
+        log, _ = support.eval_runner.read_broker_log(state / "calls.jsonl")
+        self.assertFalse(support.eval_runner.complete_broker_lifecycle(log))
 
     def test_clean_worker_with_descendant_requires_failed_cleanup(self):
         config, state = support.broker_config(self.work, self.repo, self.snapshot)

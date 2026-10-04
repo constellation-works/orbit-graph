@@ -492,9 +492,11 @@ A single supervisor SIGTERM observation can qualify by either the original
 already-exited-zero/empty-group proof or this additional shutdown proof:
 
 1. Before cleanup, the supervisor reads a bounded, complete broker log whose last
-   exchange boundary is a **flushed reply** or completed EOF. It captures request
-   and call counts. A busy request/call, missing reply, partial/oversized log or
-   unknown counts cannot qualify.
+   exchange boundary is a **published reply** or completed EOF. It captures
+   request and call counts. A busy request/call, missing reply, partial/oversized
+   log or unknown counts cannot qualify. The worker publishes a request's reply
+   checkpoint after the request's work completes and immediately before writing
+   that response (see [Reply checkpoint ordering](#reply-checkpoint-ordering)).
 2. After that checkpoint, polling the inherited MCP stdin must show exactly
    `POLLHUP`: an empty pipe with no writers. Open input, queued input, non-pipe
    input and unknown state cannot qualify. The provider process pidfd must still
@@ -508,8 +510,9 @@ already-exited-zero/empty-group proof or this additional shutdown proof:
 4. Final validation requires exactly the checkpoint's request and call counts.
    This fence rejects additional requests prefetched into Python's input buffer,
    even if the kernel pipe was already empty. The complete serial ledger must
-   reconcile every request, completed call and flushed reply, then `stdin_eof`.
-   A completed tool log before a broken reply pipe is insufficient.
+   reconcile every request, completed call and reply, then `stdin_eof`, whose
+   reply count only advances after a successful flush. A completed tool log or a
+   published reply before a broken reply pipe is insufficient.
 
 Both paths still require worker exit zero, bounded diagnostic EOF without
 truncation or supervision errors, no surviving descendants or SIGKILL cleanup,
@@ -560,6 +563,40 @@ AGENT_EVAL_ORBIT=/absolute/orbit \
 AGENT_EVAL_ORBIT_GRAPH="$PWD/target/debug/orbit-graph" \
   python3 -B -m unittest discover -s scripts/agent-eval/tests -v
 ```
+
+### Reply checkpoint ordering
+
+Earlier broker bytes flushed each MCP response before logging its `reply`
+checkpoint. A client that tore down as soon as it held its final response could
+have the supervisor observe EOF while the checkpoint was still unpublished; the
+null checkpoint correctly refused the drain, so the episode failed
+`broker_failed` depending on scheduling (ORB-13847). The worker now logs the
+`reply` checkpoint after any wire redaction and immediately before writing the
+response, so a delivered response always has a published checkpoint. Only that
+write can remain. It is proven by worker exit zero and the `stdin_eof` stop's
+reply count. A broken or full reply pipe still fails, as does an expired drain.
+The drain never performs tool work.
+
+The two orderings are equivalent for a client. Before, a flushed response could
+already sit unread in the pipe at observation. Now the drain may also finish
+writing a published response to a pipe that is still open. Telemetry
+reconciliation still requires the provider to report every broker call.
+
+Classification rules, request/raw schemas, runner/broker version strings and
+`eof-idle-at-term-observation-v2` are unchanged. The broker source hash changes,
+and each capture records it (`tool_versions.read`, harness hashes). Captures
+from earlier broker bytes keep their post-flush `reply` meaning and their
+outcomes. Freeze the new harness hashes before any future use. Corpus locks
+that pin the previous broker bytes refuse it intentionally.
+
+`test_broker.py` stops a runtime copy of the worker immediately after its final
+response is flushed. The client then reads that response, closes input, sends
+TERM, waits for the logged supervisor observation and resumes the worker. With
+the earlier ordering, this fails deterministically: the observation has a null
+checkpoint and cleanup sends SIGTERM to the worker, whose exit status then
+depends on scheduling. With the repair, it passes with the full checkpoint, no
+cleanup signals and exit zero. A companion test stops the worker after publication but before the
+write and closes the client's reader. The justified drain then still fails.
 
 ## Prospective source-reply provenance (runner 5)
 
