@@ -1080,19 +1080,26 @@ class Broker:
                 self.record({"type": "protocol_error", "code": error.code,
                              "reason": error.message[:200]})
                 if is_request or not isinstance(message, dict):
-                    self.reply(stdout, request_id, error=(error.code, error.message))
+                    self.reply(stdout, request_id, error=(error.code, error.message),
+                               seq=requests if is_request else None)
                     if is_request:
                         replies += 1
-                        self.record({"type": "reply", "seq": requests, "calls": self.calls})
                 continue
             if is_request:
-                self.reply(stdout, request_id, result=result if result is not None else {})
+                self.reply(stdout, request_id, result=result if result is not None else {},
+                           seq=requests)
                 replies += 1
-                self.record({"type": "reply", "seq": requests, "calls": self.calls})
         self.record({"type": "stop", "reason": "stdin_eof", "requests": requests,
                      "replies": replies, "calls": self.calls, "output_bytes": self.output_bytes})
 
-    def reply(self, stdout, request_id, result=None, error=None):
+    def reply(self, stdout, request_id, result=None, error=None, seq=None):
+        """Write one MCP response, publishing a request's reply checkpoint first.
+
+        A client may tear down as soon as it holds the response, so the
+        supervisor's idle checkpoint must already cover it. Only the write
+        remains after publication. Its flush is proven later by worker exit
+        zero and the stdin_eof stop's reply count; a failed write never is.
+        """
         if not (request_id is None or isinstance(request_id, (str, int))) or \
                 isinstance(request_id, bool):
             request_id = None
@@ -1105,7 +1112,10 @@ class Broker:
             body, count = self.redactor.value(body)
             if count:
                 self.record({"type": "wire_redaction", "audit_redactions": count})
-        stdout.write((canonical(body) + "\n").encode())
+        data = (canonical(body) + "\n").encode()
+        if seq is not None:
+            self.record({"type": "reply", "seq": seq, "calls": self.calls})
+        stdout.write(data)
         stdout.flush()
 
 
