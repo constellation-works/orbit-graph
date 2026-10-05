@@ -17,6 +17,8 @@ import time
 import eval_broker as broker
 
 PROFILE = "installed-plugin-skill-v2"
+PROSPECTIVE_PROFILE = "installed-plugin-skill-v3"
+PROFILES = {2: PROFILE, 3: PROSPECTIVE_PROFILE}
 RAW_KIND = "installed-plugin-agent-eval-raw-episode"
 WORKSPACE = "agent-eval-episode"
 VERBS = ("version", "status", "recommend", "maintain", "search", "show", "refs",
@@ -385,7 +387,7 @@ def _install(episode, deadline, *, inventory_only=False):
                "bytes; their headings identify relative reference paths.\n")
     context = binding + "".join("\n--- shipped file: " + name + " ---\n" + text
                                 for name, text in context_files.items())
-    return {"profile": PROFILE, "pin": pin, "policy": POLICY, "inventory": inventory,
+    return {"profile": PROFILES[episode.request["schema_version"]], "pin": pin, "policy": POLICY, "inventory": inventory,
             "inventory_sha256": digest(inventory), "source_files": original,
             "manifest_original": original_manifest, "manifest_installed": bound_manifest,
             "skill_files": context_files, "binding_context": binding,

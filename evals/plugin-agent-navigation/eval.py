@@ -15,6 +15,7 @@ sys.path.insert(0, str(ROOT / "scripts/agent-eval"))
 import eval_runner as runner
 import plugin_profile as plugin
 import reply_provenance as replies
+import telemetry
 
 
 def require(value, message):
@@ -36,7 +37,7 @@ def check_treatment(artifact):
         return
     require(isinstance(treatment, dict), "graph treatment missing")
     pin = request["plugin"]
-    require(treatment["pin"] == pin and treatment["profile"] == plugin.PROFILE,
+    require(treatment["pin"] == pin and treatment["profile"] == plugin.PROFILES[request["schema_version"]],
             "treatment pin/profile differs")
     require(treatment["policy"] == plugin.POLICY, "treatment authority policy differs")
     inventory = plugin.plugin_inventory({"tools": treatment["inventory"]})
@@ -86,22 +87,31 @@ def check_treatment(artifact):
 def load_episode(directory, diagnostic=False):
     directory = Path(directory)
     artifact = runner.load_json(directory / "episode.json", 64 * 1024 * 1024)
-    require(artifact.get("schema_version") == 2 and artifact.get("kind") == plugin.RAW_KIND
-            and artifact.get("profile") == plugin.PROFILE, "not an installed-plugin schema-2 capture")
-    require((artifact.get("runner_version") == "2" and "lifecycle_contract" not in artifact)
-            or (artifact.get("runner_version") in runner.LIFECYCLE_CONTRACTS
+    version = artifact.get("schema_version")
+    prospective = version == 3
+    require(type(version) is int and version in plugin.PROFILES and artifact.get("kind") == plugin.RAW_KIND
+            and artifact.get("profile") == plugin.PROFILES[version], "not a supported installed-plugin capture")
+    require((prospective and artifact.get("runner_version") == "6"
+             and artifact.get("lifecycle_contract") == runner.LIFECYCLE_CONTRACTS["6"])
+            or (not prospective and "telemetry" not in artifact and
+                ((artifact.get("runner_version") == "2" and "lifecycle_contract" not in artifact)
+            or (artifact.get("runner_version") in {"3", "4", "5"}
                 and artifact.get("lifecycle_contract") ==
-                runner.LIFECYCLE_CONTRACTS[artifact["runner_version"]]),
+                runner.LIFECYCLE_CONTRACTS[artifact["runner_version"]]))),
             "unsupported runner/lifecycle contract")
     require(artifact.get("artifact_sha256") == runner.digest(
         {k: v for k, v in artifact.items() if k != "artifact_sha256"}), "artifact seal differs")
     request = runner.validate_request(artifact["request"])
+    require(request["schema_version"] == version and request.get("profile") == artifact["profile"],
+            "request/raw version drift")
     require(artifact["request_digest"] == runner.digest(request), "request digest differs")
     require(artifact["redactions"] == 0, "redacted treatment cannot establish exact provenance")
     required_files = {"provider.jsonl", "provider-stderr.txt", "broker-calls.jsonl", "final-message.txt",
                       "probe.json", "preflight.json"}
     if request["arm"] == "graph":
         required_files.add("plugin-setup.json")
+    if prospective:
+        required_files.add("phase-timing.json")
     require(set(artifact["files"]) == required_files, "capture file set differs")
     for name, record in artifact["files"].items():
         require(not (directory / name).is_symlink(), "symlink capture file")
@@ -139,12 +149,18 @@ def load_episode(directory, diagnostic=False):
         require(runner.load_json(directory / "plugin-setup.json", 32 * 1024 * 1024)
                 == artifact["treatment"]["setup"], "installation log differs")
     log, _ = runner.read_broker_log(directory / "broker-calls.jsonl")
+    if not prospective:
+        require(not log["telemetry_contracts"] and not log["attempt_events"],
+                "prospective broker evidence under a historical capture")
     log["truncated"] = log["truncated"] or artifact["files"]["broker-calls.jsonl"]["truncated"]
     require(log["calls"] == artifact["calls"] and artifact["calls_dropped"] == 0, "call evidence differs")
     replies.verify_capture(artifact, log)
     transcript = runner.analyse_transcript((directory / "provider.jsonl").read_bytes(),
-                                           artifact["files"]["provider.jsonl"]["truncated"], request["tools"])
-    require(transcript["usage"] == artifact["usage"], "usage differs")
+                                           artifact["files"]["provider.jsonl"]["truncated"], request["tools"],
+                                           prospective=prospective)
+    normalized = telemetry.verify(artifact, directory, runner) if prospective else None
+    if not prospective:
+        require(transcript["usage"] == artifact["usage"], "usage differs")
     output_bytes = sum(len(c["output"].encode()) for c in log["calls"]) + len(artifact["final_output"].encode())
     require(output_bytes == artifact["output_bytes"], "tool/answer output costs differ")
     exit_state = artifact["provider"]["exit"]
@@ -159,7 +175,8 @@ def load_episode(directory, diagnostic=False):
              "truncated": artifact["final_output_truncated"]}
     status, code, _ = runner.decide(supervision, transcript, log, final, request["limits"], None,
                                      output_bytes, artifact["timing"]["wall_ms"],
-                                     lifecycle_contract=artifact.get("lifecycle_contract"))
+                                     lifecycle_contract=artifact.get("lifecycle_contract"),
+                                     attempts=normalized["attempts"] if normalized else None)
     require(status == artifact["status"] and code == (artifact["error"] or {}).get("code"),
             "replayed episode outcome differs")
     if status == "ok":
@@ -169,9 +186,12 @@ def load_episode(directory, diagnostic=False):
 
 def replay(plan, directories, diagnostic=False):
     require(set(plan) == {"schema_version", "profile", "model", "provider_binary_sha256", "harness", "requests"}
-            and plan["schema_version"] == 2 and plan["profile"] == plugin.PROFILE,
+            and type(plan["schema_version"]) is int and plan["schema_version"] in plugin.PROFILES
+            and plan["profile"] == plugin.PROFILES[plan["schema_version"]],
             "unsupported preregistration contract")
     episodes = [load_episode(directory, diagnostic) for directory in directories]
+    require(all(a["schema_version"] == plan["schema_version"] and a["profile"] == plan["profile"]
+                for a in episodes), "cohort telemetry version drift")
     episodes.sort(key=lambda a: a["request"]["order"])
     require([a["request"] for a in episodes] == plan["requests"], "captures differ from preregistration")
     require([a["request"]["order"] for a in episodes] == list(range(len(episodes))), "orders are incomplete")
@@ -195,7 +215,7 @@ def replay(plan, directories, diagnostic=False):
         require({k: v for k, v in pair[0].items() if k not in omit} ==
                 {k: v for k, v in pair[1].items() if k not in omit}, "paired question/view/budget/pin drift")
     require(episodes, "empty cohort")
-    return {"schema_version": 2, "profile": plugin.PROFILE, "episodes": len(episodes),
+    result = {"schema_version": plan["schema_version"], "profile": plan["profile"], "episodes": len(episodes),
             "preregistration_sha256": runner.digest(plan), "effectiveness_evidence": False,
             "containment_verified": not diagnostic and all(a["status"] == "ok" for a in episodes),
             "outcomes": dict(Counter(a["status"] for a in episodes)),
@@ -206,6 +226,10 @@ def replay(plan, directories, diagnostic=False):
                        "tool_calls": len(a["calls"]), "output_bytes": a["output_bytes"],
                        "usage": a["usage"]} for a in episodes],
             "limitation": "Provenance and behavior replay only; an independent frozen corpus/rubric is still required for effectiveness scoring."}
+    if plan["schema_version"] == 3:
+        for cost, episode in zip(result["costs"], episodes):
+            cost["telemetry"] = episode["telemetry"]
+    return result
 
 
 def main():
