@@ -32,6 +32,8 @@ import reply_provenance as replies
 
 BROKER_NAME = "agent-eval-broker"
 BROKER_VERSION = "4"
+PROSPECTIVE_BROKER_VERSION = "5"
+TELEMETRY_CONTRACT = "prospective-accounting-v1"
 EXITED_LIFECYCLE_CONTRACT = "eof-exited-at-term-observation-v1"
 LIFECYCLE_CONTRACT = "eof-idle-at-term-observation-v2"
 MAX_LIFECYCLE_LOG = 64 * 1024 * 1024
@@ -527,13 +529,16 @@ def end_group(process, terminate, grace_s=KILL_GRACE_S):
 class Broker:
     def __init__(self, config):
         self.config = config
+        self.prospective = config["schema_version"] == 3
+        self.attempt_count = 0
+        self.attempt = None
         self.reply_contract = config.get("reply_contract")
         self.redactor = (replies.Redactor(policy=self.reply_contract["policy"])
                          if self.reply_contract else None)
         self.arm = config["arm"]
         self.tools = tuple(config["tools"])
         self.plugin = config.get("plugin")
-        self.hidden_names = HIDDEN_NAMES | ({".orbit"} if config["schema_version"] == 2 else set())
+        self.hidden_names = HIDDEN_NAMES | ({".orbit"} if config["schema_version"] in (2, 3) else set())
         self.root = config["repo_root"]
         self.limits = config["limits"]
         self.binaries = config["binaries"]
@@ -913,8 +918,11 @@ class Broker:
                       f"more than {self.limits['tool_calls']} tool calls")
             return self.tool_error("tool_call_budget_exceeded", "tool call budget exhausted")
         self.calls += 1
+        if self.attempt is not None:
+            self.attempt["call_seq"] = self.calls
         self.views = []
-        self.record({"type": "call_start", "seq": self.calls, "tool": tool})
+        self.record({"type": "call_start", "seq": self.calls, "tool": tool,
+                     **({"attempt_id": self.attempt["attempt_id"]} if self.attempt else {})})
         started = time.monotonic()
         raw_input = canonical(arguments) if _jsonable(arguments) else repr(arguments)
         limit = self.limits["call_bytes"]
@@ -932,7 +940,7 @@ class Broker:
                 checked = arguments  # product validates its advertised schema
             else:
                 checked = validate_arguments(tool, arguments)
-                if self.config["schema_version"] == 2 and "path" in checked:
+                if self.config["schema_version"] in (2, 3) and "path" in checked:
                     if ".orbit" in split_path(checked["path"]):
                         raise Refusal("path_refused", "Orbit state is hidden")
             status, output = self.execute(tool, checked)
@@ -1006,7 +1014,31 @@ class Broker:
             proof["call_sha256"] = replies.digest({k: entry[k] for k in
                 ("tool", "input", "output", "status", "elapsed_ms")})
             entry["reply_provenance"] = proof
+        if self.attempt is not None:
+            self.attempt["outcome"] = status
+            entry["attempt_id"] = self.attempt["attempt_id"]
         self.record(entry)
+
+    def start_attempt(self, message, seq):
+        """Observe a parsed tools/call before protocol, authority or budget checks."""
+        self.attempt = None
+        if not self.prospective or not isinstance(message, dict) or message.get("method") != "tools/call":
+            return
+        self.attempt_count += 1
+        self.attempt = {"attempt_id": "request-" + str(self.attempt_count), "call_seq": None,
+                        "outcome": None}
+        self.record({"type": "attempt_start", "attempt_id": self.attempt["attempt_id"],
+                     "request_seq": seq, "request_id": message.get("id"),
+                     "params": message.get("params", {}), "started_ns": time.monotonic_ns()})
+
+    def end_attempt(self, result=None, error=None):
+        if self.attempt is None:
+            return
+        self.record({"type": "attempt_end", "attempt_id": self.attempt["attempt_id"],
+                     "call_seq": self.attempt["call_seq"], "ended_ns": time.monotonic_ns(),
+                     "outcome": self.attempt["outcome"] or ("protocol_error" if error else "refused"),
+                     "result": result,
+                     "protocol_error": {"code": error.code, "message": error.message} if error else None})
 
     @staticmethod
     def tool_error(code, message):
@@ -1027,7 +1059,8 @@ class Broker:
                          "client": _bounded_json(params.get("clientInfo")
                                                  if isinstance(params, dict) else None)})
             return {"protocolVersion": version, "capabilities": {"tools": {"listChanged": False}},
-                    "serverInfo": {"name": BROKER_NAME, "version": BROKER_VERSION}}
+                    "serverInfo": {"name": BROKER_NAME, "version": PROSPECTIVE_BROKER_VERSION
+                                   if self.prospective else BROKER_VERSION}}
         if method == "ping":
             return {}
         if method == "tools/list":
@@ -1047,6 +1080,7 @@ class Broker:
         requests = replies = 0
         self.record({"type": "start", "arm": self.arm, "tools": list(self.tools),
                      "identity": start_identity(),
+                     **({"telemetry_contract": TELEMETRY_CONTRACT} if self.prospective else {}),
                      **({"reply_contract": self.reply_contract} if self.reply_contract else {})})
         while True:
             line = stdin.readline(MAX_MESSAGE_BYTES + 1)
@@ -1073,10 +1107,14 @@ class Broker:
             is_request = isinstance(message, dict) and "id" in message and "method" in message
             if is_request:
                 requests += 1
-                self.record({"type": "request", "seq": requests})
+                self.record({"type": "request", "seq": requests,
+                             **({"method": message["method"], "request_id": request_id}
+                                if self.prospective else {})})
+            self.start_attempt(message, requests if is_request else None)
             try:
                 result = self.handle(message)
             except ProtocolError as error:
+                self.end_attempt(error=error)
                 self.record({"type": "protocol_error", "code": error.code,
                              "reason": error.message[:200]})
                 if is_request or not isinstance(message, dict):
@@ -1085,6 +1123,7 @@ class Broker:
                     if is_request:
                         replies += 1
                 continue
+            self.end_attempt(result=result)
             if is_request:
                 self.reply(stdout, request_id, result=result if result is not None else {},
                            seq=requests)
@@ -1114,7 +1153,8 @@ class Broker:
                 self.record({"type": "wire_redaction", "audit_redactions": count})
         data = (canonical(body) + "\n").encode()
         if seq is not None:
-            self.record({"type": "reply", "seq": seq, "calls": self.calls})
+            self.record({"type": "reply", "seq": seq, "calls": self.calls,
+                         **({"attempt_id": self.attempt["attempt_id"]} if self.attempt else {})})
         stdout.write(data)
         stdout.flush()
 
@@ -1168,14 +1208,14 @@ def load_config(path):
         config = json.loads(stream.read(1024 * 1024 + 1), object_pairs_hook=_unique,
                             parse_constant=_reject_constant)
     problems = []
-    v2 = isinstance(config, dict) and config.get("schema_version") == 2
+    v2 = isinstance(config, dict) and config.get("schema_version") in (2, 3)
     fields = CONFIG_FIELDS | ({"plugin"} if v2 else set())
     if v2 and "reply_contract" in config:
         fields.add("reply_contract")
         replies.validate_contract(config["reply_contract"])
     if not isinstance(config, dict) or set(config) != fields:
         raise ValueError(f"broker config must have exactly {sorted(CONFIG_FIELDS)}")
-    if config["schema_version"] not in (1, 2):
+    if type(config["schema_version"]) is not int or config["schema_version"] not in (1, 2, 3):
         problems.append("schema_version")
     expected = ARM_TOOLS.get(config["arm"])
     if v2 and config["arm"] == "graph":

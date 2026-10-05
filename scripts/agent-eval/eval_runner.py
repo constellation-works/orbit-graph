@@ -36,10 +36,12 @@ sys.path.insert(0, str(HERE))
 import eval_broker as broker  # noqa: E402  (sibling module, same checkout)
 import plugin_profile as plugin  # noqa: E402
 import reply_provenance as replies  # noqa: E402
+import telemetry  # noqa: E402
 
 RUNNER_VERSION = "5"
+PROSPECTIVE_RUNNER_VERSION = "6"
 LIFECYCLE_CONTRACTS = {"3": broker.EXITED_LIFECYCLE_CONTRACT, "4": broker.LIFECYCLE_CONTRACT,
-                       "5": broker.LIFECYCLE_CONTRACT}
+                       "5": broker.LIFECYCLE_CONTRACT, "6": broker.LIFECYCLE_CONTRACT}
 RAW_KIND = "agent-eval-raw-episode"
 CACHE_POLICY = "cold-per-episode-including-graph-setup"
 ARMS = ("baseline", "graph")
@@ -168,15 +170,15 @@ def validate_request(request):
     require(isinstance(request, dict), "request must be a JSON object")
     fields = set(request)
     missing = sorted(REQUEST_REQUIRED - fields)
-    v2 = request.get("schema_version") == 2
+    v2 = request.get("schema_version") in (2, 3)
     optional = REQUEST_OPTIONAL | ({"profile", "plugin", "setup_limits", "source_commits"} if v2 else set())
     unknown = sorted(fields - REQUEST_REQUIRED - optional)
     require(not missing, f"request is missing {missing}")
     require(not unknown, f"request has unknown fields {unknown}")
-    require(type(request["schema_version"]) is int and request["schema_version"] in (1, 2),
-            "request schema_version must be 1 or 2")
+    require(type(request["schema_version"]) is int and request["schema_version"] in (1, 2, 3),
+            "request schema_version must be 1, 2 or 3")
     if v2:
-        require(request.get("profile") == plugin.PROFILE, "unknown version-2 profile")
+        require(request.get("profile") == plugin.PROFILES[request["schema_version"]], "unknown installed profile")
         try:
             plugin.validate_pin(request.get("plugin"))
             commits = request.get("source_commits")
@@ -493,7 +495,8 @@ class Episode:
         self.args = args
         self.request = request
         self.arm = request["arm"]
-        self.plugin_profile = request["schema_version"] == 2
+        self.plugin_profile = request["schema_version"] in (2, 3)
+        self.prospective = request["schema_version"] == 3
         self.treatment = None
         if self.plugin_profile:
             for name in ("source_repo", "plugin_repo"):
@@ -812,7 +815,7 @@ def tool_versions(episode):
     broker_sha = sha256_file(HERE / "eval_broker.py")
     rg_version = probe_version([episode.binaries["rg"], "--version"], env).split(" (")[0]
     versions = {
-        "read": f"{broker.BROKER_NAME} {broker.BROKER_VERSION} sha256:{broker_sha}",
+        "read": f"{broker.BROKER_NAME} {broker.PROSPECTIVE_BROKER_VERSION if episode.prospective else broker.BROKER_VERSION} sha256:{broker_sha}",
         "rg": f"{rg_version} sha256:{sha256_file(episode.binaries['rg'])}",
         "git": f"{probe_version([episode.binaries['git'], '--version'], env)} "
                f"sha256:{sha256_file(episode.binaries['git'])}",
@@ -1022,7 +1025,7 @@ def audit_mcp_item(kind, item, pending, completed, summary):
     summary["mcp_call_audit"].append((*key, status, output_hash))
 
 
-def analyse_transcript(raw, truncated, tools):
+def analyse_transcript(raw, truncated, tools, prospective=False):
     """Audit provider JSONL; `tools` are the arm's broker tools, the only permitted calls."""
     lines = raw.split(b"\n")
     partial = lines.pop() if lines else b""
@@ -1090,7 +1093,8 @@ def analyse_transcript(raw, truncated, tools):
             if kind == "item.completed" and item_type == "agent_message":
                 text = item.get("text")
                 summary["last_agent_message"] = text if isinstance(text, str) else None
-            if item_type == "mcp_tool_call" and not violation:
+            if item_type == "mcp_tool_call" and (not violation or
+                    (prospective and item.get("server") == BROKER_SERVER)):
                 audit_mcp_item(kind, item, pending, completed, summary)
             if kind == "item.completed" and item_type == "mcp_tool_call" and not violation:
                 summary["mcp_calls"].append({"tool": str(item.get("tool"))[:64],
@@ -1148,7 +1152,8 @@ def read_broker_log(path):
     log = {"starts": [], "initialized": False, "tools_listed": [], "calls": [], "refusals": [],
            "budget": [], "protocol_errors": 0, "malformed_lines": 0, "truncated": False,
            "supervisors": [], "exits": [], "lifecycle_contracts": [], "lifecycle_events": [],
-           "reply_contracts": [], "reply_provenance": [], "audit_redactions": 0}
+           "reply_contracts": [], "reply_provenance": [], "audit_redactions": 0,
+           "telemetry_contracts": [], "attempt_events": 0}
     try:
         fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC)
     except FileNotFoundError:
@@ -1169,6 +1174,10 @@ def read_broker_log(path):
             log["malformed_lines"] += 1
             continue
         kind = entry.get("type")
+        if "telemetry_contract" in entry:
+            log["telemetry_contracts"].append(entry["telemetry_contract"])
+        if kind in ("attempt_start", "attempt_end"):
+            log["attempt_events"] += 1
         redactions = entry.get("audit_redactions", 0)
         if type(redactions) is not int or redactions < 0:
             log["malformed_lines"] += 1
@@ -1352,7 +1361,7 @@ def complete_broker_lifecycle(log, contract=broker.LIFECYCLE_CONTRACT):
 
 
 def decide(supervision, transcript, log, final, limits, sentinel_code, output_bytes, wall_ms,
-           lifecycle_contract=None):
+           lifecycle_contract=None, attempts=None):
     """First matching failure wins; only a clean, complete, well-formed run is ok."""
     calls = log["calls"]
     if supervision["terminated_by"] == "timeout":
@@ -1384,7 +1393,8 @@ def decide(supervision, transcript, log, final, limits, sentinel_code, output_by
         return "failed", "provider_output_malformed", "provider JSONL contains malformed lines"
     if log["truncated"] or log["malformed_lines"]:
         return "failed", "broker_output_malformed", "broker JSONL is malformed or truncated"
-    mismatch = reconcile_calls(transcript, calls)
+    mismatch = (reconcile_calls(transcript, calls) if attempts is None else
+                telemetry.reconcile(transcript, attempts, calls, sys.modules[__name__]))
     if mismatch:
         return "failed", "telemetry_mismatch", mismatch
     if lifecycle_contract is not None:
@@ -1481,6 +1491,10 @@ def command_revision(args):
 
 def setup(args):
     request = validate_request(load_json(args.request))
+    if request["schema_version"] == 3:
+        args.accounting_request = request
+        args.accounting_stage = "admission"
+        args.accounting_provider_started = False
     for name in args.provider_env:
         require(ENV_NAME.match(name) and not name.startswith("ORBIT_"),
                 f"--provider-env {name}: invalid or privileged name (STD-05 R11)")
@@ -1506,7 +1520,7 @@ def write_broker_config(episode, deadline_unix_ms, snapshot):
               "snapshot": {"base_commit": snapshot["base_commit"],
                            "head_commit": snapshot["head_commit"]}}
     if episode.plugin_profile:
-        config["schema_version"] = 2
+        config["schema_version"] = episode.request["schema_version"]
         config["reply_contract"] = episode.reply_contract
         config["plugin"] = None if episode.arm == "baseline" else {
             "orbit": episode.tool_in("orbit"), "home": episode.state_in("orbit-home"),
@@ -1565,12 +1579,19 @@ def command_run(args):
     make_private_dir(episode.repo)
     if episode.arm == "graph":
         make_private_dir(episode.repo / ".orbit-graph")
+    outside_preflight_start = time.monotonic_ns()
     preflight_evidence = preflight(episode, versions)
+    outside_preflight_end = time.monotonic_ns()
     if episode.arm == "graph":
         os.rmdir(episode.repo / ".orbit-graph")
     os.rmdir(episode.repo)
 
     clock = time.monotonic()
+    args.accounting_stage = "setup"
+    phases = {"wall_start_ns": time.monotonic_ns(), "provider_start_ns": None,
+              "provider_end_ns": None, "preflight": {
+                  "outside_wall": {"start_ns": outside_preflight_start, "end_ns": outside_preflight_end},
+                  "within_setup": None}, "plugin_install": None}
     started_at = time.time()
     deadline = clock + limits["wall_ms"] / 1000
     head_entries = tree_entries(args.head, "head")
@@ -1591,12 +1612,16 @@ def command_run(args):
     if episode.arm == "graph":
         make_private_dir(graph_dir)
     if episode.plugin_profile and episode.arm == "graph":
+        install_start = time.monotonic_ns()
         try:
             episode.treatment = plugin.install(episode, deadline)
         except ValueError as error:
             raise CapabilityRefusal("plugin_profile_refused", str(error)) from None
+        phases["plugin_install"] = {"start_ns": install_start, "end_ns": time.monotonic_ns()}
         # Verify the actual treatment flags too, within the episode setup budget.
+        inside_preflight_start = time.monotonic_ns()
         preflight_evidence = preflight(episode, versions, deadline)
+        phases["preflight"]["within_setup"] = {"start_ns": inside_preflight_start, "end_ns": time.monotonic_ns()}
     if episode.plugin_profile:
         episode.reply_contract = {"version": replies.CONTRACT, "policy": episode.redactor.policy,
             "source_binding": replies.source_binding(request,
@@ -1609,10 +1634,16 @@ def command_run(args):
                       "--launch", f"{episode.inside('runtime')}/probe-spec.json", "--",
                       *episode.exec_argv()]
     setup_ms = int((time.monotonic() - clock) * 1000)
+    phases["provider_start_ns"] = time.monotonic_ns()
     sentinel = episode.state / "budget-exceeded.json"
+    args.accounting_stage = "launch_probe"
     supervision = supervise(argv, episode.env(), str(episode.state), request["prompt"],
                             deadline, sentinel)
     wall_ms = int((supervision["ended"] - clock) * 1000)
+    phases["provider_end_ns"] = int(supervision["ended"] * 1_000_000_000)
+    if episode.prospective:
+        observed_timing = telemetry.timing(phases, [])
+        wall_ms, setup_ms = observed_timing["wall_ms"], observed_timing["setup_ms"]
     probe_raw = read_bounded(episode.state / "probe.json", 4 * 1024 * 1024)
     probe = state_object(probe_raw, "probe")
     if probe is None or (episode.contained and not probe.get("hidden")):
@@ -1622,6 +1653,7 @@ def command_run(args):
             "was not started" if probe else "the containment probe did not run",
             {"probe": probe, "exit": supervision["exit"],
              "stderr": supervision["stderr"].decode(errors="replace")[:2000]})
+    args.accounting_provider_started = True
 
     pending_log, _ = read_broker_log(episode.state / "broker-calls.jsonl")
     # A provider may exit without waiting for its MCP servers. Give the pidfd
@@ -1636,7 +1668,7 @@ def command_run(args):
     supervision["brokers_swept"] = swept
     log, log_bytes = read_broker_log(episode.state / "broker-calls.jsonl")
     transcript = analyse_transcript(supervision["stdout"], supervision["stdout_truncated"],
-                                    request["tools"])
+                                    request["tools"], prospective=episode.prospective)
     final_raw = read_bounded(episode.state / "final-message.txt", 4 * limits["call_bytes"])
     final_source = "output_last_message"
     if final_raw is None and transcript["last_agent_message"] is not None:
@@ -1657,10 +1689,11 @@ def command_run(args):
     if sentinel_raw is not None:  # its existence is the stop; the code is detail
         sentinel_code = str((state_object(sentinel_raw, "sentinel") or {}).get("code")
                             or "budget_exceeded")[:64]
+    attempt_ledger = telemetry.attempts(log_bytes, log["calls"], log["truncated"])[0] if episode.prospective else None
     status, code, message = decide(supervision, transcript, log,
                                    {"text": final_text, "truncated": final_truncated},
                                    limits, sentinel_code, output_bytes, wall_ms,
-                                   lifecycle_contract=broker.LIFECYCLE_CONTRACT)
+                                   lifecycle_contract=broker.LIFECYCLE_CONTRACT, attempts=attempt_ledger)
     answer = parse_json(final_text.encode(), "final") if status == "ok" else None
     graph_state = None
     if episode.arm == "graph":
@@ -1685,13 +1718,17 @@ def command_run(args):
     files["preflight.json"] = write_private(
         episode.out / "preflight.json",
         json.dumps(preflight_evidence, indent=2, sort_keys=True) + "\n", redactor)
+    if episode.prospective:
+        files["phase-timing.json"] = write_private(episode.out / "phase-timing.json",
+                                                   json.dumps(phases, sort_keys=True) + "\n", redactor)
 
     run_id = f"aeval-{secrets.token_hex(8)}"
     contained = episode.contained and bool(probe.get("hidden"))
     artifact = {
         "schema_version": request["schema_version"],
         "kind": plugin.RAW_KIND if episode.plugin_profile else RAW_KIND,
-        "runner_version": RUNNER_VERSION if episode.plugin_profile else "4",
+        "runner_version": PROSPECTIVE_RUNNER_VERSION if episode.prospective else
+                          RUNNER_VERSION if episode.plugin_profile else "4",
         "lifecycle_contract": broker.LIFECYCLE_CONTRACT,
         "run_id": run_id, "request": request, "request_digest": digest(request),
         "started_at_unix": round(started_at, 3),
@@ -1760,12 +1797,14 @@ def command_run(args):
     if episode.plugin_profile:
         artifact["reply_contract"] = episode.reply_contract
         artifact["reply_provenance"] = log["reply_provenance"]
-        artifact["profile"] = plugin.PROFILE
+        artifact["profile"] = plugin.PROFILES[request["schema_version"]]
         artifact["source_provenance"] = source_provenance
         artifact["resource_limits"] = episode.resource_limits
         artifact["harness"] = {name: sha256_file(HERE / name) for name in
                                ("eval_runner.py", "eval_broker.py", "plugin_profile.py",
                                 "reply_provenance.py")}
+        if episode.prospective:
+            artifact["harness"]["telemetry.py"] = sha256_file(HERE / "telemetry.py")
         artifact["treatment"] = episode.treatment
         artifact["timing"]["plugin_install_ms"] = (episode.treatment or {}).get("install_ms", 0)
         artifact["setup_output_bytes"] = (episode.treatment or {}).get("setup_output_bytes", 0)
@@ -1780,6 +1819,12 @@ def command_run(args):
         artifact["output_bytes"] = sum(len(str(call["output"]).encode())
                                        for call in artifact["calls"]) + \
             len(artifact["final_output"].encode())
+    if episode.prospective:
+        artifact["telemetry"] = telemetry.normalize(artifact,
+            (episode.out / "provider.jsonl").read_bytes(), (episode.out / "broker-calls.jsonl").read_bytes(),
+            phases, sys.modules[__name__])
+        artifact["usage"] = telemetry.legacy_usage(artifact["telemetry"]["usage"], USAGE_SOURCE)
+        artifact["usage_raw"] = None
     seal(artifact, "artifact_sha256")
     files_written = write_private(episode.out / "episode.json",
                                   json.dumps(artifact, indent=2, sort_keys=True) + "\n", redactor)
@@ -1855,7 +1900,8 @@ def load_raw_episode(directory):
     directory = Path(directory)
     artifact = load_json(directory / "episode.json", 64 * 1024 * 1024)
     require(isinstance(artifact, dict) and artifact.get("kind") == RAW_KIND
-            and artifact.get("schema_version") == 1, f"{directory}: not a raw episode artifact")
+            and artifact.get("schema_version") == 1 and "telemetry" not in artifact
+            and artifact.get("runner_version") != "6", f"{directory}: not a raw episode artifact")
     sealed = artifact.get("artifact_sha256")
     body = {key: value for key, value in artifact.items() if key != "artifact_sha256"}
     require(sealed == digest(body), f"{directory}: artifact hash mismatch")
@@ -1973,10 +2019,23 @@ def main(argv=None):
         result = handlers[args.command](args)
     except CapabilityRefusal as refusal:
         out = getattr(args, "out", None)
-        print(json.dumps(refuse(os.path.abspath(out) if out else None, refusal), indent=2,
+        request = getattr(args, "accounting_request", None)
+        extra = {"schema_version": 3, "profile": plugin.PROSPECTIVE_PROFILE,
+                 "request_digest": digest(request), "request_identity": digest(request),
+                 "stage": args.accounting_stage} if request else None
+        print(json.dumps(refuse(os.path.abspath(out) if out else None, refusal, extra), indent=2,
                          sort_keys=True))
         return EXIT_REFUSED
     except (ValueError, OSError, KeyError, TypeError) as error:
+        request = getattr(args, "accounting_request", None)
+        if request and not getattr(args, "accounting_provider_started", False):
+            report = refuse(getattr(args, "out", None),
+                            CapabilityRefusal("setup_invalid", str(error)[:2000]),
+                            {"schema_version": 3, "profile": plugin.PROSPECTIVE_PROFILE,
+                             "request_digest": digest(request), "request_identity": digest(request),
+                             "stage": args.accounting_stage})
+            print(json.dumps(report, sort_keys=True))
+            return EXIT_INVALID
         print(json.dumps({"error": {"code": "invalid", "message": str(error)[:2000]}}),
               file=sys.stderr)
         return EXIT_INVALID

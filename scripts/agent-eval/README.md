@@ -688,3 +688,184 @@ A denied namespace check is not containment evidence. The frozen twelve-episode
 cohort, its failed outcomes and original adapter refusal remain authoritative,
 with no accepted quality score. A later measured study needs a fresh frozen
 preregistration/corpus under this contract; no old episode may be replaced.
+
+## Prospective accounting (ORB-14003; consumer interface for ORB-14002)
+
+Opt in with request `schema_version: 3` and
+`profile: "installed-plugin-skill-v3"`. The remaining request fields, source
+selection, plugin pin, cold treatment, authority and budgets are those of profile
+2. Raw captures use the existing installed-plugin kind, schema 3, runner `6`,
+broker `5`, `safe-tool-text-v1` and the delivered
+`eof-idle-at-term-observation-v2` lifecycle contract. The five harness hashes
+include `telemetry.py`. `plugin-inspect` still exports the same treatment pin and
+inventory without starting a provider; that pin is also accepted by profile 3.
+Schema 1 and 2 writers and replay retain their old token sums, classifications
+and result shapes. No historical corpus, score, study lock or result is updated.
+The historical `adapt` entry point refuses schema 3.
+
+Use `evals/plugin-agent-navigation/eval.py replay` with a schema-3 preregistration
+and profile above. Its `load_episode(directory, diagnostic=False)` verifies and
+returns a sealed raw capture; each replay `costs[]` entry also includes the full
+`telemetry` object. Replay recomputes this object from the hashed provider JSONL,
+broker JSONL and `phase-timing.json`, compares types as well as values, and checks
+existing call proofs, input/output bytes, provider reconciliation, source,
+containment and lifecycle outcomes. A malformed or missing ledger, altered
+coverage/bytes/duration, or mixed schema/profile/runner is rejected. It cannot
+fall back to a historical validator. Failed captures can replay as failed;
+replaying diagnostics does not qualify them as contained effectiveness evidence.
+Freezing the merged harness hashes and qualifying the actual runtime are the
+root operator's responsibility. This worker uses no live model.
+
+The schema-3 raw artifact has `telemetry.contract:
+"prospective-accounting-v1"` and these fields:
+
+- `usage.turns[]`: ordinal, nullable supplied `session_id`/`turn_id`, start event,
+  terminal `outcome` and all terminal `observations[]`. Each observation retains
+  raw usage, truly reported normalized field names, typed nullable values and
+  invalid-field diagnostics, including usage on failed/cancelled turns.
+  Every event reference gives its one-based JSONL line, zero-based byte offset,
+  exact line byte count **including its newline**, and SHA-256 of those bytes.
+  Duplicate terminals/IDs/JSON keys and malformed or partial streams are never
+  silently deduplicated into complete accounting. Missing optional identities
+  are allowed; supplied identities must be non-empty strings of at most 128
+  UTF-8 bytes. Invalid types and cross-session turn identities are inconsistent.
+- `usage.fields`: `input_tokens`, `cached_input_tokens`, `output_tokens`,
+  `reasoning_tokens` (also observes `reasoning_output_tokens`), and `total_tokens`.
+  Each has `expected_turns`, `reported_turns`, `valid_observations`, nullable
+  `observed_sum`, `coverage` (`complete`, `partial`, `inconsistent`), nullable
+  `total`, and `total_state`. `observed_sum` is the exact sum of valid observed
+  counters, **a diagnostic rather than a session token total**. Zero survives.
+  Invalid bool/negative counters, competing reasoning aliases and cached input
+  greater than input invalidate completeness. Missing usage, failed/cancelled
+  turns, abnormal provider exit and bounded/truncated JSONL prevent complete
+  coverage. Pending turns remain visible. `session_complete` concerns turn
+  lifecycle; it never asserts complete token accounting or cost.
+- Counter scope is pinned as `codex-jsonl-scope-unqualified-v1`: neither
+  incremental-per-turn nor cumulative-across-turns is established by the
+  available captures. `usage.source` pins the provider binary hash/version and
+  format; `semantics_evidence` remains null. A single clean turn can expose its reported counter with
+  `total_state: "observed_single_turn"`; even complete multi-turn field coverage
+  has `total: null`, `total_state: "unknown_semantics"`. Cache subset semantics
+  are also unqualified, so `derived.uncached_input_tokens` is null, labelled
+  `unknown_cache_semantics`. Cached input is never added to input. No dollar
+  cost or model tokens per tool are invented. Top-level `usage` contains only
+  qualified single-turn input/output counters; `usage_raw` is always null in
+  schema 3. Consumers must use the ledger rather than legacy partial sums.
+- `attempts[]`: every parsed broker `tools/call`, logged before protocol,
+  allowlist and budget checks. `(run_id, attempt_id)` is stable and unique;
+  `request_seq` and supplied JSON-RPC `request_id` link it to the request and
+  published reply checkpoint. IDs such as `request-1` are episode-local and
+  independent of provider item IDs. Each attempt retains tool/arguments,
+  canonical safe argument UTF-8 bytes/hash, event references, monotonic
+  `started_ns`, nullable `ended_ns`/`elapsed_ns`, nullable `call_seq`, outcome,
+  error, completion/success flags, output text/UTF-8 bytes/hash and
+  `reply_published`. `observed_outcome` retains the handler return separately
+  from pending/interrupted request outcome. `call_completed`/`call_event` and
+  measured output bytes/hash retain tool completion before an interrupted
+  return or unpublished reply; this never counts as successful use. Protocol
+  refusals have no tool text; unknown-tool and budget refusals do. Missing
+  endpoints/results remain null; partial measured observations are explicitly
+  retained and interrupted requests reference broker exit.
+  Invalid/unparseable frames cannot be identified as `tools/call` and remain
+  protocol-error evidence. Duplicate JSON-RPC IDs are disambiguated by sequence.
+- `tools`: all-attempt denominator, attempts, responses (finished requests,
+  including refusals), completed **admitted tool calls**, successes, graph
+  attempts/completions/successes, and per-tool summaries. Successful use requires
+  a published reply and exact provider reconciliation; uncorroborated captures
+  conservatively expose zero successes while retaining observed producer
+  outcomes. `input_bytes` and
+  `output_bytes` sum the ledger exactly, including refusal text. Output bytes
+  describe prepared safe tool text, excluding JSON-RPC framing; they are not
+  model tokens. `provider_received_output_bytes` is null unless exact provider
+  result reconciliation succeeds. The legacy top-level `output_bytes` still
+  counts measured call text plus the final answer, so it can differ by refusal
+  text. Graph refusals count as attempts, never completed or successful graph
+  use. `provider_call_observations` separately retains provider item identity,
+  status/error and event location, including pre-broker approval refusals;
+  these observations are not added again to the broker denominator.
+  `coverage` reports its state, issues, observed `reported_attempts` and nullable
+  `expected_attempts`. A cut broker-log tail retains the valid prefix with
+  partial coverage and a hashed tail location; expected attempts and the
+  all-attempt denominator are unknown/null. This remains a failed capture, with
+  zero qualified successes and null received bytes. Duplicate request or reply
+  sequences are rejected before indexing, rather than silently overwritten.
+- `reconciliation`: exact-result match verdict and nullable error. Extra
+  refusal results must match with full multiplicity. After removing precisely
+  those results, the original completed-call audit runs unchanged. Arguments,
+  status or text mismatches, missing results, partial input and interrupted
+  calls still fail. The reply checkpoint remains published immediately before
+  writing/flushing; `reply_published` alone does not prove delivery or orderly
+  EOF. ORB-13847's lifecycle negatives remain mandatory.
+
+`telemetry.timing` partitions integer milliseconds as
+`wall_ms = setup_ms + provider_ms`; rounding remainder belongs to provider.
+`phase-timing.json` retains the three monotonic nanosecond boundaries. Wall
+starts after initial admission preflight and ends at the supervisor's provider
+exit/stop observation, before post-exit cleanup/capture work. Setup includes
+snapshot materialization, source verification, cold plugin installation and its
+second preflight. Provider phase includes the launch/containment probe and broker
+work; it is not pure model compute. Separately `overlapping` contains
+`plugin_install_ms`, `graph_sync_ms` and `preflight_within_setup_ms` observations.
+Do not add these again to wall. `outside_wall.preflight_ms` records the initial
+preflight interval; source export and runtime qualification costs are null
+because they occur outside episodes and are not measured here. `end_to_end_ms`
+is null. No warm-cache support or full end-to-end cost is claimed.
+
+The study owns the cohort attempt registry, including attempts that never start
+an episode. Schema-3 admission/setup runner refusal responses (also written to
+`refusal.json` when the private output layout already exists)
+include `request_digest`, equal stable `request_identity`, phase `stage`, typed
+refusal evidence and `provider_started: false`. There is no invented provider
+run ID, token usage or timing for these. An invalid pinned source yields a setup
+refusal; a capability/feature denial yields an admission refusal. Registry-level
+attempt IDs, retries, runtime-qualification/source-export costs and custody of
+these refusal records belong to ORB-14002/the root operator, not this harness.
+
+For example, these excerpts describe two turns with input reported only once,
+and two observed attempts before a cut broker-log tail. They are fields of a
+schema-3 capture, not a complete preregistration or raw artifact:
+
+```json
+{
+  "schema_version": 3,
+  "profile": "installed-plugin-skill-v3",
+  "telemetry": {
+    "contract": "prospective-accounting-v1",
+    "usage": {
+      "counter_semantics": "codex-jsonl-scope-unqualified-v1",
+      "fields": {
+        "input_tokens": {
+          "expected_turns": 2, "reported_turns": 1,
+          "valid_observations": 1, "observed_sum": 10,
+          "coverage": "partial", "total": null, "total_state": "partial"
+        }
+      },
+      "derived": {"uncached_input_tokens": null, "state": "unknown_cache_semantics"},
+      "cost_usd": null, "per_tool_tokens": null
+    },
+    "tools": {
+      "attempts": 2, "completed": 1, "successful": 0,
+      "all_attempt_denominator": null,
+      "coverage": {"state": "partial", "reported_attempts": 2, "expected_attempts": null}
+    }
+  }
+}
+```
+
+An admission-refusal excerpt instead has `"stage": "admission"`,
+`"provider_started": false` and equal 64-hex `request_digest` and
+`request_identity`. The study gives that refusal its own cohort attempt ID;
+there is no provider session, observed usage or episode timing to infer.
+
+Run the prospective real-entry-point regressions with:
+
+```sh
+AGENT_EVAL_ORBIT=/absolute/orbit \
+AGENT_EVAL_ORBIT_GRAPH="$PWD/target/debug/orbit-graph" \
+  python3 -B -m unittest discover -s scripts/agent-eval/tests -p test_telemetry.py -v
+```
+
+The provider is fake; the installed Orbit plugin is real and private. Set
+`AGENT_EVAL_REQUIRE_BWRAP=1` to make unavailable user namespaces fail strict
+qualification rather than skip. Diagnostic passes and namespace refusals are
+reported separately. No live plugin, Codex auth or user configuration is changed.
