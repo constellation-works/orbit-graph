@@ -293,7 +293,7 @@ def score(corpus, protocol, plan, bundle, export_root, views, reviews, truth_rev
                    identity_recall={"matched":0,"required":len(c["truth"]["identities"])}, citation_recall={"matched":0,"required":len(c["truth"]["identities"])},
                    calls=len(e["calls"]) if e else 0, graph_calls=0, successful_graph_calls=0,
                    output_bytes=e["output_bytes"] if e else None, setup_output_bytes=e["setup_output_bytes"] if e else None,
-                   timing=e["timing"] if e else {"wall_ms":r["elapsed_ms"],"setup_ms":r["elapsed_ms"],"provider_ms":None,"graph_sync_ms":None},
+                   timing=observed_timing(e) if e else {"wall_ms":r["elapsed_ms"],"setup_ms":r["elapsed_ms"],"provider_ms":None,"graph_sync_ms":None},
                    usage=observed_usage(e) if e else None,
                    telemetry=e.get("telemetry") if e else None,
                    review_attribution=[review for review in [*reviews["reviews"], *reviews["adjudications"]]
@@ -368,7 +368,21 @@ def observed_usage(episode):
     if episode.get("telemetry") is not None:
         telemetry = episode["telemetry"]
         source.require(telemetry["contract"] == "prospective-accounting-v1", "telemetry contract")
-        return {**{key: value["total"] for key, value in telemetry["usage"]["fields"].items()},
-                "cost_usd":telemetry["usage"].get("cost_usd")}
+        return {**{key: value["total"] if value["coverage"] == "complete" and
+                   value["expected_turns"] == value["reported_turns"] == 1 and
+                   value["total_state"] == "observed_single_turn" else None
+                   for key, value in telemetry["usage"]["fields"].items()},
+                "cost_usd":None}
     # Explicit scorer fixtures are synthetic diagnostics, never live accounting.
     return sys.modules["effectiveness_source"].observed_usage(episode)
+
+
+def observed_timing(episode):
+    """Normalized schema-3 boundaries; legacy scalar preflight has mixed scopes."""
+    if episode.get("telemetry") is None:
+        return episode["timing"]
+    timing = episode["telemetry"]["timing"]
+    return {**{key:timing[key] for key in ("wall_ms", "setup_ms", "provider_ms")},
+            **{key:timing["overlapping"].get(key) for key in
+               ("plugin_install_ms", "graph_sync_ms", "preflight_within_setup_ms")},
+            "preflight_outside_wall_ms":timing["outside_wall"]["preflight_ms"]}

@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "corpus_sha256": "c5d807c0432f0bc63c11677917c3bceee44068d942f4ea7b80478a80e5c3cffe",
-  "protocol_sha256": "28176c7c3146390698d974b713066eb79c76c6722e7f7f5847280ad1ee95e7ff",
+  "protocol_sha256": "5db3b3b2517521db557f90cf21fcf5e01c10479d2de2c64620ee526ab58c5cea",
   "snapshots": {
     "orbit-graph-head": {
       "git_revision": "17d8203accea0af6f93e31a26e22a47f64590dce",
@@ -36767,22 +36767,23 @@
   "dependencies": {
     "evals/plugin-navigation-study-v1/eval.py": "d023814e15e455d75e936c514937a8280a37577d01e5c73fb4e475e584a39b69",
     "evals/real-agent-navigation/eval.py": "a6e933cbb17e13dc482f89277be3becf03eb791ea0a68332260205ba8364b769",
-    "evals/plugin-agent-navigation/eval.py": "9ac1ea00a238577a20a0b9637021936ad3ea10c7218fd63c959b722cd6e52b3c",
-    "scripts/agent-eval/eval_runner.py": "fb3f89212834b12f20b399ee4fcb69c237aa36b0bd338679615a8a77de9a7d3e",
-    "scripts/agent-eval/eval_broker.py": "01a4f55f889a96c6650b91d9384cb04e96ac4455e790e713586c578f2b232ddd",
-    "scripts/agent-eval/plugin_profile.py": "519e5cdd22d02838cf8a27f58df89a1f85d3fed201ccc547aa4d4d280b69ee3b",
-    "scripts/agent-eval/reply_provenance.py": "9344d2cfc523c5631e22cbf2def1bd961cbc3d0f6d9cefd07e62c7ea1b3161c8",
+    "evals/plugin-agent-navigation/eval.py": "c51cb4449abb9740f76be0766376f97484d0eb64cf81ffd8ef59d3a88ccb8d7c",
+    "scripts/agent-eval/eval_runner.py": "d4b174a109f0dd29dfcfb4c70c513c59632d02998ac6650c9933f136cf892c19",
+    "scripts/agent-eval/eval_broker.py": "e5321779335ba9057c45db002234d21dc4a992c68620e0b213504355d9859feb",
+    "scripts/agent-eval/plugin_profile.py": "1a82ff6cb2c837bb05ea629beb1e33266fe8012fc0cacbcb70297efae69f0115",
+    "scripts/agent-eval/reply_provenance.py": "d740ca719558d61c2ee1ab2838d0656beda943d9bddaa9d1df8defff0fbc4b0d",
     "evals/source-identity-v1/source_identity.py": "8fadf0f18f1642f3d0b7e9185a937a76bfeda1daddba0adadf584dff9a9c52fa",
     "evals/source-identity-v1/rust_source.py": "d42926bce54478739e3a52841b2f003b32885f5cc7c602bd11ad904d7840e09a",
     "evals/source-identity-v1/contract.json": "21fee7101c9bf93b5cad7b30982d48f992b864fb9a8c1179f91db63031e02779",
     "evals/source-identity-v1/syntax/Cargo.toml": "8c3ab6d15e99a3142d6dcafef97dc3f4e3a4b1170a076bac53ebeee07ed2f4b7",
     "evals/source-identity-v1/syntax/Cargo.lock": "dd766e08c25fbe96b4f1da71430997de006aee962fbfc5cfb76167431b478d2e",
-    "evals/source-identity-v1/syntax/src/main.rs": "b346d262b6911858e82ecb78d50c7f94c214a137188f2222ae6abc4208fe88e9"
+    "evals/source-identity-v1/syntax/src/main.rs": "b346d262b6911858e82ecb78d50c7f94c214a137188f2222ae6abc4208fe88e9",
+    "scripts/agent-eval/telemetry.py": "addef39ad71cecf990ee05294428e7d6600d5848f7a81ac8fc8bfbfb051d59f4"
   },
   "identity_contract": "source-identity-v1",
-  "profile_contract": "installed-plugin-skill-v2",
-  "runner_version": "5",
-  "broker_version": "4",
+  "profile_contract": "installed-plugin-skill-v3",
+  "runner_version": "6",
+  "broker_version": "5",
   "python_ast_version": "3.14",
   "prospective_runtime_required": {
     "request_schema_version": 3,
@@ -36792,13 +36793,57 @@
     "telemetry_contract": "prospective-accounting-v1",
     "dependency_task": "ORB-14003",
     "qualified": false,
-    "preparation": "Common static request fields checked with pinned unchanged v2 reference validator; emitted schema3 templates are preparation only. Captures require delivered schema3 loader/telemetry and a new root freeze; v2 evidence is never promoted.",
-    "source": "Read-only pending sibling interface at orbit-jrun-20261004-2242-c3, not certified",
+    "preparation": "Requests are validated directly as schema3 by the exact delivered shared runner; replay uses the delivered original capture loader. Live admission requires a new operational freeze with external root qualification, independently attributed truth and operator custody.",
+    "source": "Delivered ORB-14003 at 854265dcdc20abf87ad3e33c96fb0ee6fa424268",
     "reference_hashes": {
-      "telemetry.py": "addef39ad71cecf990ee05294428e7d6600d5848f7a81ac8fc8bfbfb051d59f4",
       "eval_runner.py": "d4b174a109f0dd29dfcfb4c70c513c59632d02998ac6650c9933f136cf892c19",
-      "plugin_profile.py": "1a82ff6cb2c837bb05ea629beb1e33266fe8012fc0cacbcb70297efae69f0115"
-    }
+      "eval_broker.py": "e5321779335ba9057c45db002234d21dc4a992c68620e0b213504355d9859feb",
+      "plugin_profile.py": "1a82ff6cb2c837bb05ea629beb1e33266fe8012fc0cacbcb70297efae69f0115",
+      "reply_provenance.py": "d740ca719558d61c2ee1ab2838d0656beda943d9bddaa9d1df8defff0fbc4b0d",
+      "telemetry.py": "addef39ad71cecf990ee05294428e7d6600d5848f7a81ac8fc8bfbfb051d59f4"
+    },
+    "runtime_version": "graph-effectiveness-runtime-v2"
   },
-  "reference_contract_note": "profile_contract/runner_version/broker_version and dependencies pin current read-only references, not the future admitted runtime"
+  "reference_contract_note": "Exact delivered schema3 contracts; previous v2 preparation bindings retained in development_preparation_provenance. No historical evidence is rewritten or promoted.",
+  "development_preparation_provenance": {
+    "profile_contract": "installed-plugin-skill-v2",
+    "runner_version": "5",
+    "broker_version": "4",
+    "dependencies": {
+      "evals/plugin-navigation-study-v1/eval.py": "d023814e15e455d75e936c514937a8280a37577d01e5c73fb4e475e584a39b69",
+      "evals/real-agent-navigation/eval.py": "a6e933cbb17e13dc482f89277be3becf03eb791ea0a68332260205ba8364b769",
+      "evals/plugin-agent-navigation/eval.py": "9ac1ea00a238577a20a0b9637021936ad3ea10c7218fd63c959b722cd6e52b3c",
+      "scripts/agent-eval/eval_runner.py": "fb3f89212834b12f20b399ee4fcb69c237aa36b0bd338679615a8a77de9a7d3e",
+      "scripts/agent-eval/eval_broker.py": "01a4f55f889a96c6650b91d9384cb04e96ac4455e790e713586c578f2b232ddd",
+      "scripts/agent-eval/plugin_profile.py": "519e5cdd22d02838cf8a27f58df89a1f85d3fed201ccc547aa4d4d280b69ee3b",
+      "scripts/agent-eval/reply_provenance.py": "9344d2cfc523c5631e22cbf2def1bd961cbc3d0f6d9cefd07e62c7ea1b3161c8",
+      "evals/source-identity-v1/source_identity.py": "8fadf0f18f1642f3d0b7e9185a937a76bfeda1daddba0adadf584dff9a9c52fa",
+      "evals/source-identity-v1/rust_source.py": "d42926bce54478739e3a52841b2f003b32885f5cc7c602bd11ad904d7840e09a",
+      "evals/source-identity-v1/contract.json": "21fee7101c9bf93b5cad7b30982d48f992b864fb9a8c1179f91db63031e02779",
+      "evals/source-identity-v1/syntax/Cargo.toml": "8c3ab6d15e99a3142d6dcafef97dc3f4e3a4b1170a076bac53ebeee07ed2f4b7",
+      "evals/source-identity-v1/syntax/Cargo.lock": "dd766e08c25fbe96b4f1da71430997de006aee962fbfc5cfb76167431b478d2e",
+      "evals/source-identity-v1/syntax/src/main.rs": "b346d262b6911858e82ecb78d50c7f94c214a137188f2222ae6abc4208fe88e9"
+    },
+    "prospective_runtime_required": {
+      "request_schema_version": 3,
+      "profile": "installed-plugin-skill-v3",
+      "runner_version": "6",
+      "broker_version": "5",
+      "telemetry_contract": "prospective-accounting-v1",
+      "dependency_task": "ORB-14003",
+      "qualified": false,
+      "preparation": "Common static request fields checked with pinned unchanged v2 reference validator; emitted schema3 templates are preparation only. Captures require delivered schema3 loader/telemetry and a new root freeze; v2 evidence is never promoted.",
+      "source": "Read-only pending sibling interface at orbit-jrun-20261004-2242-c3, not certified",
+      "reference_hashes": {
+        "telemetry.py": "addef39ad71cecf990ee05294428e7d6600d5848f7a81ac8fc8bfbfb051d59f4",
+        "eval_runner.py": "d4b174a109f0dd29dfcfb4c70c513c59632d02998ac6650c9933f136cf892c19",
+        "plugin_profile.py": "1a82ff6cb2c837bb05ea629beb1e33266fe8012fc0cacbcb70297efae69f0115"
+      }
+    },
+    "reference_contract_note": "profile_contract/runner_version/broker_version and dependencies pin current read-only references, not the future admitted runtime",
+    "lock_sha256": "158f01734998a75877f13cea81af4bab576ccc5d3ad17878488cbc6e581d4f9a",
+    "protocol_sha256": "28176c7c3146390698d974b713066eb79c76c6722e7f7f5847280ad1ee95e7ff",
+    "source_commit": "696855d33922ea02214af83f473fa90316ee4cab"
+  },
+  "runtime_version": "graph-effectiveness-runtime-v2"
 }

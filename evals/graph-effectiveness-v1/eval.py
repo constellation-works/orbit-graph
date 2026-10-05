@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Prospective development study, offline only. JSON stdout; JSON errors on stderr."""
+"""Prospective development preparation and original-capture scoring. JSON stdout; JSON errors on stderr."""
 import argparse
 from collections import Counter
 import ctypes
@@ -37,6 +37,7 @@ import source_identity as identity
 sys.path.insert(0, str(HERE))
 import scoring
 import analysis
+import runtime
 
 FAMILIES = ("localization", "control_flow", "cross_module", "change_impact", "before_after", "uncertainty")
 SCRIPT_PATHS = ()
@@ -89,6 +90,9 @@ def documents():
         require(sha((REPO / p).read_bytes()) == expected, "dependency drift: " + p)
     require(lock["python_ast_version"] == f"{sys.version_info.major}.{sys.version_info.minor}",
             "Python AST runtime differs; adopt a new prospective pin")
+    require(lock["runtime_version"] == runtime.VERSION and lock["profile_contract"] == PROSPECTIVE_PROFILE and
+            lock["runner_version"] == runner.PROSPECTIVE_RUNNER_VERSION == "6" and
+            lock["broker_version"] == runner.broker.PROSPECTIVE_BROKER_VERSION == "5", "prospective runtime version drift")
     return corpus, protocol, lock
 
 
@@ -277,7 +281,8 @@ def schedule(corpus, protocol, study_id, repetitions, treatments, cache):
     return seal(dict(schema_version=1, study_id=study_id, corpus_sha256=digest(corpus), protocol_sha256=digest(protocol),
                      repetitions=repetitions, treatments=treatments, cache=cache, slots=slots,
                      runtime_admitted=False, lock_sha256=digest(load(HERE / "corpus.lock.json")),
-                     implementation_sha256={p:sha((HERE / p).read_bytes()) for p in ("eval.py","scoring.py","analysis.py")},
+                     runtime_version=runtime.VERSION,
+                     implementation_sha256={p:sha((HERE / p).read_bytes()) for p in ("eval.py","scoring.py","analysis.py","runtime.py")},
                      admission_pending=protocol["admission"]["pending"]), "plan_sha256")
 
 
@@ -294,40 +299,30 @@ def requests(corpus, protocol, lock, plan, pin):
     for slot in plan["slots"]:
         c = cases[slot["case_id"]]
         head, base = (lock["snapshots"][c[v]] for v in ("head_view", "base_view"))
-        request = dict(schema_version=2, profile=plugin.PROFILE, case_id=slot["pair_id"], order=slot["order"],
+        request = dict(schema_version=3, profile=PROSPECTIVE_PROFILE, case_id=slot["pair_id"], order=slot["order"],
                        arm=slot["arm"], split="development", fixture=c["repository"],
                        source_revision=head["content_revision"], base_revision=base["content_revision"],
                        corpus_sha256=digest(corpus), source_commits={"head": head["git_revision"], "base": base["git_revision"]},
                        prompt=c["prompt"] + source.CONTRACT,
                        limits=protocol["limits"], setup_limits=protocol["setup_limits"], plugin=pin,
                        tools=source.COMMON + (list(plugin.TOOLS) if slot["arm"] == "graph" else []), cache_policy=runner.CACHE_POLICY)
-        # Validate unchanged common source/tool/limit fields with the read-only
-        # reference. This is preparatory schema translation, not v3 qualification.
-        runner.validate_request(seal(request, "request_sha256"))
-        request.update(schema_version=3, profile=PROSPECTIVE_PROFILE)
-        result.append(seal(request, "request_sha256"))
+        result.append(runner.validate_request(seal(request, "request_sha256")))
     return result
 
 
-def adapt(plan, request_plan, directories, refusals, lock, corpus, kind):
+def adapt(plan, request_plan, directories, refusals, lock, corpus, kind, freeze=None, export_root=None, views=None):
     """Replay real raw directories with the existing profile; never accept copied episode dictionaries."""
     require(kind in ("test-only", "agent"), "capture kind")
-    require(set(request_plan) == {"schema_version", "profile", "model", "provider_binary_sha256", "harness", "requests"}, "profile plan shape")
-    require(request_plan["schema_version"] == 3 and request_plan["profile"] == PROSPECTIVE_PROFILE,
-            "prospective schema-3 installed-plugin-skill-v3 required; historical v2 cannot qualify")
-    require(len(request_plan["requests"]) == len(plan["slots"]), "missing scheduled requests")
-    expected_requests = requests(corpus, load(HERE / "protocol.json"), lock, plan, request_plan["requests"][0]["plugin"])
-    require(request_plan["requests"] == expected_requests, "request/source/treatment pin drift")
-    require(request_plan["harness"] == {p: sha((REPO / "scripts/agent-eval" / p).read_bytes()) for p in
-            ("eval_runner.py", "eval_broker.py", "plugin_profile.py", "reply_provenance.py") +
-            (("telemetry.py",) if directories else ())}, "harness pins")
-    require(kind != "agent", "live runtime not admitted: independent root review and runtime freeze pending")
-    require(not directories or getattr(runner,"PROSPECTIVE_RUNNER_VERSION",None) == "6" and
-            (REPO / "scripts/agent-eval/telemetry.py").is_file(),
-            "schema-3 original capture replay unavailable until qualified runtime dependency is delivered and frozen")
-    episodes = [profile.load_episode(p, diagnostic=True) for p in directories]
-    # Profile pair replay is reused per complete repetition/cohort. A partial pair caused
-    # by a setup refusal retains individually replayed episodes and the refusal ledger.
+    protocol = load(HERE / "protocol.json")
+    ev = sys.modules[__name__]
+    expected_requests = runtime.request_plan(ev, request_plan, plan, corpus, protocol, lock)
+    if kind == "agent":
+        runtime.checked_freeze(ev, freeze, plan, request_plan, corpus, protocol, lock, export_root, views)
+    else:
+        require(freeze is None, "test-only captures cannot use a live operational freeze")
+    # Each original is independently replayed, including incomplete pairs and
+    # failed episodes. Test-only permits uncontained fixtures, never live evidence.
+    episodes = [profile.load_episode(p, diagnostic=kind == "test-only") for p in directories]
     require(len({e["request"]["order"] for e in episodes}) == len(episodes), "duplicate captured attempt")
     require(len({e["run_id"] for e in episodes}) == len(episodes), "reused capture run")
     require(len({e["isolation"]["repository_id"] for e in episodes}) == len(episodes) and
@@ -339,6 +334,7 @@ def adapt(plan, request_plan, directories, refusals, lock, corpus, kind):
                 "process/memory ceiling drift in partial cohort")
     cases = {c["id"]: c for c in corpus["cases"]}
     for e in episodes:
+        require(e["schema_version"] == 3 and e["profile"] == PROSPECTIVE_PROFILE, "schema2 relabel cannot qualify")
         order = e["request"]["order"]
         require(0 <= order < len(plan["slots"]) and e["request"] == expected_requests[order], "unexpected capture")
         require(e["model"] == request_plan["model"] and e["harness"] == request_plan["harness"] and
@@ -347,12 +343,20 @@ def adapt(plan, request_plan, directories, refusals, lock, corpus, kind):
                 "prospective lifecycle/safe-text capture required")
         require(e["reply_contract"]["policy"] == profile.replies.Redactor().policy,
                 "host-value masking policy not prospectively admitted")
+        if kind == "agent":
+            require(type(e["started_at_unix"]) in (int, float) and
+                    e["started_at_unix"] >= runtime.timestamp(freeze["custody"]["recorded_at"]).timestamp(),
+                    "capture predates the operational freeze")
+            qualification = freeze["qualification"]
+            require({k:e["tool_versions"][k] for k in ("read", "rg", "git")} == qualification["tool_versions"] and
+                    e["resource_limits"] == qualification["resource_limits"] and
+                    e["isolation"]["bwrap"] == qualification["bwrap"], "qualified binary/confinement/resource pins differ")
         c = cases[plan["slots"][order]["case_id"]]
         for role in ("head", "base"):
             require(e["source_provenance"][role]["selected_blobs"] ==
                     {p: b["oid"] for p, b in lock["snapshots"][c[role + "_view"]]["blobs"].items()}, "source universe drift")
-    if not refusals:
-        profile.replay(request_plan, directories, diagnostic=True)
+    if episodes and not refusals:
+        profile.replay(request_plan, directories, diagnostic=kind == "test-only")
     records = []
     for e, path in zip(episodes, directories):
         records.append(dict(order=e["request"]["order"], capture=str(Path(path).resolve()), artifact_sha256=e["artifact_sha256"], episode=e))
@@ -364,20 +368,21 @@ def adapt(plan, request_plan, directories, refusals, lock, corpus, kind):
         require(type(refusal["elapsed_ms"]) is int and refusal["elapsed_ms"] >= 0, "refusal time")
         records.append(refusal)
     require(sorted(r["order"] for r in records) == list(range(len(plan["slots"]))), "missing/duplicated scheduled attempt")
-    return seal(dict(schema_version=1, study_kind=kind, plan_sha256=plan["plan_sha256"],
-                     request_plan=request_plan, records=sorted(records, key=lambda r:r["order"])), "bundle_sha256")
+    return seal(dict(schema_version=1, runtime_version=runtime.VERSION, study_kind=kind, plan_sha256=plan["plan_sha256"],
+                     request_plan=request_plan, freeze=freeze, records=sorted(records, key=lambda r:r["order"])), "bundle_sha256")
 
 
-def checked_bundle(bundle, plan, corpus, lock):
+def checked_bundle(bundle, plan, corpus, lock, export_root=None, views=None):
     source.check_seal(bundle, "bundle_sha256")
     require(bundle["plan_sha256"] == plan["plan_sha256"], "bundle plan differs")
-    require(bundle["study_kind"] == "test-only", "fabricated/live evidence refused: runtime not admitted")
+    require(bundle["study_kind"] in ("test-only", "agent") and bundle.get("runtime_version") == runtime.VERSION,
+            "fabricated/live evidence refused: unsupported bundle runtime")
     records = bundle["records"]
     require([r["order"] for r in records] == list(range(len(plan["slots"]))), "missing/duplicate attempts")
     # Replay again at scoring/packet time, binding originals rather than trusting a seal.
     captures = [r for r in records if "episode" in r]
     rebuilt = adapt(plan, bundle["request_plan"], [r["capture"] for r in captures],
-                    [r for r in records if "episode" not in r], lock, corpus, bundle["study_kind"])
+                    [r for r in records if "episode" not in r], lock, corpus, bundle["study_kind"], bundle["freeze"], export_root, views)
     require(rebuilt == bundle, "capture changed since adaptation")
 
 
@@ -482,14 +487,18 @@ def main():
         "export": dict(type=Path, help="Previously verified source-only export directory."),
         "plan": dict(type=Path, help="Frozen offline schedule JSON."),
         "pin": dict(type=Path, help="Existing installed-plugin treatment pin JSON; does not install or qualify it."),
-        "request-plan": dict(type=Path, help="Prospective schema-3 profile plan with exact requests, model and runtime pins; qualification pending."),
+        "model-pin": dict(type=Path, help="Optional exact model and provider_binary_sha256 document; emits a complete request_plan without running a provider."),
+        "request-plan": dict(type=Path, help="Schema-3 profile plan with exact requests, model/settings, provider binary and all five harness pins."),
+        "freeze": dict(type=Path, help="Operational freeze with externally attested qualification, independent truth and operator custody; required for agent admission."),
+        "qualification": dict(type=Path, help="External root strict namespace/client qualification document with exact runtime pins and evidence file hashes."),
+        "custody": dict(type=Path, help="External operator custody document attesting serial schedule, independent reviewer identity and freeze before output."),
         "raw": dict(action="append", default=[], help="Original capture directory; replayed offline, repeat for every captured attempt."),
         "refusals": dict(type=Path, help="Attributed setup-refusal JSON array, one record for each refused schedule slot."),
         "bundle": dict(type=Path, help="Adapted bundle JSON retaining original capture references."),
         "reviews": dict(type=Path, help="Attributed answer identity/semantic review document."),
         "review-packets": dict(type=Path, help="Frozen operator packet registry from study review; keep bindings outside reviewer view."),
         "truth-reviews": dict(type=Path, help="Independent frozen truth identity/semantic reviews and adjudications."),
-        "study-kind": dict(default="test-only", choices=["test-only", "agent"], help="Evidence class; agent is refused pending future runtime admission."),
+        "study-kind": dict(default="test-only", choices=["test-only", "agent"], help="Evidence class; default test-only, agent requires a qualified operational freeze and strict original replay."),
         "study-id": dict(default="graph-effectiveness-dev-v1", help="Stable declared study identifier."),
         "repetitions": dict(type=int, default=1, help="Declared paired sessions per case/arm, 1 through 10."),
         "treatments": dict(default="baseline,product", help="Declared treatments; only baseline,product currently qualified."),
@@ -501,10 +510,11 @@ def main():
         "validate": ("Verify corpus/source hashes and expose independent-review admission coverage.", ["repo", "export", "truth-reviews"]),
         "export": ("Export full frozen source universes with manifests outside mountable views.", ["repo", "destination"]),
         "plan": ("Prepare a counterbalanced all-attempt schedule, without live admission.", ["study-id", "repetitions", "treatments", "cache", "destination"]),
-        "requests": ("Prepare schema-3 request templates; common fields checked, runtime qualification pending.", ["plan", "pin", "destination"]),
+        "requests": ("Prepare requests validated by the delivered schema-3 runner; does not grant runtime admission.", ["plan", "pin", "model-pin", "destination"]),
+        "freeze": ("Bind a prospective operational freeze to independent truth, external qualification and custody before dispatch.", ["plan", "request-plan", "export", "truth-reviews", "qualification", "custody", "destination"]),
         "truth-packets": ("Prepare source-only independent truth review packets.", ["repo", "export", "destination"]),
         "review": ("Prepare arm-blinded answer packets from replayed captures or explicit test fixtures.", ["plan", "export", "bundle", "fixture", "destination"]),
-        "adapt": ("Replay original installed-plugin captures and retain setup refusals.", ["plan", "request-plan", "raw", "refusals", "study-kind", "destination"]),
+        "adapt": ("Replay every original installed-plugin capture and retain setup refusals.", ["plan", "request-plan", "raw", "refusals", "study-kind", "freeze", "export", "destination"]),
         "score": ("Score every scheduled attempt with explicit pending review/missingness.", ["plan", "export", "bundle", "fixture", "reviews", "review-packets", "truth-reviews", "destination"]),
         "precision": ("Compute prospective sample/precision diagnostics from completed development judgments.", ["report", "destination"])
     }
@@ -539,32 +549,49 @@ def main():
         elif args.command == "requests":
             require(args.plan and args.pin, "plan and qualified treatment pin required; no fabricated pin")
             result = dict(schema_version=1, runtime_admitted=False, requests=requests(corpus, protocol, lock, load(args.plan), load(args.pin)))
+            if args.model_pin:
+                model_pin = load(args.model_pin)
+                source.shape(model_pin, ["model", "provider_binary_sha256"], "model pin")
+                rp = dict(schema_version=3, profile=PROSPECTIVE_PROFILE, **model_pin,
+                          harness={p:sha((REPO / "scripts/agent-eval" / p).read_bytes()) for p in runtime.HARNESS},
+                          requests=result["requests"])
+                runtime.request_plan(sys.modules[__name__], rp, load(args.plan), corpus, protocol, lock)
+                result["request_plan"] = rp
         elif args.command == "truth-packets":
             require(views is not None, "source views required")
             result = scoring.truth_packets(corpus, lock)
+        elif args.command == "freeze":
+            require(args.plan and args.request_plan and args.truth_reviews and args.qualification and args.custody and args.export,
+                    "freeze requires plan, request-plan, full export, truth-reviews, qualification and custody")
+            result = runtime.freeze(sys.modules[__name__], load(args.plan), load(args.request_plan), corpus, protocol, lock,
+                                    args.export, views, load(args.truth_reviews), load(args.qualification), load(args.custody))
         elif args.command in ("adapt", "review", "score"):
             require(args.plan, "frozen offline plan required")
             plan = load(args.plan)
             checked_plan(plan, corpus, protocol)
             if args.command == "adapt":
                 require(args.request_plan, "profile request plan required")
-                result = adapt(plan, load(args.request_plan), args.raw or [], load(args.refusals) if args.refusals else [], lock, corpus, args.study_kind)
+                result = adapt(plan, load(args.request_plan), args.raw or [], load(args.refusals) if args.refusals else [], lock, corpus,
+                               args.study_kind, load(args.freeze) if args.freeze else None, args.export, views)
             else:
                 require(bool(args.bundle) != bool(args.fixture) and views is not None and args.export,
                         "exactly one --bundle or explicit test-only --fixture and verified --export required")
                 if args.bundle:
                     bundle = load(args.bundle)
-                    checked_bundle(bundle, plan, corpus, lock)
+                    checked_bundle(bundle, plan, corpus, lock, args.export, views)
                 else:
                     bundle = diagnostic_fixture(load(args.fixture), plan, protocol)
                 if args.command == "review":
                     result = scoring.review_packets(corpus, plan, bundle)
                 else:
+                    if bundle["study_kind"] == "agent" and args.truth_reviews:
+                        require(load(args.truth_reviews) == bundle["freeze"]["truth_reviews"], "truth reviews differ from operational freeze")
                     result = scoring.score(corpus, protocol, plan, bundle, args.export, views,
                                            load(args.reviews) if args.reviews else {"schema_version":1,"reviews":[],"adjudications":[]},
-                                           load(args.truth_reviews) if args.truth_reviews else None,
+                                           load(args.truth_reviews) if args.truth_reviews else (bundle.get("freeze") or {}).get("truth_reviews"),
                                            load(args.review_packets) if args.review_packets else None)
-                    result["provenance"] = bundle.get("provenance", "original installed-plugin capture replay (test-only)")
+                    result["provenance"] = bundle.get("provenance", "original schema3 installed-plugin capture replay (" + bundle["study_kind"] + ")")
+                    result["runtime_freeze"] = bundle.get("freeze")
         else:
             require(args.report, "precision requires --report with completed development judgments")
             result = analysis.precision(load(args.report), protocol)

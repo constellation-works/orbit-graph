@@ -200,13 +200,13 @@
     "runtime_admitted": false,
     "pending": [
       "independent root source/semantic/diff reviews",
-      "telemetry and lifecycle repairs then versioned runtime freeze",
+      "versioned operational freeze binding exact runtime/model/treatment/source/scorer/helper pins",
       "strict original-capture and confinement qualification",
       "operator custody and approved model/source/budget before provider execution"
     ],
     "forbidden_in_this_task": [
       "provider/model network calls",
-      "plugin installation or grants",
+      "live plugin installations or grants (disposable private test installations only)",
       "release/version/tag/publish",
       "user configuration changes",
       "historical evaluation edits",
@@ -221,13 +221,16 @@
     "telemetry_contract": "prospective-accounting-v1",
     "dependency_task": "ORB-14003",
     "qualified": false,
-    "preparation": "Common static request fields checked with pinned unchanged v2 reference validator; emitted schema3 templates are preparation only. Captures require delivered schema3 loader/telemetry and a new root freeze; v2 evidence is never promoted.",
-    "source": "Read-only pending sibling interface at orbit-jrun-20261004-2242-c3, not certified",
+    "preparation": "Requests are validated directly as schema3 by the exact delivered shared runner; replay uses the delivered original capture loader. Live admission requires a new operational freeze with external root qualification, independently attributed truth and operator custody.",
+    "source": "Delivered ORB-14003 at 854265dcdc20abf87ad3e33c96fb0ee6fa424268",
     "reference_hashes": {
-      "telemetry.py": "addef39ad71cecf990ee05294428e7d6600d5848f7a81ac8fc8bfbfb051d59f4",
       "eval_runner.py": "d4b174a109f0dd29dfcfb4c70c513c59632d02998ac6650c9933f136cf892c19",
-      "plugin_profile.py": "1a82ff6cb2c837bb05ea629beb1e33266fe8012fc0cacbcb70297efae69f0115"
-    }
+      "eval_broker.py": "e5321779335ba9057c45db002234d21dc4a992c68620e0b213504355d9859feb",
+      "plugin_profile.py": "1a82ff6cb2c837bb05ea629beb1e33266fe8012fc0cacbcb70297efae69f0115",
+      "reply_provenance.py": "d740ca719558d61c2ee1ab2838d0656beda943d9bddaa9d1df8defff0fbc4b0d",
+      "telemetry.py": "addef39ad71cecf990ee05294428e7d6600d5848f7a81ac8fc8bfbfb051d59f4"
+    },
+    "runtime_version": "graph-effectiveness-runtime-v2"
   },
   "sampling_dependence": {
     "primary_case_count": 24,
