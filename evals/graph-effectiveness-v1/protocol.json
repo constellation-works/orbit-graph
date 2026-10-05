@@ -1,0 +1,273 @@
+{
+  "schema_version": 1,
+  "protocol_id": "graph-effectiveness-v1",
+  "phase": "development-only",
+  "purpose": "Prospective offline preparation and descriptive development analysis; no provider measurements or effectiveness claim.",
+  "primary_comparison": {
+    "baseline": "Competent read/rg/git navigation with full source, both revisions, equal answer contract and explicit uncertainty instructions.",
+    "product": "Actual installed-plugin-skill-v3 with complete shipped inventory and shipped skill; optional graph adoption. Prospective runtime qualification and root freeze pending.",
+    "matched": [
+      "question",
+      "source universes",
+      "answer format",
+      "provider binary",
+      "model and version",
+      "all settings",
+      "memory and process ceilings",
+      "wall/tool/output budgets",
+      "baseline tool versions"
+    ],
+    "counterbalance": "Deterministically balance first-arm order within repository and task family, reversing order for even repetitions. Serial schedule; no prewarming or parallel paired runs.",
+    "unit": "case; repeated sessions clustered within case, not additional independent samples",
+    "identifiers": [
+      "study_id",
+      "case_id",
+      "pair_id",
+      "repetition",
+      "attempt_id",
+      "runner run_id"
+    ],
+    "runner_case_id": "case_id--rNN so the existing strict profile pair replay sees exactly one pair per repeated case"
+  },
+  "treatments": {
+    "baseline": {
+      "tools": [
+        "read",
+        "rg",
+        "git"
+      ],
+      "required_interface": "installed-plugin-skill-v3 baseline",
+      "runtime_qualified": false
+    },
+    "product": {
+      "inventory": "complete discovered shipped inventory, hash pinned; no silent tool removal",
+      "skill": "complete shipped skill/reference bytes, hash pinned",
+      "required_interface": "installed-plugin-skill-v3 graph",
+      "runtime_qualified": false
+    },
+    "inventory_ablation": {
+      "phase": "development-only",
+      "available": false,
+      "design": "Separate qualified treatment disabling one declared family while holding skill, model and budgets fixed; independent incremental paired evidence."
+    },
+    "skill_ablation": {
+      "phase": "development-only",
+      "available": false,
+      "design": "Separate qualified installed inventory treatment with declared skill omission, never labeled shipped product."
+    },
+    "tool_family_ablation": {
+      "phase": "development-only",
+      "available": false,
+      "design": "Separate qualified incremental leave-one-family-out treatments. Low adoption alone cannot authorize removal."
+    }
+  },
+  "limits": {
+    "wall_ms": 300000,
+    "tool_calls": 60,
+    "output_bytes": 1048576,
+    "answer_items": 32,
+    "call_bytes": 65536
+  },
+  "setup_limits": {
+    "wall_ms": 120000,
+    "output_bytes": 4194304
+  },
+  "source": {
+    "pinning": "Exact original commit, tree, mode, blob OID, path, UTF-8 content SHA-256 and complete selected source content revision per view.",
+    "selection": "Reuse stable source.snapshot boundary across all arms and cases: full permitted src/crates/tests source and Cargo/pyproject manifests. No script extension, graph-based selection or shrinking to satisfy parser limits.",
+    "script_allowlist": [],
+    "exclude": [
+      "evals",
+      "truth",
+      "answers",
+      "docs",
+      "AGENTS.md",
+      "skills",
+      "credentials/state",
+      ".orbit-plugin duplicate implementation",
+      "moving HEAD"
+    ],
+    "mounting": "Only export/views/<view> enters an agent mount. Source manifests, frozen truth, reviews, base/head custody and protocol remain outside agent mounts; original Git roots are inspected outside containment.",
+    "before_after": "Real accessible base/head pins and actual diff hashes, author source review then independent root diff adjudication before live use. Generated HEAD/HEAD^ views are not original chronological Git history.",
+    "freshness": "Historical real/v1/v2 questions are inventoried and excluded. All 24 cases are exposed DEVELOPMENT material forever, not holdout.",
+    "truth": "Source/tests/specification only; authored before graph query or evaluated model output. Every required claim is named in its question. Author attribution is not independent review."
+  },
+  "identity_contract": {
+    "version": "source-identity-v1",
+    "qualification": "Use unchanged Project/check on full relevant source universe only when helper manifest is expressible; multiple Rust crate roots and >128 Python files are unsupported. Never split a language index to hide ambiguity or strip normal syntax.",
+    "automated_outcomes": [
+      "verified",
+      "contradicted",
+      "ambiguous",
+      "unsupported"
+    ],
+    "citations": "Exact written head declaration line; score identity and whole-line citation separately. Runner trims indentation; restore it only after exact whole trimmed line comparison. Behavioral source evidence can include both revisions.",
+    "independent_source_path": "Unsupported/unresolved written identities need a source-wide independent reviewer, exact declaration/citation plus owner/module/trait context, full universe hashes, method, attribution and honest blinding. Unknown is pending, not correct/incorrect or hallucination.",
+    "adjudication": "Consequential ambiguity or disagreement requires two independent initial reviews, then an independent adjudicator with both initial review hashes preserved. No overwrite or truth waiver.",
+    "truth_admission": "Invalid/contradictory or ambiguous required truth blocks admission. Unsupported automatic truth can pass only with frozen independent verified identity and semantic truth reviews plus independent historical diff review. Root independently reviews before live execution.",
+    "semantic_separation": "Distinct semantic packets/reviews assess each asked behavioral claim with original answer quote and exact source evidence; name matches cannot establish behavior.",
+    "coverage": "Report automated and adjudicated outcomes with original required and all-attempt denominators, including unsupported and pending cases; never normalize to accepted subset.",
+    "review_binding": "Freeze a cryptographically random 256-bit opaque token for each scheduled answered attempt in a private operator registry. Packets contain tokens but no arm/order/repetition. Reuse that registry at score time; identical answers never collide. Missing/unresolved manual review cannot be overridden by automated verification."
+  },
+  "attempts": {
+    "denominator": "Every scheduled baseline/product attempt, including setup refusal, invalid answer, failure and timeout. One immutable attempt record per slot; missing/duplicate slots are integrity errors.",
+    "refusals": "Before an episode exists, retain attributed setup refusal with error, evidence and elapsed time in frozen schedule; never replace it with a new attempt.",
+    "replay": "Use only delivered qualified schema3 original-capture load/replay, preserving per-episode evidence gates even in incomplete cohorts with setup refusals. Current checkout has v2 read-only references: raw adaptation refuses until dependency delivery and root freeze. Explicit test-only scorer fixtures and all-refusal registries exercise offline flow without fabricated live evidence.",
+    "result_versioning": "Freeze source/protocol/corpus/scorer/helper/treatment/model/binary/runtime pins and schedule before any real output; preserve original captures and operator custody. A self-computed hash detects edits, not identity or temporal custody.",
+    "integrity": "Stop for source, treatment, evidence, lifecycle, confinement or attempt integrity failure; retain all records and diagnose prospectively, never drop a failure, retry to replace it or rescore historical studies.",
+    "current_capability": "Offline validate/export/plan/request/review/score only; no new harness, provider or installation commands. Agent adaptation is refused until a future prospectively reviewed runtime admission version."
+  },
+  "telemetry": {
+    "interface": "prospective-accounting-v1, installed-plugin-skill-v3/schema3; pending qualified dependency and root freeze",
+    "tokens": [
+      "Per-field expected_turns, reported_turns, coverage state, diagnostic observed_sum, nullable qualified total and counter/cache semantics",
+      "input_tokens, cached_input_tokens, output_tokens, reasoning_tokens, total_tokens; never sum overlapping or unqualified fields",
+      "Codex multi-turn and cache semantics remain unqualified; multi-turn aggregates and uncached-input derivation null",
+      "Observed zero is distinct from absent; provider failure/truncation does not erase earlier observations",
+      "USD null if absent; all-attempt missingness remains visible"
+    ],
+    "behavior": [
+      "task correctness/errors",
+      "identity recall",
+      "citation recall",
+      "semantic judgments",
+      "unsupported/pending coverage",
+      "tool calls",
+      "attempted/successful graph calls",
+      "all-attempt and successful-attempt adoption",
+      "tool/answer bytes",
+      "setup bytes"
+    ],
+    "time": "Non-overlapping wall=setup+provider. Keep telemetry.timing.overlapping install/sync/in-clock preflight observations separate and telemetry.timing.outside_wall admission preflight/export/qualification costs separate; unknown end-to-end total remains null. No double counting.",
+    "paired": "Graph-minus-baseline accuracy and token deltas, per-case averaged repetitions; report observed pair/case counts and missingness. Both-correct time is explicitly conditional and retains its all-pair denominator.",
+    "cache": {
+      "cold": "currently implemented, fresh private state per attempt; graph_sync optional agent choice",
+      "warm": "separate unavailable preregistered study; CLI refuses",
+      "warm_followup": "Future qualified persistent cache treatment measures initial setup plus N declared tasks, amortized total/N, invalidation cost and cache-hit/eviction provenance under equal source/model pins. Never silently call cold data warm."
+    },
+    "tool_accounting": "Use every telemetry.attempts row and telemetry.tools attempts/responses/completed/successful/graph summaries and coverage. Refused/budget-exceeded/interrupted attempts stay represented. Preserve raw provider-call observations separately; completed calls alone are not the denominator."
+  },
+  "confirmatory": {
+    "status": "future independent protocol freeze required; no final holdout authored here",
+    "planning_envelope": {
+      "fresh_cases": 48,
+      "fresh_repositories": 8,
+      "repetitions_per_arm": 3,
+      "sufficiency_established": false
+    },
+    "claims": [
+      "overall navigation",
+      "localization",
+      "control_flow",
+      "cross_module",
+      "change_impact",
+      "before_after",
+      "uncertainty"
+    ],
+    "familywise_alpha": 0.05,
+    "maximum_tests": 21,
+    "multiplicity": "Conservative simultaneous Bonferroni intervals at alpha/21: seven predeclared claims times accuracy superiority, accuracy noninferiority and token efficiency tests. Freeze final claim list, estimands, directions and adjustment before holdout; no claim selected after results.",
+    "analysis": "Fixed final analysis once all frozen attempts terminate. Primary paired case-mean accuracy difference; stratified case-cluster bootstrap preserving all repetitions within cases and repository/family allocation, plus leave-one-repository-out and repository-cluster sensitivity. Missing adjudication delays analysis; missing usage cannot prove token benefit.",
+    "go_accuracy": {
+      "target_gain": 0.1,
+      "require": "simultaneous lower accuracy-benefit bound >0 and point benefit >=0.10 on the declared claim"
+    },
+    "go_efficiency": {
+      "accuracy_noninferiority_margin": 0.05,
+      "minimum_token_reduction": 0.2,
+      "require": "simultaneous accuracy lower bound >-0.05 and simultaneous token-reduction lower bound >=0.20, with complete qualified usage or pre-frozen missingness sensitivity that also meets thresholds"
+    },
+    "broad_go": "Overall declared claim meets one go branch, every declared family passes the frozen noninferiority guard, and complete integrity/adjudication/runtime evidence is present. A family-only pass permits only that scoped claim; no broad or cross-language promotion.",
+    "no_useful_benefit": "At fixed final analysis, simultaneous accuracy upper bound <0.10 with accuracy half-width <=0.05 AND efficiency branch excluded (accuracy upper<-0.05 or token-reduction upper<0.20 with token half-width <=0.10). Declare evidence of no practically useful gain for that claim; negative findings are valid.",
+    "inconclusive": "Neither supported go nor sufficiently precise futility. Finite budget, low adoption or a nonsignificant result cannot turn inconclusive into pass or evidence of no gain.",
+    "policy_basis": "10-point accuracy target, 5-point noninferiority margin and 20% token benefit are pragmatic root-selected policy choices, not established power guarantees.",
+    "precision_planning": "Use development graph-only/baseline-only discordance, per-case session correlation, observed paired token variance and repository heterogeneity. CLI computes Bonferroni normal approximation diagnostics and n/half-width sensitivity, never asserts 48 sufficient. Independent planner performs clustered joint simulation with pessimistic variance/discordance and missingness bounds; adjust sample count/repository allocation/repetitions, then freeze before any fresh answer. Degenerate/no-discordance or fewer than eight development case clusters are unqualified: retain point estimates, null bootstrap intervals and power/sample/half-width diagnostics. Eight is a diagnostic policy threshold, not a power guarantee; no arbitrary positive variance floor is a statistical bound.",
+    "stopping": "No optional repeated significance peeking or tuning until positive. Only integrity failure can stop early; retain all attempts. No threshold relaxation at budget exhaustion.",
+    "holdout_custody": "Fresh repository reserve and concealed final answers belong to a future independent task. Tool authors never author/expose final holdout answers while optimizing. Development cases cannot later become confirmatory."
+  },
+  "downstream_tracks": {
+    "patch_hidden_test": {
+      "available": false,
+      "design": "Independent fresh write-capable tasks with explicit patch authorization, isolated source checkout and hidden tests outside mount. Measure all-attempt hidden-test pass, regressions, diff size, failures and costs using matched budgets. Navigation score does not certify patch effectiveness."
+    },
+    "chronological_history": {
+      "available": false,
+      "design": "Independent chronological windows from real accessible commits, enforce cutoff and future-test/answer blinding, preserve temporal order and history universe; score before/after reasoning and patch outcomes. Two generated source commits do not certify this track."
+    }
+  },
+  "admission": {
+    "offline_ready": true,
+    "runtime_admitted": false,
+    "pending": [
+      "independent root source/semantic/diff reviews",
+      "telemetry and lifecycle repairs then versioned runtime freeze",
+      "strict original-capture and confinement qualification",
+      "operator custody and approved model/source/budget before provider execution"
+    ],
+    "forbidden_in_this_task": [
+      "provider/model network calls",
+      "plugin installation or grants",
+      "release/version/tag/publish",
+      "user configuration changes",
+      "historical evaluation edits",
+      "shared runner changes"
+    ]
+  },
+  "runtime_interface": {
+    "request_schema_version": 3,
+    "profile": "installed-plugin-skill-v3",
+    "runner_version": "6",
+    "broker_version": "5",
+    "telemetry_contract": "prospective-accounting-v1",
+    "dependency_task": "ORB-14003",
+    "qualified": false,
+    "preparation": "Common static request fields checked with pinned unchanged v2 reference validator; emitted schema3 templates are preparation only. Captures require delivered schema3 loader/telemetry and a new root freeze; v2 evidence is never promoted.",
+    "source": "Read-only pending sibling interface at orbit-jrun-20261004-2242-c3, not certified",
+    "reference_hashes": {
+      "telemetry.py": "addef39ad71cecf990ee05294428e7d6600d5848f7a81ac8fc8bfbfb051d59f4",
+      "eval_runner.py": "d4b174a109f0dd29dfcfb4c70c513c59632d02998ac6650c9933f136cf892c19",
+      "plugin_profile.py": "1a82ff6cb2c837bb05ea629beb1e33266fe8012fc0cacbcb70297efae69f0115"
+    }
+  },
+  "sampling_dependence": {
+    "primary_case_count": 24,
+    "independent_sampling_established": false,
+    "component_counts": {
+      "pulsar:bluesky-text": 3,
+      "orbit-graph:import-edges": 2,
+      "nebula:identifier": 1,
+      "pulsar:ledger-state-aggregation": 1,
+      "orbit-graph:search": 1,
+      "nebula:recovery": 1,
+      "pulsar:filesystem-json": 1,
+      "pulsar:account-key-publication": 1,
+      "orbit-graph:overview": 1,
+      "nebula:link-cycles": 1,
+      "nebula:reference-allocation": 1,
+      "orbit-graph:writer-observation": 1,
+      "nebula:path-history": 1,
+      "pulsar:error-serialization": 1,
+      "pulsar:credential-value": 1,
+      "orbit-graph:query-dispatch": 1,
+      "nebula:corpus-absence": 1,
+      "orbit:child-environment": 2,
+      "orbit:origin-gates": 1,
+      "orbit:audit-population": 1
+    },
+    "required_identity_overlap": [
+      {
+        "cases": [
+          "bsky-unicode-facet-offsets",
+          "bsky-facet-value-consumers"
+        ],
+        "identities": [
+          {
+            "file": "src/pulsar/app/core/channels/bluesky/text.py",
+            "name": "src.pulsar.app.core.channels.bluesky.text.detect_facets"
+          }
+        ]
+      }
+    ],
+    "qualification": "Case IDs are distinct prompts, not independently sampled population evidence. Report leave-one-component-out and leave-one-repository-out sensitivity; Bluesky text, import edges and Orbit child-environment retain correlated problems. All Python cases still come from one repository; no broad Python or cross-language claim."
+  }
+}

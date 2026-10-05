@@ -1,0 +1,74 @@
+{
+  "schema_version": 1,
+  "help": {
+    "--help": {
+      "exit_code": 0,
+      "stdout": "usage: eval.py [-h] [--json] {study} ...\n\nProspective development study, offline only. JSON stdout; JSON errors on\nstderr.\n\npositional arguments:\n  {study}\n    study     Prepare and analyze the offline development study.\n\noptions:\n  -h, --help  show this help message and exit\n  --json      Emit structured JSON (the default); help remains text.\n",
+      "stderr": ""
+    },
+    "study --help": {
+      "exit_code": 0,
+      "stdout": "usage: eval.py study [-h]\n                     {validate,export,plan,requests,truth-packets,review,adapt,score,precision} ...\n\npositional arguments:\n  {validate,export,plan,requests,truth-packets,review,adapt,score,precision}\n    validate            Verify corpus/source hashes and expose independent-\n                        review admission coverage.\n    export              Export full frozen source universes with manifests\n                        outside mountable views.\n    plan                Prepare a counterbalanced all-attempt schedule,\n                        without live admission.\n    requests            Prepare schema-3 request templates; common fields\n                        checked, runtime qualification pending.\n    truth-packets       Prepare source-only independent truth review packets.\n    review              Prepare arm-blinded answer packets from replayed\n                        captures or explicit test fixtures.\n    adapt               Replay original installed-plugin captures and retain\n                        setup refusals.\n    score               Score every scheduled attempt with explicit pending\n                        review/missingness.\n    precision           Compute prospective sample/precision diagnostics from\n                        completed development judgments.\n\noptions:\n  -h, --help            show this help message and exit\n",
+      "stderr": ""
+    },
+    "study validate --help": {
+      "exit_code": 0,
+      "stdout": "usage: eval.py study validate [-h] [--repo NAME=ROOT] [--export EXPORT]\n                              [--truth-reviews TRUTH_REVIEWS]\n\nVerify corpus/source hashes and expose independent-review admission coverage.\n\noptions:\n  -h, --help            show this help message and exit\n  --repo NAME=ROOT      Explicit pinned repository root; repeat for all four\n                        repositories.\n  --export EXPORT       Previously verified source-only export directory.\n  --truth-reviews TRUTH_REVIEWS\n                        Independent frozen truth identity/semantic reviews and\n                        adjudications.\n",
+      "stderr": ""
+    },
+    "study export --help": {
+      "exit_code": 0,
+      "stdout": "usage: eval.py study export [-h] [--repo NAME=ROOT]\n                            [--destination DESTINATION]\n\nExport full frozen source universes with manifests outside mountable views.\n\noptions:\n  -h, --help            show this help message and exit\n  --repo NAME=ROOT      Explicit pinned repository root; repeat for all four\n                        repositories.\n  --destination DESTINATION\n                        Fresh output path with an existing physical parent;\n                        never overwrite.\n",
+      "stderr": ""
+    },
+    "study plan --help": {
+      "exit_code": 0,
+      "stdout": "usage: eval.py study plan [-h] [--study-id STUDY_ID]\n                          [--repetitions REPETITIONS]\n                          [--treatments TREATMENTS] [--cache CACHE]\n                          [--destination DESTINATION]\n\nPrepare a counterbalanced all-attempt schedule, without live admission.\n\noptions:\n  -h, --help            show this help message and exit\n  --study-id STUDY_ID   Stable declared study identifier.\n  --repetitions REPETITIONS\n                        Declared paired sessions per case/arm, 1 through 10.\n  --treatments TREATMENTS\n                        Declared treatments; only baseline,product currently\n                        qualified.\n  --cache CACHE         Declared cache study; warm is refused until separately\n                        qualified.\n  --destination DESTINATION\n                        Fresh output path with an existing physical parent;\n                        never overwrite.\n",
+      "stderr": ""
+    },
+    "study requests --help": {
+      "exit_code": 0,
+      "stdout": "usage: eval.py study requests [-h] [--plan PLAN] [--pin PIN]\n                              [--destination DESTINATION]\n\nPrepare schema-3 request templates; common fields checked, runtime\nqualification pending.\n\noptions:\n  -h, --help            show this help message and exit\n  --plan PLAN           Frozen offline schedule JSON.\n  --pin PIN             Existing installed-plugin treatment pin JSON; does not\n                        install or qualify it.\n  --destination DESTINATION\n                        Fresh output path with an existing physical parent;\n                        never overwrite.\n",
+      "stderr": ""
+    },
+    "study truth-packets --help": {
+      "exit_code": 0,
+      "stdout": "usage: eval.py study truth-packets [-h] [--repo NAME=ROOT] [--export EXPORT]\n                                   [--destination DESTINATION]\n\nPrepare source-only independent truth review packets.\n\noptions:\n  -h, --help            show this help message and exit\n  --repo NAME=ROOT      Explicit pinned repository root; repeat for all four\n                        repositories.\n  --export EXPORT       Previously verified source-only export directory.\n  --destination DESTINATION\n                        Fresh output path with an existing physical parent;\n                        never overwrite.\n",
+      "stderr": ""
+    },
+    "study review --help": {
+      "exit_code": 0,
+      "stdout": "usage: eval.py study review [-h] [--plan PLAN] [--export EXPORT]\n                            [--bundle BUNDLE] [--fixture FIXTURE]\n                            [--destination DESTINATION]\n\nPrepare arm-blinded answer packets from replayed captures or explicit test\nfixtures.\n\noptions:\n  -h, --help            show this help message and exit\n  --plan PLAN           Frozen offline schedule JSON.\n  --export EXPORT       Previously verified source-only export directory.\n  --bundle BUNDLE       Adapted bundle JSON retaining original capture\n                        references.\n  --fixture FIXTURE     Explicit offline-scoring-fixture-v1 test data; never\n                        original captures or agent evidence.\n  --destination DESTINATION\n                        Fresh output path with an existing physical parent;\n                        never overwrite.\n",
+      "stderr": ""
+    },
+    "study adapt --help": {
+      "exit_code": 0,
+      "stdout": "usage: eval.py study adapt [-h] [--plan PLAN] [--request-plan REQUEST_PLAN]\n                           [--raw RAW] [--refusals REFUSALS]\n                           [--study-kind {test-only,agent}]\n                           [--destination DESTINATION]\n\nReplay original installed-plugin captures and retain setup refusals.\n\noptions:\n  -h, --help            show this help message and exit\n  --plan PLAN           Frozen offline schedule JSON.\n  --request-plan REQUEST_PLAN\n                        Prospective schema-3 profile plan with exact requests,\n                        model and runtime pins; qualification pending.\n  --raw RAW             Original capture directory; replayed offline, repeat\n                        for every captured attempt.\n  --refusals REFUSALS   Attributed setup-refusal JSON array, one record for\n                        each refused schedule slot.\n  --study-kind {test-only,agent}\n                        Evidence class; agent is refused pending future\n                        runtime admission.\n  --destination DESTINATION\n                        Fresh output path with an existing physical parent;\n                        never overwrite.\n",
+      "stderr": ""
+    },
+    "study score --help": {
+      "exit_code": 0,
+      "stdout": "usage: eval.py study score [-h] [--plan PLAN] [--export EXPORT]\n                           [--bundle BUNDLE] [--fixture FIXTURE]\n                           [--reviews REVIEWS]\n                           [--review-packets REVIEW_PACKETS]\n                           [--truth-reviews TRUTH_REVIEWS]\n                           [--destination DESTINATION]\n\nScore every scheduled attempt with explicit pending review/missingness.\n\noptions:\n  -h, --help            show this help message and exit\n  --plan PLAN           Frozen offline schedule JSON.\n  --export EXPORT       Previously verified source-only export directory.\n  --bundle BUNDLE       Adapted bundle JSON retaining original capture\n                        references.\n  --fixture FIXTURE     Explicit offline-scoring-fixture-v1 test data; never\n                        original captures or agent evidence.\n  --reviews REVIEWS     Attributed answer identity/semantic review document.\n  --review-packets REVIEW_PACKETS\n                        Frozen operator packet registry from study review;\n                        keep bindings outside reviewer view.\n  --truth-reviews TRUTH_REVIEWS\n                        Independent frozen truth identity/semantic reviews and\n                        adjudications.\n  --destination DESTINATION\n                        Fresh output path with an existing physical parent;\n                        never overwrite.\n",
+      "stderr": ""
+    },
+    "study precision --help": {
+      "exit_code": 0,
+      "stdout": "usage: eval.py study precision [-h] [--report REPORT]\n                               [--destination DESTINATION]\n\nCompute prospective sample/precision diagnostics from completed development\njudgments.\n\noptions:\n  -h, --help            show this help message and exit\n  --report REPORT       Scored development report for power/precision\n                        planning.\n  --destination DESTINATION\n                        Fresh output path with an existing physical parent;\n                        never overwrite.\n",
+      "stderr": ""
+    }
+  },
+  "warm_error": {
+    "schema_version": 1,
+    "error": {
+      "code": "study_refused",
+      "message": "warm/cache-amortization runtime unsupported; separate study required"
+    }
+  },
+  "ablation_error": {
+    "schema_version": 1,
+    "error": {
+      "code": "study_refused",
+      "message": "experimental ablation unavailable until separately qualified"
+    }
+  }
+}
