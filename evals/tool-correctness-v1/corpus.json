@@ -1,0 +1,6016 @@
+{
+  "schema_version": 1,
+  "kind": "deterministic-tool-correctness-v1",
+  "tools": [
+    "version",
+    "status",
+    "recommend",
+    "maintain",
+    "search",
+    "show",
+    "refs",
+    "callees",
+    "impact",
+    "trace",
+    "deps",
+    "overview",
+    "changes"
+  ],
+  "code_extractors": [
+    "rust",
+    "python",
+    "c",
+    "csharp",
+    "go",
+    "java",
+    "javascript",
+    "typescript",
+    "kotlin",
+    "ruby"
+  ],
+  "surface_gaps": [
+    "implementors is CLI only",
+    "impact/trace have no plugin time-budget field"
+  ],
+  "warm_samples": 3,
+  "volatile_paths": [
+    "repository",
+    "index.synced_at",
+    "duration_ms",
+    "database_path",
+    "status.database_path",
+    "status.repository",
+    "code_index.published.synced_at",
+    "code_index.published.database",
+    "result.timings",
+    "result.comparison.snapshots.*.files_written",
+    "code_index.directory",
+    "generated_at",
+    "result.generated_at",
+    "result.timing",
+    "result.timings",
+    "metrics.*.mean_latency_ms",
+    "metrics.*.max_latency_ms"
+  ],
+  "repositories": {
+    "rust": {
+      "trees": [
+        {
+          "src/lib.rs": "fixtures/rust/0/src/lib.rs"
+        }
+      ]
+    },
+    "python": {
+      "trees": [
+        {
+          "app.py": "fixtures/python/0/app.py"
+        }
+      ]
+    },
+    "c": {
+      "trees": [
+        {
+          "app.c": "fixtures/c/0/app.c"
+        }
+      ]
+    },
+    "csharp": {
+      "trees": [
+        {
+          "App.cs": "fixtures/csharp/0/App.cs"
+        }
+      ]
+    },
+    "go": {
+      "trees": [
+        {
+          "app.go": "fixtures/go/0/app.go"
+        }
+      ]
+    },
+    "java": {
+      "trees": [
+        {
+          "App.java": "fixtures/java/0/App.java"
+        }
+      ]
+    },
+    "javascript": {
+      "trees": [
+        {
+          "app.js": "fixtures/javascript/0/app.js"
+        }
+      ]
+    },
+    "jsx": {
+      "trees": [
+        {
+          "app.jsx": "fixtures/jsx/0/app.jsx"
+        }
+      ]
+    },
+    "typescript": {
+      "trees": [
+        {
+          "app.ts": "fixtures/typescript/0/app.ts"
+        }
+      ]
+    },
+    "tsx": {
+      "trees": [
+        {
+          "app.tsx": "fixtures/tsx/0/app.tsx"
+        }
+      ]
+    },
+    "kotlin": {
+      "trees": [
+        {
+          "app.kt": "fixtures/kotlin/0/app.kt"
+        }
+      ]
+    },
+    "ruby": {
+      "trees": [
+        {
+          "app.rb": "fixtures/ruby/0/app.rb"
+        }
+      ]
+    },
+    "coverage": {
+      "trees": [
+        {
+          "README.md": "fixtures/coverage/0/README.md",
+          "settings.toml": "fixtures/coverage/0/settings.toml",
+          "schema.proto": "fixtures/coverage/0/schema.proto"
+        }
+      ]
+    },
+    "graph": {
+      "trees": [
+        {
+          "src/lib.rs": "fixtures/graph/0/src/lib.rs"
+        }
+      ]
+    },
+    "imports": {
+      "trees": [
+        {
+          "src/lib.rs": "fixtures/imports/0/src/lib.rs",
+          "src/helper.rs": "fixtures/imports/0/src/helper.rs"
+        }
+      ]
+    },
+    "ambiguity": {
+      "trees": [
+        {
+          "app.py": "fixtures/ambiguity/0/app.py"
+        }
+      ]
+    },
+    "macro": {
+      "trees": [
+        {
+          "src/lib.rs": "fixtures/macro/0/src/lib.rs"
+        }
+      ]
+    },
+    "commands": {
+      "trees": [
+        {
+          "src/lib.rs": "fixtures/commands/0/src/lib.rs"
+        }
+      ]
+    },
+    "nodecap": {
+      "trees": [
+        {
+          "src/lib.rs": "fixtures/nodecap/0/src/lib.rs"
+        }
+      ]
+    },
+    "lifecycle": {
+      "trees": [
+        {
+          "src/lib.rs": "fixtures/lifecycle/0/src/lib.rs",
+          "src/old.rs": "fixtures/lifecycle/0/src/old.rs"
+        },
+        {
+          "src/lib.rs": "fixtures/lifecycle/1/src/lib.rs",
+          "src/new.rs": "fixtures/lifecycle/1/src/new.rs"
+        }
+      ]
+    },
+    "lifecycle-reviewed": {
+      "trees": [
+        {
+          "src/lib.rs": "fixtures/lifecycle-reviewed/0/src/lib.rs",
+          "src/old.rs": "fixtures/lifecycle-reviewed/0/src/old.rs"
+        },
+        {
+          "src/lib.rs": "fixtures/lifecycle-reviewed/1/src/lib.rs",
+          "src/new.rs": "fixtures/lifecycle-reviewed/1/src/new.rs"
+        }
+      ]
+    },
+    "command-ambiguity": {
+      "trees": [
+        {
+          "src/a.rs": "fixtures/command-ambiguity/0/src/a.rs",
+          "src/b.rs": "fixtures/command-ambiguity/0/src/b.rs"
+        }
+      ]
+    },
+    "change-add": {
+      "trees": [
+        {
+          "src/lib.rs": "fixtures/change-add/0/src/lib.rs"
+        },
+        {
+          "src/lib.rs": "fixtures/change-add/1/src/lib.rs"
+        }
+      ]
+    },
+    "change-remove": {
+      "trees": [
+        {
+          "src/lib.rs": "fixtures/change-remove/0/src/lib.rs"
+        },
+        {
+          "src/lib.rs": "fixtures/change-remove/1/src/lib.rs"
+        }
+      ]
+    },
+    "change-move": {
+      "trees": [
+        {
+          "src/old.rs": "fixtures/change-move/0/src/old.rs"
+        },
+        {
+          "src/new.rs": "fixtures/change-move/1/src/new.rs"
+        }
+      ]
+    },
+    "change-rename-edit": {
+      "trees": [
+        {
+          "src/lib.rs": "fixtures/change-rename-edit/0/src/lib.rs"
+        },
+        {
+          "src/lib.rs": "fixtures/change-rename-edit/1/src/lib.rs"
+        }
+      ]
+    },
+    "change-ambiguous-body": {
+      "trees": [
+        {
+          "src/lib.rs": "fixtures/change-ambiguous-body/0/src/lib.rs"
+        },
+        {
+          "src/lib.rs": "fixtures/change-ambiguous-body/1/src/lib.rs"
+        }
+      ]
+    },
+    "change-unsupported": {
+      "trees": [
+        {
+          "schema.proto": "fixtures/change-unsupported/0/schema.proto"
+        },
+        {
+          "schema.proto": "fixtures/change-unsupported/1/schema.proto"
+        }
+      ]
+    },
+    "change-test-only": {
+      "trees": [
+        {
+          "tests/test_lib.rs": "fixtures/change-test-only/0/tests/test_lib.rs"
+        },
+        {
+          "tests/test_lib.rs": "fixtures/change-test-only/1/tests/test_lib.rs"
+        }
+      ]
+    },
+    "change-multiple": {
+      "trees": [
+        {
+          "src/lib.rs": "fixtures/change-multiple/0/src/lib.rs"
+        },
+        {
+          "src/lib.rs": "fixtures/change-multiple/1/src/lib.rs"
+        }
+      ]
+    },
+    "change-budget": {
+      "trees": [
+        {
+          "src/lib.rs": "fixtures/change-budget/0/src/lib.rs"
+        },
+        {
+          "src/lib.rs": "fixtures/change-budget/1/src/lib.rs"
+        }
+      ]
+    },
+    "history": {
+      "trees": [
+        {
+          "src/parser.rs": "fixtures/history/0/src/parser.rs",
+          "src/delete.rs": "fixtures/history/0/src/delete.rs"
+        },
+        {
+          "src/parser.rs": "fixtures/history/1/src/parser.rs",
+          "src/delete.rs": "fixtures/history/1/src/delete.rs"
+        },
+        {
+          "src/renamed.rs": "fixtures/history/2/src/renamed.rs"
+        },
+        {
+          "src/renamed.rs": "fixtures/history/3/src/renamed.rs",
+          "src/new.rs": "fixtures/history/3/src/new.rs"
+        }
+      ]
+    },
+    "owners": {
+      "trees": [
+        {
+          "app.py": "fixtures/owners/0/app.py"
+        }
+      ]
+    },
+    "owner-rust": {
+      "trees": [
+        {
+          "src/lib.rs": "fixtures/owner-rust/0/src/lib.rs"
+        }
+      ]
+    }
+  },
+  "cases": [
+    {
+      "id": "rust-declarations",
+      "repository": "rust",
+      "tool": "overview",
+      "input": {
+        "format": "full"
+      },
+      "checks": [
+        {
+          "path": "result.total_files",
+          "op": "eq",
+          "value": 1
+        },
+        {
+          "path": "result.files.*.symbols",
+          "op": "set",
+          "fields": [
+            "name",
+            "qualified",
+            "kind"
+          ],
+          "value": [
+            [
+              "helper",
+              "helper",
+              "function"
+            ],
+            [
+              "entry",
+              "entry",
+              "function"
+            ]
+          ],
+          "complete": true
+        }
+      ],
+      "setup": "graph",
+      "source_review": "All declarations are explicitly written; class App additionally owns its two methods.",
+      "coverage": {
+        "supported": 1,
+        "unsupported": 0,
+        "omitted": 0,
+        "unresolved": 0,
+        "unit": "scenario"
+      },
+      "surfaces": [
+        "plugin-cli",
+        "mcp",
+        "cli"
+      ]
+    },
+    {
+      "id": "rust-direct-call",
+      "repository": "rust",
+      "tool": "callees",
+      "input": {
+        "selector": "symbol:src/lib.rs#entry:function",
+        "include_unresolved": true
+      },
+      "checks": [
+        {
+          "path": "result.callees",
+          "op": "set",
+          "fields": [
+            "target_name",
+            "target_qualified",
+            "confidence"
+          ],
+          "value": [
+            [
+              "helper",
+              "helper",
+              "exact"
+            ]
+          ],
+          "complete": true
+        }
+      ],
+      "setup": "graph",
+      "source_review": "One unqualified call to a unique local helper; exact is the same-file resolution contract.",
+      "coverage": {
+        "supported": 1,
+        "unsupported": 0,
+        "omitted": 0,
+        "unresolved": 0,
+        "unit": "scenario"
+      },
+      "surfaces": [
+        "plugin-cli",
+        "mcp",
+        "cli"
+      ]
+    },
+    {
+      "id": "rust-import",
+      "repository": "rust",
+      "tool": "deps",
+      "input": {
+        "selector": "file:src/lib.rs"
+      },
+      "checks": [
+        {
+          "path": "result.imports",
+          "op": "set",
+          "fields": [
+            "from_file",
+            "target_path",
+            "target_symbol"
+          ],
+          "value": [
+            [
+              "src/lib.rs",
+              "std",
+              "fmt"
+            ]
+          ],
+          "complete": true
+        }
+      ],
+      "setup": "graph",
+      "source_review": "One written import. Its specifier is an opaque source dependency, not a package or compiler dependency.",
+      "coverage": {
+        "supported": 1,
+        "unsupported": 0,
+        "omitted": 0,
+        "unresolved": 0,
+        "unit": "scenario"
+      },
+      "surfaces": [
+        "plugin-cli",
+        "mcp",
+        "cli"
+      ]
+    },
+    {
+      "id": "python-declarations",
+      "repository": "python",
+      "tool": "overview",
+      "input": {
+        "format": "full"
+      },
+      "checks": [
+        {
+          "path": "result.total_files",
+          "op": "eq",
+          "value": 1
+        },
+        {
+          "path": "result.files.*.symbols",
+          "op": "set",
+          "fields": [
+            "name",
+            "qualified",
+            "kind"
+          ],
+          "value": [
+            [
+              "helper",
+              "helper",
+              "function"
+            ],
+            [
+              "entry",
+              "entry",
+              "function"
+            ]
+          ],
+          "complete": true
+        }
+      ],
+      "setup": "graph",
+      "source_review": "All declarations are explicitly written; class App additionally owns its two methods.",
+      "coverage": {
+        "supported": 1,
+        "unsupported": 0,
+        "omitted": 0,
+        "unresolved": 0,
+        "unit": "scenario"
+      },
+      "surfaces": [
+        "plugin-cli",
+        "mcp",
+        "cli"
+      ]
+    },
+    {
+      "id": "python-direct-call",
+      "repository": "python",
+      "tool": "callees",
+      "input": {
+        "selector": "symbol:app.py#entry:function",
+        "include_unresolved": true
+      },
+      "checks": [
+        {
+          "path": "result.callees",
+          "op": "set",
+          "fields": [
+            "target_name",
+            "target_qualified",
+            "confidence"
+          ],
+          "value": [
+            [
+              "helper",
+              "helper",
+              "exact"
+            ]
+          ],
+          "complete": true
+        }
+      ],
+      "setup": "graph",
+      "source_review": "One unqualified call to a unique local helper; exact is the same-file resolution contract.",
+      "coverage": {
+        "supported": 1,
+        "unsupported": 0,
+        "omitted": 0,
+        "unresolved": 0,
+        "unit": "scenario"
+      },
+      "surfaces": [
+        "plugin-cli",
+        "mcp",
+        "cli"
+      ]
+    },
+    {
+      "id": "python-import",
+      "repository": "python",
+      "tool": "deps",
+      "input": {
+        "selector": "file:app.py"
+      },
+      "checks": [
+        {
+          "path": "result.imports",
+          "op": "set",
+          "fields": [
+            "from_file",
+            "target_path",
+            "target_symbol"
+          ],
+          "value": [
+            [
+              "app.py",
+              "json",
+              null
+            ]
+          ],
+          "complete": true
+        }
+      ],
+      "setup": "graph",
+      "source_review": "One written import. Its specifier is an opaque source dependency, not a package or compiler dependency.",
+      "coverage": {
+        "supported": 1,
+        "unsupported": 0,
+        "omitted": 0,
+        "unresolved": 0,
+        "unit": "scenario"
+      },
+      "surfaces": [
+        "plugin-cli",
+        "mcp",
+        "cli"
+      ]
+    },
+    {
+      "id": "c-declarations",
+      "repository": "c",
+      "tool": "overview",
+      "input": {
+        "format": "full"
+      },
+      "checks": [
+        {
+          "path": "result.total_files",
+          "op": "eq",
+          "value": 1
+        },
+        {
+          "path": "result.files.*.symbols",
+          "op": "set",
+          "fields": [
+            "name",
+            "qualified",
+            "kind"
+          ],
+          "value": [
+            [
+              "helper",
+              "helper",
+              "function"
+            ],
+            [
+              "entry",
+              "entry",
+              "function"
+            ]
+          ],
+          "complete": true
+        }
+      ],
+      "setup": "graph",
+      "source_review": "All declarations are explicitly written; class App additionally owns its two methods.",
+      "coverage": {
+        "supported": 1,
+        "unsupported": 0,
+        "omitted": 0,
+        "unresolved": 0,
+        "unit": "scenario"
+      },
+      "surfaces": [
+        "plugin-cli",
+        "mcp",
+        "cli"
+      ]
+    },
+    {
+      "id": "c-direct-call",
+      "repository": "c",
+      "tool": "callees",
+      "input": {
+        "selector": "symbol:app.c#entry:function",
+        "include_unresolved": true
+      },
+      "checks": [
+        {
+          "path": "result.callees",
+          "op": "set",
+          "fields": [
+            "target_name",
+            "target_qualified",
+            "confidence"
+          ],
+          "value": [
+            [
+              "helper",
+              "helper",
+              "exact"
+            ]
+          ],
+          "complete": true
+        }
+      ],
+      "setup": "graph",
+      "source_review": "One unqualified call to a unique local helper; exact is the same-file resolution contract.",
+      "coverage": {
+        "supported": 1,
+        "unsupported": 0,
+        "omitted": 0,
+        "unresolved": 0,
+        "unit": "scenario"
+      },
+      "surfaces": [
+        "plugin-cli",
+        "mcp",
+        "cli"
+      ]
+    },
+    {
+      "id": "c-import",
+      "repository": "c",
+      "tool": "deps",
+      "input": {
+        "selector": "file:app.c"
+      },
+      "checks": [
+        {
+          "path": "result.imports",
+          "op": "set",
+          "fields": [
+            "from_file",
+            "target_path",
+            "target_symbol"
+          ],
+          "value": [
+            [
+              "app.c",
+              "helper.h",
+              null
+            ]
+          ],
+          "complete": true
+        }
+      ],
+      "setup": "graph",
+      "source_review": "One written import. Its specifier is an opaque source dependency, not a package or compiler dependency.",
+      "coverage": {
+        "supported": 1,
+        "unsupported": 0,
+        "omitted": 0,
+        "unresolved": 0,
+        "unit": "scenario"
+      },
+      "surfaces": [
+        "plugin-cli",
+        "mcp",
+        "cli"
+      ]
+    },
+    {
+      "id": "csharp-declarations",
+      "repository": "csharp",
+      "tool": "overview",
+      "input": {
+        "format": "full"
+      },
+      "checks": [
+        {
+          "path": "result.total_files",
+          "op": "eq",
+          "value": 1
+        },
+        {
+          "path": "result.files.*.symbols",
+          "op": "set",
+          "fields": [
+            "name",
+            "qualified",
+            "kind"
+          ],
+          "value": [
+            [
+              "helper",
+              "App::helper",
+              "method"
+            ],
+            [
+              "entry",
+              "App::entry",
+              "method"
+            ],
+            [
+              "App",
+              "App",
+              "class"
+            ]
+          ],
+          "complete": true
+        }
+      ],
+      "setup": "graph",
+      "source_review": "All declarations are explicitly written; class App additionally owns its two methods.",
+      "coverage": {
+        "supported": 1,
+        "unsupported": 0,
+        "omitted": 0,
+        "unresolved": 0,
+        "unit": "scenario"
+      },
+      "surfaces": [
+        "plugin-cli",
+        "mcp",
+        "cli"
+      ]
+    },
+    {
+      "id": "csharp-direct-call",
+      "repository": "csharp",
+      "tool": "callees",
+      "input": {
+        "selector": "symbol:App.cs#App::entry:method",
+        "include_unresolved": true
+      },
+      "checks": [
+        {
+          "path": "result.callees",
+          "op": "set",
+          "fields": [
+            "target_name",
+            "target_qualified",
+            "confidence"
+          ],
+          "value": [
+            [
+              "helper",
+              "App::helper",
+              "exact"
+            ]
+          ],
+          "complete": true
+        }
+      ],
+      "setup": "graph",
+      "source_review": "One unqualified call to a unique local helper; exact is the same-file resolution contract.",
+      "coverage": {
+        "supported": 1,
+        "unsupported": 0,
+        "omitted": 0,
+        "unresolved": 0,
+        "unit": "scenario"
+      },
+      "surfaces": [
+        "plugin-cli",
+        "mcp",
+        "cli"
+      ]
+    },
+    {
+      "id": "csharp-import",
+      "repository": "csharp",
+      "tool": "deps",
+      "input": {
+        "selector": "file:App.cs"
+      },
+      "checks": [
+        {
+          "path": "result.imports",
+          "op": "set",
+          "fields": [
+            "from_file",
+            "target_path",
+            "target_symbol"
+          ],
+          "value": [
+            [
+              "App.cs",
+              "System",
+              "System"
+            ]
+          ],
+          "complete": true
+        }
+      ],
+      "setup": "graph",
+      "source_review": "One written import. Its specifier is an opaque source dependency, not a package or compiler dependency.",
+      "coverage": {
+        "supported": 1,
+        "unsupported": 0,
+        "omitted": 0,
+        "unresolved": 0,
+        "unit": "scenario"
+      },
+      "surfaces": [
+        "plugin-cli",
+        "mcp",
+        "cli"
+      ]
+    },
+    {
+      "id": "go-declarations",
+      "repository": "go",
+      "tool": "overview",
+      "input": {
+        "format": "full"
+      },
+      "checks": [
+        {
+          "path": "result.total_files",
+          "op": "eq",
+          "value": 1
+        },
+        {
+          "path": "result.files.*.symbols",
+          "op": "set",
+          "fields": [
+            "name",
+            "qualified",
+            "kind"
+          ],
+          "value": [
+            [
+              "helper",
+              "helper",
+              "function"
+            ],
+            [
+              "entry",
+              "entry",
+              "function"
+            ]
+          ],
+          "complete": true
+        }
+      ],
+      "setup": "graph",
+      "source_review": "All declarations are explicitly written; class App additionally owns its two methods.",
+      "coverage": {
+        "supported": 1,
+        "unsupported": 0,
+        "omitted": 0,
+        "unresolved": 0,
+        "unit": "scenario"
+      },
+      "surfaces": [
+        "plugin-cli",
+        "mcp",
+        "cli"
+      ]
+    },
+    {
+      "id": "go-direct-call",
+      "repository": "go",
+      "tool": "callees",
+      "input": {
+        "selector": "symbol:app.go#entry:function",
+        "include_unresolved": true
+      },
+      "checks": [
+        {
+          "path": "result.callees",
+          "op": "set",
+          "fields": [
+            "target_name",
+            "target_qualified",
+            "confidence"
+          ],
+          "value": [
+            [
+              "helper",
+              "helper",
+              "exact"
+            ]
+          ],
+          "complete": true
+        }
+      ],
+      "setup": "graph",
+      "source_review": "One unqualified call to a unique local helper; exact is the same-file resolution contract.",
+      "coverage": {
+        "supported": 1,
+        "unsupported": 0,
+        "omitted": 0,
+        "unresolved": 0,
+        "unit": "scenario"
+      },
+      "surfaces": [
+        "plugin-cli",
+        "mcp",
+        "cli"
+      ]
+    },
+    {
+      "id": "go-import",
+      "repository": "go",
+      "tool": "deps",
+      "input": {
+        "selector": "file:app.go"
+      },
+      "checks": [
+        {
+          "path": "result.imports",
+          "op": "set",
+          "fields": [
+            "from_file",
+            "target_path",
+            "target_symbol"
+          ],
+          "value": [
+            [
+              "app.go",
+              "fmt",
+              null
+            ]
+          ],
+          "complete": true
+        }
+      ],
+      "setup": "graph",
+      "source_review": "One written import. Its specifier is an opaque source dependency, not a package or compiler dependency.",
+      "coverage": {
+        "supported": 1,
+        "unsupported": 0,
+        "omitted": 0,
+        "unresolved": 0,
+        "unit": "scenario"
+      },
+      "surfaces": [
+        "plugin-cli",
+        "mcp",
+        "cli"
+      ]
+    },
+    {
+      "id": "java-declarations",
+      "repository": "java",
+      "tool": "overview",
+      "input": {
+        "format": "full"
+      },
+      "checks": [
+        {
+          "path": "result.total_files",
+          "op": "eq",
+          "value": 1
+        },
+        {
+          "path": "result.files.*.symbols",
+          "op": "set",
+          "fields": [
+            "name",
+            "qualified",
+            "kind"
+          ],
+          "value": [
+            [
+              "helper",
+              "App::helper#0",
+              "method"
+            ],
+            [
+              "entry",
+              "App::entry#0",
+              "method"
+            ],
+            [
+              "App",
+              "App",
+              "class"
+            ]
+          ],
+          "complete": true
+        }
+      ],
+      "setup": "graph",
+      "source_review": "All declarations are explicitly written; class App additionally owns its two methods.",
+      "coverage": {
+        "supported": 1,
+        "unsupported": 0,
+        "omitted": 0,
+        "unresolved": 0,
+        "unit": "scenario"
+      },
+      "surfaces": [
+        "plugin-cli",
+        "mcp",
+        "cli"
+      ]
+    },
+    {
+      "id": "java-direct-call",
+      "repository": "java",
+      "tool": "callees",
+      "input": {
+        "selector": "symbol:App.java#App::entry#0:method",
+        "include_unresolved": true
+      },
+      "checks": [
+        {
+          "path": "result.callees",
+          "op": "set",
+          "fields": [
+            "target_name",
+            "target_qualified",
+            "confidence"
+          ],
+          "value": [
+            [
+              "helper",
+              "App::helper#0",
+              "exact"
+            ]
+          ],
+          "complete": true
+        }
+      ],
+      "setup": "graph",
+      "source_review": "One unqualified call to a unique local helper; exact is the same-file resolution contract.",
+      "coverage": {
+        "supported": 1,
+        "unsupported": 0,
+        "omitted": 0,
+        "unresolved": 0,
+        "unit": "scenario"
+      },
+      "surfaces": [
+        "plugin-cli",
+        "mcp",
+        "cli"
+      ]
+    },
+    {
+      "id": "java-import",
+      "repository": "java",
+      "tool": "deps",
+      "input": {
+        "selector": "file:App.java"
+      },
+      "checks": [
+        {
+          "path": "result.imports",
+          "op": "set",
+          "fields": [
+            "from_file",
+            "target_path",
+            "target_symbol"
+          ],
+          "value": [
+            [
+              "App.java",
+              "java.util.List",
+              "List"
+            ]
+          ],
+          "complete": true
+        }
+      ],
+      "setup": "graph",
+      "source_review": "One written import. Its specifier is an opaque source dependency, not a package or compiler dependency.",
+      "coverage": {
+        "supported": 1,
+        "unsupported": 0,
+        "omitted": 0,
+        "unresolved": 0,
+        "unit": "scenario"
+      },
+      "surfaces": [
+        "plugin-cli",
+        "mcp",
+        "cli"
+      ]
+    },
+    {
+      "id": "javascript-declarations",
+      "repository": "javascript",
+      "tool": "overview",
+      "input": {
+        "format": "full"
+      },
+      "checks": [
+        {
+          "path": "result.total_files",
+          "op": "eq",
+          "value": 1
+        },
+        {
+          "path": "result.files.*.symbols",
+          "op": "set",
+          "fields": [
+            "name",
+            "qualified",
+            "kind"
+          ],
+          "value": [
+            [
+              "helper",
+              "helper",
+              "function"
+            ],
+            [
+              "entry",
+              "entry",
+              "function"
+            ]
+          ],
+          "complete": true
+        }
+      ],
+      "setup": "graph",
+      "source_review": "All declarations are explicitly written; class App additionally owns its two methods.",
+      "coverage": {
+        "supported": 1,
+        "unsupported": 0,
+        "omitted": 0,
+        "unresolved": 0,
+        "unit": "scenario"
+      },
+      "surfaces": [
+        "plugin-cli",
+        "mcp",
+        "cli"
+      ]
+    },
+    {
+      "id": "javascript-direct-call",
+      "repository": "javascript",
+      "tool": "callees",
+      "input": {
+        "selector": "symbol:app.js#entry:function",
+        "include_unresolved": true
+      },
+      "checks": [
+        {
+          "path": "result.callees",
+          "op": "set",
+          "fields": [
+            "target_name",
+            "target_qualified",
+            "confidence"
+          ],
+          "value": [
+            [
+              "helper",
+              "helper",
+              "exact"
+            ]
+          ],
+          "complete": true
+        }
+      ],
+      "setup": "graph",
+      "source_review": "One unqualified call to a unique local helper; exact is the same-file resolution contract.",
+      "coverage": {
+        "supported": 1,
+        "unsupported": 0,
+        "omitted": 0,
+        "unresolved": 0,
+        "unit": "scenario"
+      },
+      "surfaces": [
+        "plugin-cli",
+        "mcp",
+        "cli"
+      ]
+    },
+    {
+      "id": "javascript-import",
+      "repository": "javascript",
+      "tool": "deps",
+      "input": {
+        "selector": "file:app.js"
+      },
+      "checks": [
+        {
+          "path": "result.imports",
+          "op": "set",
+          "fields": [
+            "from_file",
+            "target_path",
+            "target_symbol"
+          ],
+          "value": [
+            [
+              "app.js",
+              "./external.js",
+              null
+            ]
+          ],
+          "complete": true
+        }
+      ],
+      "setup": "graph",
+      "source_review": "One written import. Its specifier is an opaque source dependency, not a package or compiler dependency.",
+      "coverage": {
+        "supported": 1,
+        "unsupported": 0,
+        "omitted": 0,
+        "unresolved": 0,
+        "unit": "scenario"
+      },
+      "surfaces": [
+        "plugin-cli",
+        "mcp",
+        "cli"
+      ]
+    },
+    {
+      "id": "jsx-declarations",
+      "repository": "jsx",
+      "tool": "overview",
+      "input": {
+        "format": "full"
+      },
+      "checks": [
+        {
+          "path": "result.total_files",
+          "op": "eq",
+          "value": 1
+        },
+        {
+          "path": "result.files.*.symbols",
+          "op": "set",
+          "fields": [
+            "name",
+            "qualified",
+            "kind"
+          ],
+          "value": [
+            [
+              "helper",
+              "helper",
+              "function"
+            ],
+            [
+              "entry",
+              "entry",
+              "function"
+            ]
+          ],
+          "complete": true
+        }
+      ],
+      "setup": "graph",
+      "source_review": "All declarations are explicitly written; class App additionally owns its two methods.",
+      "coverage": {
+        "supported": 1,
+        "unsupported": 0,
+        "omitted": 0,
+        "unresolved": 0,
+        "unit": "scenario"
+      },
+      "surfaces": [
+        "plugin-cli",
+        "mcp",
+        "cli"
+      ]
+    },
+    {
+      "id": "jsx-direct-call",
+      "repository": "jsx",
+      "tool": "callees",
+      "input": {
+        "selector": "symbol:app.jsx#entry:function",
+        "include_unresolved": true
+      },
+      "checks": [
+        {
+          "path": "result.callees",
+          "op": "set",
+          "fields": [
+            "target_name",
+            "target_qualified",
+            "confidence"
+          ],
+          "value": [
+            [
+              "helper",
+              "helper",
+              "exact"
+            ]
+          ],
+          "complete": true
+        }
+      ],
+      "setup": "graph",
+      "source_review": "One unqualified call to a unique local helper; exact is the same-file resolution contract.",
+      "coverage": {
+        "supported": 1,
+        "unsupported": 0,
+        "omitted": 0,
+        "unresolved": 0,
+        "unit": "scenario"
+      },
+      "surfaces": [
+        "plugin-cli",
+        "mcp",
+        "cli"
+      ]
+    },
+    {
+      "id": "jsx-import",
+      "repository": "jsx",
+      "tool": "deps",
+      "input": {
+        "selector": "file:app.jsx"
+      },
+      "checks": [
+        {
+          "path": "result.imports",
+          "op": "set",
+          "fields": [
+            "from_file",
+            "target_path",
+            "target_symbol"
+          ],
+          "value": [
+            [
+              "app.jsx",
+              "./external.js",
+              null
+            ]
+          ],
+          "complete": true
+        }
+      ],
+      "setup": "graph",
+      "source_review": "One written import. Its specifier is an opaque source dependency, not a package or compiler dependency.",
+      "coverage": {
+        "supported": 1,
+        "unsupported": 0,
+        "omitted": 0,
+        "unresolved": 0,
+        "unit": "scenario"
+      },
+      "surfaces": [
+        "plugin-cli",
+        "mcp",
+        "cli"
+      ]
+    },
+    {
+      "id": "typescript-declarations",
+      "repository": "typescript",
+      "tool": "overview",
+      "input": {
+        "format": "full"
+      },
+      "checks": [
+        {
+          "path": "result.total_files",
+          "op": "eq",
+          "value": 1
+        },
+        {
+          "path": "result.files.*.symbols",
+          "op": "set",
+          "fields": [
+            "name",
+            "qualified",
+            "kind"
+          ],
+          "value": [
+            [
+              "helper",
+              "helper",
+              "function"
+            ],
+            [
+              "entry",
+              "entry",
+              "function"
+            ]
+          ],
+          "complete": true
+        }
+      ],
+      "setup": "graph",
+      "source_review": "All declarations are explicitly written; class App additionally owns its two methods.",
+      "coverage": {
+        "supported": 1,
+        "unsupported": 0,
+        "omitted": 0,
+        "unresolved": 0,
+        "unit": "scenario"
+      },
+      "surfaces": [
+        "plugin-cli",
+        "mcp",
+        "cli"
+      ]
+    },
+    {
+      "id": "typescript-direct-call",
+      "repository": "typescript",
+      "tool": "callees",
+      "input": {
+        "selector": "symbol:app.ts#entry:function",
+        "include_unresolved": true
+      },
+      "checks": [
+        {
+          "path": "result.callees",
+          "op": "set",
+          "fields": [
+            "target_name",
+            "target_qualified",
+            "confidence"
+          ],
+          "value": [
+            [
+              "helper",
+              "helper",
+              "exact"
+            ]
+          ],
+          "complete": true
+        }
+      ],
+      "setup": "graph",
+      "source_review": "One unqualified call to a unique local helper; exact is the same-file resolution contract.",
+      "coverage": {
+        "supported": 1,
+        "unsupported": 0,
+        "omitted": 0,
+        "unresolved": 0,
+        "unit": "scenario"
+      },
+      "surfaces": [
+        "plugin-cli",
+        "mcp",
+        "cli"
+      ]
+    },
+    {
+      "id": "typescript-import",
+      "repository": "typescript",
+      "tool": "deps",
+      "input": {
+        "selector": "file:app.ts"
+      },
+      "checks": [
+        {
+          "path": "result.imports",
+          "op": "set",
+          "fields": [
+            "from_file",
+            "target_path",
+            "target_symbol"
+          ],
+          "value": [
+            [
+              "app.ts",
+              "./external",
+              null
+            ]
+          ],
+          "complete": true
+        }
+      ],
+      "setup": "graph",
+      "source_review": "One written import. Its specifier is an opaque source dependency, not a package or compiler dependency.",
+      "coverage": {
+        "supported": 1,
+        "unsupported": 0,
+        "omitted": 0,
+        "unresolved": 0,
+        "unit": "scenario"
+      },
+      "surfaces": [
+        "plugin-cli",
+        "mcp",
+        "cli"
+      ]
+    },
+    {
+      "id": "tsx-declarations",
+      "repository": "tsx",
+      "tool": "overview",
+      "input": {
+        "format": "full"
+      },
+      "checks": [
+        {
+          "path": "result.total_files",
+          "op": "eq",
+          "value": 1
+        },
+        {
+          "path": "result.files.*.symbols",
+          "op": "set",
+          "fields": [
+            "name",
+            "qualified",
+            "kind"
+          ],
+          "value": [
+            [
+              "helper",
+              "helper",
+              "function"
+            ],
+            [
+              "entry",
+              "entry",
+              "function"
+            ]
+          ],
+          "complete": true
+        }
+      ],
+      "setup": "graph",
+      "source_review": "All declarations are explicitly written; class App additionally owns its two methods.",
+      "coverage": {
+        "supported": 1,
+        "unsupported": 0,
+        "omitted": 0,
+        "unresolved": 0,
+        "unit": "scenario"
+      },
+      "surfaces": [
+        "plugin-cli",
+        "mcp",
+        "cli"
+      ]
+    },
+    {
+      "id": "tsx-direct-call",
+      "repository": "tsx",
+      "tool": "callees",
+      "input": {
+        "selector": "symbol:app.tsx#entry:function",
+        "include_unresolved": true
+      },
+      "checks": [
+        {
+          "path": "result.callees",
+          "op": "set",
+          "fields": [
+            "target_name",
+            "target_qualified",
+            "confidence"
+          ],
+          "value": [
+            [
+              "helper",
+              "helper",
+              "exact"
+            ]
+          ],
+          "complete": true
+        }
+      ],
+      "setup": "graph",
+      "source_review": "One unqualified call to a unique local helper; exact is the same-file resolution contract.",
+      "coverage": {
+        "supported": 1,
+        "unsupported": 0,
+        "omitted": 0,
+        "unresolved": 0,
+        "unit": "scenario"
+      },
+      "surfaces": [
+        "plugin-cli",
+        "mcp",
+        "cli"
+      ]
+    },
+    {
+      "id": "tsx-import",
+      "repository": "tsx",
+      "tool": "deps",
+      "input": {
+        "selector": "file:app.tsx"
+      },
+      "checks": [
+        {
+          "path": "result.imports",
+          "op": "set",
+          "fields": [
+            "from_file",
+            "target_path",
+            "target_symbol"
+          ],
+          "value": [
+            [
+              "app.tsx",
+              "./external",
+              null
+            ]
+          ],
+          "complete": true
+        }
+      ],
+      "setup": "graph",
+      "source_review": "One written import. Its specifier is an opaque source dependency, not a package or compiler dependency.",
+      "coverage": {
+        "supported": 1,
+        "unsupported": 0,
+        "omitted": 0,
+        "unresolved": 0,
+        "unit": "scenario"
+      },
+      "surfaces": [
+        "plugin-cli",
+        "mcp",
+        "cli"
+      ]
+    },
+    {
+      "id": "kotlin-declarations",
+      "repository": "kotlin",
+      "tool": "overview",
+      "input": {
+        "format": "full"
+      },
+      "checks": [
+        {
+          "path": "result.total_files",
+          "op": "eq",
+          "value": 1
+        },
+        {
+          "path": "result.files.*.symbols",
+          "op": "set",
+          "fields": [
+            "name",
+            "qualified",
+            "kind"
+          ],
+          "value": [
+            [
+              "helper",
+              "helper",
+              "function"
+            ],
+            [
+              "entry",
+              "entry",
+              "function"
+            ]
+          ],
+          "complete": true
+        }
+      ],
+      "setup": "graph",
+      "source_review": "All declarations are explicitly written; class App additionally owns its two methods.",
+      "coverage": {
+        "supported": 1,
+        "unsupported": 0,
+        "omitted": 0,
+        "unresolved": 0,
+        "unit": "scenario"
+      },
+      "surfaces": [
+        "plugin-cli",
+        "mcp",
+        "cli"
+      ]
+    },
+    {
+      "id": "kotlin-direct-call",
+      "repository": "kotlin",
+      "tool": "callees",
+      "input": {
+        "selector": "symbol:app.kt#entry:function",
+        "include_unresolved": true
+      },
+      "checks": [
+        {
+          "path": "result.callees",
+          "op": "set",
+          "fields": [
+            "target_name",
+            "target_qualified",
+            "confidence"
+          ],
+          "value": [
+            [
+              "helper",
+              "helper",
+              "exact"
+            ]
+          ],
+          "complete": true
+        }
+      ],
+      "setup": "graph",
+      "source_review": "One unqualified call to a unique local helper; exact is the same-file resolution contract.",
+      "coverage": {
+        "supported": 1,
+        "unsupported": 0,
+        "omitted": 0,
+        "unresolved": 0,
+        "unit": "scenario"
+      },
+      "surfaces": [
+        "plugin-cli",
+        "mcp",
+        "cli"
+      ]
+    },
+    {
+      "id": "kotlin-import",
+      "repository": "kotlin",
+      "tool": "deps",
+      "input": {
+        "selector": "file:app.kt"
+      },
+      "checks": [
+        {
+          "path": "result.imports",
+          "op": "set",
+          "fields": [
+            "from_file",
+            "target_path",
+            "target_symbol"
+          ],
+          "value": [
+            [
+              "app.kt",
+              "kotlin.math.abs",
+              "abs"
+            ]
+          ],
+          "complete": true
+        }
+      ],
+      "setup": "graph",
+      "source_review": "One written import. Its specifier is an opaque source dependency, not a package or compiler dependency.",
+      "coverage": {
+        "supported": 1,
+        "unsupported": 0,
+        "omitted": 0,
+        "unresolved": 0,
+        "unit": "scenario"
+      },
+      "surfaces": [
+        "plugin-cli",
+        "mcp",
+        "cli"
+      ]
+    },
+    {
+      "id": "ruby-declarations",
+      "repository": "ruby",
+      "tool": "overview",
+      "input": {
+        "format": "full"
+      },
+      "checks": [
+        {
+          "path": "result.total_files",
+          "op": "eq",
+          "value": 1
+        },
+        {
+          "path": "result.files.*.symbols",
+          "op": "set",
+          "fields": [
+            "name",
+            "qualified",
+            "kind"
+          ],
+          "value": [
+            [
+              "helper",
+              "helper",
+              "method"
+            ],
+            [
+              "entry",
+              "entry",
+              "method"
+            ]
+          ],
+          "complete": true
+        }
+      ],
+      "setup": "graph",
+      "source_review": "All declarations are explicitly written; class App additionally owns its two methods.",
+      "coverage": {
+        "supported": 1,
+        "unsupported": 0,
+        "omitted": 0,
+        "unresolved": 0,
+        "unit": "scenario"
+      },
+      "surfaces": [
+        "plugin-cli",
+        "mcp",
+        "cli"
+      ]
+    },
+    {
+      "id": "ruby-direct-call",
+      "repository": "ruby",
+      "tool": "callees",
+      "input": {
+        "selector": "symbol:app.rb#entry:method",
+        "include_unresolved": true
+      },
+      "checks": [
+        {
+          "path": "result.callees",
+          "op": "set",
+          "fields": [
+            "target_name",
+            "target_qualified",
+            "confidence"
+          ],
+          "value": [
+            [
+              "helper",
+              "helper",
+              "exact"
+            ]
+          ],
+          "complete": true
+        }
+      ],
+      "setup": "graph",
+      "source_review": "One unqualified call to a unique local helper; exact is the same-file resolution contract.",
+      "coverage": {
+        "supported": 1,
+        "unsupported": 0,
+        "omitted": 0,
+        "unresolved": 0,
+        "unit": "scenario"
+      },
+      "surfaces": [
+        "plugin-cli",
+        "mcp",
+        "cli"
+      ]
+    },
+    {
+      "id": "ruby-import",
+      "repository": "ruby",
+      "tool": "deps",
+      "input": {
+        "selector": "file:app.rb"
+      },
+      "checks": [
+        {
+          "path": "result.imports",
+          "op": "set",
+          "fields": [
+            "from_file",
+            "target_path",
+            "target_symbol"
+          ],
+          "value": [
+            [
+              "app.rb",
+              "json",
+              null
+            ]
+          ],
+          "complete": true
+        }
+      ],
+      "setup": "graph",
+      "source_review": "One written import. Its specifier is an opaque source dependency, not a package or compiler dependency.",
+      "coverage": {
+        "supported": 1,
+        "unsupported": 0,
+        "omitted": 0,
+        "unresolved": 0,
+        "unit": "scenario"
+      },
+      "surfaces": [
+        "plugin-cli",
+        "mcp",
+        "cli"
+      ]
+    },
+    {
+      "id": "markdown-heading",
+      "repository": "coverage",
+      "tool": "search",
+      "input": {
+        "query": "Navigation",
+        "kind": "symbol"
+      },
+      "checks": [
+        {
+          "path": "result.matches",
+          "op": "set",
+          "fields": [
+            "path",
+            "name"
+          ],
+          "value": [
+            [
+              "README.md",
+              "Navigation"
+            ]
+          ],
+          "complete": true
+        }
+      ],
+      "setup": "graph",
+      "source_review": "A single markdown heading defines the searched identity.",
+      "coverage": {
+        "supported": 1,
+        "unsupported": 0,
+        "omitted": 0,
+        "unresolved": 0,
+        "unit": "scenario"
+      },
+      "surfaces": [
+        "plugin-cli",
+        "mcp",
+        "cli"
+      ]
+    },
+    {
+      "id": "config-key",
+      "repository": "coverage",
+      "tool": "search",
+      "input": {
+        "query": "port",
+        "kind": "config"
+      },
+      "checks": [
+        {
+          "path": "result.matches",
+          "op": "set",
+          "fields": [
+            "path",
+            "value"
+          ],
+          "value": [
+            [
+              "settings.toml",
+              "service.port"
+            ]
+          ],
+          "complete": true
+        }
+      ],
+      "setup": "graph",
+      "source_review": "The nested TOML key is service.port, with no code-call meaning.",
+      "coverage": {
+        "supported": 1,
+        "unsupported": 0,
+        "omitted": 0,
+        "unresolved": 0,
+        "unit": "scenario"
+      },
+      "surfaces": [
+        "plugin-cli",
+        "mcp",
+        "cli"
+      ]
+    },
+    {
+      "id": "unsupported-file",
+      "repository": "coverage",
+      "tool": "overview",
+      "input": {
+        "format": "full"
+      },
+      "checks": [
+        {
+          "path": "result.total_files",
+          "op": "eq",
+          "value": 2
+        },
+        {
+          "path": "result.files",
+          "op": "set",
+          "fields": [
+            "path"
+          ],
+          "value": [
+            [
+              "README.md"
+            ],
+            [
+              "settings.toml"
+            ]
+          ],
+          "complete": true
+        }
+      ],
+      "setup": "graph",
+      "source_review": "schema.proto is deliberately unsupported and absent from the indexed-file denominator.",
+      "coverage": {
+        "supported": 2,
+        "unsupported": 1,
+        "omitted": 1,
+        "unresolved": 0,
+        "unit": "file"
+      },
+      "surfaces": [
+        "plugin-cli",
+        "mcp",
+        "cli"
+      ]
+    },
+    {
+      "id": "version-no-repository",
+      "repository": "graph",
+      "tool": "version",
+      "input": {},
+      "checks": [
+        {
+          "path": "extractor_version",
+          "op": "exists"
+        },
+        {
+          "path": "plugin_schema_version",
+          "op": "exists"
+        }
+      ],
+      "setup": "none",
+      "source_review": "Version requires no repository; runner also invokes standalone version outside every Git fixture.",
+      "coverage": {
+        "supported": 1,
+        "unsupported": 0,
+        "omitted": 0,
+        "unresolved": 0,
+        "unit": "scenario"
+      },
+      "surfaces": [
+        "plugin-cli",
+        "mcp",
+        "cli"
+      ]
+    },
+    {
+      "id": "search-identity",
+      "repository": "graph",
+      "tool": "search",
+      "input": {
+        "query": "leaf",
+        "kind": "symbol"
+      },
+      "checks": [
+        {
+          "path": "result.matches",
+          "op": "set",
+          "fields": [
+            "path",
+            "name"
+          ],
+          "value": [
+            [
+              "src/lib.rs",
+              "leaf"
+            ]
+          ],
+          "complete": true
+        }
+      ],
+      "setup": "graph",
+      "source_review": "Exactly one declared leaf; call sites are not symbol search hits.",
+      "coverage": {
+        "supported": 1,
+        "unsupported": 0,
+        "omitted": 0,
+        "unresolved": 0,
+        "unit": "scenario"
+      },
+      "surfaces": [
+        "plugin-cli",
+        "mcp",
+        "cli"
+      ]
+    },
+    {
+      "id": "search-string",
+      "repository": "graph",
+      "tool": "search",
+      "input": {
+        "query": "caf\u00e9",
+        "kind": "string"
+      },
+      "checks": [
+        {
+          "path": "result.total",
+          "op": "eq",
+          "value": 1
+        },
+        {
+          "path": "result.truncated",
+          "op": "eq",
+          "value": false
+        }
+      ],
+      "setup": "graph",
+      "source_review": "The only matching string literal is inside unicode; Unicode must survive encoding.",
+      "coverage": {
+        "supported": 1,
+        "unsupported": 0,
+        "omitted": 0,
+        "unresolved": 0,
+        "unit": "scenario"
+      },
+      "surfaces": [
+        "plugin-cli",
+        "mcp",
+        "cli"
+      ]
+    },
+    {
+      "id": "search-filter",
+      "repository": "graph",
+      "tool": "search",
+      "input": {
+        "query": "leaf",
+        "lang": "python"
+      },
+      "checks": [
+        {
+          "path": "result.matches",
+          "op": "set",
+          "fields": [
+            "path",
+            "name"
+          ],
+          "value": [],
+          "complete": true
+        }
+      ],
+      "setup": "graph",
+      "source_review": "No Python files exist; apply language filtering before limits.",
+      "coverage": {
+        "supported": 1,
+        "unsupported": 0,
+        "omitted": 0,
+        "unresolved": 0,
+        "unit": "scenario"
+      },
+      "surfaces": [
+        "plugin-cli",
+        "mcp",
+        "cli"
+      ]
+    },
+    {
+      "id": "search-empty-result",
+      "repository": "graph",
+      "tool": "search",
+      "input": {
+        "query": "doesnotexist"
+      },
+      "checks": [
+        {
+          "path": "result.matches",
+          "op": "set",
+          "fields": [
+            "path",
+            "name"
+          ],
+          "value": [],
+          "complete": true
+        },
+        {
+          "path": "result.total",
+          "op": "eq",
+          "value": 0
+        }
+      ],
+      "setup": "graph",
+      "source_review": "The query is valid and has a complete empty result.",
+      "coverage": {
+        "supported": 1,
+        "unsupported": 0,
+        "omitted": 0,
+        "unresolved": 0,
+        "unit": "scenario"
+      },
+      "surfaces": [
+        "plugin-cli",
+        "mcp",
+        "cli"
+      ]
+    },
+    {
+      "id": "search-bounds",
+      "repository": "ambiguity",
+      "tool": "search",
+      "input": {
+        "query": "work",
+        "limit": 1
+      },
+      "checks": [
+        {
+          "path": "result.truncated",
+          "op": "eq",
+          "value": true
+        },
+        {
+          "path": "truncation.matches.total_at_least",
+          "op": "exists"
+        }
+      ],
+      "setup": "graph",
+      "source_review": "More than one source occurrence; the limit must disclose its lower-bound count.",
+      "coverage": {
+        "supported": 1,
+        "unsupported": 0,
+        "omitted": 0,
+        "unresolved": 0,
+        "unit": "scenario"
+      },
+      "surfaces": [
+        "plugin-cli",
+        "mcp"
+      ],
+      "cli_omission": "Plugin envelope/bounds/error contract differs from standalone CLI; assessed on both installed surfaces."
+    },
+    {
+      "id": "search-invalid-bound",
+      "repository": "graph",
+      "tool": "search",
+      "input": {
+        "query": "leaf",
+        "limit": 0
+      },
+      "checks": [],
+      "setup": "graph",
+      "source_review": "Zero is outside the public 1..500 bound.",
+      "coverage": {
+        "supported": 1,
+        "unsupported": 0,
+        "omitted": 0,
+        "unresolved": 0,
+        "unit": "scenario"
+      },
+      "expected_error": "invalid_request",
+      "surfaces": [
+        "plugin-cli",
+        "mcp"
+      ],
+      "cli_omission": "Plugin envelope/bounds/error contract differs from standalone CLI; assessed on both installed surfaces."
+    },
+    {
+      "id": "show-utf8-span",
+      "repository": "graph",
+      "tool": "show",
+      "input": {
+        "selector": "symbol:src/lib.rs#unicode:function"
+      },
+      "checks": [
+        {
+          "path": "result.source",
+          "op": "eq",
+          "value": "pub fn unicode() -> &'static str { \"caf\u00e9 \ud83e\ude90\" }"
+        },
+        {
+          "path": "result.metadata.span",
+          "op": "eq",
+          "value": {
+            "start": 169,
+            "end": 218
+          }
+        },
+        {
+          "path": "result.metadata.truncated",
+          "op": "eq",
+          "value": false
+        },
+        {
+          "path": "result.source_encoding",
+          "op": "eq",
+          "value": "utf-8"
+        }
+      ],
+      "setup": "graph",
+      "source_review": "Reviewed UTF-8 byte offsets include the accent and four-byte planet; span is half-open.",
+      "coverage": {
+        "supported": 1,
+        "unsupported": 0,
+        "omitted": 0,
+        "unresolved": 0,
+        "unit": "scenario"
+      },
+      "surfaces": [
+        "plugin-cli",
+        "mcp",
+        "cli"
+      ]
+    },
+    {
+      "id": "show-bounded",
+      "repository": "graph",
+      "tool": "show",
+      "input": {
+        "selector": "symbol:src/lib.rs#unicode:function",
+        "max_bytes": 3
+      },
+      "checks": [
+        {
+          "path": "result.metadata.truncated",
+          "op": "eq",
+          "value": true
+        },
+        {
+          "path": "result.source",
+          "op": "eq",
+          "value": "pub"
+        }
+      ],
+      "setup": "graph",
+      "source_review": "The source slice is cut at three bytes and disclosure must be true.",
+      "coverage": {
+        "supported": 1,
+        "unsupported": 0,
+        "omitted": 0,
+        "unresolved": 0,
+        "unit": "scenario"
+      },
+      "surfaces": [
+        "plugin-cli",
+        "mcp",
+        "cli"
+      ]
+    },
+    {
+      "id": "show-missing",
+      "repository": "graph",
+      "tool": "show",
+      "input": {
+        "selector": "symbol:src/lib.rs#absent:function"
+      },
+      "checks": [
+        {
+          "path": "result",
+          "op": "eq",
+          "value": null
+        }
+      ],
+      "setup": "graph",
+      "source_review": "A nonexistent identity is an explicit null source result, not invented source.",
+      "coverage": {
+        "supported": 1,
+        "unsupported": 0,
+        "omitted": 0,
+        "unresolved": 0,
+        "unit": "scenario"
+      },
+      "surfaces": [
+        "plugin-cli",
+        "mcp"
+      ],
+      "cli_omission": "Plugin envelope/bounds/error contract differs from standalone CLI; assessed on both installed surfaces."
+    },
+    {
+      "id": "refs-diamond",
+      "repository": "graph",
+      "tool": "refs",
+      "input": {
+        "selector": "symbol:src/lib.rs#leaf:function",
+        "kind": "call"
+      },
+      "checks": [
+        {
+          "path": "result.refs",
+          "op": "set",
+          "fields": [
+            "from_selector",
+            "kind",
+            "confidence"
+          ],
+          "value": [
+            [
+              "symbol:src/lib.rs#left:function",
+              "call",
+              "exact"
+            ],
+            [
+              "symbol:src/lib.rs#right:function",
+              "call",
+              "exact"
+            ]
+          ],
+          "complete": true
+        }
+      ],
+      "setup": "graph",
+      "source_review": "The complete inbound call set of leaf is left and right, not root.",
+      "coverage": {
+        "supported": 1,
+        "unsupported": 0,
+        "omitted": 0,
+        "unresolved": 0,
+        "unit": "scenario"
+      },
+      "surfaces": [
+        "plugin-cli",
+        "mcp",
+        "cli"
+      ]
+    },
+    {
+      "id": "impact-chain",
+      "repository": "graph",
+      "tool": "impact",
+      "input": {
+        "selector": "symbol:src/lib.rs#left:function",
+        "direction": "outbound",
+        "depth": 3
+      },
+      "checks": [
+        {
+          "path": "result.touched",
+          "op": "set",
+          "fields": [
+            "qualified_name",
+            "distance"
+          ],
+          "value": [
+            [
+              "leaf",
+              1
+            ]
+          ],
+          "complete": true
+        }
+      ],
+      "setup": "graph",
+      "source_review": "Manually traversed written adjacency; direction/depth limits the complete eligible node set.",
+      "coverage": {
+        "supported": 1,
+        "unsupported": 0,
+        "omitted": 0,
+        "unresolved": 0,
+        "unit": "scenario"
+      },
+      "surfaces": [
+        "plugin-cli",
+        "mcp",
+        "cli"
+      ]
+    },
+    {
+      "id": "impact-diamond",
+      "repository": "graph",
+      "tool": "impact",
+      "input": {
+        "selector": "symbol:src/lib.rs#root:function",
+        "direction": "outbound",
+        "depth": 3
+      },
+      "checks": [
+        {
+          "path": "result.touched",
+          "op": "set",
+          "fields": [
+            "qualified_name",
+            "distance"
+          ],
+          "value": [
+            [
+              "left",
+              1
+            ],
+            [
+              "right",
+              1
+            ],
+            [
+              "leaf",
+              2
+            ]
+          ],
+          "complete": true
+        }
+      ],
+      "setup": "graph",
+      "source_review": "Manually traversed written adjacency; direction/depth limits the complete eligible node set.",
+      "coverage": {
+        "supported": 1,
+        "unsupported": 0,
+        "omitted": 0,
+        "unresolved": 0,
+        "unit": "scenario"
+      },
+      "surfaces": [
+        "plugin-cli",
+        "mcp",
+        "cli"
+      ]
+    },
+    {
+      "id": "impact-inbound",
+      "repository": "graph",
+      "tool": "impact",
+      "input": {
+        "selector": "symbol:src/lib.rs#leaf:function",
+        "direction": "inbound",
+        "depth": 3
+      },
+      "checks": [
+        {
+          "path": "result.touched",
+          "op": "set",
+          "fields": [
+            "qualified_name",
+            "distance"
+          ],
+          "value": [
+            [
+              "left",
+              1
+            ],
+            [
+              "right",
+              1
+            ],
+            [
+              "root",
+              2
+            ]
+          ],
+          "complete": true
+        }
+      ],
+      "setup": "graph",
+      "source_review": "Manually traversed written adjacency; direction/depth limits the complete eligible node set.",
+      "coverage": {
+        "supported": 1,
+        "unsupported": 0,
+        "omitted": 0,
+        "unresolved": 0,
+        "unit": "scenario"
+      },
+      "surfaces": [
+        "plugin-cli",
+        "mcp",
+        "cli"
+      ]
+    },
+    {
+      "id": "impact-depth",
+      "repository": "graph",
+      "tool": "impact",
+      "input": {
+        "selector": "symbol:src/lib.rs#root:function",
+        "direction": "outbound",
+        "depth": 1
+      },
+      "checks": [
+        {
+          "path": "result.touched",
+          "op": "set",
+          "fields": [
+            "qualified_name",
+            "distance"
+          ],
+          "value": [
+            [
+              "left",
+              1
+            ],
+            [
+              "right",
+              1
+            ]
+          ],
+          "complete": true
+        }
+      ],
+      "setup": "graph",
+      "source_review": "Manually traversed written adjacency; direction/depth limits the complete eligible node set.",
+      "coverage": {
+        "supported": 1,
+        "unsupported": 0,
+        "omitted": 0,
+        "unresolved": 0,
+        "unit": "scenario"
+      },
+      "surfaces": [
+        "plugin-cli",
+        "mcp",
+        "cli"
+      ]
+    },
+    {
+      "id": "impact-cycle",
+      "repository": "graph",
+      "tool": "impact",
+      "input": {
+        "selector": "symbol:src/lib.rs#cycle_a:function",
+        "direction": "outbound",
+        "depth": 10
+      },
+      "checks": [
+        {
+          "path": "result.touched",
+          "op": "set",
+          "fields": [
+            "qualified_name",
+            "distance"
+          ],
+          "value": [
+            [
+              "cycle_b",
+              1
+            ]
+          ],
+          "complete": true
+        }
+      ],
+      "setup": "graph",
+      "source_review": "Manually traversed written adjacency; direction/depth limits the complete eligible node set.",
+      "coverage": {
+        "supported": 1,
+        "unsupported": 0,
+        "omitted": 0,
+        "unresolved": 0,
+        "unit": "scenario"
+      },
+      "surfaces": [
+        "plugin-cli",
+        "mcp",
+        "cli"
+      ]
+    },
+    {
+      "id": "impact-output-cut",
+      "repository": "graph",
+      "tool": "impact",
+      "input": {
+        "selector": "symbol:src/lib.rs#root:function",
+        "direction": "outbound",
+        "limit": 1
+      },
+      "checks": [
+        {
+          "path": "truncated",
+          "op": "eq",
+          "value": true
+        },
+        {
+          "path": "truncation.touched.returned",
+          "op": "eq",
+          "value": 1
+        },
+        {
+          "path": "truncation.touched.total",
+          "op": "eq",
+          "value": 3
+        }
+      ],
+      "setup": "graph",
+      "source_review": "Output cap is distinct from traversal depth; all three reached nodes belong to the denominator.",
+      "coverage": {
+        "supported": 1,
+        "unsupported": 0,
+        "omitted": 0,
+        "unresolved": 0,
+        "unit": "scenario"
+      },
+      "surfaces": [
+        "plugin-cli",
+        "mcp"
+      ],
+      "cli_omission": "Plugin envelope/bounds/error contract differs from standalone CLI; assessed on both installed surfaces."
+    },
+    {
+      "id": "imported-call",
+      "repository": "imports",
+      "tool": "callees",
+      "input": {
+        "selector": "symbol:src/lib.rs#entry:function",
+        "include_unresolved": true
+      },
+      "checks": [
+        {
+          "path": "result.callees",
+          "op": "set",
+          "fields": [
+            "target_name",
+            "target_qualified",
+            "confidence"
+          ],
+          "value": [
+            [
+              "work",
+              "work",
+              "import_resolved"
+            ],
+            [
+              "work",
+              "work",
+              "import_resolved"
+            ]
+          ],
+          "complete": true
+        }
+      ],
+      "setup": "graph",
+      "source_review": "Both calls point at the explicitly imported helper::work; duplicate written edges are preserved, not deduplicated.",
+      "coverage": {
+        "supported": 1,
+        "unsupported": 0,
+        "omitted": 0,
+        "unresolved": 0,
+        "unit": "scenario"
+      },
+      "surfaces": [
+        "plugin-cli",
+        "mcp",
+        "cli"
+      ]
+    },
+    {
+      "id": "source-deps",
+      "repository": "imports",
+      "tool": "deps",
+      "input": {
+        "selector": "file:src/lib.rs"
+      },
+      "checks": [
+        {
+          "path": "result.imports",
+          "op": "set",
+          "fields": [
+            "target_path",
+            "target_symbol"
+          ],
+          "value": [
+            [
+              "crate::helper",
+              "work"
+            ]
+          ],
+          "complete": true
+        }
+      ],
+      "setup": "graph",
+      "source_review": "The use is a source import; mod declares a module, not an import row. No Cargo package graph is asserted.",
+      "coverage": {
+        "supported": 1,
+        "unsupported": 0,
+        "omitted": 0,
+        "unresolved": 0,
+        "unit": "scenario"
+      },
+      "surfaces": [
+        "plugin-cli",
+        "mcp",
+        "cli"
+      ]
+    },
+    {
+      "id": "overview-scope",
+      "repository": "imports",
+      "tool": "overview",
+      "input": {
+        "selector": "file:src/helper.rs",
+        "format": "full"
+      },
+      "checks": [
+        {
+          "path": "result.total_files",
+          "op": "eq",
+          "value": 1
+        },
+        {
+          "path": "result.total_symbols",
+          "op": "eq",
+          "value": 1
+        },
+        {
+          "path": "result.files",
+          "op": "set",
+          "fields": [
+            "path",
+            "lang"
+          ],
+          "value": [
+            [
+              "src/helper.rs",
+              "rust"
+            ]
+          ],
+          "complete": true
+        }
+      ],
+      "setup": "graph",
+      "source_review": "Scope includes only helper.rs with its one function.",
+      "coverage": {
+        "supported": 1,
+        "unsupported": 0,
+        "omitted": 0,
+        "unresolved": 0,
+        "unit": "scenario"
+      },
+      "surfaces": [
+        "plugin-cli",
+        "mcp",
+        "cli"
+      ]
+    },
+    {
+      "id": "duplicate-search",
+      "repository": "ambiguity",
+      "tool": "search",
+      "input": {
+        "query": "work",
+        "kind": "symbol"
+      },
+      "checks": [
+        {
+          "path": "result.matches",
+          "op": "set",
+          "fields": [
+            "path",
+            "name"
+          ],
+          "value": [
+            [
+              "app.py",
+              "work"
+            ],
+            [
+              "app.py",
+              "work"
+            ]
+          ],
+          "complete": true
+        }
+      ],
+      "setup": "graph",
+      "source_review": "Two independent owners declare work. Multiplicity is part of truth.",
+      "coverage": {
+        "supported": 1,
+        "unsupported": 0,
+        "omitted": 0,
+        "unresolved": 0,
+        "unit": "scenario"
+      },
+      "surfaces": [
+        "plugin-cli",
+        "mcp",
+        "cli"
+      ]
+    },
+    {
+      "id": "show-ambiguous",
+      "repository": "ambiguity",
+      "tool": "show",
+      "input": {
+        "selector": "symbol:app.py#work:method"
+      },
+      "checks": [
+        {
+          "path": "result.metadata.qualified",
+          "op": "exists"
+        }
+      ],
+      "setup": "graph",
+      "source_review": "A short-name selector has two owners; this challenge requires ambiguity disclosure and cannot count as an exact-identity success.",
+      "coverage": {
+        "supported": 1,
+        "unsupported": 0,
+        "omitted": 0,
+        "unresolved": 0,
+        "unit": "scenario"
+      },
+      "challenge": "ambiguous_show",
+      "surfaces": [
+        "plugin-cli",
+        "mcp",
+        "cli"
+      ]
+    },
+    {
+      "id": "dynamic-uncertainty",
+      "repository": "ambiguity",
+      "tool": "callees",
+      "input": {
+        "selector": "symbol:app.py#dynamic:function",
+        "include_unresolved": true
+      },
+      "checks": [
+        {
+          "path": "result.callees",
+          "op": "confidence_ceiling",
+          "value": "fuzzy_name",
+          "names": [
+            "work"
+          ]
+        }
+      ],
+      "setup": "graph",
+      "source_review": "Runtime receiver/parameter/import/external binding is unknowable from these bytes. Return an unresolved fuzzy edge or an explicit omission; never assert a concrete owner.",
+      "coverage": {
+        "supported": 0,
+        "unsupported": 1,
+        "omitted": 0,
+        "unresolved": 1,
+        "unit": "written_call"
+      },
+      "surfaces": [
+        "plugin-cli",
+        "mcp",
+        "cli"
+      ]
+    },
+    {
+      "id": "generic-uncertainty",
+      "repository": "ambiguity",
+      "tool": "callees",
+      "input": {
+        "selector": "symbol:app.py#generic:function",
+        "include_unresolved": true
+      },
+      "checks": [
+        {
+          "path": "result.callees",
+          "op": "confidence_ceiling",
+          "value": "fuzzy_name",
+          "names": [
+            "callback"
+          ]
+        }
+      ],
+      "setup": "graph",
+      "source_review": "Runtime receiver/parameter/import/external binding is unknowable from these bytes. Return an unresolved fuzzy edge or an explicit omission; never assert a concrete owner.",
+      "coverage": {
+        "supported": 0,
+        "unsupported": 1,
+        "omitted": 0,
+        "unresolved": 1,
+        "unit": "written_call"
+      },
+      "surfaces": [
+        "plugin-cli",
+        "mcp",
+        "cli"
+      ]
+    },
+    {
+      "id": "external-uncertainty",
+      "repository": "ambiguity",
+      "tool": "callees",
+      "input": {
+        "selector": "symbol:app.py#external:function",
+        "include_unresolved": true
+      },
+      "checks": [
+        {
+          "path": "result.callees",
+          "op": "confidence_ceiling",
+          "value": "fuzzy_name",
+          "names": [
+            "mystery"
+          ]
+        }
+      ],
+      "setup": "graph",
+      "source_review": "Runtime receiver/parameter/import/external binding is unknowable from these bytes. Return an unresolved fuzzy edge or an explicit omission; never assert a concrete owner.",
+      "coverage": {
+        "supported": 0,
+        "unsupported": 1,
+        "omitted": 0,
+        "unresolved": 1,
+        "unit": "written_call"
+      },
+      "surfaces": [
+        "plugin-cli",
+        "mcp",
+        "cli"
+      ]
+    },
+    {
+      "id": "runtime-uncertainty",
+      "repository": "ambiguity",
+      "tool": "callees",
+      "input": {
+        "selector": "symbol:app.py#runtime:function",
+        "include_unresolved": true
+      },
+      "checks": [
+        {
+          "path": "result.callees",
+          "op": "confidence_ceiling",
+          "value": "fuzzy_name",
+          "names": [
+            "__import__"
+          ]
+        }
+      ],
+      "setup": "graph",
+      "source_review": "Runtime receiver/parameter/import/external binding is unknowable from these bytes. Return an unresolved fuzzy edge or an explicit omission; never assert a concrete owner.",
+      "coverage": {
+        "supported": 0,
+        "unsupported": 1,
+        "omitted": 0,
+        "unresolved": 1,
+        "unit": "written_call"
+      },
+      "surfaces": [
+        "plugin-cli",
+        "mcp",
+        "cli"
+      ]
+    },
+    {
+      "id": "external-omission",
+      "repository": "ambiguity",
+      "tool": "callees",
+      "input": {
+        "selector": "symbol:app.py#external:function"
+      },
+      "checks": [
+        {
+          "path": "result.hidden_unresolved",
+          "op": "eq",
+          "value": 1
+        },
+        {
+          "path": "result.callees",
+          "op": "set",
+          "fields": [
+            "target_name"
+          ],
+          "value": [],
+          "complete": true
+        }
+      ],
+      "setup": "graph",
+      "source_review": "The hidden external call must still be counted.",
+      "coverage": {
+        "supported": 1,
+        "unsupported": 0,
+        "omitted": 0,
+        "unresolved": 0,
+        "unit": "scenario"
+      },
+      "surfaces": [
+        "plugin-cli",
+        "mcp",
+        "cli"
+      ]
+    },
+    {
+      "id": "macro-generated-challenge",
+      "repository": "macro",
+      "tool": "callees",
+      "input": {
+        "selector": "symbol:src/lib.rs#entry:function",
+        "include_unresolved": true
+      },
+      "checks": [
+        {
+          "path": "result.callees",
+          "op": "forbid_target",
+          "value": "helper"
+        }
+      ],
+      "setup": "graph",
+      "source_review": "The macro invocation is written, but its expansion is not a direct source call in entry. No compiler-expansion coverage claim.",
+      "coverage": {
+        "supported": 0,
+        "unsupported": 1,
+        "omitted": 1,
+        "unresolved": 0,
+        "unit": "expanded_call"
+      },
+      "surfaces": [
+        "plugin-cli",
+        "mcp",
+        "cli"
+      ]
+    },
+    {
+      "id": "trace-handler",
+      "repository": "commands",
+      "tool": "trace",
+      "input": {
+        "command": "run"
+      },
+      "checks": [
+        {
+          "path": "result.root.name",
+          "op": "eq",
+          "value": "run"
+        },
+        {
+          "path": "result.root.qualified_name",
+          "op": "eq",
+          "value": "run"
+        },
+        {
+          "path": "result.root.children.0.name",
+          "op": "eq",
+          "value": "middle"
+        },
+        {
+          "path": "result.root.children.0.children.0.name",
+          "op": "eq",
+          "value": "leaf"
+        }
+      ],
+      "setup": "graph",
+      "source_review": "derive Subcommand Run maps through the match arm to run -> middle -> leaf.",
+      "coverage": {
+        "supported": 1,
+        "unsupported": 0,
+        "omitted": 0,
+        "unresolved": 0,
+        "unit": "scenario"
+      },
+      "surfaces": [
+        "plugin-cli",
+        "mcp",
+        "cli"
+      ]
+    },
+    {
+      "id": "trace-hop-cut",
+      "repository": "commands",
+      "tool": "trace",
+      "input": {
+        "command": "run",
+        "depth": 1
+      },
+      "checks": [
+        {
+          "path": "result.root.children.0.name",
+          "op": "eq",
+          "value": "middle"
+        },
+        {
+          "path": "result.root.children.0.children",
+          "op": "eq",
+          "value": []
+        }
+      ],
+      "setup": "graph",
+      "source_review": "One hop stops before leaf; depth is explicit in the submitted request.",
+      "coverage": {
+        "supported": 1,
+        "unsupported": 0,
+        "omitted": 0,
+        "unresolved": 0,
+        "unit": "scenario"
+      },
+      "surfaces": [
+        "plugin-cli",
+        "mcp",
+        "cli"
+      ]
+    },
+    {
+      "id": "trace-missing",
+      "repository": "commands",
+      "tool": "trace",
+      "input": {
+        "command": "absent"
+      },
+      "checks": [
+        {
+          "path": "result.root",
+          "op": "eq",
+          "value": null
+        },
+        {
+          "path": "result.visited_nodes",
+          "op": "eq",
+          "value": 0
+        }
+      ],
+      "setup": "graph",
+      "source_review": "No discovered command absent; return an explicit null root.",
+      "coverage": {
+        "supported": 1,
+        "unsupported": 0,
+        "omitted": 0,
+        "unresolved": 0,
+        "unit": "scenario"
+      },
+      "surfaces": [
+        "plugin-cli",
+        "mcp",
+        "cli"
+      ]
+    },
+    {
+      "id": "impact-node-cap",
+      "repository": "nodecap",
+      "tool": "impact",
+      "input": {
+        "selector": "symbol:src/lib.rs#hub:function",
+        "direction": "outbound",
+        "depth": 1,
+        "limit": 500
+      },
+      "checks": [
+        {
+          "path": "result.truncated",
+          "op": "eq",
+          "value": true
+        },
+        {
+          "path": "result.total",
+          "op": "eq",
+          "value": null
+        },
+        {
+          "path": "result.visited_nodes",
+          "op": "eq",
+          "value": 200
+        }
+      ],
+      "setup": "graph",
+      "source_review": "205 written outbound targets exceed the fixed 200-node cap; unknown total must remain null.",
+      "coverage": {
+        "supported": 200,
+        "unsupported": 0,
+        "omitted": 5,
+        "unresolved": 0,
+        "unit": "reachable_node"
+      },
+      "surfaces": [
+        "plugin-cli",
+        "mcp",
+        "cli"
+      ]
+    },
+    {
+      "id": "status-missing",
+      "repository": "lifecycle-reviewed",
+      "tool": "status",
+      "input": {},
+      "checks": [],
+      "setup": "lifecycle",
+      "source_review": "History freshness and code-index state are inspected separately; absence never counts as up-to-date.",
+      "coverage": {
+        "supported": 1,
+        "unsupported": 0,
+        "omitted": 0,
+        "unresolved": 0,
+        "unit": "scenario"
+      },
+      "lifecycle": "missing",
+      "surfaces": [
+        "plugin-cli",
+        "mcp"
+      ],
+      "cli_omission": "Plugin envelope/bounds/error contract differs from standalone CLI; assessed on both installed surfaces.",
+      "expected_error": "index_missing"
+    },
+    {
+      "id": "status-fresh",
+      "repository": "lifecycle-reviewed",
+      "tool": "status",
+      "input": {},
+      "checks": [
+        {
+          "path": "status",
+          "op": "exists"
+        }
+      ],
+      "setup": "lifecycle",
+      "source_review": "History freshness and code-index state are inspected separately; absence never counts as up-to-date.",
+      "coverage": {
+        "supported": 1,
+        "unsupported": 0,
+        "omitted": 0,
+        "unresolved": 0,
+        "unit": "scenario"
+      },
+      "lifecycle": "fresh",
+      "surfaces": [
+        "plugin-cli",
+        "mcp",
+        "cli"
+      ]
+    },
+    {
+      "id": "status-outdated",
+      "repository": "lifecycle-reviewed",
+      "tool": "status",
+      "input": {},
+      "checks": [
+        {
+          "path": "status",
+          "op": "exists"
+        }
+      ],
+      "setup": "lifecycle",
+      "source_review": "History freshness and code-index state are inspected separately; absence never counts as up-to-date.",
+      "coverage": {
+        "supported": 1,
+        "unsupported": 0,
+        "omitted": 0,
+        "unresolved": 0,
+        "unit": "scenario"
+      },
+      "lifecycle": "outdated",
+      "surfaces": [
+        "plugin-cli",
+        "mcp",
+        "cli"
+      ]
+    },
+    {
+      "id": "maintain-first",
+      "repository": "lifecycle-reviewed",
+      "tool": "maintain",
+      "input": {
+        "operation": "graph_sync",
+        "full": false
+      },
+      "checks": [
+        {
+          "path": "coverage.complete",
+          "op": "eq",
+          "value": true
+        },
+        {
+          "path": "coverage.state",
+          "op": "eq",
+          "value": "published"
+        },
+        {
+          "path": "result.failed.count",
+          "op": "eq",
+          "value": 0
+        }
+      ],
+      "setup": "lifecycle",
+      "source_review": "Frozen keep calls remove in base and added in head. Complete declarations, individual literal search identities and callees are checked against source truth and fresh full publication.",
+      "coverage": {
+        "supported": 1,
+        "unsupported": 0,
+        "omitted": 0,
+        "unresolved": 0,
+        "unit": "scenario"
+      },
+      "lifecycle": "first",
+      "snapshot_truth": {
+        "base": [
+          {
+            "path": "overview.total_files",
+            "op": "eq",
+            "value": 2
+          },
+          {
+            "path": "overview.total_symbols",
+            "op": "eq",
+            "value": 3
+          },
+          {
+            "path": "overview.files",
+            "op": "set",
+            "fields": [
+              "path"
+            ],
+            "value": [
+              [
+                "src/lib.rs"
+              ],
+              [
+                "src/old.rs"
+              ]
+            ],
+            "complete": true
+          },
+          {
+            "path": "overview.files.*.symbols",
+            "op": "set",
+            "fields": [
+              "name",
+              "qualified",
+              "kind"
+            ],
+            "value": [
+              [
+                "keep",
+                "keep",
+                "function"
+              ],
+              [
+                "remove",
+                "remove",
+                "function"
+              ],
+              [
+                "moved",
+                "moved",
+                "function"
+              ]
+            ],
+            "complete": true
+          },
+          {
+            "path": "search-keep.matches",
+            "op": "set",
+            "fields": [
+              "path",
+              "name"
+            ],
+            "value": [
+              [
+                "src/lib.rs",
+                "keep"
+              ]
+            ],
+            "complete": true
+          },
+          {
+            "path": "search-keep.truncated",
+            "op": "eq",
+            "value": false
+          },
+          {
+            "path": "search-remove.matches",
+            "op": "set",
+            "fields": [
+              "path",
+              "name"
+            ],
+            "value": [
+              [
+                "src/lib.rs",
+                "remove"
+              ]
+            ],
+            "complete": true
+          },
+          {
+            "path": "search-remove.truncated",
+            "op": "eq",
+            "value": false
+          },
+          {
+            "path": "search-added.matches",
+            "op": "set",
+            "fields": [
+              "path",
+              "name"
+            ],
+            "value": [],
+            "complete": true
+          },
+          {
+            "path": "search-added.truncated",
+            "op": "eq",
+            "value": false
+          },
+          {
+            "path": "search-moved.matches",
+            "op": "set",
+            "fields": [
+              "path",
+              "name"
+            ],
+            "value": [
+              [
+                "src/old.rs",
+                "moved"
+              ]
+            ],
+            "complete": true
+          },
+          {
+            "path": "search-moved.truncated",
+            "op": "eq",
+            "value": false
+          },
+          {
+            "path": "callees-src_lib_rs-keep.callees",
+            "op": "set",
+            "fields": [
+              "target_name",
+              "target_qualified",
+              "confidence"
+            ],
+            "value": [
+              [
+                "remove",
+                "remove",
+                "exact"
+              ]
+            ],
+            "complete": true
+          },
+          {
+            "path": "refs-src_lib_rs-keep.refs",
+            "op": "set",
+            "fields": [
+              "from_selector",
+              "kind",
+              "confidence"
+            ],
+            "value": [],
+            "complete": true
+          },
+          {
+            "path": "callees-src_lib_rs-remove.callees",
+            "op": "set",
+            "fields": [
+              "target_name",
+              "target_qualified",
+              "confidence"
+            ],
+            "value": [],
+            "complete": true
+          },
+          {
+            "path": "refs-src_lib_rs-remove.refs",
+            "op": "set",
+            "fields": [
+              "from_selector",
+              "kind",
+              "confidence"
+            ],
+            "value": [
+              [
+                "symbol:src/lib.rs#keep:function",
+                "call",
+                "exact"
+              ]
+            ],
+            "complete": true
+          },
+          {
+            "path": "callees-src_lib_rs-added.callees",
+            "op": "set",
+            "fields": [
+              "target_name",
+              "target_qualified",
+              "confidence"
+            ],
+            "value": [],
+            "complete": true
+          },
+          {
+            "path": "refs-src_lib_rs-added.refs",
+            "op": "set",
+            "fields": [
+              "from_selector",
+              "kind",
+              "confidence"
+            ],
+            "value": [],
+            "complete": true
+          },
+          {
+            "path": "callees-src_old_rs-moved.callees",
+            "op": "set",
+            "fields": [
+              "target_name",
+              "target_qualified",
+              "confidence"
+            ],
+            "value": [],
+            "complete": true
+          },
+          {
+            "path": "refs-src_old_rs-moved.refs",
+            "op": "set",
+            "fields": [
+              "from_selector",
+              "kind",
+              "confidence"
+            ],
+            "value": [],
+            "complete": true
+          },
+          {
+            "path": "callees-src_new_rs-moved.callees",
+            "op": "set",
+            "fields": [
+              "target_name",
+              "target_qualified",
+              "confidence"
+            ],
+            "value": [],
+            "complete": true
+          },
+          {
+            "path": "refs-src_new_rs-moved.refs",
+            "op": "set",
+            "fields": [
+              "from_selector",
+              "kind",
+              "confidence"
+            ],
+            "value": [],
+            "complete": true
+          }
+        ],
+        "head": [
+          {
+            "path": "overview.total_files",
+            "op": "eq",
+            "value": 2
+          },
+          {
+            "path": "overview.total_symbols",
+            "op": "eq",
+            "value": 3
+          },
+          {
+            "path": "overview.files",
+            "op": "set",
+            "fields": [
+              "path"
+            ],
+            "value": [
+              [
+                "src/lib.rs"
+              ],
+              [
+                "src/new.rs"
+              ]
+            ],
+            "complete": true
+          },
+          {
+            "path": "overview.files.*.symbols",
+            "op": "set",
+            "fields": [
+              "name",
+              "qualified",
+              "kind"
+            ],
+            "value": [
+              [
+                "keep",
+                "keep",
+                "function"
+              ],
+              [
+                "added",
+                "added",
+                "function"
+              ],
+              [
+                "moved",
+                "moved",
+                "function"
+              ]
+            ],
+            "complete": true
+          },
+          {
+            "path": "search-keep.matches",
+            "op": "set",
+            "fields": [
+              "path",
+              "name"
+            ],
+            "value": [
+              [
+                "src/lib.rs",
+                "keep"
+              ]
+            ],
+            "complete": true
+          },
+          {
+            "path": "search-keep.truncated",
+            "op": "eq",
+            "value": false
+          },
+          {
+            "path": "search-remove.matches",
+            "op": "set",
+            "fields": [
+              "path",
+              "name"
+            ],
+            "value": [],
+            "complete": true
+          },
+          {
+            "path": "search-remove.truncated",
+            "op": "eq",
+            "value": false
+          },
+          {
+            "path": "search-added.matches",
+            "op": "set",
+            "fields": [
+              "path",
+              "name"
+            ],
+            "value": [
+              [
+                "src/lib.rs",
+                "added"
+              ]
+            ],
+            "complete": true
+          },
+          {
+            "path": "search-added.truncated",
+            "op": "eq",
+            "value": false
+          },
+          {
+            "path": "search-moved.matches",
+            "op": "set",
+            "fields": [
+              "path",
+              "name"
+            ],
+            "value": [
+              [
+                "src/new.rs",
+                "moved"
+              ]
+            ],
+            "complete": true
+          },
+          {
+            "path": "search-moved.truncated",
+            "op": "eq",
+            "value": false
+          },
+          {
+            "path": "callees-src_lib_rs-keep.callees",
+            "op": "set",
+            "fields": [
+              "target_name",
+              "target_qualified",
+              "confidence"
+            ],
+            "value": [
+              [
+                "added",
+                "added",
+                "exact"
+              ]
+            ],
+            "complete": true
+          },
+          {
+            "path": "refs-src_lib_rs-keep.refs",
+            "op": "set",
+            "fields": [
+              "from_selector",
+              "kind",
+              "confidence"
+            ],
+            "value": [],
+            "complete": true
+          },
+          {
+            "path": "callees-src_lib_rs-remove.callees",
+            "op": "set",
+            "fields": [
+              "target_name",
+              "target_qualified",
+              "confidence"
+            ],
+            "value": [],
+            "complete": true
+          },
+          {
+            "path": "refs-src_lib_rs-remove.refs",
+            "op": "set",
+            "fields": [
+              "from_selector",
+              "kind",
+              "confidence"
+            ],
+            "value": [],
+            "complete": true
+          },
+          {
+            "path": "callees-src_lib_rs-added.callees",
+            "op": "set",
+            "fields": [
+              "target_name",
+              "target_qualified",
+              "confidence"
+            ],
+            "value": [],
+            "complete": true
+          },
+          {
+            "path": "refs-src_lib_rs-added.refs",
+            "op": "set",
+            "fields": [
+              "from_selector",
+              "kind",
+              "confidence"
+            ],
+            "value": [
+              [
+                "symbol:src/lib.rs#keep:function",
+                "call",
+                "exact"
+              ]
+            ],
+            "complete": true
+          },
+          {
+            "path": "callees-src_old_rs-moved.callees",
+            "op": "set",
+            "fields": [
+              "target_name",
+              "target_qualified",
+              "confidence"
+            ],
+            "value": [],
+            "complete": true
+          },
+          {
+            "path": "refs-src_old_rs-moved.refs",
+            "op": "set",
+            "fields": [
+              "from_selector",
+              "kind",
+              "confidence"
+            ],
+            "value": [],
+            "complete": true
+          },
+          {
+            "path": "callees-src_new_rs-moved.callees",
+            "op": "set",
+            "fields": [
+              "target_name",
+              "target_qualified",
+              "confidence"
+            ],
+            "value": [],
+            "complete": true
+          },
+          {
+            "path": "refs-src_new_rs-moved.refs",
+            "op": "set",
+            "fields": [
+              "from_selector",
+              "kind",
+              "confidence"
+            ],
+            "value": [],
+            "complete": true
+          }
+        ]
+      },
+      "surfaces": [
+        "plugin-cli",
+        "mcp",
+        "cli"
+      ],
+      "cli_checks": [
+        {
+          "path": "failed.count",
+          "op": "eq",
+          "value": 0
+        },
+        {
+          "path": "files_indexed",
+          "op": "exists"
+        }
+      ]
+    },
+    {
+      "id": "maintain-full",
+      "repository": "lifecycle-reviewed",
+      "tool": "maintain",
+      "input": {
+        "operation": "graph_sync",
+        "full": true
+      },
+      "checks": [
+        {
+          "path": "coverage.complete",
+          "op": "eq",
+          "value": true
+        },
+        {
+          "path": "coverage.state",
+          "op": "eq",
+          "value": "published"
+        },
+        {
+          "path": "result.failed.count",
+          "op": "eq",
+          "value": 0
+        }
+      ],
+      "setup": "lifecycle",
+      "source_review": "Frozen keep calls remove in base and added in head. Complete declarations, individual literal search identities and callees are checked against source truth and fresh full publication.",
+      "coverage": {
+        "supported": 1,
+        "unsupported": 0,
+        "omitted": 0,
+        "unresolved": 0,
+        "unit": "scenario"
+      },
+      "lifecycle": "full",
+      "snapshot_truth": {
+        "base": [
+          {
+            "path": "overview.total_files",
+            "op": "eq",
+            "value": 2
+          },
+          {
+            "path": "overview.total_symbols",
+            "op": "eq",
+            "value": 3
+          },
+          {
+            "path": "overview.files",
+            "op": "set",
+            "fields": [
+              "path"
+            ],
+            "value": [
+              [
+                "src/lib.rs"
+              ],
+              [
+                "src/old.rs"
+              ]
+            ],
+            "complete": true
+          },
+          {
+            "path": "overview.files.*.symbols",
+            "op": "set",
+            "fields": [
+              "name",
+              "qualified",
+              "kind"
+            ],
+            "value": [
+              [
+                "keep",
+                "keep",
+                "function"
+              ],
+              [
+                "remove",
+                "remove",
+                "function"
+              ],
+              [
+                "moved",
+                "moved",
+                "function"
+              ]
+            ],
+            "complete": true
+          },
+          {
+            "path": "search-keep.matches",
+            "op": "set",
+            "fields": [
+              "path",
+              "name"
+            ],
+            "value": [
+              [
+                "src/lib.rs",
+                "keep"
+              ]
+            ],
+            "complete": true
+          },
+          {
+            "path": "search-keep.truncated",
+            "op": "eq",
+            "value": false
+          },
+          {
+            "path": "search-remove.matches",
+            "op": "set",
+            "fields": [
+              "path",
+              "name"
+            ],
+            "value": [
+              [
+                "src/lib.rs",
+                "remove"
+              ]
+            ],
+            "complete": true
+          },
+          {
+            "path": "search-remove.truncated",
+            "op": "eq",
+            "value": false
+          },
+          {
+            "path": "search-added.matches",
+            "op": "set",
+            "fields": [
+              "path",
+              "name"
+            ],
+            "value": [],
+            "complete": true
+          },
+          {
+            "path": "search-added.truncated",
+            "op": "eq",
+            "value": false
+          },
+          {
+            "path": "search-moved.matches",
+            "op": "set",
+            "fields": [
+              "path",
+              "name"
+            ],
+            "value": [
+              [
+                "src/old.rs",
+                "moved"
+              ]
+            ],
+            "complete": true
+          },
+          {
+            "path": "search-moved.truncated",
+            "op": "eq",
+            "value": false
+          },
+          {
+            "path": "callees-src_lib_rs-keep.callees",
+            "op": "set",
+            "fields": [
+              "target_name",
+              "target_qualified",
+              "confidence"
+            ],
+            "value": [
+              [
+                "remove",
+                "remove",
+                "exact"
+              ]
+            ],
+            "complete": true
+          },
+          {
+            "path": "refs-src_lib_rs-keep.refs",
+            "op": "set",
+            "fields": [
+              "from_selector",
+              "kind",
+              "confidence"
+            ],
+            "value": [],
+            "complete": true
+          },
+          {
+            "path": "callees-src_lib_rs-remove.callees",
+            "op": "set",
+            "fields": [
+              "target_name",
+              "target_qualified",
+              "confidence"
+            ],
+            "value": [],
+            "complete": true
+          },
+          {
+            "path": "refs-src_lib_rs-remove.refs",
+            "op": "set",
+            "fields": [
+              "from_selector",
+              "kind",
+              "confidence"
+            ],
+            "value": [
+              [
+                "symbol:src/lib.rs#keep:function",
+                "call",
+                "exact"
+              ]
+            ],
+            "complete": true
+          },
+          {
+            "path": "callees-src_lib_rs-added.callees",
+            "op": "set",
+            "fields": [
+              "target_name",
+              "target_qualified",
+              "confidence"
+            ],
+            "value": [],
+            "complete": true
+          },
+          {
+            "path": "refs-src_lib_rs-added.refs",
+            "op": "set",
+            "fields": [
+              "from_selector",
+              "kind",
+              "confidence"
+            ],
+            "value": [],
+            "complete": true
+          },
+          {
+            "path": "callees-src_old_rs-moved.callees",
+            "op": "set",
+            "fields": [
+              "target_name",
+              "target_qualified",
+              "confidence"
+            ],
+            "value": [],
+            "complete": true
+          },
+          {
+            "path": "refs-src_old_rs-moved.refs",
+            "op": "set",
+            "fields": [
+              "from_selector",
+              "kind",
+              "confidence"
+            ],
+            "value": [],
+            "complete": true
+          },
+          {
+            "path": "callees-src_new_rs-moved.callees",
+            "op": "set",
+            "fields": [
+              "target_name",
+              "target_qualified",
+              "confidence"
+            ],
+            "value": [],
+            "complete": true
+          },
+          {
+            "path": "refs-src_new_rs-moved.refs",
+            "op": "set",
+            "fields": [
+              "from_selector",
+              "kind",
+              "confidence"
+            ],
+            "value": [],
+            "complete": true
+          }
+        ],
+        "head": [
+          {
+            "path": "overview.total_files",
+            "op": "eq",
+            "value": 2
+          },
+          {
+            "path": "overview.total_symbols",
+            "op": "eq",
+            "value": 3
+          },
+          {
+            "path": "overview.files",
+            "op": "set",
+            "fields": [
+              "path"
+            ],
+            "value": [
+              [
+                "src/lib.rs"
+              ],
+              [
+                "src/new.rs"
+              ]
+            ],
+            "complete": true
+          },
+          {
+            "path": "overview.files.*.symbols",
+            "op": "set",
+            "fields": [
+              "name",
+              "qualified",
+              "kind"
+            ],
+            "value": [
+              [
+                "keep",
+                "keep",
+                "function"
+              ],
+              [
+                "added",
+                "added",
+                "function"
+              ],
+              [
+                "moved",
+                "moved",
+                "function"
+              ]
+            ],
+            "complete": true
+          },
+          {
+            "path": "search-keep.matches",
+            "op": "set",
+            "fields": [
+              "path",
+              "name"
+            ],
+            "value": [
+              [
+                "src/lib.rs",
+                "keep"
+              ]
+            ],
+            "complete": true
+          },
+          {
+            "path": "search-keep.truncated",
+            "op": "eq",
+            "value": false
+          },
+          {
+            "path": "search-remove.matches",
+            "op": "set",
+            "fields": [
+              "path",
+              "name"
+            ],
+            "value": [],
+            "complete": true
+          },
+          {
+            "path": "search-remove.truncated",
+            "op": "eq",
+            "value": false
+          },
+          {
+            "path": "search-added.matches",
+            "op": "set",
+            "fields": [
+              "path",
+              "name"
+            ],
+            "value": [
+              [
+                "src/lib.rs",
+                "added"
+              ]
+            ],
+            "complete": true
+          },
+          {
+            "path": "search-added.truncated",
+            "op": "eq",
+            "value": false
+          },
+          {
+            "path": "search-moved.matches",
+            "op": "set",
+            "fields": [
+              "path",
+              "name"
+            ],
+            "value": [
+              [
+                "src/new.rs",
+                "moved"
+              ]
+            ],
+            "complete": true
+          },
+          {
+            "path": "search-moved.truncated",
+            "op": "eq",
+            "value": false
+          },
+          {
+            "path": "callees-src_lib_rs-keep.callees",
+            "op": "set",
+            "fields": [
+              "target_name",
+              "target_qualified",
+              "confidence"
+            ],
+            "value": [
+              [
+                "added",
+                "added",
+                "exact"
+              ]
+            ],
+            "complete": true
+          },
+          {
+            "path": "refs-src_lib_rs-keep.refs",
+            "op": "set",
+            "fields": [
+              "from_selector",
+              "kind",
+              "confidence"
+            ],
+            "value": [],
+            "complete": true
+          },
+          {
+            "path": "callees-src_lib_rs-remove.callees",
+            "op": "set",
+            "fields": [
+              "target_name",
+              "target_qualified",
+              "confidence"
+            ],
+            "value": [],
+            "complete": true
+          },
+          {
+            "path": "refs-src_lib_rs-remove.refs",
+            "op": "set",
+            "fields": [
+              "from_selector",
+              "kind",
+              "confidence"
+            ],
+            "value": [],
+            "complete": true
+          },
+          {
+            "path": "callees-src_lib_rs-added.callees",
+            "op": "set",
+            "fields": [
+              "target_name",
+              "target_qualified",
+              "confidence"
+            ],
+            "value": [],
+            "complete": true
+          },
+          {
+            "path": "refs-src_lib_rs-added.refs",
+            "op": "set",
+            "fields": [
+              "from_selector",
+              "kind",
+              "confidence"
+            ],
+            "value": [
+              [
+                "symbol:src/lib.rs#keep:function",
+                "call",
+                "exact"
+              ]
+            ],
+            "complete": true
+          },
+          {
+            "path": "callees-src_old_rs-moved.callees",
+            "op": "set",
+            "fields": [
+              "target_name",
+              "target_qualified",
+              "confidence"
+            ],
+            "value": [],
+            "complete": true
+          },
+          {
+            "path": "refs-src_old_rs-moved.refs",
+            "op": "set",
+            "fields": [
+              "from_selector",
+              "kind",
+              "confidence"
+            ],
+            "value": [],
+            "complete": true
+          },
+          {
+            "path": "callees-src_new_rs-moved.callees",
+            "op": "set",
+            "fields": [
+              "target_name",
+              "target_qualified",
+              "confidence"
+            ],
+            "value": [],
+            "complete": true
+          },
+          {
+            "path": "refs-src_new_rs-moved.refs",
+            "op": "set",
+            "fields": [
+              "from_selector",
+              "kind",
+              "confidence"
+            ],
+            "value": [],
+            "complete": true
+          }
+        ]
+      },
+      "surfaces": [
+        "plugin-cli",
+        "mcp",
+        "cli"
+      ],
+      "cli_checks": [
+        {
+          "path": "failed.count",
+          "op": "eq",
+          "value": 0
+        },
+        {
+          "path": "files_indexed",
+          "op": "exists"
+        }
+      ]
+    },
+    {
+      "id": "maintain-incremental",
+      "repository": "lifecycle-reviewed",
+      "tool": "maintain",
+      "input": {
+        "operation": "graph_sync",
+        "full": false
+      },
+      "checks": [
+        {
+          "path": "coverage.complete",
+          "op": "eq",
+          "value": true
+        },
+        {
+          "path": "coverage.state",
+          "op": "eq",
+          "value": "published"
+        },
+        {
+          "path": "result.failed.count",
+          "op": "eq",
+          "value": 0
+        }
+      ],
+      "setup": "lifecycle",
+      "source_review": "Frozen keep calls remove in base and added in head. Complete declarations, individual literal search identities and callees are checked against source truth and fresh full publication.",
+      "coverage": {
+        "supported": 1,
+        "unsupported": 0,
+        "omitted": 0,
+        "unresolved": 0,
+        "unit": "scenario"
+      },
+      "lifecycle": "incremental",
+      "snapshot_truth": {
+        "base": [
+          {
+            "path": "overview.total_files",
+            "op": "eq",
+            "value": 2
+          },
+          {
+            "path": "overview.total_symbols",
+            "op": "eq",
+            "value": 3
+          },
+          {
+            "path": "overview.files",
+            "op": "set",
+            "fields": [
+              "path"
+            ],
+            "value": [
+              [
+                "src/lib.rs"
+              ],
+              [
+                "src/old.rs"
+              ]
+            ],
+            "complete": true
+          },
+          {
+            "path": "overview.files.*.symbols",
+            "op": "set",
+            "fields": [
+              "name",
+              "qualified",
+              "kind"
+            ],
+            "value": [
+              [
+                "keep",
+                "keep",
+                "function"
+              ],
+              [
+                "remove",
+                "remove",
+                "function"
+              ],
+              [
+                "moved",
+                "moved",
+                "function"
+              ]
+            ],
+            "complete": true
+          },
+          {
+            "path": "search-keep.matches",
+            "op": "set",
+            "fields": [
+              "path",
+              "name"
+            ],
+            "value": [
+              [
+                "src/lib.rs",
+                "keep"
+              ]
+            ],
+            "complete": true
+          },
+          {
+            "path": "search-keep.truncated",
+            "op": "eq",
+            "value": false
+          },
+          {
+            "path": "search-remove.matches",
+            "op": "set",
+            "fields": [
+              "path",
+              "name"
+            ],
+            "value": [
+              [
+                "src/lib.rs",
+                "remove"
+              ]
+            ],
+            "complete": true
+          },
+          {
+            "path": "search-remove.truncated",
+            "op": "eq",
+            "value": false
+          },
+          {
+            "path": "search-added.matches",
+            "op": "set",
+            "fields": [
+              "path",
+              "name"
+            ],
+            "value": [],
+            "complete": true
+          },
+          {
+            "path": "search-added.truncated",
+            "op": "eq",
+            "value": false
+          },
+          {
+            "path": "search-moved.matches",
+            "op": "set",
+            "fields": [
+              "path",
+              "name"
+            ],
+            "value": [
+              [
+                "src/old.rs",
+                "moved"
+              ]
+            ],
+            "complete": true
+          },
+          {
+            "path": "search-moved.truncated",
+            "op": "eq",
+            "value": false
+          },
+          {
+            "path": "callees-src_lib_rs-keep.callees",
+            "op": "set",
+            "fields": [
+              "target_name",
+              "target_qualified",
+              "confidence"
+            ],
+            "value": [
+              [
+                "remove",
+                "remove",
+                "exact"
+              ]
+            ],
+            "complete": true
+          },
+          {
+            "path": "refs-src_lib_rs-keep.refs",
+            "op": "set",
+            "fields": [
+              "from_selector",
+              "kind",
+              "confidence"
+            ],
+            "value": [],
+            "complete": true
+          },
+          {
+            "path": "callees-src_lib_rs-remove.callees",
+            "op": "set",
+            "fields": [
+              "target_name",
+              "target_qualified",
+              "confidence"
+            ],
+            "value": [],
+            "complete": true
+          },
+          {
+            "path": "refs-src_lib_rs-remove.refs",
+            "op": "set",
+            "fields": [
+              "from_selector",
+              "kind",
+              "confidence"
+            ],
+            "value": [
+              [
+                "symbol:src/lib.rs#keep:function",
+                "call",
+                "exact"
+              ]
+            ],
+            "complete": true
+          },
+          {
+            "path": "callees-src_lib_rs-added.callees",
+            "op": "set",
+            "fields": [
+              "target_name",
+              "target_qualified",
+              "confidence"
+            ],
+            "value": [],
+            "complete": true
+          },
+          {
+            "path": "refs-src_lib_rs-added.refs",
+            "op": "set",
+            "fields": [
+              "from_selector",
+              "kind",
+              "confidence"
+            ],
+            "value": [],
+            "complete": true
+          },
+          {
+            "path": "callees-src_old_rs-moved.callees",
+            "op": "set",
+            "fields": [
+              "target_name",
+              "target_qualified",
+              "confidence"
+            ],
+            "value": [],
+            "complete": true
+          },
+          {
+            "path": "refs-src_old_rs-moved.refs",
+            "op": "set",
+            "fields": [
+              "from_selector",
+              "kind",
+              "confidence"
+            ],
+            "value": [],
+            "complete": true
+          },
+          {
+            "path": "callees-src_new_rs-moved.callees",
+            "op": "set",
+            "fields": [
+              "target_name",
+              "target_qualified",
+              "confidence"
+            ],
+            "value": [],
+            "complete": true
+          },
+          {
+            "path": "refs-src_new_rs-moved.refs",
+            "op": "set",
+            "fields": [
+              "from_selector",
+              "kind",
+              "confidence"
+            ],
+            "value": [],
+            "complete": true
+          }
+        ],
+        "head": [
+          {
+            "path": "overview.total_files",
+            "op": "eq",
+            "value": 2
+          },
+          {
+            "path": "overview.total_symbols",
+            "op": "eq",
+            "value": 3
+          },
+          {
+            "path": "overview.files",
+            "op": "set",
+            "fields": [
+              "path"
+            ],
+            "value": [
+              [
+                "src/lib.rs"
+              ],
+              [
+                "src/new.rs"
+              ]
+            ],
+            "complete": true
+          },
+          {
+            "path": "overview.files.*.symbols",
+            "op": "set",
+            "fields": [
+              "name",
+              "qualified",
+              "kind"
+            ],
+            "value": [
+              [
+                "keep",
+                "keep",
+                "function"
+              ],
+              [
+                "added",
+                "added",
+                "function"
+              ],
+              [
+                "moved",
+                "moved",
+                "function"
+              ]
+            ],
+            "complete": true
+          },
+          {
+            "path": "search-keep.matches",
+            "op": "set",
+            "fields": [
+              "path",
+              "name"
+            ],
+            "value": [
+              [
+                "src/lib.rs",
+                "keep"
+              ]
+            ],
+            "complete": true
+          },
+          {
+            "path": "search-keep.truncated",
+            "op": "eq",
+            "value": false
+          },
+          {
+            "path": "search-remove.matches",
+            "op": "set",
+            "fields": [
+              "path",
+              "name"
+            ],
+            "value": [],
+            "complete": true
+          },
+          {
+            "path": "search-remove.truncated",
+            "op": "eq",
+            "value": false
+          },
+          {
+            "path": "search-added.matches",
+            "op": "set",
+            "fields": [
+              "path",
+              "name"
+            ],
+            "value": [
+              [
+                "src/lib.rs",
+                "added"
+              ]
+            ],
+            "complete": true
+          },
+          {
+            "path": "search-added.truncated",
+            "op": "eq",
+            "value": false
+          },
+          {
+            "path": "search-moved.matches",
+            "op": "set",
+            "fields": [
+              "path",
+              "name"
+            ],
+            "value": [
+              [
+                "src/new.rs",
+                "moved"
+              ]
+            ],
+            "complete": true
+          },
+          {
+            "path": "search-moved.truncated",
+            "op": "eq",
+            "value": false
+          },
+          {
+            "path": "callees-src_lib_rs-keep.callees",
+            "op": "set",
+            "fields": [
+              "target_name",
+              "target_qualified",
+              "confidence"
+            ],
+            "value": [
+              [
+                "added",
+                "added",
+                "exact"
+              ]
+            ],
+            "complete": true
+          },
+          {
+            "path": "refs-src_lib_rs-keep.refs",
+            "op": "set",
+            "fields": [
+              "from_selector",
+              "kind",
+              "confidence"
+            ],
+            "value": [],
+            "complete": true
+          },
+          {
+            "path": "callees-src_lib_rs-remove.callees",
+            "op": "set",
+            "fields": [
+              "target_name",
+              "target_qualified",
+              "confidence"
+            ],
+            "value": [],
+            "complete": true
+          },
+          {
+            "path": "refs-src_lib_rs-remove.refs",
+            "op": "set",
+            "fields": [
+              "from_selector",
+              "kind",
+              "confidence"
+            ],
+            "value": [],
+            "complete": true
+          },
+          {
+            "path": "callees-src_lib_rs-added.callees",
+            "op": "set",
+            "fields": [
+              "target_name",
+              "target_qualified",
+              "confidence"
+            ],
+            "value": [],
+            "complete": true
+          },
+          {
+            "path": "refs-src_lib_rs-added.refs",
+            "op": "set",
+            "fields": [
+              "from_selector",
+              "kind",
+              "confidence"
+            ],
+            "value": [
+              [
+                "symbol:src/lib.rs#keep:function",
+                "call",
+                "exact"
+              ]
+            ],
+            "complete": true
+          },
+          {
+            "path": "callees-src_old_rs-moved.callees",
+            "op": "set",
+            "fields": [
+              "target_name",
+              "target_qualified",
+              "confidence"
+            ],
+            "value": [],
+            "complete": true
+          },
+          {
+            "path": "refs-src_old_rs-moved.refs",
+            "op": "set",
+            "fields": [
+              "from_selector",
+              "kind",
+              "confidence"
+            ],
+            "value": [],
+            "complete": true
+          },
+          {
+            "path": "callees-src_new_rs-moved.callees",
+            "op": "set",
+            "fields": [
+              "target_name",
+              "target_qualified",
+              "confidence"
+            ],
+            "value": [],
+            "complete": true
+          },
+          {
+            "path": "refs-src_new_rs-moved.refs",
+            "op": "set",
+            "fields": [
+              "from_selector",
+              "kind",
+              "confidence"
+            ],
+            "value": [],
+            "complete": true
+          }
+        ]
+      },
+      "surfaces": [
+        "plugin-cli",
+        "mcp",
+        "cli"
+      ],
+      "cli_checks": [
+        {
+          "path": "failed.count",
+          "op": "eq",
+          "value": 0
+        },
+        {
+          "path": "files_indexed",
+          "op": "exists"
+        }
+      ]
+    },
+    {
+      "id": "maintain-budget-disclosure",
+      "repository": "nodecap",
+      "tool": "maintain",
+      "input": {
+        "operation": "graph_sync",
+        "budget_ms": 1000
+      },
+      "checks": [
+        {
+          "path": "coverage",
+          "op": "budget_truth"
+        }
+      ],
+      "setup": "none",
+      "source_review": "The minimum budget may finish or exhaust. Both are valid only with truthful publish/discard state; no exact elapsed-time assertion.",
+      "coverage": {
+        "supported": 1,
+        "unsupported": 0,
+        "omitted": 0,
+        "unresolved": 0,
+        "unit": "scenario"
+      },
+      "surfaces": [
+        "plugin-cli",
+        "mcp"
+      ],
+      "cli_omission": "Plugin envelope/bounds/error contract differs from standalone CLI; assessed on both installed surfaces.",
+      "cli_checks": [
+        {
+          "path": "failed.count",
+          "op": "eq",
+          "value": 0
+        },
+        {
+          "path": "files_indexed",
+          "op": "exists"
+        }
+      ]
+    },
+    {
+      "id": "impact-time-surface-gap",
+      "repository": "graph",
+      "tool": "impact",
+      "input": {
+        "selector": "symbol:src/lib.rs#leaf:function",
+        "budget_ms": 1000
+      },
+      "checks": [],
+      "setup": "graph",
+      "source_review": "impact advertises no time budget; unknown-field rejection is the honest surface gap.",
+      "coverage": {
+        "supported": 1,
+        "unsupported": 0,
+        "omitted": 0,
+        "unresolved": 0,
+        "unit": "scenario"
+      },
+      "expected_error": "invalid_request",
+      "surfaces": [
+        "plugin-cli",
+        "mcp"
+      ],
+      "cli_omission": "Plugin envelope/bounds/error contract differs from standalone CLI; assessed on both installed surfaces."
+    },
+    {
+      "id": "trace-time-surface-gap",
+      "repository": "commands",
+      "tool": "trace",
+      "input": {
+        "command": "run",
+        "budget_ms": 1000
+      },
+      "checks": [],
+      "setup": "graph",
+      "source_review": "trace advertises no time budget; do not infer budget coverage from changes or CLI traversal.",
+      "coverage": {
+        "supported": 1,
+        "unsupported": 0,
+        "omitted": 0,
+        "unresolved": 0,
+        "unit": "scenario"
+      },
+      "expected_error": "invalid_request",
+      "surfaces": [
+        "plugin-cli",
+        "mcp"
+      ],
+      "cli_omission": "Plugin envelope/bounds/error contract differs from standalone CLI; assessed on both installed surfaces."
+    },
+    {
+      "id": "trace-ambiguous-root",
+      "repository": "command-ambiguity",
+      "tool": "trace",
+      "input": {
+        "command": "run"
+      },
+      "checks": [
+        {
+          "path": "result",
+          "op": "exists"
+        }
+      ],
+      "setup": "graph",
+      "source_review": "Two unrelated discovered run commands: selecting one without disclosure fails this challenge.",
+      "coverage": {
+        "supported": 1,
+        "unsupported": 0,
+        "omitted": 0,
+        "unresolved": 0,
+        "unit": "scenario"
+      },
+      "challenge": "ambiguous_trace",
+      "surfaces": [
+        "plugin-cli",
+        "mcp",
+        "cli"
+      ]
+    },
+    {
+      "id": "changes-add",
+      "repository": "change-add",
+      "tool": "changes",
+      "input": {
+        "base": "$base",
+        "head": "$head"
+      },
+      "checks": [
+        {
+          "path": "result.complete",
+          "op": "eq",
+          "value": true
+        },
+        {
+          "path": "result.comparison.base.commit_sha",
+          "op": "eq",
+          "value": "$base"
+        },
+        {
+          "path": "result.comparison.head.commit_sha",
+          "op": "eq",
+          "value": "$head"
+        },
+        {
+          "path": "result.symbols",
+          "op": "changes_provenance",
+          "base": "$base",
+          "head": "$head"
+        },
+        {
+          "path": "result.symbols",
+          "op": "set",
+          "fields": [
+            "status",
+            "base.selector",
+            "head.selector"
+          ],
+          "value": [
+            [
+              "added",
+              null,
+              "symbol:src/lib.rs#added:function"
+            ]
+          ],
+          "complete": true
+        }
+      ],
+      "setup": "none",
+      "source_review": "Manually reviewed base/head bytes; additions/removals retain sides, moves preserve identity, rename+edit and equal bodies cannot establish confident rename pairing.",
+      "coverage": {
+        "supported": 1,
+        "unsupported": 0,
+        "omitted": 0,
+        "unresolved": 0,
+        "unit": "scenario"
+      },
+      "surfaces": [
+        "plugin-cli",
+        "mcp",
+        "cli"
+      ]
+    },
+    {
+      "id": "changes-remove",
+      "repository": "change-remove",
+      "tool": "changes",
+      "input": {
+        "base": "$base",
+        "head": "$head"
+      },
+      "checks": [
+        {
+          "path": "result.complete",
+          "op": "eq",
+          "value": true
+        },
+        {
+          "path": "result.comparison.base.commit_sha",
+          "op": "eq",
+          "value": "$base"
+        },
+        {
+          "path": "result.comparison.head.commit_sha",
+          "op": "eq",
+          "value": "$head"
+        },
+        {
+          "path": "result.symbols",
+          "op": "changes_provenance",
+          "base": "$base",
+          "head": "$head"
+        },
+        {
+          "path": "result.symbols",
+          "op": "set",
+          "fields": [
+            "status",
+            "base.selector",
+            "head.selector"
+          ],
+          "value": [
+            [
+              "removed",
+              "symbol:src/lib.rs#removed:function",
+              null
+            ]
+          ],
+          "complete": true
+        }
+      ],
+      "setup": "none",
+      "source_review": "Manually reviewed base/head bytes; additions/removals retain sides, moves preserve identity, rename+edit and equal bodies cannot establish confident rename pairing.",
+      "coverage": {
+        "supported": 1,
+        "unsupported": 0,
+        "omitted": 0,
+        "unresolved": 0,
+        "unit": "scenario"
+      },
+      "surfaces": [
+        "plugin-cli",
+        "mcp",
+        "cli"
+      ]
+    },
+    {
+      "id": "changes-move",
+      "repository": "change-move",
+      "tool": "changes",
+      "input": {
+        "base": "$base",
+        "head": "$head"
+      },
+      "checks": [
+        {
+          "path": "result.complete",
+          "op": "eq",
+          "value": true
+        },
+        {
+          "path": "result.comparison.base.commit_sha",
+          "op": "eq",
+          "value": "$base"
+        },
+        {
+          "path": "result.comparison.head.commit_sha",
+          "op": "eq",
+          "value": "$head"
+        },
+        {
+          "path": "result.symbols",
+          "op": "changes_provenance",
+          "base": "$base",
+          "head": "$head"
+        },
+        {
+          "path": "result.symbols",
+          "op": "set",
+          "fields": [
+            "status",
+            "base.selector",
+            "head.selector"
+          ],
+          "value": [
+            [
+              "moved",
+              "symbol:src/old.rs#moved:function",
+              "symbol:src/new.rs#moved:function"
+            ]
+          ],
+          "complete": true
+        }
+      ],
+      "setup": "none",
+      "source_review": "Manually reviewed base/head bytes; additions/removals retain sides, moves preserve identity, rename+edit and equal bodies cannot establish confident rename pairing.",
+      "coverage": {
+        "supported": 1,
+        "unsupported": 0,
+        "omitted": 0,
+        "unresolved": 0,
+        "unit": "scenario"
+      },
+      "surfaces": [
+        "plugin-cli",
+        "mcp",
+        "cli"
+      ]
+    },
+    {
+      "id": "changes-rename-edit",
+      "repository": "change-rename-edit",
+      "tool": "changes",
+      "input": {
+        "base": "$base",
+        "head": "$head"
+      },
+      "checks": [
+        {
+          "path": "result.complete",
+          "op": "eq",
+          "value": true
+        },
+        {
+          "path": "result.comparison.base.commit_sha",
+          "op": "eq",
+          "value": "$base"
+        },
+        {
+          "path": "result.comparison.head.commit_sha",
+          "op": "eq",
+          "value": "$head"
+        },
+        {
+          "path": "result.symbols",
+          "op": "changes_provenance",
+          "base": "$base",
+          "head": "$head"
+        },
+        {
+          "path": "result.symbols",
+          "op": "uncertain_pairing",
+          "value": [
+            [
+              "base",
+              "symbol:src/lib.rs#old:function",
+              "$base"
+            ],
+            [
+              "head",
+              "symbol:src/lib.rs#new:function",
+              "$head"
+            ]
+          ]
+        }
+      ],
+      "setup": "none",
+      "source_review": "Manually reviewed base/head bytes; additions/removals retain sides, moves preserve identity, rename+edit and equal bodies cannot establish confident rename pairing.",
+      "coverage": {
+        "supported": 1,
+        "unsupported": 0,
+        "omitted": 0,
+        "unresolved": 0,
+        "unit": "scenario"
+      },
+      "surfaces": [
+        "plugin-cli",
+        "mcp",
+        "cli"
+      ]
+    },
+    {
+      "id": "changes-ambiguous-body",
+      "repository": "change-ambiguous-body",
+      "tool": "changes",
+      "input": {
+        "base": "$base",
+        "head": "$head"
+      },
+      "checks": [
+        {
+          "path": "result.complete",
+          "op": "eq",
+          "value": true
+        },
+        {
+          "path": "result.comparison.base.commit_sha",
+          "op": "eq",
+          "value": "$base"
+        },
+        {
+          "path": "result.comparison.head.commit_sha",
+          "op": "eq",
+          "value": "$head"
+        },
+        {
+          "path": "result.symbols",
+          "op": "changes_provenance",
+          "base": "$base",
+          "head": "$head"
+        },
+        {
+          "path": "result.symbols",
+          "op": "uncertain_pairing",
+          "value": [
+            [
+              "base",
+              "symbol:src/lib.rs#one:function",
+              "$base"
+            ],
+            [
+              "base",
+              "symbol:src/lib.rs#two:function",
+              "$base"
+            ],
+            [
+              "head",
+              "symbol:src/lib.rs#alpha:function",
+              "$head"
+            ],
+            [
+              "head",
+              "symbol:src/lib.rs#beta:function",
+              "$head"
+            ]
+          ]
+        }
+      ],
+      "setup": "none",
+      "source_review": "Manually reviewed base/head bytes; additions/removals retain sides, moves preserve identity, rename+edit and equal bodies cannot establish confident rename pairing.",
+      "coverage": {
+        "supported": 1,
+        "unsupported": 0,
+        "omitted": 0,
+        "unresolved": 0,
+        "unit": "scenario"
+      },
+      "surfaces": [
+        "plugin-cli",
+        "mcp",
+        "cli"
+      ]
+    },
+    {
+      "id": "changes-unsupported",
+      "repository": "change-unsupported",
+      "tool": "changes",
+      "input": {
+        "base": "$base",
+        "head": "$head"
+      },
+      "checks": [
+        {
+          "path": "result.complete",
+          "op": "eq",
+          "value": true
+        },
+        {
+          "path": "result.comparison.base.commit_sha",
+          "op": "eq",
+          "value": "$base"
+        },
+        {
+          "path": "result.comparison.head.commit_sha",
+          "op": "eq",
+          "value": "$head"
+        },
+        {
+          "path": "result.symbols",
+          "op": "changes_provenance",
+          "base": "$base",
+          "head": "$head"
+        },
+        {
+          "path": "result.symbols",
+          "op": "set",
+          "fields": [
+            "status",
+            "base.selector",
+            "head.selector"
+          ],
+          "value": [],
+          "complete": true
+        },
+        {
+          "path": "result.out_of_scope",
+          "op": "set",
+          "fields": [
+            "path",
+            "snapshot"
+          ],
+          "value": [
+            [
+              "schema.proto",
+              "base"
+            ],
+            [
+              "schema.proto",
+              "head"
+            ]
+          ],
+          "complete": true
+        }
+      ],
+      "setup": "none",
+      "source_review": "Manually reviewed base/head bytes; additions/removals retain sides, moves preserve identity, rename+edit and equal bodies cannot establish confident rename pairing.",
+      "coverage": {
+        "supported": 1,
+        "unsupported": 0,
+        "omitted": 0,
+        "unresolved": 0,
+        "unit": "scenario"
+      },
+      "surfaces": [
+        "plugin-cli",
+        "mcp",
+        "cli"
+      ]
+    },
+    {
+      "id": "changes-test-only",
+      "repository": "change-test-only",
+      "tool": "changes",
+      "input": {
+        "base": "$base",
+        "head": "$head"
+      },
+      "checks": [
+        {
+          "path": "result.complete",
+          "op": "eq",
+          "value": true
+        },
+        {
+          "path": "result.comparison.base.commit_sha",
+          "op": "eq",
+          "value": "$base"
+        },
+        {
+          "path": "result.comparison.head.commit_sha",
+          "op": "eq",
+          "value": "$head"
+        },
+        {
+          "path": "result.symbols",
+          "op": "changes_provenance",
+          "base": "$base",
+          "head": "$head"
+        },
+        {
+          "path": "result.symbols",
+          "op": "set",
+          "fields": [
+            "status",
+            "base.selector",
+            "head.selector"
+          ],
+          "value": [
+            [
+              "modified",
+              "symbol:tests/test_lib.rs#check:test",
+              "symbol:tests/test_lib.rs#check:test"
+            ]
+          ],
+          "complete": true
+        }
+      ],
+      "setup": "none",
+      "source_review": "Manually reviewed base/head bytes; additions/removals retain sides, moves preserve identity, rename+edit and equal bodies cannot establish confident rename pairing.",
+      "coverage": {
+        "supported": 1,
+        "unsupported": 0,
+        "omitted": 0,
+        "unresolved": 0,
+        "unit": "scenario"
+      },
+      "surfaces": [
+        "plugin-cli",
+        "mcp",
+        "cli"
+      ]
+    },
+    {
+      "id": "changes-truncation",
+      "repository": "change-multiple",
+      "tool": "changes",
+      "input": {
+        "base": "$base",
+        "head": "$head",
+        "max_symbols": 1
+      },
+      "checks": [
+        {
+          "path": "result.comparison.base.commit_sha",
+          "op": "eq",
+          "value": "$base"
+        },
+        {
+          "path": "result.comparison.head.commit_sha",
+          "op": "eq",
+          "value": "$head"
+        },
+        {
+          "path": "result.truncated",
+          "op": "eq",
+          "value": true
+        },
+        {
+          "path": "result.not_analysed.0",
+          "op": "exists"
+        },
+        {
+          "path": "result.symbols",
+          "op": "changes_provenance",
+          "base": "$base",
+          "head": "$head"
+        }
+      ],
+      "setup": "none",
+      "source_review": "Two independently modified functions exceed max_symbols=1; each remainder stays visible.",
+      "coverage": {
+        "supported": 1,
+        "unsupported": 0,
+        "omitted": 0,
+        "unresolved": 0,
+        "unit": "scenario"
+      },
+      "surfaces": [
+        "plugin-cli",
+        "mcp",
+        "cli"
+      ]
+    },
+    {
+      "id": "changes-budget",
+      "repository": "change-budget",
+      "tool": "changes",
+      "input": {
+        "base": "$base",
+        "head": "$head",
+        "budget_ms": 1000,
+        "query_budget_ms": 100,
+        "node_cap": 1
+      },
+      "checks": [
+        {
+          "path": "result",
+          "op": "changes_budget_truth",
+          "base": "$base",
+          "head": "$head",
+          "value": [
+            "symbol:src/lib.rs#leaf:function"
+          ]
+        },
+        {
+          "path": "result.symbols",
+          "op": "changes_provenance",
+          "base": "$base",
+          "head": "$head"
+        }
+      ],
+      "setup": "none",
+      "source_review": "Leaf changes its body while hub calls it on both sides. Node cap one cannot visit hub from leaf. Index/analysis time exhaustion is valid only with structured disclosure; completed comparison must account for leaf and traversal cuts without asserting exact milliseconds.",
+      "coverage": {
+        "supported": 1,
+        "unsupported": 0,
+        "omitted": 0,
+        "unresolved": 0,
+        "unit": "scenario"
+      },
+      "surfaces": [
+        "plugin-cli",
+        "mcp",
+        "cli"
+      ]
+    },
+    {
+      "id": "recommend-task-cutoff",
+      "repository": "history",
+      "tool": "recommend",
+      "input": {
+        "task_id": "synthetic-target",
+        "task_snapshot": "$task",
+        "revision": "$target",
+        "cutoff": "unix:500",
+        "limit": 10
+      },
+      "checks": [
+        {
+          "path": "recommendations",
+          "op": "exists"
+        },
+        {
+          "path": "resolved_target_revision",
+          "op": "eq",
+          "value": "$target"
+        },
+        {
+          "path": "recommendations",
+          "op": "live_selectors",
+          "value": [
+            "file:src/renamed.rs"
+          ]
+        }
+      ],
+      "setup": "history",
+      "source_review": "Known pre-execution task text at 400, cutoff 500, historical delivery 200; rename/delete at 300; heldout modification+addition 600 is not imported into ranking. Future Git objects still exist in the fixture; cutoff semantics are tested, not physical containment.",
+      "coverage": {
+        "supported": 1,
+        "unsupported": 0,
+        "omitted": 0,
+        "unresolved": 0,
+        "unit": "scenario"
+      },
+      "surfaces": [
+        "plugin-cli",
+        "mcp",
+        "cli"
+      ]
+    },
+    {
+      "id": "recommend-strict-evaluation",
+      "repository": "history",
+      "tool": "recommend",
+      "input": {},
+      "checks": [
+        {
+          "path": "metrics",
+          "op": "ranking_metrics",
+          "value": [
+            [
+              "combined",
+              "file",
+              10,
+              1,
+              1,
+              1,
+              1
+            ],
+            [
+              "combined",
+              "symbol",
+              10,
+              1,
+              1,
+              1,
+              1
+            ],
+            [
+              "task_search_only",
+              "file",
+              10,
+              1,
+              1,
+              1,
+              1
+            ],
+            [
+              "task_search_only",
+              "symbol",
+              10,
+              1,
+              1,
+              1,
+              1
+            ],
+            [
+              "graph_only",
+              "file",
+              10,
+              1,
+              1,
+              1,
+              1
+            ],
+            [
+              "graph_only",
+              "symbol",
+              10,
+              1,
+              1,
+              1,
+              1
+            ],
+            [
+              "frequency",
+              "file",
+              10,
+              1,
+              1,
+              1,
+              1
+            ],
+            [
+              "frequency",
+              "symbol",
+              10,
+              1,
+              1,
+              1,
+              1
+            ]
+          ]
+        },
+        {
+          "path": "cases.0.truth_coverage",
+          "op": "truth_omissions"
+        },
+        {
+          "path": "cases.0.evaluated",
+          "op": "eq",
+          "value": true
+        },
+        {
+          "path": "cases.0.target_revision",
+          "op": "eq",
+          "value": "$target"
+        },
+        {
+          "path": "coverage.isolated_indexes",
+          "op": "eq",
+          "value": true
+        }
+      ],
+      "setup": "history",
+      "source_review": "Exactly one live target file and parse symbol: history remaps parser.rs to renamed.rs, drops obsolete; lexical parse overlaps both levels. All variants return one true positive at K=10 (recall 1, precision 0.1, stale 0). Later new.rs/new_only are omitted; this is hand-computable contract truth, not ranking-score or effectiveness measurement.",
+      "coverage": {
+        "supported": 1,
+        "unsupported": 0,
+        "omitted": 0,
+        "unresolved": 0,
+        "unit": "scenario"
+      },
+      "action": "evaluate",
+      "surfaces": [
+        "cli"
+      ]
+    },
+    {
+      "id": "recommend-empty-metrics",
+      "repository": "history",
+      "tool": "recommend",
+      "input": {},
+      "checks": [
+        {
+          "path": "metrics",
+          "op": "null_metrics"
+        }
+      ],
+      "setup": "history",
+      "source_review": "No admitted cases means null metric denominators, not zero-valued precision or recall.",
+      "coverage": {
+        "supported": 1,
+        "unsupported": 0,
+        "omitted": 0,
+        "unresolved": 0,
+        "unit": "scenario"
+      },
+      "action": "evaluate_empty",
+      "surfaces": [
+        "cli"
+      ]
+    },
+    {
+      "id": "same-name-owner-callees",
+      "repository": "owner-rust",
+      "tool": "callees",
+      "input": {
+        "selector": "symbol:src/lib.rs#entry:function",
+        "include_unresolved": true
+      },
+      "checks": [
+        {
+          "path": "result.callees",
+          "op": "set",
+          "fields": [
+            "target_name",
+            "target_qualified",
+            "confidence"
+          ],
+          "value": [
+            [
+              "work",
+              "<A>::work",
+              "exact"
+            ]
+          ],
+          "complete": true
+        }
+      ],
+      "setup": "graph",
+      "source_review": "Written A::work explicitly names owner A; B::work is unrelated. This is static path syntax, not a dynamic self receiver.",
+      "coverage": {
+        "supported": 1,
+        "unsupported": 0,
+        "omitted": 0,
+        "unresolved": 0,
+        "unit": "scenario"
+      },
+      "surfaces": [
+        "plugin-cli",
+        "mcp",
+        "cli"
+      ]
+    },
+    {
+      "id": "same-name-owner-refs",
+      "repository": "owner-rust",
+      "tool": "refs",
+      "input": {
+        "selector": "symbol:src/lib.rs#<A>::work:method",
+        "kind": "call"
+      },
+      "checks": [
+        {
+          "path": "result.refs",
+          "op": "set",
+          "fields": [
+            "from_selector",
+            "kind",
+            "confidence"
+          ],
+          "value": [
+            [
+              "symbol:src/lib.rs#entry:function",
+              "call",
+              "exact"
+            ]
+          ],
+          "complete": true
+        }
+      ],
+      "setup": "graph",
+      "source_review": "Only entry writes A::work; other explicitly writes B::work. The original Python self fixture is retained but its stronger owner assertion was invalid.",
+      "coverage": {
+        "supported": 1,
+        "unsupported": 0,
+        "omitted": 0,
+        "unresolved": 0,
+        "unit": "scenario"
+      },
+      "surfaces": [
+        "plugin-cli",
+        "mcp",
+        "cli"
+      ]
+    }
+  ]
+}

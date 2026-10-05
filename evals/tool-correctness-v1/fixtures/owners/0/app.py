@@ -1,0 +1,10 @@
+class A:
+    def work(self):
+        return 1
+    def run(self):
+        return self.work()
+class B:
+    def work(self):
+        return 2
+    def run(self):
+        return self.work()

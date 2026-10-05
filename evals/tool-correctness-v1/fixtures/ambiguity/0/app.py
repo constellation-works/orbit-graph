@@ -1,0 +1,14 @@
+class A:
+    def work(self):
+        return 1
+class B:
+    def work(self):
+        return 2
+def dynamic(worker):
+    return worker.work()
+def generic(callback):
+    return callback()
+def external():
+    return mystery()
+def runtime():
+    return __import__("late")

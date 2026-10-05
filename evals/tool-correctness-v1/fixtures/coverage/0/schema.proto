@@ -1,0 +1,1 @@
+message Wire { string name = 1; }

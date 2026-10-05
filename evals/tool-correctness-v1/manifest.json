@@ -1,0 +1,245 @@
+{
+  "schema_version": 1,
+  "files": {
+    "fixtures/ambiguity/0/app.py": {
+      "sha256": "e43ed0cb5bbd964d5b56b920ca1a0f658403c9a9637300c608db893177cbdcee",
+      "bytes": 265
+    },
+    "fixtures/c/0/app.c": {
+      "sha256": "fc0ef41b7676ca0e551bd15eff1e6ce32e6d1928d286f6e66b3821fe75ccf5cd",
+      "bytes": 88
+    },
+    "fixtures/change-add/0/src/lib.rs": {
+      "sha256": "ed298fdecf45212d38aad209e79435e7ffe1e996ddf4d7d5c5974649693386ce",
+      "bytes": 17
+    },
+    "fixtures/change-add/1/src/lib.rs": {
+      "sha256": "0dcc993ef56557705a3561c8af7d70f627919391fe1ba2b1768d76d74b54948f",
+      "bytes": 35
+    },
+    "fixtures/change-ambiguous-body/0/src/lib.rs": {
+      "sha256": "5ca8d7746565199f4e00d72b1de3406ef97583a3d2724fa1f9bc5f8378b63e37",
+      "bytes": 34
+    },
+    "fixtures/change-ambiguous-body/1/src/lib.rs": {
+      "sha256": "9f59ef963abe977aedc1346d5faa0c06d0581f3280bf78d1340e13f6695be385",
+      "bytes": 37
+    },
+    "fixtures/change-budget/0/src/lib.rs": {
+      "sha256": "02879b5fb45f22c316a643a49a1b04f72e8421bfcd4925df7918fd570b1b4ed1",
+      "bytes": 62
+    },
+    "fixtures/change-budget/1/src/lib.rs": {
+      "sha256": "34207a5afb47a7bbd7d65f6f9db02c6e986fdc1fa76aa0c75cd900ae06d1800d",
+      "bytes": 62
+    },
+    "fixtures/change-move/0/src/old.rs": {
+      "sha256": "003c73914fe588d0c153cfb24adfebf53ca1738a3703fce711c9321188f812f7",
+      "bytes": 18
+    },
+    "fixtures/change-move/1/src/new.rs": {
+      "sha256": "003c73914fe588d0c153cfb24adfebf53ca1738a3703fce711c9321188f812f7",
+      "bytes": 18
+    },
+    "fixtures/change-multiple/0/src/lib.rs": {
+      "sha256": "2021f52a3fa4ebe6a7878be34aa4e4475477fdab6570992d6df5d31bb4fbdd3f",
+      "bytes": 65
+    },
+    "fixtures/change-multiple/1/src/lib.rs": {
+      "sha256": "6520e4fdc4405e48e144d07c68d57610e09d4ce652c7b0438c3dcbb04d495e50",
+      "bytes": 67
+    },
+    "fixtures/change-remove/0/src/lib.rs": {
+      "sha256": "1e13fc5080eac643a857e849f7f29df38a77ed5723b6d42eaef7c52fad04f420",
+      "bytes": 20
+    },
+    "fixtures/change-remove/1/src/lib.rs": {
+      "sha256": "5b3ffa2e39a6367f38cd15af2454abf27c392cd8f00468721a0888318e21cb69",
+      "bytes": 11
+    },
+    "fixtures/change-rename-edit/0/src/lib.rs": {
+      "sha256": "7e47b1768a06c50fc13ab5b633e9bf29f62ba35578abaeed5d37d0b30e901b67",
+      "bytes": 26
+    },
+    "fixtures/change-rename-edit/1/src/lib.rs": {
+      "sha256": "a2ab642322887c25f59f6d4ad18ad89f518ce5f7267a3a0fb092e0602d396425",
+      "bytes": 26
+    },
+    "fixtures/change-test-only/0/tests/test_lib.rs": {
+      "sha256": "1174b7f3b720e986cb44e275638568ed2532cf28ef77400d6565abb3704b9ba1",
+      "bytes": 38
+    },
+    "fixtures/change-test-only/1/tests/test_lib.rs": {
+      "sha256": "9aa059ef6ccb4c43f62898c128be3ded09fbcfa11a310b68ab02c4883b907d4c",
+      "bytes": 39
+    },
+    "fixtures/change-unsupported/0/schema.proto": {
+      "sha256": "41528416825fcf34ff53674a9b6097f15450fceb6973f7bbfaa25f64a5bb520d",
+      "bytes": 15
+    },
+    "fixtures/change-unsupported/1/schema.proto": {
+      "sha256": "bc8574e6b599395e577f2ac58ae985f3668a8313da5fd56c02b2764b944cefa3",
+      "bytes": 15
+    },
+    "fixtures/command-ambiguity/0/src/a.rs": {
+      "sha256": "e596293dd0c83a160e2174e823beb9c8896303fd3cf96139692e5c426cfe839a",
+      "bytes": 275
+    },
+    "fixtures/command-ambiguity/0/src/b.rs": {
+      "sha256": "e596293dd0c83a160e2174e823beb9c8896303fd3cf96139692e5c426cfe839a",
+      "bytes": 275
+    },
+    "fixtures/commands/0/src/lib.rs": {
+      "sha256": "e596293dd0c83a160e2174e823beb9c8896303fd3cf96139692e5c426cfe839a",
+      "bytes": 275
+    },
+    "fixtures/coverage/0/README.md": {
+      "sha256": "431c4a7c7586fab78f31c3be328739c76d4e852740b106454005156893d0be43",
+      "bytes": 37
+    },
+    "fixtures/coverage/0/schema.proto": {
+      "sha256": "e0acd06db8d75913eb000de0dffc92bd1dcc64dd2c9e98db76add1cbc5ccf5ed",
+      "bytes": 34
+    },
+    "fixtures/coverage/0/settings.toml": {
+      "sha256": "853a12e21d7e7befdb18e5de7b2991f4dcfbfc16bbee44f60ef96ac7b67154b6",
+      "bytes": 22
+    },
+    "fixtures/csharp/0/App.cs": {
+      "sha256": "d541d06a8dd927917e8d5cbebd94147635f90dabab69ef9e4ee48a8fe093f54b",
+      "bytes": 110
+    },
+    "fixtures/go/0/app.go": {
+      "sha256": "0ecbbf265934526ceefdc68e56491424032dd38c73c9c73549c081a9db53aee4",
+      "bytes": 94
+    },
+    "fixtures/graph/0/src/lib.rs": {
+      "sha256": "f0b9e19608b9e36b127b8cb19d210f3829e384eaca13b775251d9acf5e26b23c",
+      "bytes": 219
+    },
+    "fixtures/history/0/src/delete.rs": {
+      "sha256": "7b5bc0dde9468f348e7a9679756ea3a408b38aa81a20c2342d3a4ac32beed393",
+      "bytes": 21
+    },
+    "fixtures/history/0/src/parser.rs": {
+      "sha256": "da3c3a9179d1cc437fe7976e8ec75fcb2687dbeca2323b955a8e22d8f8453659",
+      "bytes": 28
+    },
+    "fixtures/history/1/src/delete.rs": {
+      "sha256": "61188e2f335013e3d05a740a48be4df343f9c92d9244b4b62fd04a68a31bdb52",
+      "bytes": 22
+    },
+    "fixtures/history/1/src/parser.rs": {
+      "sha256": "be32cf7cb986244dff90b3e2d8fcb3d97a357c86c16db51312d8fb75b4f3bc57",
+      "bytes": 28
+    },
+    "fixtures/history/2/src/renamed.rs": {
+      "sha256": "be32cf7cb986244dff90b3e2d8fcb3d97a357c86c16db51312d8fb75b4f3bc57",
+      "bytes": 28
+    },
+    "fixtures/history/3/src/new.rs": {
+      "sha256": "4c29da6d9dca73bdc52b4d582a5cc28707b288560428c3db14c4b47eb1fa76e6",
+      "bytes": 21
+    },
+    "fixtures/history/3/src/renamed.rs": {
+      "sha256": "de74291c09f3f7038b53c1527cc0b941b40e22c04edb07ad3dd0cc1dea5d34b7",
+      "bytes": 28
+    },
+    "fixtures/imports/0/src/helper.rs": {
+      "sha256": "aba7204248f4f3a39782ad8abababfc135b3879b1ba6aa9fe4979a56a92824e5",
+      "bytes": 17
+    },
+    "fixtures/imports/0/src/lib.rs": {
+      "sha256": "4ea6e3362dc30765418e2330e5fa91ba10d73e771d53059750db6ca9b6c123e2",
+      "bytes": 87
+    },
+    "fixtures/java/0/App.java": {
+      "sha256": "ee31a85f8caec885bc1c11d5ef5cc1c4a77e87d330cf3212b5540391cf74ce75",
+      "bytes": 119
+    },
+    "fixtures/javascript/0/app.js": {
+      "sha256": "4a18b63f670c48f3633f806e671d766d4c28a1539ff07fa5910d5f1707aec40e",
+      "bytes": 94
+    },
+    "fixtures/jsx/0/app.jsx": {
+      "sha256": "4a18b63f670c48f3633f806e671d766d4c28a1539ff07fa5910d5f1707aec40e",
+      "bytes": 94
+    },
+    "fixtures/kotlin/0/app.kt": {
+      "sha256": "181d617a63c6c9ff16a42b1fca466529dc04a9482799d988dd0ccf93644eb908",
+      "bytes": 91
+    },
+    "fixtures/lifecycle/0/src/lib.rs": {
+      "sha256": "d4ddb5d2556333e7e81df3ede379f5d15397650077cb6390eb6562817906228d",
+      "bytes": 36
+    },
+    "fixtures/lifecycle/0/src/old.rs": {
+      "sha256": "003c73914fe588d0c153cfb24adfebf53ca1738a3703fce711c9321188f812f7",
+      "bytes": 18
+    },
+    "fixtures/lifecycle/1/src/lib.rs": {
+      "sha256": "0dcc993ef56557705a3561c8af7d70f627919391fe1ba2b1768d76d74b54948f",
+      "bytes": 35
+    },
+    "fixtures/lifecycle/1/src/new.rs": {
+      "sha256": "003c73914fe588d0c153cfb24adfebf53ca1738a3703fce711c9321188f812f7",
+      "bytes": 18
+    },
+    "fixtures/lifecycle-reviewed/0/src/lib.rs": {
+      "sha256": "80ad9685f0d0f3befc2d8bb11b9fdc40469494b219da8d18579930325496698c",
+      "bytes": 47
+    },
+    "fixtures/lifecycle-reviewed/0/src/old.rs": {
+      "sha256": "003c73914fe588d0c153cfb24adfebf53ca1738a3703fce711c9321188f812f7",
+      "bytes": 18
+    },
+    "fixtures/lifecycle-reviewed/1/src/lib.rs": {
+      "sha256": "006899afa2652dae11c9e299ee5d2b6974017ccfe078fd10133c4c2dd6730344",
+      "bytes": 45
+    },
+    "fixtures/lifecycle-reviewed/1/src/new.rs": {
+      "sha256": "003c73914fe588d0c153cfb24adfebf53ca1738a3703fce711c9321188f812f7",
+      "bytes": 18
+    },
+    "fixtures/macro/0/src/lib.rs": {
+      "sha256": "9806427204203b820edc2459687ee848137e4505af6a50cb978d61d14731a079",
+      "bytes": 93
+    },
+    "fixtures/nodecap/0/src/lib.rs": {
+      "sha256": "849d862573ff4a67c02781c725936ade87fa050a939d169183c93d5d4364a0ca",
+      "bytes": 4922
+    },
+    "fixtures/owner-rust/0/src/lib.rs": {
+      "sha256": "e23040554fb9a143c80685170eb372cd3d854aeebc7bfbe65c6ca2a6785311bb",
+      "bytes": 128
+    },
+    "fixtures/owners/0/app.py": {
+      "sha256": "1d9204713e9cbe9fa35d22bdf709f531290bd09f06ed2443d94580f8f78affba",
+      "bytes": 184
+    },
+    "fixtures/python/0/app.py": {
+      "sha256": "786cc6346cb69df3bea7d3a761eaf0c44daccfa788139ff5a9fd061e39c0ab29",
+      "bytes": 72
+    },
+    "fixtures/ruby/0/app.rb": {
+      "sha256": "1150c19a1839a5469594bea2206515604e51eda33f046864031067bad1df898f",
+      "bytes": 63
+    },
+    "fixtures/rust/0/src/lib.rs": {
+      "sha256": "120ef101993fd472177d7c1ef7b5c920306714bba8ee19c1eb022c7d450d8d5c",
+      "bytes": 78
+    },
+    "fixtures/tsx/0/app.tsx": {
+      "sha256": "de20ce940d4446dea87d4e3cecd68aeeab434779506a8ea7ef4db46e9617a8a3",
+      "bytes": 107
+    },
+    "fixtures/typescript/0/app.ts": {
+      "sha256": "de20ce940d4446dea87d4e3cecd68aeeab434779506a8ea7ef4db46e9617a8a3",
+      "bytes": 107
+    },
+    "corpus.json": {
+      "sha256": "3463055d4023af35ea2aef750b67ec074dcbf8f99ddb63ee4badabaa19deadb6",
+      "bytes": 139822
+    }
+  }
+}
