@@ -13,17 +13,22 @@ def interval(values, alpha=0.05, seed=14002):
     return [samples[int(alpha / 2 * len(samples))], samples[min(len(samples)-1, int((1-alpha/2)*len(samples)))]]
 
 
-def tokens(row):
-    usage = row["usage"] or {}
-    a, b = usage.get("input_tokens"), usage.get("output_tokens")
-    return a + b if type(a) is int and type(b) is int else None
+TOKEN_FIELDS = ("input_tokens", "output_tokens", "cached_input_tokens", "reasoning_tokens", "total_tokens")
+
+
+def tokens(row, field="total_tokens"):
+    """A nullable qualified field, never a sum of other counters or diagnostics."""
+    value = (row["usage"] or {}).get(field)
+    return value if type(value) is int and value >= 0 else None
 
 
 def paired(rows):
     pairs = defaultdict(dict)
     for r in rows:
         pairs[(r["case_id"], r["repetition"])][r["arm"]] = r
-    quality, token_delta, reductions, both_time = defaultdict(list), defaultdict(list), defaultdict(list), []
+    quality, both_time = defaultdict(list), []
+    token_delta = {field:defaultdict(list) for field in TOKEN_FIELDS}
+    reductions = {field:defaultdict(list) for field in TOKEN_FIELDS}
     discordant = Counter()
     for (case, repetition), pair in pairs.items():
         if set(pair) != {"baseline", "graph"}:
@@ -32,27 +37,39 @@ def paired(rows):
         if b["correct"] is not None and g["correct"] is not None:
             quality[case].append(int(g["correct"]) - int(b["correct"]))
             discordant["graph_only" if g["correct"] and not b["correct"] else "baseline_only" if b["correct"] and not g["correct"] else "concordant"] += 1
-        bt, gt = tokens(b), tokens(g)
-        if bt is not None and gt is not None:
-            token_delta[case].append(gt-bt)
-            if bt > 0:
-                reductions[case].append(1-gt/bt)
+        for field in TOKEN_FIELDS:
+            bt, gt = tokens(b, field), tokens(g, field)
+            if bt is not None and gt is not None:
+                token_delta[field][case].append(gt-bt)
+                if bt > 0:
+                    reductions[field][case].append(1-gt/bt)
         if b["correct"] is True and g["correct"] is True:
             both_time.append(dict(case_id=case,repetition=repetition,graph_minus_baseline_wall_ms=g["timing"]["wall_ms"]-b["timing"]["wall_ms"]))
     # All repetitions must contribute to a case before its estimate enters uncertainty.
     repeated = Counter(case for case, _ in pairs)
     quality_means = {k:mean(v) for k,v in quality.items() if len(v)==repeated[k]}
-    delta_means = {k:mean(v) for k,v in token_delta.items() if len(v)==repeated[k]}
-    reduction_means = {k:mean(v) for k,v in reductions.items() if len(v)==repeated[k]}
+    comparisons = {}
+    for field in TOKEN_FIELDS:
+        delta_means = {k:mean(v) for k,v in token_delta[field].items() if len(v)==repeated[k]}
+        reduction_means = {k:mean(v) for k,v in reductions[field].items() if len(v)==repeated[k]}
+        observed_pairs = sum(len(v) for v in token_delta[field].values())
+        comparisons[field] = dict(graph_minus_baseline=mean(delta_means.values()) if delta_means else None,
+                                  per_case_delta=delta_means, observed_cases=len(delta_means), total_cases=len(repeated),
+                                  observed_pairs=observed_pairs, total_pairs=len(pairs), missing_pairs=len(pairs)-observed_pairs,
+                                  reduction=mean(reduction_means.values()) if reduction_means else None,
+                                  reduction_ci=interval(list(reduction_means.values())), observed_reduction_cases=len(reduction_means),
+                                  reduction_pairs=sum(len(v) for v in reductions[field].values()),
+                                  qualification="independently qualified field totals only; diagnostic observed_sum excluded")
+    total = comparisons["total_tokens"]
     return dict(total_pairs=len(pairs), total_cases=len(repeated), complete_quality_cases=len(quality_means),
                 per_case_quality_delta=quality_means, accuracy_delta=mean(quality_means.values()) if quality_means else None,
                 descriptive_case_bootstrap_ci=interval(list(quality_means.values())),
-                discordance=dict(discordant), paired_token_delta=mean(delta_means.values()) if delta_means else None,
-                observed_token_cases=len(delta_means), token_reduction=mean(reduction_means.values()) if reduction_means else None,
-                token_reduction_ci=interval(list(reduction_means.values())), observed_reduction_cases=len(reduction_means),
+                discordance=dict(discordant), token_fields=comparisons, paired_token_delta=total["graph_minus_baseline"],
+                observed_token_cases=total["observed_cases"], token_reduction=total["reduction"],
+                token_reduction_ci=total["reduction_ci"], observed_reduction_cases=total["observed_reduction_cases"],
                 both_correct_time={"conditional":True,"pairs":len(both_time),"all_pairs":len(pairs),"rows":both_time},
                 missing_quality_pairs=len(pairs)-sum(len(v) for v in quality.values()),
-                missing_token_pairs=len(pairs)-sum(len(v) for v in token_delta.values()))
+                missing_token_pairs=total["missing_pairs"])
 
 
 def report(rows, admission, protocol, plan, kind):
@@ -90,7 +107,8 @@ def report(rows, admission, protocol, plan, kind):
                                          observed=sum(r[key] is not None for r in selected),total=len(selected)) for key in ("output_bytes","setup_output_bytes")},
                          timing={key:dict(sum_ms=sum(r["timing"].get(key) for r in selected if r["timing"].get(key) is not None) if any(r["timing"].get(key) is not None for r in selected) else None,
                                           observed=sum(r["timing"].get(key) is not None for r in selected),total=len(selected))
-                                 for key in ("wall_ms","setup_ms","provider_ms","graph_sync_ms","plugin_install_ms")})
+                                 for key in ("wall_ms","setup_ms","provider_ms","graph_sync_ms","plugin_install_ms",
+                                             "preflight_outside_wall_ms","preflight_within_setup_ms")})
     repositories = sorted({r["repository"] for r in rows})
     paired_results = paired(rows)
     return dict(schema_version=1, study_id=plan["study_id"], study_kind=kind, source_truth_admission=admission,

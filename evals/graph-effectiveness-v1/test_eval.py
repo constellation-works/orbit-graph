@@ -36,7 +36,7 @@ def fixture(corpus, protocol, plan):
     for s in plan['slots']:
         e = dict(status='ok',error=None,answer=answer(cases[s['case_id']]),calls=[{'tool':'read','status':'ok'}],
                  timing=dict(wall_ms=1000,setup_ms=200,provider_ms=800,graph_sync_ms=None,plugin_install_ms=0),
-                 usage={'input_tokens':1000,'output_tokens':100},usage_raw={'cached_input_tokens':200},
+                 usage={'input_tokens':1000,'output_tokens':100},usage_raw={'cached_input_tokens':200,'total_tokens':1100},
                  output_bytes=100,setup_output_bytes=0)
         records.append(dict(order=s['order'],episode=e))
     return dict(schema_version=1,kind='offline-scoring-fixture-v1',study_kind='test-only',
@@ -83,6 +83,13 @@ class StudyTests(unittest.TestCase):
         cls.scratch = study.REPO / '.orbit/tmp/graph-effectiveness-tests'
         cls.scratch.mkdir(parents=True,exist_ok=True)
         cls.goldens = study.load(HERE/'cli-goldens.json')
+        if os.environ.get('UPDATE_GRAPH_EFFECTIVENESS_GOLDENS') == '1':
+            for args in [*cls.goldens['help'], 'study freeze --help']:
+                r=run_cli(HERE/'eval.py',args.split(),cls.scratch)
+                if r.returncode:
+                    raise AssertionError(r.stderr)
+                cls.goldens['help'][args]={'exit_code':r.returncode,'stdout':r.stdout,'stderr':r.stderr}
+            (HERE/'cli-goldens.json').write_text(json.dumps(cls.goldens,indent=2)+'\n')
 
     def setUp(self):
         self.work = Path(tempfile.mkdtemp(dir=self.scratch))
@@ -244,6 +251,7 @@ class StudyTests(unittest.TestCase):
         self.assertEqual(report['paired']['both_correct_time']['pairs'],24)
         # Change fixture prospectively, with new packets/reviews. No historical rescore.
         f['records'][0]['episode']['usage']={'input_tokens':None,'output_tokens':100}
+        f['records'][0]['episode']['usage_raw']['total_tokens']=None
         f['records'][1]['episode'].update(status='failed',error={'code':'TEST-ONLY failure','message':'TEST-ONLY setup/provider failure retained'},answer=None)
         f['records'][2]['episode'].update(status='timeout',error={'code':'TEST-ONLY timeout','message':'TEST-ONLY timeout retained'},answer=None)
         path=self.save('partial.json',f)
@@ -291,8 +299,8 @@ class StudyTests(unittest.TestCase):
     def test_attributed_setup_refusals_and_fake_adaptation_boundary(self):
         pin=dict(commit='1'*40,backend_sha256='2'*64,orbit_sha256='3'*64,inventory_sha256='4'*64,skill_sha256='5'*64)
         req=study.requests(self.corpus,self.protocol,self.lock,self.plan,pin)
-        rp=dict(schema_version=3,profile=study.PROSPECTIVE_PROFILE,model={'provider':'TEST-ONLY','name':'fake','version':'fake','settings':{}},
-                provider_binary_sha256='6'*64,harness={p:study.sha((study.REPO/'scripts/agent-eval'/p).read_bytes()) for p in ('eval_runner.py','eval_broker.py','plugin_profile.py','reply_provenance.py')},requests=req)
+        rp=dict(schema_version=3,profile=study.PROSPECTIVE_PROFILE,model={'provider':'codex-cli','name':'fake','version':'fake','settings':{}},
+                provider_binary_sha256='6'*64,harness={p:study.sha((study.REPO/'scripts/agent-eval'/p).read_bytes()) for p in study.runtime.HARNESS},requests=req)
         refusals=[dict(order=s['order'],status='setup_refused',error={'code':'TEST-ONLY capability unavailable','message':'TEST-ONLY refused before provider'},operator='TEST-ONLY operator',evidence='TEST-ONLY preflight refusal record',elapsed_ms=10) for s in self.plan['slots']]
         plan=self.save('plan.json',self.plan);rp_path=self.save('rp.json',rp);ref_path=self.save('refusals.json',refusals)
         adapted=self.cli('study','adapt','--plan',plan,'--request-plan',rp_path,'--refusals',ref_path)
@@ -367,7 +375,7 @@ class StudyTests(unittest.TestCase):
         # This tests the production CLI without narrowing the real corpus.
         repo = self.work/'qualified-cli'
         here = repo/'evals/graph-effectiveness-v1';here.mkdir(parents=True)
-        for name in ('eval.py','scoring.py','analysis.py'):
+        for name in ('eval.py','scoring.py','analysis.py','runtime.py'):
             shutil.copyfile(HERE/name,here/name)
         for relative in self.lock['dependencies']:
             target=repo/relative
@@ -471,6 +479,33 @@ class StudyTests(unittest.TestCase):
         self.assertEqual(r['paired']['missing_token_pairs'],1)
         self.assertEqual(r['arms']['graph']['usage']['input_tokens']['field_coverage'][0]['observed_sum'],200)
         self.assertEqual(row['phase_timing']['outside_wall']['preflight_ms'],5)
+
+    def test_real_shaped_nullable_totals_and_overlapping_timing_cli(self):
+        plan,path,f=self.prepare()
+        for n,(inputs,outputs) in enumerate(((30529,990),(71040,1408))):
+            e=f['records'][n]['episode']
+            values=dict(input_tokens=inputs,output_tokens=outputs,cached_input_tokens=400,reasoning_tokens=300,total_tokens=None)
+            fields={key:dict(expected_turns=1,reported_turns=1 if value is not None else 0,
+                valid_observations=1 if value is not None else 0,observed_sum=value,
+                coverage='complete' if value is not None else 'partial',total=value,
+                total_state='observed_single_turn' if value is not None else 'partial') for key,value in values.items()}
+            timing=dict(wall_ms=27734,setup_ms=1634,provider_ms=26100,
+                        overlapping=dict(plugin_install_ms=1012,graph_sync_ms=660,preflight_within_setup_ms=55),
+                        outside_wall=dict(preflight_ms=125),end_to_end_ms=None)
+            e['telemetry']=dict(contract='prospective-accounting-v1',usage=dict(fields=fields,cost_usd=None),
+                attempts=[],tools=dict(attempts=0,graph_attempts=0,graph_successful=0,all_attempt_denominator=0,
+                                      coverage=dict(state='complete',reported_attempts=0,expected_attempts=0)),timing=timing)
+        r=self.cli('study','score','--plan',plan,'--export',self.export,'--fixture',self.save('real-shaped.json',f))
+        self.assertEqual(r['paired']['missing_token_pairs'],1)
+        self.assertEqual(r['paired']['token_fields']['input_tokens']['observed_pairs'],24)
+        self.assertEqual(r['paired']['token_fields']['total_tokens']['observed_pairs'],23)
+        row=r['attempts'][1]
+        self.assertIsNone(row['usage']['total_tokens'])
+        self.assertEqual(row['usage']['output_tokens'],1408)
+        self.assertEqual(row['usage']['reasoning_tokens'],300)
+        self.assertEqual(row['timing']['wall_ms'],27734)
+        self.assertEqual(row['timing']['preflight_outside_wall_ms'],125)
+        self.assertEqual(row['timing']['preflight_within_setup_ms'],55)
 
 
 if __name__=='__main__':unittest.main()
