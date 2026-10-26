@@ -25,7 +25,7 @@ jobs:
         with:
           toolchain: 1.89.0
           components: clippy, rustfmt
-      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
       # Pinned release, verified by its SHA-256 before it runs (STD-05 §R23).
       # Keep the version in step with CARGO_NEXTEST_VERSION in the Makefile.
       - name: Download pinned cargo-nextest release
@@ -148,7 +148,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # 1.89.0
         with:
           toolchain: 1.89.0
-      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
       # The gate scripts run under macOS's BSD userland and bash 3.2 too.
       - if: runner.os == 'macOS'
         run: scripts/test-repo-gates.sh
