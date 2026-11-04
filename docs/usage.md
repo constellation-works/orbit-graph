@@ -178,7 +178,7 @@ that was never synced, a read exits 1 with code `index_missing` and names the
 command that builds the missing index:
 
 ```text
-no graph index for /work/widgets at /work/widgets/.orbit-graph/main.18.db; run `orbit-graph sync`
+no graph index for /work/widgets at /work/widgets/.orbit-graph/main.24.db; run `orbit-graph sync`
 ```
 
 `recommend` and `history status` name `orbit-graph history sync --branch
@@ -199,7 +199,7 @@ cannot look up for any other reason (an ambiguous prefix, an unreadable
 object, an unreadable ref) is kept and reported as `unverifiable`, with a
 `detail` naming the failure.
 
-Extractor version 22 writes redacted graph strings and symbol signatures. Run
+Extractor version 24 writes redacted graph strings and symbol signatures. Run
 `orbit-graph clean --confirm` to remove older graph databases that may contain credential-shaped
 values. A subsequent `sync` builds the current index. History task text and
 symbol signatures are redacted when imported or rebuilt; run
@@ -275,26 +275,27 @@ their stored envelopes and retained unless `--discard-verified` is explicit.
 | Command | Purpose |
 | --- | --- |
 | `sync [--full]` | Incrementally update or fully rebuild the index. |
-| `history import --input <path\|->` | Import a validated v2 delivery JSON envelope. |
+| `history import [--input <path\|->]` | Import a validated v2 delivery JSON envelope (`--input` defaults to `-`, stdin). |
 | `history sync --branch <name> [--limit <n>]` | Atomically index new first-parent commits as Git-only evidence. |
 | `history status --branch <name>` | Report history versions, cursor, evidence, and association counts. |
 | `history rebuild --branch <name> [--limit <n>] [--confirm] [--discard-verified]` | Preview one scope, then atomically re-extract Git-only history while retaining verified deliveries by default. |
-| `recommend --query <text>\|--task-id <id> [--level file\|symbol] [--variant <variant>]` | Rank current destinations with evidence and freshness. |
-| `evaluate --input <corpus.json>` | Compare four ranking variants chronologically. |
-| `evaluate --live --branch <name> [--limit <n>] [--k <n>] [--revision <rev>]` | Hold out first-parent commits and score Git-only commit-text relevance. Requires `history sync` first. |
+| `recommend --query <text>\|--task-id <id> [--level file\|symbol] [--variant <variant>] [--limit <n>] [--branch <name>] [--revision <rev>] [--cutoff <cutoff>] [--task-snapshot <path>] [--hybrid-hits <path>]` | Rank current destinations with evidence and freshness. |
+| `evaluate --input <corpus.json> [--k <n>]` | Compare four ranking variants chronologically. `--input` is required unless `--live` is set. |
+| `evaluate --live [--branch <name>] [--limit <n>] [--k <n>] [--revision <rev>]` | Hold out first-parent commits and score Git-only commit-text relevance. Requires `history sync` first. |
 | `search <query> [--kind symbol\|string\|config] [--lang <id>] [--limit <n>]` | Full-text search indexed definitions, strings, or config keys. |
 | `show <selector> [--max-bytes <n>]` | Return metadata and a bounded source slice. `source` is the slice as text, or `null` when it is not UTF-8; then `source_bytes` carries the raw bytes and `source_encoding` is `bytes` (otherwise `utf-8`). |
 | `refs <symbol> [--confidence <level>] [--kind <kind>]` | Return inbound references and relations. |
 | `callees <symbol> [--include-unresolved]` | Return calls made by a symbol. Unresolved calls whose name has no indexed definition (standard-library and prelude calls) are hidden by default, counted in `hidden_unresolved`, and noted on stderr. |
 | `impact <selector> [--depth <n>] [--confidence <level>] [--direction inbound\|outbound\|both]` | Traverse callers, callees, or both around a selector (default: both). |
 | `trace <command> [--depth <n>] [--confidence <level>]` | Trace a discovered CLI command handler and its calls. |
-| `overview [<file-or-dir-selector>] [--detail summary\|full]` | Summarize indexed files and symbols. The former `--format summary\|full` spelling still works but warns on stderr; `--format` otherwise selects the output mode. |
+| `overview [<file-or-dir-selector>] [--detail summary\|full]` | Summarize indexed files and symbols. The former `overview --format summary\|full` spelling (placed after `overview`) still works but warns on stderr; `--format` otherwise selects the output mode. |
 | `implementors <trait-selector>` | Find concrete implementations of a trait-like symbol. |
 | `deps <file-or-dir-selector>` | List source-level module/import edges. |
-| `changes [<base>..<head>\|<base>] [--symbol <selector>] [--max-*]` | Analyse a change: changed symbols, affected callers and entry points, and labelled candidate tests. See [Change analysis](#change-analysis). |
+| `changes [<base>..<head>\|<base>] [--symbol <selector>] [--confidence <level>] [--depth <n>] [--node-cap <n>] [--query-budget-ms <ms>] [--max-symbols <n>] [--max-callers <n>] [--max-entry-points <n>] [--max-tests <n>] [--budget-ms <ms>] [--language <id>] [--scope <prefix>] [--cache-dir <dir>] [--no-cache]` | Analyse a change: changed symbols, affected callers and entry points, and labelled candidate tests. See [Change analysis](#change-analysis). |
 | `db-path` | Show the current database path, extractor version, and whether it exists. |
 | `clean [--confirm]` | Report obsolete graph databases; delete them only with `--confirm`. |
-| `version` | Show crate, extractor, and store schema versions. |
+| `version` | Show crate, extractor, store schema, history schema, and plugin schema versions. |
+| `help [<command>]` | Print help for the CLI or one command (same as `--help`). |
 
 Confidence levels are `exact`, `import`, `same_module`, and `fuzzy`. Reference
 kinds are `call`, `type`, `use`, `trait_bound`, `impl`, `extends`, and
@@ -421,8 +422,8 @@ strict replay never reads. It walks the named branch's first-parent history
 from `--revision` (default: the branch tip), newest first, and holds out up to
 `--limit` commits (default 300). For each commit C with a non-empty subject
 whose delivery is already in the history index, the query is that subject and
-the target revision is C's first parent. No `--cutoff` is set, so the request
-is live. Truth is the files C changed that still exist at that parent. Added
+the target revision is C's first parent. The underlying recommendation
+request sets no cutoff, so the request is live. Truth is the files C changed that still exist at that parent. Added
 files are omitted from the denominator.
 
 The command reads an existing history index and does not sync or import. Sync
