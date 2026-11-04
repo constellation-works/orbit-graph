@@ -30,5 +30,6 @@ depends_on:
   []
 status: "current"
 review_by: "2027-02-02"
-auto: false
+auto: true
+auto_set_by: "operator"
 ```
