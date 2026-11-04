@@ -169,6 +169,7 @@ jobs:
             "https://github.com/nextest-rs/nextest/releases/download/cargo-nextest-0.9.146/cargo-nextest-0.9.146-$target.tar.gz"
           printf '%s  %s\n' "$sha256" "$RUNNER_TEMP/cargo-nextest.tar.gz" | shasum -a 256 --check -
           tar -xzf "$RUNNER_TEMP/cargo-nextest.tar.gz" -C "$RUNNER_TEMP" cargo-nextest
+          mkdir -p "$HOME/.cargo/bin"
           install -m 755 "$RUNNER_TEMP/cargo-nextest" "$HOME/.cargo/bin/cargo-nextest"
           cargo nextest --version
       - run: cargo nextest run --workspace --locked --no-tests=fail
