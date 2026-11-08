@@ -877,3 +877,10 @@ The independent stage runs only after a sealed capture. See
 [`evals/patch-effectiveness-v1/README.md`](../../evals/patch-effectiveness-v1/README.md)
 for qualification, exact freeze/run/evaluate/score commands and limitations.
 Historical navigation requests and captures retain their original contracts.
+
+### Prospective warm batches
+
+The separate schema-5 [warm-navigation-v1](../../evals/warm-navigation-v1/README.md)
+profile reuses declared batch-private product state with fresh model sessions.
+Use `run-batch` with a frozen plan; `run` and the cold replay route do not admit
+warm evidence. This capability is proposed and has no measured study output.

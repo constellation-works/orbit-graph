@@ -97,3 +97,17 @@ library target. In-crate test modules live in a `tests/` directory with a
 
 When recovering more historical code, update `PROVENANCE.md` with an immutable
 commit, original path, license, and the exact adaptation boundary.
+
+For changes to the agent-evaluation batch harness, also run its real private
+installation/fake-provider qualification after building the CLI:
+
+```sh
+AGENT_EVAL_ORBIT=/absolute/path/to/orbit \
+AGENT_EVAL_ORBIT_GRAPH="$PWD/target/debug/orbit-graph" \
+  python3 -B -m unittest discover -s evals/warm-navigation-v1 -p 'test_*.py' -v
+```
+
+CI runs this diagnostic gate in `plugin-conformance`. The separate strict-host
+release checklist and prospective freeze/scoring contracts live in
+[the warm profile README](evals/warm-navigation-v1/README.md); no provider
+network call is part of qualification.

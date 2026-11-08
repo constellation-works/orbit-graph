@@ -42,7 +42,8 @@ import telemetry  # noqa: E402
 RUNNER_VERSION = "5"
 PROSPECTIVE_RUNNER_VERSION = "6"
 LIFECYCLE_CONTRACTS = {"3": broker.EXITED_LIFECYCLE_CONTRACT, "4": broker.LIFECYCLE_CONTRACT,
-                       "5": broker.LIFECYCLE_CONTRACT, "6": broker.LIFECYCLE_CONTRACT, "7": broker.LIFECYCLE_CONTRACT}
+                       "5": broker.LIFECYCLE_CONTRACT, "6": broker.LIFECYCLE_CONTRACT,
+                       "7": broker.LIFECYCLE_CONTRACT, "8": broker.LIFECYCLE_CONTRACT}
 RAW_KIND = "agent-eval-raw-episode"
 CACHE_POLICY = "cold-per-episode-including-graph-setup"
 ARMS = ("baseline", "graph")
@@ -171,15 +172,15 @@ def validate_request(request):
     require(isinstance(request, dict), "request must be a JSON object")
     fields = set(request)
     missing = sorted(REQUEST_REQUIRED - fields)
-    v2 = request.get("schema_version") in (2, 3, 4)
+    v2 = request.get("schema_version") in (2, 3, 4, 5)
     optional = REQUEST_OPTIONAL | ({"profile", "plugin", "setup_limits", "source_commits"} if v2 else set())
     if request.get("schema_version") == 4:
         optional |= {"patch"}
     unknown = sorted(fields - REQUEST_REQUIRED - optional)
     require(not missing, f"request is missing {missing}")
     require(not unknown, f"request has unknown fields {unknown}")
-    require(type(request["schema_version"]) is int and request["schema_version"] in (1, 2, 3, 4),
-            "request schema_version must be 1, 2, 3 or 4")
+    require(type(request["schema_version"]) is int and request["schema_version"] in (1, 2, 3, 4, 5),
+            "request schema_version must be 1, 2, 3, 4 or 5")
     if v2:
         require(request.get("profile") == plugin.PROFILES[request["schema_version"]], "unknown installed profile")
         try:
@@ -232,7 +233,11 @@ def validate_request(request):
         require(isinstance(request["corpus_sha256"], str) and HEX64.match(request["corpus_sha256"]),
                 "corpus_sha256 must be 64 hex")
     if "cache_policy" in request:
-        require(request["cache_policy"] == CACHE_POLICY, f"cache_policy must be {CACHE_POLICY}")
+        policy = CACHE_POLICY
+        if request["schema_version"] == 5:
+            import warm_batch
+            policy = warm_batch.CACHE_POLICY
+        require(request["cache_policy"] == policy, f"cache_policy must be {policy}")
     if "request_sha256" in request:
         body = {key: value for key, value in request.items() if key != "request_sha256"}
         require(request["request_sha256"] == digest(body), "request_sha256 does not match")
@@ -500,9 +505,11 @@ class Episode:
         self.args = args
         self.request = request
         self.arm = request["arm"]
-        self.plugin_profile = request["schema_version"] in (2, 3, 4)
+        self.plugin_profile = request["schema_version"] in (2, 3, 4, 5)
         self.patch_profile = request["schema_version"] == 4
-        self.prospective = request["schema_version"] in (3, 4)
+        self.prospective = request["schema_version"] in (3, 4, 5)
+        self.batch = getattr(args, "batch_context", None)
+        require(request["schema_version"] != 5 or self.batch is not None, "warm requests require run-batch")
         self.treatment = None
         if self.plugin_profile:
             for name in ("source_repo", "plugin_repo"):
@@ -555,6 +562,17 @@ class Episode:
         self.redactor = Redactor(os.environ[name] for name in args.provider_env
                                  if SECRET_NAME.search(name) and name in os.environ)
 
+        if self.batch:
+            self.repo = self.batch.repo
+
+    def installation(self):
+        return self.batch.installation if self.batch else self.runtime
+
+    def installation_in(self):
+        if not self.batch:
+            return self.inside("runtime")
+        return "/eval/installation" if self.contained else str(self.installation())
+
     @staticmethod
     def resolve_auth(value):
         if value == "none":
@@ -580,6 +598,8 @@ class Episode:
         return SANDBOX[key] if self.contained else str(host)
 
     def state_in(self, *names):
+        if self.batch and names == ("orbit-home",):
+            return "/eval/product-home" if self.contained else str(self.batch.home)
         return "/".join([self.inside("state"), *names])
 
     def codex_in(self):
@@ -634,6 +654,9 @@ class Episode:
             argv += ["--ro-bind", self.binaries["orbit_graph"], self.tool_in("orbit_graph")]
         if self.binaries.get("orbit"):
             argv += ["--ro-bind", self.binaries["orbit"], self.tool_in("orbit")]
+        if self.batch:
+            argv += ["--bind" if installing else "--ro-bind", str(self.batch.installation), "/eval/installation",
+                     "--bind", str(self.batch.home), "/eval/product-home"]
         if self.auth_file and not installing:
             argv += ["--ro-bind", self.auth_file, f"{SANDBOX['state']}/codex-home/auth.json"]
         return argv + ["--chdir", SANDBOX["repo"], "--"]
@@ -871,7 +894,7 @@ class BoundedReader(threading.Thread):
                     self.overflow.set()
 
 
-def supervise(argv, env, cwd, prompt, deadline, sentinel):
+def supervise(argv, env, cwd, prompt, deadline, sentinel, cancelled=lambda: False):
     process = subprocess.Popen(argv, cwd=cwd, env=env, stdin=subprocess.PIPE,
                                stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                                start_new_session=True)
@@ -892,6 +915,9 @@ def supervise(argv, env, cwd, prompt, deadline, sentinel):
     reason = None
     while True:
         if broker.wait_leader(process.pid, 0.05):
+            break
+        if cancelled():
+            reason = "cancelled"
             break
         if time.monotonic() >= deadline:
             reason = "timeout"
@@ -1500,7 +1526,7 @@ def command_revision(args):
 
 def setup(args):
     request = validate_request(load_json(args.request))
-    if request["schema_version"] in (3, 4):
+    if request["schema_version"] in (3, 4, 5):
         args.accounting_request = request
         args.accounting_stage = "admission"
         args.accounting_provider_started = False
@@ -1620,17 +1646,24 @@ def command_run(args):
         raise Invalid("base tree does not match request.base_revision")
     if snapshot["work_tree_revision"] != request["source_revision"]:
         raise Invalid("checked-out snapshot differs from the head tree")
+    if episode.batch:
+        episode.batch.restore(episode)
     graph_dir = episode.repo / ".orbit-graph"
     graph_fresh = not os.path.lexists(graph_dir)
-    if episode.arm == "graph":
+    if episode.arm == "graph" and not graph_dir.exists():
         make_private_dir(graph_dir)
     if episode.plugin_profile and episode.arm == "graph":
         install_start = time.monotonic_ns()
+        reused_installation = episode.batch is not None and episode.batch.treatment is not None
         try:
-            episode.treatment = plugin.install(episode, deadline)
+            episode.treatment = (episode.batch.reuse(episode) if episode.batch and episode.batch.treatment
+                                 else plugin.install(episode, deadline))
         except ValueError as error:
             raise CapabilityRefusal("plugin_profile_refused", str(error)) from None
-        phases["plugin_install"] = {"start_ns": install_start, "end_ns": time.monotonic_ns()}
+        if episode.batch and not reused_installation:
+            episode.batch.pin_installation(episode)
+        phases["plugin_install"] = (None if reused_installation else
+                                     {"start_ns": install_start, "end_ns": time.monotonic_ns()})
         # Verify the actual treatment flags too, within the episode setup budget.
         inside_preflight_start = time.monotonic_ns()
         preflight_evidence = preflight(episode, versions, deadline)
@@ -1651,7 +1684,8 @@ def command_run(args):
     sentinel = episode.state / "budget-exceeded.json"
     args.accounting_stage = "launch_probe"
     supervision = supervise(argv, episode.env(), str(episode.state), request["prompt"],
-                            deadline, sentinel)
+                            deadline, sentinel,
+                            cancelled=(lambda: episode.batch.cancelled) if episode.batch else (lambda: False))
     wall_ms = int((supervision["ended"] - clock) * 1000)
     phases["provider_end_ns"] = int(supervision["ended"] * 1_000_000_000)
     if episode.prospective:
@@ -1744,7 +1778,7 @@ def command_run(args):
     artifact = {
         "schema_version": request["schema_version"],
         "kind": plugin.RAW_KIND if episode.plugin_profile else RAW_KIND,
-        "runner_version": patch.VERSION if episode.patch_profile else PROSPECTIVE_RUNNER_VERSION if episode.prospective else
+        "runner_version": patch.VERSION if episode.patch_profile else "8" if episode.batch else PROSPECTIVE_RUNNER_VERSION if episode.prospective else
                           RUNNER_VERSION if episode.plugin_profile else "4",
         "lifecycle_contract": broker.LIFECYCLE_CONTRACT,
         "run_id": run_id, "request": request, "request_digest": digest(request),
@@ -1833,6 +1867,10 @@ def command_run(args):
         artifact["patch_admission"] = patch_admission
         artifact["patch_identity"] = {"sha256": sha256_bytes(final_raw or b""), "bytes": len(final_raw or b"")}
         artifact["harness"]["patch_profile.py"] = sha256_file(HERE / "patch_profile.py")
+    if episode.batch:
+        artifact["batch"] = episode.batch.evidence(episode, artifact)
+        artifact["isolation"]["cache_id"] = episode.batch.cache_id
+        artifact["harness"]["warm_batch.py"] = sha256_file(HERE / "warm_batch.py")
     artifact, redactions = redactor.value(artifact)
     artifact["redactions"] = redactions
     if redactions:
@@ -2018,6 +2056,13 @@ def parser():
     episode_options(commands.add_parser("preflight", help="verify containment; no episode"),
                     False)
     episode_options(commands.add_parser("run", help="run one episode"), True)
+    batch = commands.add_parser("run-batch", help="run a frozen warm batch, retaining every scheduled slot")
+    episode_options(batch, True)
+    for action in batch._actions:
+        if action.dest in {"request", "head", "base"}:
+            action.required = False
+    batch.add_argument("--plan", required=True, help="sealed warm batch freeze JSON")
+    batch.add_argument("--export", required=True, help="source-only exported views")
     inspect = commands.add_parser("plugin-inspect", help="capture pinned real installed inventory; no provider")
     inspect.add_argument("--plugin-repo", required=True)
     inspect.add_argument("--plugin-commit", required=True)
@@ -2045,10 +2090,15 @@ def refusal_out(args):
     return out
 
 
+def command_batch(args):
+    import warm_batch
+    return warm_batch.run(args)
+
+
 def main(argv=None):
     args = parser().parse_args(argv)
     handlers = {"revision": command_revision, "preflight": command_preflight,
-                "run": command_run, "adapt": command_adapt, "plugin-inspect": plugin.inspect}
+                "run": command_run, "run-batch": command_batch, "adapt": command_adapt, "plugin-inspect": plugin.inspect}
     try:
         result = handlers[args.command](args)
     except CapabilityRefusal as refusal:

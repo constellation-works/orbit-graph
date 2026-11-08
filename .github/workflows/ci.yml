@@ -135,6 +135,13 @@ jobs:
           ORBIT_GRAPH_TEST_ORBIT_BIN: ${{ runner.temp }}/orbit
         run: cargo test -p orbit-graph-cli --test plugin_integration --test plugin_v2 --locked -- --ignored
 
+      - name: Warm batch qualification (real private plugin, fake provider)
+        shell: bash
+        env:
+          AGENT_EVAL_ORBIT: ${{ runner.temp }}/orbit
+          AGENT_EVAL_ORBIT_GRAPH: ${{ github.workspace }}/target/debug/orbit-graph
+        run: python3 -B -m unittest discover -s evals/warm-navigation-v1 -p 'test_*.py' -v
+
   portability:
     name: Test (${{ matrix.os }})
     runs-on: ${{ matrix.os }}

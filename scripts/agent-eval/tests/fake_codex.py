@@ -306,6 +306,19 @@ def run_exec(options, script):
         elif "emit_raw" in step:
             sys.stdout.write(step["emit_raw"] + ("\n" if step.get("newline", True) else ""))
             sys.stdout.flush()
+        elif "tamper_installation" in step:
+            # Fixture-only fault: the runner must reject changed installed bytes.
+            with open(client.config_path) as stream:
+                config = json.load(stream)
+            import pathlib
+            plugin_home = pathlib.Path(config['plugin']['home'])
+            skill = next((plugin_home/'.orbit/plugins/graph').glob('*/skills/orbit-graph/SKILL.md'))
+            with skill.open('a') as stream:
+                stream.write('\nTEST-ONLY tampered installation\n')
+        elif "cancel_runner" in step:
+            # Deterministic batch interruption: wait for supervised termination.
+            os.kill(os.getppid(), signal.SIGTERM)
+            signal.pause()
         elif "sleep" in step:
             time.sleep(step["sleep"])
         elif "spawn_sleeper" in step:
