@@ -2,7 +2,7 @@ use std::ffi::OsString;
 
 use clap::{Arg, Command};
 
-use crate::command::CliError;
+use crate::error::CliError;
 use crate::output::sink::{
     FormatArg, LegacyDetail, OutputMode, OutputSink, SinkEnvironment, install_format_argument,
     requested_format_from_args, requested_output,

@@ -8,7 +8,6 @@
 pub mod json;
 pub mod log;
 pub mod payload;
-pub mod pipe;
 pub mod render;
 pub mod sink;
 pub mod table;

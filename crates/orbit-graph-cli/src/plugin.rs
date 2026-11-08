@@ -17,17 +17,13 @@ use orbit_graph::{
 mod adapter;
 mod changes;
 mod code_index;
-mod error;
 mod query;
 
+pub(crate) use crate::error::failure_json;
+pub use crate::error::{PLUGIN_SCHEMA_VERSION, ToolError};
 use adapter::{OrbitAdapter, RunVerdict, canonical_repository};
 use code_index::{Incomplete, IndexState};
-pub(crate) use error::orbit_detail;
-pub use error::{ToolError, ToolErrorCode};
 use query::QueryTool;
-
-/// Version of every external-tool request and response envelope.
-pub const PLUGIN_SCHEMA_VERSION: u32 = 1;
 
 /// One external tool: its first-party name, the v2 alias Orbit uses for an
 /// unverified install, whether its input is routed to a `repository`, and
@@ -290,7 +286,7 @@ const DEFAULT_BRANCH: &str = "main";
 /// stable [`ToolErrorCode`]: a request refused before it is acted on is
 /// [`ToolErrorCode::InvalidRequest`], a routed repository that cannot be
 /// opened is [`ToolErrorCode::RepositoryUnavailable`], and a graph failure
-/// is classified by [`crate::command::report_graph_error`].
+/// is classified by [`crate::error::report_graph_error`].
 pub fn execute_external_tool(
     name: &str,
     input: &[u8],
@@ -1200,7 +1196,7 @@ impl SyncOutcomes {
     fn record_failed(&mut self, mut identity: Value, error: &GraphError) {
         identity["status"] = json!("failed");
         identity["reason"] = json!(error.to_string());
-        identity["error"] = error::failure_json(&ToolError::graph(error.clone()));
+        identity["error"] = failure_json(&ToolError::graph(error.clone()));
         self.failed += 1;
         self.entries.push(identity);
     }
@@ -1264,7 +1260,7 @@ fn validate_schema(version: Option<u32>) -> Result<(), ToolError> {
 }
 
 /// Canonicalize and open the explicitly routed repository, reporting a
-/// missing or non-Git path as [`error::ToolErrorCode::RepositoryUnavailable`].
+/// missing or non-Git path as [`ToolErrorCode::RepositoryUnavailable`].
 fn routed_repository(path: &std::path::Path) -> Result<PathBuf, ToolError> {
     canonical_repository(path).map_err(ToolError::repository_unavailable)
 }

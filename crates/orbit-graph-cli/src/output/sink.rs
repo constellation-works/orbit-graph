@@ -14,7 +14,7 @@ use std::io::{self, IsTerminal};
 use clap::builder::{PossibleValue, PossibleValuesParser, TypedValueParser};
 use clap::{Arg, ArgAction, ArgMatches, Command, ValueEnum};
 
-use crate::command::CliError;
+use crate::error::CliError;
 
 const FORMAT_ARG_ID: &str = "output-format";
 const JSON_ARG_ID: &str = "output-json";

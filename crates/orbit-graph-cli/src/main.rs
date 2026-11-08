@@ -18,18 +18,18 @@ use clap::FromArgMatches;
 use serde::Serialize;
 use serde_json::{Value, json};
 
-use crate::command::{Cli, CliError};
+use crate::command::Cli;
+use crate::error::{CliError, ToolError};
 use crate::output::json::write_plugin_response;
 use crate::output::{
     OutputSink, emit_error, emit_help, emit_notice, emit_to_process, init_logging,
     requested_format_from_args, requested_output,
 };
-use crate::plugin::{
-    ORBIT_TIMEOUT_ENV, PLUGIN_STATE_ENV, PluginConfig, PluginEnvironment, ToolError,
-};
+use crate::plugin::{ORBIT_TIMEOUT_ENV, PLUGIN_STATE_ENV, PluginConfig, PluginEnvironment};
 use orbit_graph::{DEFAULT_LOCK_TIMEOUT, RuntimeConfig, SyncFaultPoint};
 
 mod command;
+mod error;
 mod output;
 mod plugin;
 
@@ -401,7 +401,7 @@ impl<'a> From<&'a CliError> for ErrorPayload<'a> {
                 code: error.code(),
                 message: error.to_string(),
                 retryable: error.retryable(),
-                orbit: error.graph_error().and_then(crate::plugin::orbit_detail),
+                orbit: error.graph_error().and_then(crate::error::orbit_detail),
             },
         }
     }

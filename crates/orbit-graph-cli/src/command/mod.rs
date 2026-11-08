@@ -3,19 +3,19 @@
 //! [`Cli`] is the parsed command line. Each subcommand lives in its own
 //! module, parses its arguments, makes one library call through a
 //! [`CommandContext`] and returns a JSON payload; `crate::output` renders it.
-//! [`CliError`] is the CLI's one surface error type.
+//! [`crate::error::CliError`] is the CLI's one surface error type.
 
 use std::env;
 use std::path::PathBuf;
 
 use clap::{CommandFactory, Parser, Subcommand};
-use orbit_graph::{Graph, GraphError, GraphErrorClass, SelectorParseError, SyncPolicy};
+use orbit_graph::{Graph, SyncPolicy};
 use serde::Serialize;
 use serde_json::Value;
-use thiserror::Error;
 
 use crate::output::{CommandOutput, LegacyDetail};
-use crate::plugin::ToolErrorCode;
+
+pub use crate::error::CliError;
 
 mod callees;
 mod changes;
@@ -329,185 +329,5 @@ pub(crate) fn display_value(value: &Value) -> String {
         Value::Bool(value) => value.to_string(),
         Value::Number(value) => value.to_string(),
         value => serde_json::to_string(value).unwrap_or_else(|_| "-".to_owned()),
-    }
-}
-
-/// Every failure the CLI reports; [`CliError::code`] is its stable
-/// machine-readable name.
-#[derive(Debug, Error)]
-pub enum CliError {
-    /// clap rejected the command line.
-    #[error(transparent)]
-    Clap(clap::Error),
-    /// The command line parsed but its combination of arguments or
-    /// environment is not usable.
-    #[error("{0}")]
-    Usage(String),
-    /// A selector or name resolved to nothing in the index.
-    #[error("{0}")]
-    NotFound(String),
-    /// Input the CLI read itself, such as a JSON file named by `--input`,
-    /// could not be decoded.
-    #[error("{operation}: {reason}")]
-    Input {
-        /// What was being read.
-        operation: &'static str,
-        /// Why it was refused.
-        reason: String,
-    },
-    /// The process working directory could not be read.
-    #[error("failed to determine current directory: {0}")]
-    CurrentDir(std::io::Error),
-    /// Standard input could not be read.
-    #[error("failed to read stdin: {0}")]
-    Stdin(std::io::Error),
-    /// The graph library failed.
-    #[error(transparent)]
-    Graph(#[from] GraphError),
-    /// An Orbit plugin tool request failed.
-    #[error(transparent)]
-    Tool(crate::plugin::ToolError),
-    /// Change analysis failed.
-    #[error(transparent)]
-    Changes(#[from] orbit_graph_changes::analysis::AnalysisError),
-    /// A graph selector argument did not parse.
-    #[error(transparent)]
-    Selector(#[from] SelectorParseError),
-    /// A payload could not be serialized to JSON.
-    #[error("failed to serialize JSON: {0}")]
-    Json(serde_json::Error),
-    /// Writing to stdout failed.
-    #[error("failed to write JSON to stdout: {0}")]
-    Stdout(std::io::Error),
-    /// Writing to stderr failed.
-    #[error("failed to write diagnostics to stderr: {0}")]
-    Stderr(std::io::Error),
-}
-
-impl CliError {
-    /// The stable error code written to the JSON error payload.
-    pub fn code(&self) -> &'static str {
-        match self {
-            Self::Clap(_) | Self::Usage(_) => "argument_error",
-            Self::NotFound(_) => "not_found",
-            Self::Input { .. } => "invalid_input",
-            Self::CurrentDir(_) => "current_dir_error",
-            Self::Stdin(_) => "stdin_error",
-            Self::Graph(error) => report_graph_error(error).cli_code,
-            Self::Tool(error) => error.code().as_str(),
-            Self::Changes(error) => changes::error_code(error),
-            Self::Selector(_) => "selector_parse_error",
-            Self::Json(_) => "json_error",
-            Self::Stdout(_) => "stdout_error",
-            Self::Stderr(_) => "stderr_error",
-        }
-    }
-
-    /// Whether retrying the same call can succeed: only a timeout or a
-    /// transient I/O failure of the graph.
-    pub fn retryable(&self) -> bool {
-        match self {
-            Self::Graph(error) => report_graph_error(error).retryable,
-            Self::Tool(error) => error.retryable(),
-            Self::Clap(_)
-            | Self::Usage(_)
-            | Self::NotFound(_)
-            | Self::Input { .. }
-            | Self::CurrentDir(_)
-            | Self::Stdin(_)
-            | Self::Changes(_)
-            | Self::Selector(_)
-            | Self::Json(_)
-            | Self::Stdout(_)
-            | Self::Stderr(_) => false,
-        }
-    }
-
-    /// The graph error behind this failure, if there is one.
-    pub fn graph_error(&self) -> Option<&GraphError> {
-        match self {
-            Self::Graph(error) => Some(error),
-            Self::Tool(error) => Some(error.source_error()),
-            Self::Clap(_)
-            | Self::Usage(_)
-            | Self::NotFound(_)
-            | Self::Input { .. }
-            | Self::CurrentDir(_)
-            | Self::Stdin(_)
-            | Self::Changes(_)
-            | Self::Selector(_)
-            | Self::Json(_)
-            | Self::Stdout(_)
-            | Self::Stderr(_) => None,
-        }
-    }
-
-    /// The process exit code for this failure: `2` for a usage error and `1`
-    /// for a command failure (STD-01 §R20).
-    pub fn exit_code(&self) -> i32 {
-        match self {
-            Self::Clap(error) => error.exit_code(),
-            Self::Usage(_) | Self::Selector(_) => 2,
-            Self::Graph(error) if error.class() == GraphErrorClass::InvalidInput => 2,
-            Self::Changes(error) if changes::is_usage_error(error) => 2,
-            Self::Changes(_)
-            | Self::NotFound(_)
-            | Self::Input { .. }
-            | Self::CurrentDir(_)
-            | Self::Stdin(_)
-            | Self::Graph(_)
-            | Self::Tool(_)
-            | Self::Json(_)
-            | Self::Stdout(_)
-            | Self::Stderr(_) => 1,
-        }
-    }
-
-    /// Whether this error is a closed stdout pipe, which is a successful stop.
-    pub fn is_broken_pipe(&self) -> bool {
-        crate::output::pipe::is_broken_pipe(self)
-    }
-}
-
-/// How one graph failure is reported on each surface: its CLI `code`, its
-/// plugin envelope `code`, and whether a retry can succeed.
-#[derive(Debug, Clone, Copy)]
-pub(crate) struct ReportedFailure {
-    pub(crate) cli_code: &'static str,
-    pub(crate) plugin_code: ToolErrorCode,
-    pub(crate) retryable: bool,
-}
-
-/// The one translator from a [`GraphError`] to the CLI and plugin codes
-/// (STD-02 §R12). It decides from the error's class, never its message
-/// (§R10), and `retryable` is true only for a timeout or transient I/O.
-pub(crate) fn report_graph_error(error: &GraphError) -> ReportedFailure {
-    let (cli_code, plugin_code, retryable) = match error.class() {
-        GraphErrorClass::InvalidInput => ("invalid_input", ToolErrorCode::InvalidRequest, false),
-        GraphErrorClass::NotFound => ("not_found", ToolErrorCode::NotFound, false),
-        GraphErrorClass::Timeout => ("timeout", ToolErrorCode::Timeout, true),
-        GraphErrorClass::OrbitRefused => ("orbit_refused", ToolErrorCode::OrbitRefused, false),
-        GraphErrorClass::IndexMissing => ("index_missing", ToolErrorCode::IndexMissing, false),
-        GraphErrorClass::IndexIncompatible => (
-            "index_incompatible",
-            ToolErrorCode::IndexIncompatible,
-            false,
-        ),
-        GraphErrorClass::UnsafeStatePath => {
-            ("unsafe_state_path", ToolErrorCode::UnsafeStatePath, false)
-        }
-        GraphErrorClass::VersionMismatch => {
-            ("version_mismatch", ToolErrorCode::VersionMismatch, false)
-        }
-        GraphErrorClass::Io { transient } => ("graph_error", ToolErrorCode::GraphError, transient),
-        GraphErrorClass::Git
-        | GraphErrorClass::Sqlite
-        | GraphErrorClass::InvalidData
-        | GraphErrorClass::Subprocess => ("graph_error", ToolErrorCode::GraphError, false),
-    };
-    ReportedFailure {
-        cli_code,
-        plugin_code,
-        retryable,
     }
 }

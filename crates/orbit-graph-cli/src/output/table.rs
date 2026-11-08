@@ -9,7 +9,7 @@ use std::io::Write;
 use unicode_segmentation::UnicodeSegmentation;
 use unicode_width::UnicodeWidthStr;
 
-use crate::command::CliError;
+use crate::error::CliError;
 use crate::output::sink::{OutputMode, OutputSink};
 
 /// Column metadata used by the shared table renderer.
