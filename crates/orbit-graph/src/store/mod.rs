@@ -13,9 +13,8 @@ use std::path::{Path, PathBuf};
 use git2::Repository;
 use rusqlite::{Connection, OpenFlags, OptionalExtension};
 
-use crate::lock::{self, FileLockGuard};
+use crate::lock::{self, DbLockGuard, FileLockGuard};
 use crate::state_dir::{SCRATCH_DIR_NAME, StateAccess, open_state_file};
-use crate::sync::scanner::DbLockGuard;
 use crate::{EXTRACTOR_VERSION, GraphDbPath, GraphError, resolve_db_path_for_commit};
 
 pub(crate) struct OpenedGraph {

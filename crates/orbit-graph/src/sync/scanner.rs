@@ -6,7 +6,7 @@ use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::time::UNIX_EPOCH;
 
-use crate::lock::{self, FileLockGuard};
+use crate::lock::DbLockGuard;
 use git2::Repository;
 use ignore::gitignore::{Gitignore, GitignoreBuilder};
 use orbit_graph_extract::Extractor;
@@ -208,44 +208,6 @@ impl Scanner {
         sort_diff(&mut diff);
         Ok(diff)
     }
-}
-
-#[must_use = "the database lock is released when the guard is dropped"]
-pub(crate) struct DbLockGuard {
-    _lock: FileLockGuard,
-}
-
-impl DbLockGuard {
-    /// Takes the graph database's sync lock, waiting at most the configured
-    /// [`lock::lock_timeout`].
-    pub(crate) fn acquire(db_path: &Path) -> Result<Self, GraphError> {
-        Self::acquire_within(db_path, lock::lock_timeout())
-    }
-
-    pub(crate) fn acquire_within(
-        db_path: &Path,
-        timeout: std::time::Duration,
-    ) -> Result<Self, GraphError> {
-        // L-0048: lock a sidecar so SQLite can still read the DB while the RAII guard is held.
-        let lock_path = lock_path_for(db_path);
-        let lock = FileLockGuard::acquire(
-            lock_path.as_path(),
-            &lock::holder_label("graph sync"),
-            timeout,
-            "lock graph database",
-        )?;
-        Ok(Self { _lock: lock })
-    }
-}
-
-fn lock_path_for(db_path: &Path) -> PathBuf {
-    let mut lock_path = db_path.to_path_buf();
-    let file_name = db_path
-        .file_name()
-        .and_then(|name| name.to_str())
-        .map_or_else(|| "graph.db".to_string(), ToString::to_string);
-    lock_path.set_file_name(format!("{file_name}.lock"));
-    lock_path
 }
 
 struct ExtractorRegistry {

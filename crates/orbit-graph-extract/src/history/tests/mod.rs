@@ -422,6 +422,41 @@ fn same_line_siblings_are_all_attributed_without_implicating_parent() {
     }));
 }
 
+#[test]
+fn civil_conversion_round_trips_known_dates() {
+    // Epoch, a leap day, a century non-leap boundary and a pre-epoch date.
+    for (days, expected) in [
+        (0, (1970, 1, 1)),
+        (19_723, (2024, 1, 1)),
+        (19_782, (2024, 2, 29)),
+        (-1, (1969, 12, 31)),
+        (47_482, (2100, 1, 1)),
+    ] {
+        assert_eq!(civil_from_days(days), expected, "days={days}");
+        assert_eq!(days_from_civil(expected.0, expected.1, expected.2), days);
+    }
+    assert_eq!(
+        format_epoch_rfc3339(0, None),
+        "1970-01-01T00:00:00Z",
+        "formatting a supplied epoch value is not a clock fallback"
+    );
+    assert_eq!(
+        format_epoch_rfc3339(1_735_689_600, Some(123_456_789)),
+        "2025-01-01T00:00:00.123456789Z"
+    );
+}
+
+#[test]
+fn now_rfc3339_parses_back_and_never_fabricates_epoch() {
+    let seconds = now_rfc3339().expect("now");
+    assert_eq!(seconds.len(), 20, "{seconds}");
+    parse_timestamp("now", &seconds).expect("second-precision now parses");
+    let nanos = now_rfc3339_nanos().expect("now nanos");
+    assert_eq!(nanos.len(), 30, "{nanos}");
+    assert!(nanos.ends_with('Z'));
+    parse_timestamp("now", &nanos).expect("nanosecond now parses");
+}
+
 fn delivery(
     repository: &Repository,
     before_revision: String,

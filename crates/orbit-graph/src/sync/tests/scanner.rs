@@ -9,9 +9,10 @@ use ignore::gitignore::GitignoreBuilder;
 use rusqlite::{Connection, params};
 
 use super::{
-    ContentHasher, DbLockGuard, MAX_FILE_BYTES, OrbitIgnoreMatcher, Scanner,
-    add_default_orbitignore_patterns, collect_orbitignore_files, mtime_ns, scan_count, scan_diff,
+    ContentHasher, MAX_FILE_BYTES, OrbitIgnoreMatcher, Scanner, add_default_orbitignore_patterns,
+    collect_orbitignore_files, mtime_ns, scan_count, scan_diff,
 };
+use crate::lock::DbLockGuard;
 use crate::sync::{
     SyncLeaderGate, install_sync_leader_gate, sync_leader_count, wait_for_sync_followers,
 };

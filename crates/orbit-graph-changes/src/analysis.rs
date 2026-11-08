@@ -734,7 +734,7 @@ pub fn analyse(request: &ChangesRequest) -> Result<ChangesDocument, AnalysisErro
             let budget_ms = request.bounds.budget_ms.unwrap_or_default();
             return Ok(ChangesDocument {
                 schema_version: CHANGES_SCHEMA_VERSION,
-                generated_at: crate::report::now_rfc3339(),
+                generated_at: crate::report::now_rfc3339()?,
                 complete: false,
                 incomplete: Some(Incomplete {
                     phase: "indexing".to_string(),

@@ -146,6 +146,78 @@ fn days_from_civil(year: i64, month: i64, day: i64) -> i64 {
     era * 146_097 + doe - 719_468
 }
 
+/// Howard Hinnant's `civil_from_days`: days since the Unix epoch to a
+/// proleptic-Gregorian `(year, month, day)`. The inverse of
+/// [`days_from_civil`]; this module is the workspace's single owner of the
+/// conversion.
+fn civil_from_days(days_since_unix_epoch: i64) -> (i64, i64, i64) {
+    let shifted = days_since_unix_epoch + 719_468;
+    let era = if shifted >= 0 {
+        shifted
+    } else {
+        shifted - 146_096
+    } / 146_097;
+    let day_of_era = shifted - era * 146_097;
+    let year_of_era =
+        (day_of_era - day_of_era / 1_460 + day_of_era / 36_524 - day_of_era / 146_096) / 365;
+    let year = year_of_era + era * 400;
+    let day_of_year = day_of_era - (365 * year_of_era + year_of_era / 4 - year_of_era / 100);
+    let month_part = (5 * day_of_year + 2) / 153;
+    let day = day_of_year - (153 * month_part + 2) / 5 + 1;
+    let month = month_part + if month_part < 10 { 3 } else { -9 };
+    let year = year + i64::from(month <= 2);
+    (year, month, day)
+}
+
+fn format_epoch_rfc3339(seconds: i64, subsec_nanos: Option<u32>) -> String {
+    let days = seconds.div_euclid(86_400);
+    let day_seconds = seconds.rem_euclid(86_400);
+    let (year, month, day) = civil_from_days(days);
+    let hour = day_seconds / 3_600;
+    let minute = (day_seconds % 3_600) / 60;
+    let second = day_seconds % 60;
+    match subsec_nanos {
+        Some(nanos) => {
+            format!("{year:04}-{month:02}-{day:02}T{hour:02}:{minute:02}:{second:02}.{nanos:09}Z")
+        }
+        None => format!("{year:04}-{month:02}-{day:02}T{hour:02}:{minute:02}:{second:02}Z"),
+    }
+}
+
+fn now_parts(operation: &'static str) -> Result<(i64, u32), ExtractError> {
+    let elapsed = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_err(|source| ExtractError::clock(operation, source))?;
+    let seconds = i64::try_from(elapsed.as_secs()).map_err(|_| {
+        ExtractError::invalid_data(operation, "system time is too far past the Unix epoch")
+    })?;
+    Ok((seconds, elapsed.subsec_nanos()))
+}
+
+/// Current wall-clock time as an RFC 3339 UTC timestamp with second
+/// precision (`YYYY-MM-DDTHH:MM:SSZ`).
+///
+/// # Errors
+///
+/// [`ExtractError::Clock`] when the system clock is before the Unix epoch,
+/// or a representability failure as [`ExtractError::InvalidData`]; a failed
+/// clock never yields `1970-01-01` (STD-02 §R29).
+pub fn now_rfc3339() -> Result<String, ExtractError> {
+    let (seconds, _) = now_parts("capture current time")?;
+    Ok(format_epoch_rfc3339(seconds, None))
+}
+
+/// Current wall-clock time as an RFC 3339 UTC timestamp with nanosecond
+/// precision (`YYYY-MM-DDTHH:MM:SS.nnnnnnnnnZ`).
+///
+/// # Errors
+///
+/// The same clock failures as [`now_rfc3339`].
+pub fn now_rfc3339_nanos() -> Result<String, ExtractError> {
+    let (seconds, nanos) = now_parts("capture current time")?;
+    Ok(format_epoch_rfc3339(seconds, Some(nanos)))
+}
+
 fn validate_timestamp(field: &str, timestamp: &str) -> Result<(), ExtractError> {
     parse_timestamp(field, timestamp).map(drop)
 }

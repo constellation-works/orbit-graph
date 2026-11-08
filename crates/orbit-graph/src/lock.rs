@@ -27,7 +27,7 @@
 use std::fmt::{Display, Formatter};
 use std::fs::{File, TryLockError};
 use std::io::{Read, Seek, Write};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -57,7 +57,7 @@ impl LockHolder {
     pub(crate) fn current(label: impl Into<String>) -> Self {
         Self {
             pid: std::process::id(),
-            acquired_at: crate::recommend::current_observation_cutoff()
+            acquired_at: orbit_graph_extract::history::now_rfc3339_nanos()
                 .unwrap_or_else(|_| "unknown time".to_string()),
             label: label.into(),
         }
@@ -189,6 +189,45 @@ impl Drop for FileLockGuard {
             tracing::warn!(%error, "could not explicitly release file lock");
         }
     }
+}
+
+/// The graph database's sync lock, held for as long as the guard lives.
+#[must_use = "the database lock is released when the guard is dropped"]
+pub(crate) struct DbLockGuard {
+    _lock: FileLockGuard,
+}
+
+impl DbLockGuard {
+    /// Takes the graph database's sync lock, waiting at most the configured
+    /// [`lock_timeout`].
+    pub(crate) fn acquire(db_path: &Path) -> Result<Self, GraphError> {
+        Self::acquire_within(db_path, lock_timeout())
+    }
+
+    pub(crate) fn acquire_within(
+        db_path: &Path,
+        timeout: std::time::Duration,
+    ) -> Result<Self, GraphError> {
+        // L-0048: lock a sidecar so SQLite can still read the DB while the RAII guard is held.
+        let lock_path = lock_path_for(db_path);
+        let lock = FileLockGuard::acquire(
+            lock_path.as_path(),
+            &holder_label("graph sync"),
+            timeout,
+            "lock graph database",
+        )?;
+        Ok(Self { _lock: lock })
+    }
+}
+
+fn lock_path_for(db_path: &Path) -> PathBuf {
+    let mut lock_path = db_path.to_path_buf();
+    let file_name = db_path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .map_or_else(|| "graph.db".to_string(), ToString::to_string);
+    lock_path.set_file_name(format!("{file_name}.lock"));
+    lock_path
 }
 
 /// The lock wait the composition layer installed, or the default.

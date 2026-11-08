@@ -63,6 +63,8 @@ pub use sync::report::{
 };
 
 #[doc(inline)]
+pub use orbit_graph_extract::history::now_rfc3339;
+#[doc(inline)]
 pub use orbit_graph_extract::history::{
     CHANGE_EXTRACTOR_VERSION, CurrentRevisionResolution, CurrentSymbolStatus,
     DEFAULT_HISTORY_SYNC_LIMIT, DELIVERY_IMPORT_SCHEMA_VERSION, DeliveredChange, DeliveryEvidence,
@@ -71,7 +73,7 @@ pub use orbit_graph_extract::history::{
     TaskTextAvailability, TemporalFact, TemporalStatus,
 };
 #[doc(inline)]
-pub use orbit_graph_extract::{Selector, SelectorParseError};
+pub use orbit_graph_extract::{ExtractError, Selector, SelectorParseError};
 pub use store::history::{
     HISTORY_INDEX_SCHEMA_VERSION, HistoryImportReport, HistoryIndex, HistoryRebuildReport,
     HistoryStatus, HistorySyncReport, validate_history_limit,
