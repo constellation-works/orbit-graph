@@ -7,6 +7,7 @@ use tree_sitter::{Node, Parser};
 
 use super::common::{
     dedup_imports, dedup_refs, dedup_relations, dedup_symbols, normalize_path, parse_source,
+    walk_limit,
 };
 use crate::{ExtractedFile, Extractor, RawCommand, RawImport, RawRef, RawRelation, RawSymbol};
 
@@ -259,6 +260,7 @@ fn extract_items(
     method_parent: Option<&str>,
     state: &mut ExtractionState,
 ) {
+    walk_limit!();
     let mut cursor = node.walk();
     let mut pending_attrs = Vec::new();
 
@@ -580,6 +582,7 @@ fn collect_trait_bound_fields(
     module: &ModuleScope,
     state: &mut ExtractionState,
 ) {
+    walk_limit!();
     if node.kind() == "trait_bounds" {
         collect_trait_bound_refs(node, source, module, state);
     }
@@ -600,6 +603,7 @@ fn collect_trait_bound_refs(
     module: &ModuleScope,
     state: &mut ExtractionState,
 ) {
+    walk_limit!();
     let mut cursor = node.walk();
     for child in node.named_children(&mut cursor) {
         match child.kind() {
@@ -629,6 +633,7 @@ fn collect_type_refs(
     kind: &'static str,
     state: &mut ExtractionState,
 ) {
+    walk_limit!();
     match node.kind() {
         "primitive_type" | "lifetime" | "identifier" | "field_identifier" | "self" | "crate"
         | "super" => return,
@@ -670,6 +675,7 @@ fn collect_expression_refs(
     module: &ModuleScope,
     state: &mut ExtractionState,
 ) {
+    walk_limit!();
     if node.kind() == "call_expression" {
         collect_call_ref(node, source, module, state);
         if let Some(arguments) = node.child_by_field_name("arguments") {
@@ -870,6 +876,7 @@ fn type_parameter_names(function: Node, source: &str) -> HashSet<String> {
 /// path can spell.
 fn use_type_aliases(root: Node, source: &str) -> HashMap<String, String> {
     fn collect(node: Node, source: &str, prefix: &[String], aliases: &mut HashMap<String, String>) {
+        walk_limit!();
         match node.kind() {
             "scoped_use_list" => {
                 let mut next = prefix.to_vec();
@@ -1039,6 +1046,7 @@ fn typed_bindings(
 /// and any other generic type its base (`Vec<T>` → `Vec`). Tuples, slices,
 /// primitives, and function types give `None`.
 fn type_hint(node: Node, source: &str, module: &ModuleScope) -> Option<String> {
+    walk_limit!(None);
     match node.kind() {
         "reference_type" => type_hint(node.child_by_field_name("type")?, source, module),
         "dynamic_type" | "abstract_type" => {
@@ -1123,6 +1131,7 @@ fn collect_macro_token_refs(
     module: &ModuleScope,
     state: &mut ExtractionState,
 ) {
+    walk_limit!();
     let mut cursor = tree.walk();
     let tokens: Vec<Node> = tree.children(&mut cursor).collect();
     for (index, token) in tokens.iter().enumerate() {
@@ -1402,6 +1411,7 @@ fn push_call_target_ref(
     module: &ModuleScope,
     state: &mut ExtractionState,
 ) {
+    walk_limit!();
     match function.kind() {
         "identifier" => state.push_ref(
             function,
@@ -1548,6 +1558,7 @@ fn collect_use(
     public_module: Option<&str>,
     state: &mut ExtractionState,
 ) {
+    walk_limit!();
     match node.kind() {
         "scoped_use_list" => {
             let mut next_prefix = prefix.to_vec();
@@ -1715,6 +1726,7 @@ fn type_qualified_name(node: Node, source: &str, module: &ModuleScope) -> Option
 }
 
 fn type_reference_text(node: Node, source: &str) -> Option<String> {
+    walk_limit!(None);
     match node.kind() {
         "type_identifier" | "identifier" | "scoped_type_identifier" | "scoped_identifier" => {
             Some(normalize_qualified_name(&node_text(node, source)))
@@ -1736,6 +1748,7 @@ fn type_reference_text(node: Node, source: &str) -> Option<String> {
 }
 
 fn first_type_reference_child(node: Node, source: &str) -> Option<String> {
+    walk_limit!(None);
     let mut cursor = node.walk();
     for child in node.named_children(&mut cursor) {
         if let Some(text) = type_reference_text(child, source) {

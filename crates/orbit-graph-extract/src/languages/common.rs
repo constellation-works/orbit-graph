@@ -11,47 +11,182 @@ use tree_sitter::{Node, ParseOptions, Parser, Tree};
 
 use crate::{RawImport, RawRef, RawRelation, RawSymbol};
 
+/// Most native frames one file's AST walk may push.
+///
+/// This is the ~1–2k descent cap. It binds when each frame is tiny. The
+/// stack budget below binds first on larger frames, which is what keeps a
+/// walk inside a rayon worker's default 2 MiB stack.
+pub(crate) const MAX_WALK_DEPTH: usize = 1536;
+
+/// Most stack, measured from the first walker frame, one file's walk may use.
+///
+/// Rayon workers in pass 1 keep the default 2 MiB stack. Stopping around
+/// 512 KiB of walker frames leaves room for the parse and the extractor
+/// entry that are already on that stack. Real source stays far under this;
+/// a generated nest of tens of thousands of nodes used to overflow the
+/// worker and abort the process (`SIGSEGV` is not a panic).
+pub(crate) const MAX_WALK_STACK: usize = 512 * 1024;
+
 thread_local! {
     /// Deadline for tree-sitter parses on this thread, set by
-    /// [`with_parse_timeout`].
+    /// [`with_extraction_limits`].
     static PARSE_DEADLINE: Cell<Option<Instant>> = const { Cell::new(None) };
     /// Whether a parse on this thread was cancelled by [`PARSE_DEADLINE`].
     static PARSE_DEADLINE_EXCEEDED: Cell<bool> = const { Cell::new(false) };
+    /// Walker frames currently on this thread. `0` means no walk is active.
+    static WALK_DEPTH: Cell<usize> = const { Cell::new(0) };
+    /// Stack address of the first walker frame, or `0` when no walk is active.
+    static WALK_ORIGIN: Cell<usize> = const { Cell::new(0) };
+    /// Whether a walk on this thread stopped at [`MAX_WALK_DEPTH`] or
+    /// [`MAX_WALK_STACK`].
+    static WALK_DEPTH_EXCEEDED: Cell<bool> = const { Cell::new(false) };
+}
+
+/// What [`with_extraction_limits`] observed while the extractor ran.
+///
+/// Either flag means the returned rows are not a successful extraction. The
+/// caller records the file as a failure and does not store them, the same
+/// way a cancelled parse is handled.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ExtractionLimits {
+    /// A tree-sitter parse was cancelled at the deadline.
+    pub parse_deadline_exceeded: bool,
+    /// An AST walk stopped because it passed the depth cap or stack budget.
+    pub walk_depth_exceeded: bool,
+}
+
+/// Runs `extract` with this thread's parse deadline and AST-walk budget.
+///
+/// A cancelled parse yields no tree, and a walk that passes the budget
+/// returns without descending further. Either way the extractor's rows are
+/// incomplete: the caller must treat the file as an extraction failure
+/// rather than store them.
+pub fn with_extraction_limits<T>(
+    timeout: Duration,
+    extract: impl FnOnce() -> T,
+) -> (T, ExtractionLimits) {
+    let _scope = ExtractionLimitScope::enter(Instant::now().checked_add(timeout));
+    let value = extract();
+    (
+        value,
+        ExtractionLimits {
+            parse_deadline_exceeded: PARSE_DEADLINE_EXCEEDED.get(),
+            walk_depth_exceeded: WALK_DEPTH_EXCEEDED.get(),
+        },
+    )
 }
 
 /// Runs `extract` with every tree-sitter parse on this thread bounded by
 /// `timeout`, and reports whether any parse was cancelled by it.
 ///
+/// The AST-walk budget is enforced too, but this function only reports the
+/// parse deadline. Callers that store rows use [`with_extraction_limits`] so
+/// a walk that stopped early is not stored as a successful file.
+///
 /// A cancelled parse yields no tree, so the extractor returns empty rows; the
 /// caller must treat an exceeded deadline as an extraction failure rather
 /// than store those rows.
 pub fn with_parse_timeout<T>(timeout: Duration, extract: impl FnOnce() -> T) -> (T, bool) {
-    let _scope = ParseDeadlineScope::enter(Instant::now().checked_add(timeout));
-    let value = extract();
-    (value, PARSE_DEADLINE_EXCEEDED.get())
+    let (value, limits) = with_extraction_limits(timeout, extract);
+    (value, limits.parse_deadline_exceeded)
 }
 
-/// Restores the thread's previous deadline state on drop, including unwind.
-struct ParseDeadlineScope {
+/// Restores the thread's previous limit state on drop, including unwind.
+struct ExtractionLimitScope {
     deadline: Option<Instant>,
-    exceeded: bool,
+    parse_exceeded: bool,
+    walk_depth: usize,
+    walk_origin: usize,
+    walk_exceeded: bool,
 }
 
-impl ParseDeadlineScope {
+impl ExtractionLimitScope {
     fn enter(deadline: Option<Instant>) -> Self {
         Self {
             deadline: PARSE_DEADLINE.replace(deadline),
-            exceeded: PARSE_DEADLINE_EXCEEDED.replace(false),
+            parse_exceeded: PARSE_DEADLINE_EXCEEDED.replace(false),
+            walk_depth: WALK_DEPTH.replace(0),
+            walk_origin: WALK_ORIGIN.replace(0),
+            walk_exceeded: WALK_DEPTH_EXCEEDED.replace(false),
         }
     }
 }
 
-impl Drop for ParseDeadlineScope {
+impl Drop for ExtractionLimitScope {
     fn drop(&mut self) {
         PARSE_DEADLINE.set(self.deadline);
-        PARSE_DEADLINE_EXCEEDED.set(self.exceeded);
+        PARSE_DEADLINE_EXCEEDED.set(self.parse_exceeded);
+        WALK_DEPTH.set(self.walk_depth);
+        WALK_ORIGIN.set(self.walk_origin);
+        WALK_DEPTH_EXCEEDED.set(self.walk_exceeded);
     }
 }
+
+/// One walker frame. Depth and the stack origin return to their previous
+/// values when this drops, including on unwind.
+#[must_use = "the walker frame lasts until the guard drops"]
+pub(crate) struct WalkGuard;
+
+impl Drop for WalkGuard {
+    fn drop(&mut self) {
+        let depth = WALK_DEPTH.get().saturating_sub(1);
+        WALK_DEPTH.set(depth);
+        if depth == 0 {
+            WALK_ORIGIN.set(0);
+        }
+    }
+}
+
+/// Occupies one walker frame.
+///
+/// `None` means this descent would pass [`MAX_WALK_DEPTH`] or
+/// [`MAX_WALK_STACK`]. The caller returns without walking children, and the
+/// file is an extraction failure.
+pub(crate) fn enter_walk() -> Option<WalkGuard> {
+    let here = stack_pointer();
+    let origin = WALK_ORIGIN.get();
+    let depth = WALK_DEPTH.get();
+    if origin != 0 && (depth >= MAX_WALK_DEPTH || stack_used(origin, here) > MAX_WALK_STACK) {
+        WALK_DEPTH_EXCEEDED.set(true);
+        return None;
+    }
+    if origin == 0 {
+        WALK_ORIGIN.set(here);
+    }
+    WALK_DEPTH.set(depth + 1);
+    Some(WalkGuard)
+}
+
+/// Address of a local, so successive walker frames can see how far the
+/// stack has moved. Linux stacks grow downward.
+fn stack_pointer() -> usize {
+    let marker = 0u8;
+    std::hint::black_box(&marker as *const u8).addr()
+}
+
+fn stack_used(origin: usize, here: usize) -> usize {
+    origin.saturating_sub(here)
+}
+
+/// Stops the current function before it descends past the walk budget.
+///
+/// `walk_limit!()` is for functions that return `()`. `walk_limit!(expr)`
+/// returns `expr` instead (for example `None` or the node already in hand).
+macro_rules! walk_limit {
+    () => {
+        let _walk_limit = match $crate::languages::common::enter_walk() {
+            Some(guard) => guard,
+            None => return,
+        };
+    };
+    ($fallback:expr) => {
+        let _walk_limit = match $crate::languages::common::enter_walk() {
+            Some(guard) => guard,
+            None => return $fallback,
+        };
+    };
+}
+pub(crate) use walk_limit;
 
 /// Parses `source`, cancelling the parse once the thread's parse deadline
 /// passes. tree-sitter checks progress every hundred or so parse operations.
@@ -248,6 +383,7 @@ fn non_code_ranges(scope: Node, non_code: NonCodeKinds) -> Vec<(usize, usize)> {
 }
 
 fn collect_non_code(node: Node, non_code: NonCodeKinds, excluded: &mut Vec<(usize, usize)>) {
+    walk_limit!();
     let kind = node.kind();
     if kind_listed(kind, non_code.opaque) {
         excluded.push((node.start_byte(), node.end_byte()));

@@ -113,7 +113,7 @@ index:
 - **`failed`** holds a `count` and one entry per directory or file the sync
   could not read or extract, with its `path`, the `operation` that failed, a
   stable `error_kind` (`permission_denied`, `not_found`, `io`, `invalid_data`,
-  `parse_timeout`, `unsupported` or `panic`) and the `message`. One bad path
+  `parse_timeout`, `walk_depth`, `unsupported` or `panic`) and the `message`. One bad path
   does not fail the sync: every other file is indexed, and anything already
   indexed at or under the failed path keeps its rows. A one-line stderr notice
   gives the count. The sync exits 1 only when paths failed and nothing is

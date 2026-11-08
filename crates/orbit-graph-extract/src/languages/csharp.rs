@@ -4,7 +4,7 @@ use std::path::Path;
 
 use tree_sitter::{Node, Parser};
 
-use super::common::{NonCodeKinds, collect_dotted_calls, parse_source};
+use super::common::{NonCodeKinds, collect_dotted_calls, parse_source, walk_limit};
 
 use crate::{ExtractedFile, Extractor, RawImport, RawRef, RawRelation, RawSymbol};
 
@@ -152,6 +152,7 @@ impl ExtractionState {
 }
 
 fn extract_children(node: Node, source: &str, parent: Option<&str>, state: &mut ExtractionState) {
+    walk_limit!();
     let mut scoped_parent = parent.map(str::to_string);
     let mut cursor = node.walk();
 
@@ -168,6 +169,7 @@ fn extract_children(node: Node, source: &str, parent: Option<&str>, state: &mut 
 }
 
 fn extract_node(node: Node, source: &str, parent: Option<&str>, state: &mut ExtractionState) {
+    walk_limit!();
     match node.kind() {
         "using_directive" => extract_using(node, source, state),
         "namespace_declaration" => extract_namespace(node, source, parent, state),

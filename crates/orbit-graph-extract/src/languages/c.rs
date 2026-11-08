@@ -8,7 +8,9 @@ use std::path::Path;
 
 use tree_sitter::{Node, Parser};
 
-use super::common::{dedup_imports, dedup_refs, dedup_symbols, normalize_path, parse_source};
+use super::common::{
+    dedup_imports, dedup_refs, dedup_symbols, normalize_path, parse_source, walk_limit,
+};
 use crate::{ExtractedFile, Extractor, RawImport, RawRef, RawSymbol};
 
 /// C tree-sitter extractor (functions, structs, includes).
@@ -132,6 +134,7 @@ impl ExtractionState {
 }
 
 fn extract_top_level(node: Node, source: &str, state: &mut ExtractionState) {
+    walk_limit!();
     let mut cursor = node.walk();
     for child in node.children(&mut cursor) {
         if !child.is_named() {
@@ -226,6 +229,7 @@ fn extract_tag_specifier(node: Node, source: &str, state: &mut ExtractionState) 
 }
 
 fn collect_call_refs(node: Node, source: &str, state: &mut ExtractionState) {
+    walk_limit!();
     if node.kind() == "call_expression" {
         collect_call_ref(node, source, state);
     }
@@ -274,6 +278,7 @@ fn declarators(node: Node) -> Vec<Node> {
 }
 
 fn declarator_name(node: Node, source: &str) -> Option<String> {
+    walk_limit!(None);
     match node.kind() {
         "identifier" | "type_identifier" | "field_identifier" => Some(node_text(node, source)),
         "init_declarator" | "function_declarator" | "array_declarator" | "pointer_declarator" => {
@@ -298,6 +303,7 @@ fn is_function_prototype_declarator(node: Node, source: &str) -> bool {
 }
 
 fn contains_parenthesized_pointer(node: Node) -> bool {
+    walk_limit!(false);
     if node.kind() == "parenthesized_declarator"
         && first_declarator_child(node)
             .map(|child| child.kind() == "pointer_declarator")

@@ -597,6 +597,60 @@ fn parse_past_its_deadline_is_an_extraction_failure() {
 }
 
 #[test]
+fn walk_past_its_depth_cap_is_an_extraction_failure() {
+    let worktree = TestWorktree::new("walk-depth");
+    drop(Graph::open(worktree.path(), SyncPolicy::Manual).expect("open graph"));
+    let depth = 100_000;
+    let python = format!(
+        "top()\nx = {}bottom(){}\n",
+        "(".repeat(depth),
+        ")".repeat(depth)
+    );
+    worktree.write("src/deep.py", &python);
+    worktree.write("src/ok.rs", "pub fn ok() {}\n");
+    let diff = Diff {
+        new: vec![PathBuf::from("src/deep.py"), PathBuf::from("src/ok.rs")],
+        ..Diff::default()
+    };
+
+    let output = super::run_with_backend(
+        graph_db_path(worktree.path()).as_path(),
+        worktree.path(),
+        SyncMode::Auto,
+        &diff,
+        &DefaultExtractorBackend {
+            parse_timeout: Duration::from_secs(120),
+        },
+        None,
+        Pass1Limits::default(),
+    )
+    .expect("pass1 records the deep file and indexes its sibling");
+
+    let conn = open_test_connection(worktree.path());
+    assert_eq!(
+        file_count(&conn, "src/deep.py"),
+        0,
+        "no rows for the capped file"
+    );
+    assert_eq!(file_count(&conn, "src/ok.rs"), 1);
+    drop(conn);
+
+    assert_eq!(output.files_written, 1);
+    let failed: Vec<_> = output
+        .failed
+        .iter()
+        .map(|failure| {
+            (
+                failure.path.as_str(),
+                failure.error_kind.as_str(),
+                failure.operation.as_str(),
+            )
+        })
+        .collect();
+    assert_eq!(failed, [("src/deep.py", "walk_depth", "walk source file")]);
+}
+
+#[test]
 fn extraction_refuses_a_file_that_grew_past_the_byte_cap() {
     let worktree = TestWorktree::new("extract-byte-cap");
     let oversize = "a".repeat(usize::try_from(MAX_FILE_BYTES).expect("cap fits usize") + 1);
