@@ -9,8 +9,7 @@ use std::fmt::{Display, Formatter};
 use std::io::ErrorKind;
 
 use orbit_graph::{GraphError, GraphErrorClass, SelectorParseError};
-use orbit_graph_changes::analysis::AnalysisError;
-use orbit_graph_changes::snapshot::SnapshotError;
+use orbit_graph_changes::{AnalysisError, SnapshotError};
 use serde_json::{Value, json};
 use thiserror::Error;
 
@@ -275,7 +274,7 @@ pub enum CliError {
     Tool(ToolError),
     /// Change analysis failed.
     #[error(transparent)]
-    Changes(#[from] orbit_graph_changes::analysis::AnalysisError),
+    Changes(#[from] orbit_graph_changes::AnalysisError),
     /// A graph selector argument did not parse.
     #[error(transparent)]
     Selector(#[from] SelectorParseError),

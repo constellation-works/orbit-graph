@@ -6,11 +6,11 @@
     reason = "fixtures are written with fs::write; clippy.toml bans it only from shipped code"
 )]
 
-use orbit_graph_changes::report::{ExcerptMode, ReportOptions, build_report};
-use orbit_graph_changes::snapshot::Comparison;
+use crate::report::{ExcerptMode, ReportOptions, build_report};
+use crate::snapshot::Comparison;
 use serde_json::Value;
 
-mod common;
+use crate::test_fixtures as common;
 use common::corpus;
 
 const GENERATED_AT: &str = "2024-01-01T00:00:00Z";

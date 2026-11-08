@@ -13,23 +13,21 @@ use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Instant;
 
-use git2::Repository;
-use orbit_graph::Confidence;
-use orbit_graph_changes::analysis::{
-    AnalysisError, ChangesBounds, ChangesRange, ChangesRequest, analyse,
-};
-use orbit_graph_changes::changes::{ChangeStatus, ChangedSymbols};
-use orbit_graph_changes::filters::FilterSet;
-use orbit_graph_changes::report::{
+use crate::analysis::{AnalysisError, ChangesBounds, ChangesRange, ChangesRequest, analyse};
+use crate::changes::{ChangeStatus, ChangedSymbols};
+use crate::filters::FilterSet;
+use crate::report::{
     ReportDeadline, ReportLimits, ReportOptions, UnanalysedReason, build_report_bounded,
 };
-use orbit_graph_changes::snapshot::{
+use crate::snapshot::{
     BuildState, BuildStatus, Comparison, ComparisonMode, ComparisonOptions, ComparisonOutcome,
     ComparisonProgress, SnapshotError, SnapshotSide, WORKING_TREE_ID, default_base,
 };
+use git2::Repository;
+use orbit_graph::Confidence;
 use tempfile::TempDir;
 
-mod common;
+use crate::test_fixtures as common;
 
 use common::{Fixture, build_fixture, commit_files, fingerprint_working_tree};
 

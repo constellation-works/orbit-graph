@@ -4,7 +4,6 @@
 //! A refused cache is not fatal: the comparison indexes both sides into
 //! task-owned temporary trees and names the refusal in its cache note.
 
-#![cfg(unix)]
 #![allow(clippy::expect_used)]
 #![allow(
     clippy::disallowed_methods,
@@ -17,11 +16,11 @@ use std::os::unix::fs::{PermissionsExt, symlink};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
+use crate::snapshot::{Comparison, SnapshotSide};
 use git2::Repository;
-use orbit_graph_changes::snapshot::{Comparison, SnapshotSide};
 use tempfile::TempDir;
 
-mod common;
+use crate::test_fixtures as common;
 
 use common::build_fixture;
 
@@ -88,7 +87,8 @@ fn a_planted_cache_is_refused_by_name_and_nothing_outside_the_repository_changes
 #[test]
 fn the_cache_is_owner_only_under_a_permissive_umask() {
     const CHILD: &str = "ORBIT_GRAPH_CHANGES_UMASK_CHILD";
-    const NAME: &str = "the_cache_is_owner_only_under_a_permissive_umask";
+    const NAME: &str =
+        "snapshot::tests::cache_containment::the_cache_is_owner_only_under_a_permissive_umask";
     if std::env::var_os(CHILD).is_none() {
         let output = Command::new("sh")
             .args(["-c", "umask 0002; exec \"$@\"", "sh"])

@@ -84,6 +84,10 @@ pub enum ExcerptMode {
     Controlled,
     /// Each cited location embeds the entire bounded read of its file (up to
     /// `DEFAULT_SHOW_MAX_BYTES`), not just a window around the cited line.
+    #[allow(
+        dead_code,
+        reason = "constructed by the report unit tests; shipped analysis requests Controlled"
+    )]
     FullSpan,
 }
 
@@ -94,16 +98,6 @@ impl ExcerptMode {
             Self::None => "none",
             Self::Controlled => "controlled",
             Self::FullSpan => "full-span",
-        }
-    }
-
-    /// Parse a mode from its stable label.
-    pub fn parse(label: &str) -> Option<Self> {
-        match label {
-            "none" => Some(Self::None),
-            "controlled" => Some(Self::Controlled),
-            "full-span" | "full_span" | "fullspan" => Some(Self::FullSpan),
-            _ => None,
         }
     }
 }
@@ -483,7 +477,7 @@ pub struct ComparisonSnapshotView {
 
 /// The resolved comparison, verbatim per the design doc's "Resolved
 /// comparison" contract, except that `repository` is omitted unless
-/// [`ReportOptions::include_absolute_paths`] is set.
+/// `ReportOptions::include_absolute_paths` is set.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct ComparisonView {
     /// Payload schema version.
@@ -940,6 +934,7 @@ impl<'a> Collectors<'a> {
 }
 
 /// Build the complete exported report for `comparison` under `options`.
+#[cfg(test)]
 pub fn build_report(
     comparison: &Comparison,
     options: &ReportOptions,
@@ -952,6 +947,7 @@ pub fn build_report(
 ///
 /// Every changed symbol is still listed in `changed_symbols`; only evidence,
 /// entry points, and candidate tests stop at a limit.
+#[cfg(test)]
 pub fn build_report_bounded(
     comparison: &Comparison,
     options: &ReportOptions,
@@ -1405,3 +1401,6 @@ fn comparison_view(comparison: &Comparison, include_absolute_paths: bool) -> Com
 pub(crate) fn now_rfc3339() -> Result<String, ReportError> {
     Ok(orbit_graph::now_rfc3339()?)
 }
+
+#[cfg(test)]
+mod tests;

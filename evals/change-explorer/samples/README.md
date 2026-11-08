@@ -5,12 +5,12 @@ contract JSON plus the self-contained static HTML — committed so a developer
 can open one without running the tool first.
 
 - `direct-call.json` is **generated and checked**: the test
-  `crates/orbit-graph-changes/tests/derived_artifacts.rs` regenerates it with
+  `crates/orbit-graph-changes/src/report/tests/derived_artifacts.rs` regenerates it with
   the current library and fails if the JSON differs byte for byte. Its HTML
   companion is a historical explorer export. After an
   intended change to the report output (a new field, an `EXTRACTOR_VERSION`
   bump, an index-identity change), regenerate it in the same change:
-  `UPDATE_GOLDENS=1 cargo test -p orbit-graph-changes --test derived_artifacts --locked`.
+  `UPDATE_GOLDENS=1 cargo test -p orbit-graph-changes --lib --locked derived_artifacts`.
 - `orbit-graph-self-study-9e5c15986b14` is a **historical snapshot**, pinned to
   extractor version 6 and export schema version 1. Nothing regenerates or
   checks it, and it will not match what the current binary produces.

@@ -14,13 +14,13 @@ use std::fs;
 use std::path::Path;
 use std::sync::Mutex;
 
-use orbit_graph::{Confidence, DEFAULT_IMPACT_DEPTH, RefOpts, Selector};
-use orbit_graph_changes::snapshot::{
+use crate::snapshot::{
     BuildState, BuildStatus, Comparison, ComparisonMode, ComparisonOptions, ComparisonOutcome,
     ComparisonProgress, ExclusionReason, SnapshotSide, WorkingTreeChange,
 };
+use orbit_graph::{Confidence, DEFAULT_IMPACT_DEPTH, RefOpts, Selector};
 
-mod common;
+use crate::test_fixtures as common;
 
 use common::{build_fixture, commit_files, fingerprint_working_tree, head_commit};
 

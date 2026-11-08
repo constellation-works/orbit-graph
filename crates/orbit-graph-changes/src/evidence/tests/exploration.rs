@@ -6,12 +6,12 @@
     reason = "fixtures are written with fs::write; clippy.toml bans it only from shipped code"
 )]
 
+use crate::changes::ChangedSymbols;
+use crate::evidence::{EvidenceCollector, EvidenceDirection, EvidenceQuery};
+use crate::snapshot::{Comparison, SnapshotSide};
 use orbit_graph::Confidence;
-use orbit_graph_changes::changes::ChangedSymbols;
-use orbit_graph_changes::evidence::{EvidenceCollector, EvidenceDirection, EvidenceQuery};
-use orbit_graph_changes::snapshot::{Comparison, SnapshotSide};
 
-mod common;
+use crate::test_fixtures as common;
 use common::corpus;
 
 #[test]
@@ -189,7 +189,7 @@ fn ambiguous_same_name_symbols_keep_distinct_paths() {
 
 #[test]
 fn filters_report_what_they_remove() {
-    use orbit_graph_changes::filters::FilterSet;
+    use crate::filters::FilterSet;
 
     let case = corpus::build_case("direct-call");
     let comparison =

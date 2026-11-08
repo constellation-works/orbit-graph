@@ -11,6 +11,9 @@ use crate::filters::FilterSet;
 use crate::report::ReportEvidencePath;
 use crate::snapshot::ComparisonOptions;
 
+mod changes_analysis;
+mod selection_aliases;
+
 fn request(bounds: ChangesBounds, selection: Vec<String>) -> ChangesRequest {
     ChangesRequest {
         repository: PathBuf::from("."),
