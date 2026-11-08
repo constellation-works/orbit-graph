@@ -460,10 +460,10 @@ impl ExtractorBackend for DefaultExtractorBackend {
                 )
                 .with_kind("unsupported")
             })?;
-        let (rows, deadline_exceeded) = languages::with_parse_timeout(self.parse_timeout, || {
+        let (rows, limits) = languages::with_extraction_limits(self.parse_timeout, || {
             extractor.extract(rel_path, &bytes)
         });
-        if deadline_exceeded {
+        if limits.parse_deadline_exceeded {
             return Err(ExtractFileError::new(
                 "parse source file",
                 format!(
@@ -472,6 +472,15 @@ impl ExtractorBackend for DefaultExtractorBackend {
                 ),
             )
             .with_kind("parse_timeout"));
+        }
+        if limits.walk_depth_exceeded {
+            // Rows above the cap are a partial walk. Drop them, the same way a
+            // cancelled parse is not stored (STD-02 §R30, §R32).
+            return Err(ExtractFileError::new(
+                "walk source file",
+                "AST walk exceeded its depth cap",
+            )
+            .with_kind("walk_depth"));
         }
         Ok(ExtractedSourceFile {
             path: rel_path.to_path_buf(),

@@ -7,7 +7,7 @@
 use std::collections::HashMap;
 use std::path::Path;
 
-use super::common::normalize_path;
+use super::common::{normalize_path, walk_limit};
 use crate::{ExtractedFile, Extractor, RawConfig};
 
 /// Config (yaml/toml/json/env) key extractor.
@@ -393,6 +393,7 @@ impl<'a> FlowKeyLines<'a> {
     }
 
     fn collect(&mut self, parent: &[String]) {
+        walk_limit!();
         self.skip_space();
         if self.text.as_bytes().get(self.cursor) != Some(&b'{') {
             return;
@@ -544,6 +545,7 @@ impl<'a> JsonKeyLines<'a> {
     }
 
     fn value(&mut self, parent: Option<&[String]>) {
+        walk_limit!();
         self.whitespace();
         match self.source.as_bytes().get(self.cursor) {
             Some(b'{') => {
@@ -610,6 +612,7 @@ fn collect_toml_keys(
     path: &Path,
     kind: &str,
 ) {
+    walk_limit!();
     let file_path = normalize_path(path);
     for (k, v) in table {
         let mut full = prefix.to_vec();
@@ -634,6 +637,7 @@ fn collect_yaml_keys(
     path: &Path,
     kind: &str,
 ) {
+    walk_limit!();
     let file_path = normalize_path(path);
     if let serde_norway::Value::Mapping(map) = value {
         for (k, v) in map {
@@ -660,6 +664,7 @@ fn collect_json_keys(
     path: &Path,
     kind: &str,
 ) {
+    walk_limit!();
     let file_path = normalize_path(path);
     if let serde_json::Value::Object(map) = value {
         for (k, v) in map {

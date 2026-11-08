@@ -2,6 +2,7 @@ use std::path::Path;
 
 use tree_sitter::Node;
 
+use super::common::walk_limit;
 use crate::{ExtractedFile, RawImport, RawRef, RawRelation, RawSymbol};
 
 #[derive(Debug, Clone, Copy)]
@@ -186,6 +187,7 @@ fn extract_statements(node: Node, source: &str, options: JsTsOptions, state: &mu
 }
 
 fn extract_statement(node: Node, source: &str, options: JsTsOptions, state: &mut ExtractionState) {
+    walk_limit!();
     match node.kind() {
         "program" => extract_statements(node, source, options, state),
         "import_statement" => extract_import_statement(node, source, state),
@@ -454,6 +456,7 @@ fn collect_signature_type_refs(
 }
 
 fn collect_type_refs(node: Node, source: &str, state: &mut ExtractionState) {
+    walk_limit!();
     match node.kind() {
         "predefined_type" | "statement_block" | "class_body" | "import_statement"
         | "export_statement" | "extends_clause" | "implements_clause" | "class_heritage" => return,
@@ -500,6 +503,7 @@ fn collect_type_refs(node: Node, source: &str, state: &mut ExtractionState) {
 }
 
 fn collect_type_refs_after_parameter_name(node: Node, source: &str, state: &mut ExtractionState) {
+    walk_limit!();
     let mut skipped_name = false;
     let mut cursor = node.walk();
     for child in node.named_children(&mut cursor) {
@@ -517,6 +521,7 @@ fn collect_expression_refs(
     options: JsTsOptions,
     state: &mut ExtractionState,
 ) {
+    walk_limit!();
     match node.kind() {
         "call_expression" => {
             collect_call_ref(node, source, options, state);
@@ -589,6 +594,7 @@ fn collect_callable_ref(
     options: JsTsOptions,
     state: &mut ExtractionState,
 ) {
+    walk_limit!();
     match function.kind() {
         "identifier" => {
             let name = node_text(function, source);

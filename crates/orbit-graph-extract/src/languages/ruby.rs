@@ -4,7 +4,7 @@ use std::path::Path;
 
 use tree_sitter::{Node, Parser};
 
-use super::common::parse_source;
+use super::common::{parse_source, walk_limit};
 
 use crate::{ExtractedFile, Extractor, RawImport, RawRef, RawRelation, RawSymbol};
 
@@ -133,6 +133,7 @@ fn extract_children(
     parent_symbol: Option<&str>,
     state: &mut ExtractionState,
 ) {
+    walk_limit!();
     let mut cursor = node.walk();
     for child in node.named_children(&mut cursor) {
         match child.kind() {
@@ -311,6 +312,7 @@ fn collect_expression_refs(
     parent_symbol: Option<&str>,
     state: &mut ExtractionState,
 ) {
+    walk_limit!();
     match node.kind() {
         "call" => {
             handle_call(node, source, parent_symbol, state);
@@ -340,6 +342,7 @@ fn collect_expression_refs(
 }
 
 fn handle_call(node: Node, source: &str, parent_symbol: Option<&str>, state: &mut ExtractionState) {
+    walk_limit!();
     extract_require_import(node, source, state);
     extract_include_or_extend_relation(node, source, parent_symbol, state);
     collect_call_ref(node, source, parent_symbol, state);

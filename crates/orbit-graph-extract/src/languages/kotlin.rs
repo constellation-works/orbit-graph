@@ -4,7 +4,7 @@ use std::path::Path;
 
 use tree_sitter::{Node, Parser};
 
-use super::common::{NonCodeKinds, collect_dotted_calls, parse_source};
+use super::common::{NonCodeKinds, collect_dotted_calls, parse_source, walk_limit};
 
 use crate::{ExtractedFile, Extractor, RawImport, RawRef, RawRelation, RawSymbol};
 
@@ -148,6 +148,7 @@ impl ExtractionState {
 }
 
 fn extract_children(node: Node, source: &str, parent: Option<&str>, state: &mut ExtractionState) {
+    walk_limit!();
     let mut cursor = node.walk();
     for child in node.named_children(&mut cursor) {
         extract_node(child, source, parent, state);
@@ -155,6 +156,7 @@ fn extract_children(node: Node, source: &str, parent: Option<&str>, state: &mut 
 }
 
 fn extract_node(node: Node, source: &str, parent: Option<&str>, state: &mut ExtractionState) {
+    walk_limit!();
     match node.kind() {
         "import" | "import_header" => extract_import(node, source, state),
         "import_list" => extract_children(node, source, parent, state),
@@ -428,6 +430,7 @@ fn property_names(node: Node, source: &str) -> Vec<String> {
 }
 
 fn collect_variable_names(node: Node, source: &str, names: &mut Vec<String>) {
+    walk_limit!();
     let mut cursor = node.walk();
     for child in node.named_children(&mut cursor) {
         match child.kind() {

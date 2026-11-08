@@ -4,6 +4,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use tree_sitter::Node;
 
+use super::super::common::walk_limit;
 use super::{ExtractionState, ModuleScope, get_name, node_text, normalize_qualified_name};
 
 pub(super) fn extract_commands(root: Node, source: &str, state: &mut ExtractionState) {
@@ -55,6 +56,7 @@ fn collect_command_items<'tree>(
     module: &ModuleScope,
     extraction: &mut CommandExtraction<'tree>,
 ) {
+    walk_limit!();
     let mut cursor = node.walk();
     let mut pending_attrs = Vec::new();
 
@@ -131,6 +133,7 @@ fn subcommand_field_types(node: Node, source: &str) -> Vec<String> {
 }
 
 fn collect_subcommand_field_types(node: Node, source: &str, field_types: &mut Vec<String>) {
+    walk_limit!();
     if node.kind() == "field_declaration" && node_text(node, source).contains("subcommand") {
         if let Some(type_node) = node.child_by_field_name("type")
             && let Some(field_type) = command_payload_type(type_node, source)
@@ -234,6 +237,7 @@ fn emit_commands_for_enum(
     state: &mut ExtractionState,
     active_enums: &mut BTreeSet<usize>,
 ) {
+    walk_limit!();
     // An enum may appear under multiple command paths, but cannot expand again
     // while it is already on this path.
     if !active_enums.insert(enum_index) {
@@ -312,6 +316,7 @@ fn collect_variant_handlers(
     state: &ExtractionState,
     handlers: &mut BTreeSet<String>,
 ) {
+    walk_limit!();
     if node.kind() == "match_arm" {
         if let Some(handler) = handler_from_match_arm(node, source, command_enum, variant, state) {
             handlers.insert(handler);
@@ -362,6 +367,7 @@ fn collect_call_handlers(
     state: &ExtractionState,
     handlers: &mut BTreeSet<String>,
 ) {
+    walk_limit!();
     if node.kind() == "call_expression"
         && let Some(handler) = call_handler(node, source, module, variant, state)
     {
@@ -569,6 +575,7 @@ fn collect_command_type_names(
     excluded_span: Option<(usize, usize)>,
     types: &mut Vec<String>,
 ) {
+    walk_limit!();
     if excluded_span.is_some_and(|span| span == (node.start_byte(), node.end_byte())) {
         return;
     }

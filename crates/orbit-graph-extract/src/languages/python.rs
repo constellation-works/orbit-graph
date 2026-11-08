@@ -6,7 +6,7 @@ use std::path::Path;
 
 use tree_sitter::{Node, Parser};
 
-use super::common::parse_source;
+use super::common::{parse_source, walk_limit};
 
 use crate::{ExtractedFile, Extractor, RawCommand, RawImport, RawRef, RawRelation, RawSymbol};
 
@@ -217,6 +217,7 @@ fn extract_children(
     reference_parent_symbol: Option<&str>,
     state: &mut ExtractionState,
 ) {
+    walk_limit!();
     let mut cursor = node.walk();
     for child in node.named_children(&mut cursor) {
         match child.kind() {
@@ -605,6 +606,7 @@ fn collect_function_type_refs(node: Node, source: &str, state: &mut ExtractionSt
 }
 
 fn collect_parameter_type_refs(node: Node, source: &str, state: &mut ExtractionState) {
+    walk_limit!();
     if let Some(type_node) = node.child_by_field_name("type") {
         collect_type_refs(type_node, source, state);
     }
@@ -616,6 +618,7 @@ fn collect_parameter_type_refs(node: Node, source: &str, state: &mut ExtractionS
 }
 
 fn collect_type_refs(node: Node, source: &str, state: &mut ExtractionState) {
+    walk_limit!();
     if let Some(target) = type_reference_text(node, source)
         && !target.is_empty()
         && !is_ignored_name(&target)
@@ -643,6 +646,7 @@ fn collect_expression_refs(
     parent_symbol: Option<&str>,
     state: &mut ExtractionState,
 ) {
+    walk_limit!();
     match node.kind() {
         "call" => {
             collect_call_ref(node, source, parent_symbol, state);
@@ -672,6 +676,7 @@ fn collect_call_ref(
     parent_symbol: Option<&str>,
     state: &mut ExtractionState,
 ) {
+    walk_limit!();
     let Some(function) = node.child_by_field_name("function") else {
         return;
     };
@@ -822,6 +827,7 @@ fn program_from_argv(
     script_constants: &BTreeMap<String, String>,
     allow_shell: bool,
 ) -> Option<String> {
+    walk_limit!(None);
     let rest = argv.get(1..).unwrap_or_default();
     match argv.first()? {
         ArgvItem::Interpreter => launched_script(rest, source, script_constants),
@@ -893,6 +899,7 @@ fn last_script_reference(
     source: &str,
     script_constants: &BTreeMap<String, String>,
 ) -> Option<String> {
+    walk_limit!(None);
     let found = match node.kind() {
         "string" => python_string_literal_value(&node_text(node, source))
             .filter(|literal| literal.ends_with(".py")),
@@ -1158,6 +1165,7 @@ fn import_leaf_name(name: &str) -> String {
 }
 
 fn type_reference_text(node: Node, source: &str) -> Option<String> {
+    walk_limit!(None);
     match node.kind() {
         "identifier" | "dotted_name" | "attribute" => {
             Some(normalize_qualified_name(&node_text(node, source)))
@@ -1170,6 +1178,7 @@ fn type_reference_text(node: Node, source: &str) -> Option<String> {
 }
 
 fn first_type_reference_child(node: Node, source: &str) -> Option<String> {
+    walk_limit!(None);
     let mut cursor = node.walk();
     for child in node.named_children(&mut cursor) {
         if let Some(text) = type_reference_text(child, source)
@@ -1182,6 +1191,7 @@ fn first_type_reference_child(node: Node, source: &str) -> Option<String> {
 }
 
 fn type_span_node<'tree>(node: Node<'tree>, source: &str) -> Node<'tree> {
+    walk_limit!(node);
     let mut cursor = node.walk();
     for child in node.named_children(&mut cursor) {
         if matches!(child.kind(), "identifier" | "dotted_name" | "attribute") {

@@ -5,7 +5,7 @@ use std::path::Path;
 
 use tree_sitter::{Node, Parser};
 
-use super::common::parse_source;
+use super::common::{parse_source, walk_limit};
 
 use crate::{ExtractedFile, Extractor, RawImport, RawRef, RawRelation, RawSymbol};
 
@@ -272,6 +272,7 @@ fn collect_signature_refs(node: Node, source: &str, state: &mut ExtractionState)
 }
 
 fn collect_expression_refs(node: Node, source: &str, state: &mut ExtractionState) {
+    walk_limit!();
     match node.kind() {
         "call_expression" => {
             collect_call_ref(node, source, state);
@@ -303,6 +304,7 @@ fn collect_expression_refs(node: Node, source: &str, state: &mut ExtractionState
 }
 
 fn collect_call_ref(node: Node, source: &str, state: &mut ExtractionState) {
+    walk_limit!();
     let Some(function) = node.child_by_field_name("function") else {
         return;
     };
@@ -347,6 +349,7 @@ fn collect_selector_call_ref(node: Node, source: &str, state: &mut ExtractionSta
 }
 
 fn collect_type_refs(node: Node, source: &str, state: &mut ExtractionState) {
+    walk_limit!();
     match node.kind() {
         "type_identifier" => {
             let target = node_text(node, source);
@@ -405,6 +408,7 @@ fn collect_qualified_type_ref(node: Node, source: &str, state: &mut ExtractionSt
 }
 
 fn extract_import(node: Node, source: &str, state: &mut ExtractionState) {
+    walk_limit!();
     let mut cursor = node.walk();
     for child in node.named_children(&mut cursor) {
         match child.kind() {
