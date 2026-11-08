@@ -8,7 +8,7 @@ use std::io::{self, Write};
 use serde::Serialize;
 use serde_json::Value;
 
-use crate::command::CliError;
+use crate::error::CliError;
 
 /// Write one JSON value, followed by a newline, and flush the writer.
 pub(crate) fn write_json(

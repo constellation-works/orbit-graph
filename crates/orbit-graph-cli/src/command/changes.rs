@@ -3,12 +3,12 @@ use std::path::PathBuf;
 use clap::{Args, ValueEnum};
 use orbit_graph::RefConfidence;
 use orbit_graph_changes::analysis::{
-    AnalysisError, ChangesBounds, ChangesRange, ChangesRequest, DEFAULT_MAX_CALLERS,
-    DEFAULT_MAX_ENTRY_POINTS, DEFAULT_MAX_SYMBOLS, DEFAULT_MAX_TESTS, DEFAULT_NODE_CAP, analyse,
+    ChangesBounds, ChangesRange, ChangesRequest, DEFAULT_MAX_CALLERS, DEFAULT_MAX_ENTRY_POINTS,
+    DEFAULT_MAX_SYMBOLS, DEFAULT_MAX_TESTS, DEFAULT_NODE_CAP, analyse,
 };
 use orbit_graph_changes::evidence::{DEFAULT_TIME_BUDGET_MS, EVIDENCE_DEPTH};
 use orbit_graph_changes::filters::FilterSet;
-use orbit_graph_changes::snapshot::{ComparisonOptions, SnapshotError};
+use orbit_graph_changes::snapshot::ComparisonOptions;
 use serde_json::{Value, json};
 
 use super::{CliError, CommandContext, display_value, json_value};
@@ -132,26 +132,6 @@ impl ChangesCommand {
         };
         json_value(analyse(&request)?)
     }
-}
-
-/// Stable error code of a change-analysis failure.
-pub(crate) fn error_code(error: &AnalysisError) -> &'static str {
-    match error {
-        AnalysisError::InvalidRange { .. }
-        | AnalysisError::InvalidBound { .. }
-        | AnalysisError::InvalidSelection { .. } => "argument_error",
-        AnalysisError::Snapshot(SnapshotError::Revision { .. }) => "revision_not_found",
-        AnalysisError::Snapshot(SnapshotError::NoDefaultBase { .. }) => "no_default_base",
-        AnalysisError::Snapshot(SnapshotError::Repository { .. }) => "repository_unavailable",
-        // `AnalysisError` and `SnapshotError` are `#[non_exhaustive]`: every
-        // other failure is a change-analysis failure.
-        _ => "changes_error",
-    }
-}
-
-/// Whether a change-analysis failure is a usage error (exit code 2).
-pub(crate) fn is_usage_error(error: &AnalysisError) -> bool {
-    error_code(error) == "argument_error"
 }
 
 pub(crate) fn output(document: Value) -> CommandOutput {

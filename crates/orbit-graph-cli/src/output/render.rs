@@ -7,7 +7,7 @@
 
 use std::io::{self, Write};
 
-use crate::command::CliError;
+use crate::error::CliError;
 use crate::output::json::{ErrorPayload, write_json};
 use crate::output::payload::{CommandOutput, View, ViewBlock};
 use crate::output::sink::{OutputMode, OutputSink};
