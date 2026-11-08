@@ -34,7 +34,7 @@
 //! two exports of the same inputs byte-identical.
 
 use std::collections::BTreeSet;
-use std::time::{Instant, SystemTime, UNIX_EPOCH};
+use std::time::Instant;
 
 use orbit_graph::{
     Confidence, DEFAULT_SHOW_MAX_BYTES, EXTRACTOR_VERSION, STORE_SCHEMA_VERSION, Selector,
@@ -199,6 +199,10 @@ pub enum ReportError {
     /// Computing evidence, entry points, or candidate tests failed.
     #[error(transparent)]
     Evidence(#[from] EvidenceError),
+    /// The system clock failed while stamping the report, so no
+    /// `generated_at` could be produced (STD-02 §R29).
+    #[error(transparent)]
+    Clock(#[from] orbit_graph::ExtractError),
 }
 
 /// A bounded window of source text embedded at one cited location.
@@ -964,7 +968,10 @@ pub(crate) fn build_report_with_selection(
     selection: &ResolvedSelection,
 ) -> Result<BoundedReport, ReportError> {
     let mode = options.excerpts;
-    let generated_at = options.generated_at.clone().unwrap_or_else(now_rfc3339);
+    let generated_at = match options.generated_at.clone() {
+        Some(generated_at) => generated_at,
+        None => now_rfc3339()?,
+    };
 
     let changed = ChangedSymbols::compute(comparison)?;
     let (changed_for_report, filtered_out) = changed.filtered(&options.filters);
@@ -1392,45 +1399,9 @@ fn comparison_view(comparison: &Comparison, include_absolute_paths: bool) -> Com
     }
 }
 
-/// Current wall-clock time as an RFC 3339 UTC timestamp with second
-/// precision, with no external date/time dependency.
-pub(crate) fn now_rfc3339() -> String {
-    let elapsed = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap_or_default();
-    format_epoch_seconds(elapsed.as_secs())
-}
-
-fn format_epoch_seconds(total_seconds: u64) -> String {
-    let days = (total_seconds / 86_400) as i64;
-    let seconds_of_day = total_seconds % 86_400;
-    let (hour, minute, second) = (
-        seconds_of_day / 3600,
-        (seconds_of_day % 3600) / 60,
-        seconds_of_day % 60,
-    );
-    let (year, month, day) = civil_from_days(days);
-    format!("{year:04}-{month:02}-{day:02}T{hour:02}:{minute:02}:{second:02}Z")
-}
-
-/// Howard Hinnant's `civil_from_days`: days since the Unix epoch to a
-/// proleptic-Gregorian `(year, month, day)`. Public-domain algorithm; avoids
-/// pulling in a date/time crate for one conversion.
-fn civil_from_days(days_since_epoch: i64) -> (i64, u32, u32) {
-    let z = days_since_epoch + 719_468;
-    let era = if z >= 0 { z } else { z - 146_096 } / 146_097;
-    let day_of_era = (z - era * 146_097) as u64;
-    let year_of_era =
-        (day_of_era - day_of_era / 1460 + day_of_era / 36_524 - day_of_era / 146_096) / 365;
-    let year = year_of_era as i64 + era * 400;
-    let day_of_year = day_of_era - (365 * year_of_era + year_of_era / 4 - year_of_era / 100);
-    let month_position = (5 * day_of_year + 2) / 153;
-    let day = (day_of_year - (153 * month_position + 2) / 5 + 1) as u32;
-    let month = if month_position < 10 {
-        month_position + 3
-    } else {
-        month_position - 9
-    } as u32;
-    let year = if month <= 2 { year + 1 } else { year };
-    (year, month, day)
+/// Current wall-clock time as an RFC 3339 UTC timestamp, from the single
+/// civil-time owner in the extraction crate (re-exported by `orbit-graph`).
+/// A clock failure is a typed [`ReportError::Clock`], never `1970-01-01`.
+pub(crate) fn now_rfc3339() -> Result<String, ReportError> {
+    Ok(orbit_graph::now_rfc3339()?)
 }

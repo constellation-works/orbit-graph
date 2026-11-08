@@ -365,6 +365,9 @@ impl From<orbit_graph_extract::ExtractError> for GraphError {
                 source,
             } => Self::io(operation, path, source),
             ExtractError::Git { operation, source } => Self::git(operation, source),
+            ExtractError::Clock { operation, source } => {
+                Self::invalid_data(operation, source.to_string())
+            }
         }
     }
 }

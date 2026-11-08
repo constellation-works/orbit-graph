@@ -34,6 +34,16 @@ pub enum ExtractError {
         #[source]
         source: git2::Error,
     },
+    /// The system clock could not supply a usable current time, so no
+    /// timestamp was fabricated (STD-02 §R29).
+    #[error("{operation}: {source}")]
+    Clock {
+        /// Operation being performed.
+        operation: &'static str,
+        /// Why the system clock failed.
+        #[source]
+        source: std::time::SystemTimeError,
+    },
 }
 
 impl ExtractError {
@@ -42,6 +52,10 @@ impl ExtractError {
             operation,
             reason: reason.into(),
         }
+    }
+
+    pub(crate) fn clock(operation: &'static str, source: std::time::SystemTimeError) -> Self {
+        Self::Clock { operation, source }
     }
 
     pub(crate) fn io(

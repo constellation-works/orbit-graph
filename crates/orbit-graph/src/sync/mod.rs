@@ -13,7 +13,7 @@ use std::time::{Duration, Instant};
 
 use rusqlite::Connection;
 
-use crate::lock::{self, LockHolder};
+use crate::lock::{self, DbLockGuard, LockHolder};
 use crate::runtime::SyncFaultPoint;
 use crate::{GraphError, SyncFailure, SyncMode, SyncObserver, SyncOutcome, SyncReport, SyncSkip};
 
@@ -35,7 +35,7 @@ fn run_once(
     lock_timeout: Duration,
 ) -> Result<SyncReport, GraphError> {
     let started = Instant::now();
-    let _lock = scanner::DbLockGuard::acquire_within(db_path, lock_timeout)?;
+    let _lock = DbLockGuard::acquire_within(db_path, lock_timeout)?;
     let diff = scanner::scan_diff_with_lock_held(db_path, worktree_root, mode)?;
     maybe_fail_after_scan(db_path)?;
     maybe_wait_after_scan(db_path);
@@ -59,7 +59,7 @@ pub(crate) fn run_with_observer(
     observer: &dyn SyncObserver,
 ) -> Result<SyncOutcome, GraphError> {
     let started = Instant::now();
-    let _lock = scanner::DbLockGuard::acquire(db_path)?;
+    let _lock = DbLockGuard::acquire(db_path)?;
     let diff = scanner::scan_diff_with_lock_held(db_path, worktree_root, mode)?;
     maybe_fail_after_scan(db_path)?;
     maybe_wait_after_scan(db_path);
