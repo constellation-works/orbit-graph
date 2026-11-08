@@ -1,3 +1,15 @@
+---
+title: "orbit-graph terminal interface"
+owner: maintainers
+last_updated: 2026-11-08
+status: Accepted
+stage: shipped
+next: "—"
+feature: terminal-interface
+doc_role: design
+summary: "Terminal behaviour of the standalone orbit-graph binary: output sink and modes, machine contracts, human views, help and exits."
+---
+
 # orbit-graph terminal interface
 
 This document records the terminal behavior of the standalone `orbit-graph`

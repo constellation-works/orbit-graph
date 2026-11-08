@@ -1,5 +1,23 @@
+---
+title: "Plugin surface: decisions"
+owner: maintainers
+last_updated: 2026-11-08
+status: Accepted
+stage: shipped
+next: "—"
+feature: plugin-surface
+doc_role: decisions
+summary: "Plugin surface honesty and plugin request byte bound decisions (ORB-13166 and the plugin-input bound)."
+---
+
 # Plugin surface: decisions
 
+Decisions for the Orbit plugin surface, folded from the former per-task
+folders `plugin-surface/` (ORB-13166) and `plugin-input/`. Each entry keeps
+its source task's D-number where it had one, prefixed by its source area so
+every `##` title stays unique (STD-06@1 §R11).
+
+**Plugin surface: context.**
 Decisions for ORB-13166, which makes the Orbit plugin surface honest: config
 keys take effect, fields an operation does not read are refused, schemas match
 the code, the backend binary is bound to consent, and the installed-Orbit tests
@@ -7,7 +25,8 @@ run in CI. The user-facing contract is in [`docs/plugin.md`](../../plugin.md);
 the parity and drift checks are in
 `crates/orbit-graph-cli/tests/plugin_contract.rs`.
 
-## D1. `branch` reaches the backend as `context.config`, not as an activity template
+## Plugin surface D1. `branch` reaches the backend as `context.config`, not as an activity template
+
 
 The task suggested templating the history-sync activity input with
 `branch: "{{config.branch}}"`. Orbit's `plugin.tool_call` action does not render
@@ -27,7 +46,9 @@ manifest or a definition, or read by the backend from `context.config`. The
 second case is proven by sending the key through the real binary and checking
 that no `ignoring plugin config key` notice appears.
 
-## D2. `index_dir` is removed (deviation from `STD-02@2 §R16`)
+
+## Plugin surface D2. `index_dir` is removed (deviation from `STD-02@2 §R16`)
+
 
 No runtime path read `index_dir`: the history index lives in the repository's
 `.orbit-graph/` and the code graph under plugin state, whatever the key said.
@@ -42,7 +63,9 @@ refusal is Orbit's, it names the fix, and the value it refuses never had an
 effect. Reopening the schema to accept a dead key would contradict D1's parity
 check, so the loud refusal is accepted and documented in `docs/plugin.md`.
 
-## D3. `schema_version` stays optional, and its absence stays absent (`STD-02@2 §R16`)
+
+## Plugin surface D3. `schema_version` stays optional, and its absence stays absent (`STD-02@2 §R16`)
+
 
 Not every in-repo caller sends `schema_version`: the history-sync and code-sync
 activities omit it, and so does the derived `orbit graph <verb>` CLI. The field
@@ -52,7 +75,9 @@ fabricated `1` for an absent value. Every request struct now holds
 as version 1, the only version there has been, and is not rewritten into the
 decoded request. Each request schema's description says so.
 
-## D4. Inapplicable fields are refused per operation (`STD-01@2 §R29`)
+
+## Plugin surface D4. Inapplicable fields are refused per operation (`STD-01@2 §R29`)
+
 
 `maintain` declares, per operation, the optional fields it reads
 (`MaintenanceOperation::reads`). A request that supplies any other field is
@@ -69,7 +94,9 @@ An empty string in a top-level field, or as an item of a top-level list, is
 refused naming the field. It used to be read as a value (an empty `branch`, an
 empty `run_ids` item), which the schemas' `minLength: 1` already forbade.
 
-## D5. Schema parity is proven through the binary
+
+## Plugin surface D5. Schema parity is proven through the binary
+
 
 `plugin_contract::request_schemas_equal_the_serde_structs_and_runtime_validation`
 walks every tool in the root manifest and checks the following against the real
@@ -88,7 +115,9 @@ executable:
 
 A schema edit without a code change, or the reverse, fails `make ci`.
 
-## D6. `plugin/plugin.yaml` is generated under a check gate
+
+## Plugin surface D6. `plugin/plugin.yaml` is generated under a check gate
+
 
 The compatibility tree under `plugin/` had drifted from the root manifest
 (fewer tools, hand-copied schemas). The task offered either agreement checks or
@@ -105,7 +134,9 @@ guidance, and a second copy that differs is exactly the drift this task removes.
 The two launchers must also be identical. The check runs in `make ci`
 (`STD-04@1 §R12`). The tree is retired later by ORB-12850.
 
-## D7. The backend executable is bound to consent (`STD-05@1 §R21`, `§R4`)
+
+## Plugin surface D7. The backend executable is bound to consent (`STD-05@1 §R21`, `§R4`)
+
 
 Orbit records a digest of `plugin.yaml` at consent. `spec.backend.args` is part
 of that manifest, so a binding recorded there is covered by the operator's
@@ -154,7 +185,9 @@ The deprecated installer applies the same rule, reading
 It refuses a set `ORBIT_GRAPH_BIN` (exit 2) instead of silently honouring it.
 All of this happens before anything is registered.
 
-## D8. Installed-Orbit tests are ignored locally and required in CI (`STD-04@1 §R7`, `§R8`)
+
+## Plugin surface D8. Installed-Orbit tests are ignored locally and required in CI (`STD-04@1 §R7`, `§R8`)
+
 
 The two tests that register the plugin with a real Orbit used to `return`
 silently when `ORBIT_GRAPH_TEST_ORBIT_BIN` was unset, so they never ran
@@ -177,7 +210,9 @@ Running them surfaced two latent failures:
 The installer's binding and `ORBIT_GRAPH_BIN` checks need no Orbit. They are
 also covered by an unignored test that uses a recording fake `orbit`.
 
-## D9. Hermetic fixtures and derived latency ceilings (`STD-04@1 §R7`, `§R9`)
+
+## Plugin surface D9. Hermetic fixtures and derived latency ceilings (`STD-04@1 §R7`, `§R9`)
+
 
 `plugin_integration.rs` fixture git commands now go through
 `common::git_command`, which isolates them from host and user git config.
@@ -194,3 +229,22 @@ The latency assertions derive from the configured adapter timeout:
 
 A 20 ms sleep between two idempotent syncs is also removed. Nothing depended on
 it.
+
+## Plugin input: plugin request byte bound
+
+The executable reads at most 1 MiB plus one sentinel byte from plugin stdin.
+The limit covers the complete envelope, including context and plugin config.
+An oversized request is refused before JSON decoding and dispatch with an
+`invalid_request` envelope, an actionable byte limit, and exit zero as required
+by the exec protocol. A request exactly at the limit remains accepted.
+
+Plugin inputs contain selectors, paths, revisions and bounded query parameters;
+source code and graph payloads are read from the routed repository rather than
+sent in the request. This bound prevents a peer from growing the input buffer
+without limit (STD-03 §R22). Orbit owns the call timeout and terminates a backend
+whose stdin stalls; the executable does not create another timer or worker.
+
+The real executable regression sends valid version requests padded with JSON
+whitespace. The oversized case returned success before the fix; it now refuses
+the request without creating state. The boundary case verifies that the bound
+does not truncate a valid request (STD-04 §R1, STD-04 §R2).

@@ -1,10 +1,22 @@
+---
+title: "Terminal interface: decisions"
+owner: maintainers
+last_updated: 2026-11-08
+status: Accepted
+stage: shipped
+next: "—"
+feature: terminal-interface
+doc_role: decisions
+summary: "Terminal interface decisions bringing the CLI output contract in line with STD-01 (ORB-13164)."
+---
+
 # Terminal interface: decisions
 
 Decisions for ORB-13164, which brings the CLI output contract in line with
 STD-01 (`§R7`, `§R11`, `§R12`, `§R17`, `§R19`, `§R20`, `§R28`, `§R29`, `§R32`,
 `§R34`, `§R35`). The user-facing rules are under "Output contract" in
 [`docs/usage.md`](../../usage.md); the design is
-[`terminal-interface.md`](../terminal-interface.md). Every point is pinned by
+[`2_design.md`](2_design.md). Every point is pinned by
 `crates/orbit-graph-cli/tests/output_contract.rs` against the built binary.
 
 ## D1. `ORBIT_TOOL_NAME` is the only signal for the plugin protocol

@@ -1,3 +1,15 @@
+---
+title: "Failure classes: decisions"
+owner: maintainers
+last_updated: 2026-11-08
+status: Accepted
+stage: shipped
+next: "—"
+feature: failure-classes
+doc_role: decisions
+summary: "Typed failure classes from origin to CLI and plugin codes (ORB-13167)."
+---
+
 # Failure classes: decisions
 
 Decisions for ORB-13167. Failures now keep a typed class all the way from where

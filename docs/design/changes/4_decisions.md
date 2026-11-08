@@ -1,3 +1,15 @@
+---
+title: "Changes command: decisions"
+owner: maintainers
+last_updated: 2026-11-08
+status: Accepted
+stage: shipped
+next: "—"
+feature: changes
+doc_role: decisions
+summary: "Decisions for the orbit-graph changes command and orbit.graph.changes plugin tool (ORB-13256)."
+---
+
 # Changes command: decisions
 
 Decisions for ORB-13256, which exposes the `orbit-graph-changes` analysis to
@@ -7,7 +19,7 @@ agents as `orbit-graph changes` and the `orbit.graph.changes` plugin tool
 [`docs/plugin.md`](../../plugin.md#change-analysis); the measurements behind
 D1 are in [`evals/changes-command/`](../../../evals/changes-command/README.md).
 The evidence contract underneath (snapshots, pairing, evidence categories) is
-unchanged from [`change-explorer.md`](../change-explorer.md).
+unchanged from [`2_design.md`](2_design.md).
 
 ## D1. Cost: analysis, not indexing, dominates; every call is budgeted
 

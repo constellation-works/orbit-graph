@@ -1,3 +1,15 @@
+---
+title: "Change recommendation history foundation"
+owner: maintainers
+last_updated: 2026-11-08
+status: Accepted
+stage: shipped
+next: "—"
+feature: changes
+doc_role: spec
+summary: "History index foundation: verified-delivery import contract, extraction, storage and recommendation stages."
+---
+
 # Change recommendation history foundation
 
 Status: approved Stage 1 design and integration contract. This document describes
@@ -414,7 +426,7 @@ The rules:
 - Relevance is `0.5 × similarity²`, where similarity is the same query-coverage
   token overlap used for task text. The weight and the exponent are the
   measured production setting from the live Git evaluation in
-  [`evals/commit-text-live.md`](../../evals/commit-text-live.md)
+  [`evals/commit-text-live.md`](../../../../evals/commit-text-live.md)
   (ORB-13229). That run holds out a first-parent commit, queries its subject
   at `target = commit^`, and checks that the held-out commit and later
   deliveries contribute no evidence. It compares no commit text, linear
