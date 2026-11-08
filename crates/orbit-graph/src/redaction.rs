@@ -41,6 +41,10 @@ impl<'a> PemFooters<'a> {
         Self { by_label }
     }
 
+    fn is_empty(&self) -> bool {
+        self.by_label.is_empty()
+    }
+
     /// The first footer for `label` that starts at or after `from`.
     fn first_from(&self, label: &str, from: usize) -> Option<usize> {
         let offsets = self.by_label.get(label)?;
@@ -64,22 +68,32 @@ pub fn redact(input: &str) -> Cow<'_, str> {
         // first skips most patterns at most positions.
         let first = bytes[pos];
         // PEM private keys may span many lines, so mask the whole block.
-        if first == b'-'
-            && input[pos..].starts_with("-----BEGIN ")
-            && let Some(label_end) = input[pos + 11..].find("-----")
-        {
-            let label = &input[pos + 11..pos + 11 + label_end];
-            if label.ends_with("PRIVATE KEY") {
-                let footers = pem_footers.get_or_insert_with(|| PemFooters::new(input));
-                // A header without a footer falls through, so the rest of its
-                // text is still scanned by the patterns below.
-                if let Some(footer) = footers.first_from(label, pos) {
-                    let end = footer + FOOTER_PREFIX.len() + label.len() + FOOTER_SUFFIX.len();
-                    ranges.push((pos, end));
-                    pos = end;
-                    continue;
+        // No other pattern starts with `-`, so a dash position is resolved
+        // here and skips the URL/bearer/token checks below.
+        if first == b'-' {
+            if input[pos..].starts_with("-----BEGIN ") {
+                // A known-empty footer index means no header can close, so
+                // skip the per-header label scan and hash lookup entirely.
+                if !matches!(&pem_footers, Some(footers) if footers.is_empty())
+                    && let Some(label_end) = input[pos + 11..].find("-----")
+                {
+                    let label = &input[pos + 11..pos + 11 + label_end];
+                    if label.ends_with("PRIVATE KEY") {
+                        let footers = pem_footers.get_or_insert_with(|| PemFooters::new(input));
+                        if footers.is_empty() {
+                            // Fall through to advance below; no footer exists.
+                        } else if let Some(footer) = footers.first_from(label, pos) {
+                            let end =
+                                footer + FOOTER_PREFIX.len() + label.len() + FOOTER_SUFFIX.len();
+                            ranges.push((pos, end));
+                            pos = end;
+                            continue;
+                        }
+                    }
                 }
             }
+            pos += 1;
+            continue;
         }
 
         // URL userinfo passwords are delimited by the authority's `@`.
@@ -126,6 +140,7 @@ pub fn redact(input: &str) -> Cow<'_, str> {
         if matches!(first, b'a' | b'A')
             && boundary(bytes, pos)
             && bytes[pos..].len() >= 22
+            && matches!(bytes[pos + 1], b'u' | b'U')
             && bytes[pos..pos + 22].eq_ignore_ascii_case(b"authorization: bearer ")
         {
             let start = pos + 22;
@@ -141,17 +156,21 @@ pub fn redact(input: &str) -> Cow<'_, str> {
         }
 
         // Token prefixes start with `g`, `x` or `s`; AKIA keys start with `A`.
+        // Each prefix is only checked at its own first byte, so a position
+        // pays for at most its own small family instead of all eight.
         if matches!(first, b'g' | b'x' | b's' | b'A') && boundary(bytes, pos) {
-            for (prefix, min_tail) in [
-                ("github_pat_", 12),
-                ("ghp_", 12),
-                ("gho_", 12),
-                ("glpat-", 12),
-                ("xoxb-", 12),
-                ("xoxp-", 12),
-                ("sk-proj-", 20),
-                ("sk-", 20),
-            ] {
+            let candidates: &[(&str, usize)] = match first {
+                b'g' => &[
+                    ("github_pat_", 12),
+                    ("ghp_", 12),
+                    ("gho_", 12),
+                    ("glpat-", 12),
+                ],
+                b'x' => &[("xoxb-", 12), ("xoxp-", 12)],
+                b's' => &[("sk-proj-", 20), ("sk-", 20)],
+                _ => &[],
+            };
+            for &(prefix, min_tail) in candidates {
                 if input[pos..].starts_with(prefix) {
                     let start = pos + prefix.len();
                     let end = bytes[start..]
@@ -171,7 +190,7 @@ pub fn redact(input: &str) -> Cow<'_, str> {
                     break;
                 }
             }
-            if input[pos..].starts_with("AKIA") && bytes.len() >= pos + 20 {
+            if first == b'A' && input[pos..].starts_with("AKIA") && bytes.len() >= pos + 20 {
                 let key = &bytes[pos + 4..pos + 20];
                 if key
                     .iter()

@@ -18,7 +18,7 @@ import eval_broker as broker
 
 PROFILE = "installed-plugin-skill-v2"
 PROSPECTIVE_PROFILE = "installed-plugin-skill-v3"
-PROFILES = {2: PROFILE, 3: PROSPECTIVE_PROFILE}
+PROFILES = {2: PROFILE, 3: PROSPECTIVE_PROFILE, 4: "one-shot-patch-v1"}
 RAW_KIND = "installed-plugin-agent-eval-raw-episode"
 WORKSPACE = "agent-eval-episode"
 VERBS = ("version", "status", "recommend", "maintain", "search", "show", "refs",
@@ -467,6 +467,9 @@ def verify_source(episode, head_entries, base_entries, deadline):
             check(obj is not None and obj[0] in ("100644", "100755") and obj[1:] == ("blob", oid),
                   f"{role} source differs from pinned commit: {name}")
             selected[name] = oid
+        if episode.request["schema_version"] == 4:
+            check(set(selected) == {name for name in objects if source_path_allowed(name)},
+                  "patch profile requires the full permitted source universe")
         result[role] = {"commit": commit, "selected_blobs": selected}
     return result
 

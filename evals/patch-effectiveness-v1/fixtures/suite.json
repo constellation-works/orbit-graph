@@ -1,0 +1,11 @@
+{
+  "schema_version": 1,
+  "purpose": "qualification-only",
+  "tests": [
+    {"id": "leading-negative", "family": "behavior", "input": [-2, 4, 3], "expected": 7},
+    {"id": "interleaved-negatives", "family": "behavior", "input": [4, -1, 3, -8, 2], "expected": 9},
+    {"id": "empty", "family": "regression", "input": [], "expected": 0},
+    {"id": "all-positive", "family": "regression", "input": [1, 2, 0, 8], "expected": 11},
+    {"id": "all-negative", "family": "regression", "input": [-2, -3], "expected": 0}
+  ]
+}

@@ -302,7 +302,7 @@ def _preexec():
 
 def run_child(argv, cwd, env, timeout_s, capture_limit=MAX_CHILD_CAPTURE, line_limit=None,
               passthrough=False, parent_fd=None, cancelled=lambda: False, grace_s=KILL_GRACE_S,
-              input_bytes=None, on_spawn=lambda process: None, input_exchange=None):
+              input_bytes=None, on_spawn=lambda process: None, input_exchange=None, total_capture_limit=None):
     """Bounded capture and group cleanup, including unexpected supervision exceptions.
 
     passthrough is only for the broker worker: MCP pipes stay directly connected
@@ -320,6 +320,8 @@ def run_child(argv, cwd, env, timeout_s, capture_limit=MAX_CHILD_CAPTURE, line_l
     supervision = {"signals": [], "survivors": []}
     stderr_eof = False
     try:
+        if total_capture_limit is not None and (passthrough or type(total_capture_limit) is not int or total_capture_limit < 1):
+            raise ValueError("invalid aggregate child output bound")
         if input_exchange is not None:
             if input_bytes is not None or passthrough:
                 raise ValueError("incompatible child input modes")
@@ -385,12 +387,18 @@ def run_child(argv, cwd, env, timeout_s, capture_limit=MAX_CHILD_CAPTURE, line_l
                     continue
                 if key.data == "err":
                     room = max(0, MAX_STDERR_CAPTURE - len(err))
+                    if total_capture_limit is not None:
+                        room = min(room, max(0, total_capture_limit - len(out) - len(err)))
                     err.extend(chunk[:room])
                     stderr_truncated |= len(chunk) > room
+                    if total_capture_limit is not None and len(chunk) > room:
+                        stopped = "truncated"
                     continue
                 out.extend(chunk)
-                if len(out) > capture_limit:
-                    del out[capture_limit:]
+                output_cap = capture_limit if total_capture_limit is None else min(
+                    capture_limit, max(0, total_capture_limit - len(err)))
+                if len(out) > output_cap:
+                    del out[output_cap:]
                     stopped = "truncated"
                 elif line_limit is not None and out.count(b"\n") >= line_limit:
                     stopped = "line_limit"

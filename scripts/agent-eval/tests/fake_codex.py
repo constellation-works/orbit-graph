@@ -331,8 +331,12 @@ def run_exec(options, script):
         elif "final" in step:
             last = options.get("--output-last-message")
             if last and not step.get("jsonl_only"):
-                with open(last, "w") as stream:
-                    stream.write(step["final"])
+                if "file_bytes_hex" in step:
+                    with open(last, "wb") as stream:
+                        stream.write(bytes.fromhex(step["file_bytes_hex"]))
+                else:
+                    with open(last, "w") as stream:
+                        stream.write(step["final"])
             emit({"type": "item.completed", "item": {"id": f"item_{item}",
                                                      "type": "agent_message",
                                                      "text": step["final"]}})
