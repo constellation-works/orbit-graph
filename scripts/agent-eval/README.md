@@ -869,3 +869,11 @@ The provider is fake; the installed Orbit plugin is real and private. Set
 `AGENT_EVAL_REQUIRE_BWRAP=1` to make unavailable user namespaces fail strict
 qualification rather than skip. Diagnostic passes and namespace refusals are
 reported separately. No live plugin, Codex auth or user configuration is changed.
+
+Prospective one-shot patch submission uses schema 4 / `one-shot-patch-v1` and
+runner 7. It retains the schema-3 broker and tools, returns raw bounded patch
+bytes, and requires private closure/suite/custody admission before launch.
+The independent stage runs only after a sealed capture. See
+[`evals/patch-effectiveness-v1/README.md`](../../evals/patch-effectiveness-v1/README.md)
+for qualification, exact freeze/run/evaluate/score commands and limitations.
+Historical navigation requests and captures retain their original contracts.

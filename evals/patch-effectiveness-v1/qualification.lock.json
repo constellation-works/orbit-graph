@@ -1,0 +1,24 @@
+{
+  "files": {
+    "evals/patch-effectiveness-v1/apply.py": "5ff4aee3db8a63fb1b76920c44e2e9e9e9fc906e0e057935cfe82ba51fa95b7b",
+    "evals/patch-effectiveness-v1/build_closure.py": "75e2a9ee27ca3cfe21f103d10a79860d2a11eb0ab462ca997097d21ba9c343ab",
+    "evals/patch-effectiveness-v1/check_lock.py": "c2d4687b4a8a8542b94a13c55789ae7a6ab58940a0b668595e47a8dea7d2a63c",
+    "evals/patch-effectiveness-v1/eval.py": "474a68f372bc30f825e4f975d5890f3ed7056676dda77c4c35a3cce8f1befbf5",
+    "evals/patch-effectiveness-v1/fixtures/review.md": "6dc828fd03915c3d1f5e0f5dc4091e29594098817318ae91d5d58b2400fb2cee",
+    "evals/patch-effectiveness-v1/fixtures/source.py": "58fe354a0c7529df2913a7ba341f3eace0ae416190a82119a67648a781d0baba",
+    "evals/patch-effectiveness-v1/fixtures/suite.json": "ee6375f9165db8ae2b0eafb15fac5cdfce5543494bfd551422b99147b9164f10",
+    "evals/patch-effectiveness-v1/fixtures/visible.py": "d80dd31b1ca0d3418e42ef83bfdf60fd194995e608f9c7ed08a09a4b3d669151",
+    "evals/patch-effectiveness-v1/protocol.json": "86b2718f67ecc352173fafd2eb6e32c6fa62565872f1f9f648ef277ebe287772",
+    "evals/patch-effectiveness-v1/test_eval.py": "cf545c67a85d6259407e30143d7ecbc019ad6966f2b77ca261cd2df471fafc52",
+    "evals/plugin-agent-navigation/eval.py": "25ecfd113ef2db0282bb4f21b55be57b84fdeb3dd3141a0ff109f6d204f6b948",
+    "scripts/agent-eval/eval_broker.py": "d860a338ee283aea1c04383aab252ef8e49a1bdfcd02fe8007a0cac0af451e3e",
+    "scripts/agent-eval/eval_runner.py": "581cb3f40d128441b7073387298b2d99701bd7809263fe770ef115ee642b33c9",
+    "scripts/agent-eval/patch_profile.py": "2c58d4d54ecb5d85ba01d80a1bbc21abeaee484db67ef20d4b2c621c3b0bbe43",
+    "scripts/agent-eval/plugin_profile.py": "6e12929578bdcc742a28f401774d9da23ef94b1b0ce7e89388e13474b18720f8",
+    "scripts/agent-eval/reply_provenance.py": "b13e1d40c27d8b3d5be85526e56c1db342eba718fccdc1971f559d29e8188e75",
+    "scripts/agent-eval/telemetry.py": "addef39ad71cecf990ee05294428e7d6600d5848f7a81ac8fc8bfbfb051d59f4",
+    "scripts/agent-eval/tests/fake_codex.py": "a296a2e89b0e1ece2aae626cb437eb44d826ed68c48e6a4f8bf764dd2efc9288"
+  },
+  "schema_version": 1,
+  "status": "proposed-qualification-only"
+}

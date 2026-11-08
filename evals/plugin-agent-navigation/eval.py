@@ -88,10 +88,10 @@ def load_episode(directory, diagnostic=False):
     directory = Path(directory)
     artifact = runner.load_json(directory / "episode.json", 64 * 1024 * 1024)
     version = artifact.get("schema_version")
-    prospective = version == 3
+    prospective = version in (3, 4)
     require(type(version) is int and version in plugin.PROFILES and artifact.get("kind") == plugin.RAW_KIND
             and artifact.get("profile") == plugin.PROFILES[version], "not a supported installed-plugin capture")
-    require((prospective and artifact.get("runner_version") == "6"
+    require((prospective and artifact.get("runner_version") == ("7" if version == 4 else "6")
              and artifact.get("lifecycle_contract") == runner.LIFECYCLE_CONTRACTS["6"])
             or (not prospective and "telemetry" not in artifact and
                 ((artifact.get("runner_version") == "2" and "lifecycle_contract" not in artifact)
@@ -171,16 +171,21 @@ def load_episode(directory, diagnostic=False):
                    "stderr": (directory / "provider-stderr.txt").read_bytes(), "exit": exit_state,
                    "returncode": exit_state["code"] if "code" in exit_state else
                                  -signal.Signals[exit_state["signal"]].value}
-    final = {"text": (directory / "final-message.txt").read_text(),
+    final = {"text": ((directory / "final-message.txt").read_bytes().decode("utf-8", errors="replace")
+                       if version == 4 else (directory / "final-message.txt").read_text()),
              "truncated": artifact["final_output_truncated"]}
     status, code, _ = runner.decide(supervision, transcript, log, final, request["limits"], None,
                                      output_bytes, artifact["timing"]["wall_ms"],
                                      lifecycle_contract=artifact.get("lifecycle_contract"),
-                                     attempts=normalized["attempts"] if normalized else None)
+                                     attempts=normalized["attempts"] if normalized else None,
+                                     patch_pin=request.get("patch"))
     require(status == artifact["status"] and code == (artifact["error"] or {}).get("code"),
             "replayed episode outcome differs")
-    if status == "ok":
+    if status == "ok" and version != 4:
         require(json.loads(final["text"]) == artifact["answer"], "answer differs")
+    if version == 4:
+        import patch_profile
+        patch_profile.evaluator().verify_patch_capture(artifact, directory)
     return artifact
 
 
@@ -226,7 +231,7 @@ def replay(plan, directories, diagnostic=False):
                        "tool_calls": len(a["calls"]), "output_bytes": a["output_bytes"],
                        "usage": a["usage"]} for a in episodes],
             "limitation": "Provenance and behavior replay only; an independent frozen corpus/rubric is still required for effectiveness scoring."}
-    if plan["schema_version"] == 3:
+    if plan["schema_version"] in (3, 4):
         for cost, episode in zip(result["costs"], episodes):
             cost["telemetry"] = episode["telemetry"]
     return result

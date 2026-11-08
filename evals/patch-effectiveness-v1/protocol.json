@@ -1,0 +1,16 @@
+{
+  "schema_version": 1,
+  "protocol_id": "patch-effectiveness-v1",
+  "status": "proposed-qualification-only",
+  "profile": "one-shot-patch-v1",
+  "request_schema": 4,
+  "runner_version": "7",
+  "navigation": "Unchanged schema-3 broker, matched read/rg/git, optional full installed graph skill and inventory; no agent writes, shell, build or hidden feedback.",
+  "patch": "bounded-unified-text-v1: exact LF UTF-8 --- a/path, +++ b/path and @@ -start,count +start,count @@ headers; no Git preamble, timestamps, renames, adds, deletes, modes, binary data, links or config changes; existing declared Python files only. Empty bytes are a no-op.",
+  "evaluator": "Independent host-held JSON input/expected-output vectors grouped as behavior or regression. Fresh process per vector; hidden expectations and test runner never mounted to candidate. Current qualified closure is a pinned offline Python stdlib rootfs; source export alone is never a build closure. Other languages fail admission until separately qualified.",
+  "custody": "Externally reviewed freeze receipt binds source, prompt, suite, evaluator and offline closure before output. Hashes and timestamps detect drift but do not authenticate an independent author or operator. Root owns verification of receipts and separate real-task truth before admission.",
+  "bounds": "Separate network/PID/user/mount namespaces, read-only rootfs/source, private tmpfs, no auth/environment inheritance; finite enclosing memory/pids ceilings, CPU/address-space/file-size/FD rlimits, wall and output bounds; namespace teardown plus existing group supervision reclaims descendants.",
+  "primary": "All scheduled slots. Success requires valid capture, exact patch application, every behavior vector and every regression vector. Refusals, invalid_patch, rejected_path, apply_failure, timeout and failed_tests remain unsuccessful. Integrity/admission failures invalidate a study rather than demonstrating an incorrect patch.",
+  "secondary": "No-op, partial families, patch bytes/changed lines/files, setup/provider/test timings, all-attempt field-wise token coverage and nullable USD. Never infer total tokens from input+output or substitute navigation identity scores.",
+  "admission": "No measured cohort here. Root must independently author real-task tests before any candidate; review source/build reconstruction, independent custody, strict fake-provider and actual-client synthetic rehearsal, and navigation results; freeze exact schedule/model/settings/provider/harness/source/closure/suite/evaluator pins and prioritize separately. No retries replacing failed slots. Historical profiles/captures immutable."
+}
