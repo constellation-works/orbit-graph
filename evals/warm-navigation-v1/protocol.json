@@ -1,0 +1,16 @@
+{
+  "schema_version": 1,
+  "profile": "installed-plugin-warm-batch-v1",
+  "status": "proposed-capability-only",
+  "study_output": "none; root owns cold-finding prioritization, independent review, strict rehearsal and later cohort",
+  "qualification": "test-only source fixtures; unchanged, unchanged, independently pinned source edit",
+  "batch_orders": [["baseline", "graph"], ["graph", "baseline"]],
+  "schedule": ["unchanged", "unchanged", "edited"],
+  "git_visibility": "two fixed synthetic commits from selected source only; no upstream history",
+  "warmup": "none; first task, initial installation/index, refusals and all failures count",
+  "cache": "OS cache uncontrolled and recorded; alternate batch order; do not flush host caches",
+  "measurement": "one batch wall admission-to-finalization; per-task spans overlap it and must not be added",
+  "denominator": "all scheduled slots, including failed, refused and not_run",
+  "usage": "retain per-field coverage and raw observations; no input+output total, price, cache-subset or multi-turn inference",
+  "live_run": "separate explicit root approval and frozen cohort required; this protocol authorizes no provider calls"
+}

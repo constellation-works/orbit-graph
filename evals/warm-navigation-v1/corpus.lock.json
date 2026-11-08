@@ -1,0 +1,9 @@
+{
+  "schema_version": 1,
+  "study_kind": "test-only",
+  "purpose": "Source-only qualification fixtures authored before candidate queries; never cohort evidence.",
+  "files": {
+    "fixtures/edited/src/lib.rs": "731f32dc8e3bf807007c9c833d06e6174f94c906c2a8f3c230ab8ed347f38a2b",
+    "fixtures/unchanged/src/lib.rs": "81c7e31da54d8569b85598dfcea65605fe472cbd6ee9f8e0675eed022bae0e51"
+  }
+}

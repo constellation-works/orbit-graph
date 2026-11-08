@@ -18,7 +18,8 @@ import eval_broker as broker
 
 PROFILE = "installed-plugin-skill-v2"
 PROSPECTIVE_PROFILE = "installed-plugin-skill-v3"
-PROFILES = {2: PROFILE, 3: PROSPECTIVE_PROFILE, 4: "one-shot-patch-v1"}
+WARM_PROFILE = "installed-plugin-warm-batch-v1"
+PROFILES = {2: PROFILE, 3: PROSPECTIVE_PROFILE, 4: "one-shot-patch-v1", 5: WARM_PROFILE}
 RAW_KIND = "installed-plugin-agent-eval-raw-episode"
 WORKSPACE = "agent-eval-episode"
 VERBS = ("version", "status", "recommend", "maintain", "search", "show", "refs",
@@ -267,7 +268,7 @@ def _install(episode, deadline, *, inventory_only=False):
     setup_limits = episode.request["setup_limits"]
     deadline = min(deadline, started + setup_limits["wall_ms"] / 1000)
     records = episode.plugin_setup_records
-    staged = episode.runtime / "bin"
+    staged = (episode.installation() if hasattr(episode, "installation") else episode.runtime) / "bin"
     staged.mkdir(mode=0o700)
     binary_staging_bytes = 0
     for name in ("orbit", "orbit_graph"):
@@ -306,7 +307,7 @@ def _install(episode, deadline, *, inventory_only=False):
     check(kind == b"commit\n", "plugin pin is not a commit object")
     archive = run("export-plugin", [episode.binaries["git"], "-C", episode.args.plugin_repo,
                   "archive", "--format=tar", pin["commit"], ".orbit-plugin"], host=True)
-    source = episode.runtime / "plugin-source"
+    source = (episode.installation() if hasattr(episode, "installation") else episode.runtime) / "plugin-source"
     source.mkdir(mode=0o700)
     original = {}
     with tarfile.open(fileobj=io.BytesIO(archive)) as tar:
@@ -357,7 +358,7 @@ def _install(episode, deadline, *, inventory_only=False):
             ignore.write_bytes(before_ignore)
         with (episode.repo / ".git/info/exclude").open("a") as stream:
             stream.write(".orbit/\n")
-        run("plugin-add", [orbit, "plugin", "add", episode.inside("runtime") + "/plugin-source/.orbit-plugin"])
+        run("plugin-add", [orbit, "plugin", "add", (episode.installation_in() if hasattr(episode, "installation_in") else episode.inside("runtime")) + "/plugin-source/.orbit-plugin"])
         run("plugin-enable", [orbit, "plugin", "enable", "graph", "--grant", "fs,orbit_tools"])
         reply, transport = mcp(orbit, str(episode.repo), env, "tools/list", {}, remaining(), prefix=prefix)
         records.append({"role": "tools-list", **evidence(transport)})

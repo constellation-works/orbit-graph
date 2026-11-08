@@ -164,16 +164,18 @@ def validate_contract(contract):
 
 def verify_capture(artifact, log):
     """No reinterpretation of historical captures, including historical refusals."""
-    if artifact["runner_version"] not in ("5", "6", "7"):
+    if artifact["runner_version"] not in ("5", "6", "7", "8"):
         check("reply_contract" not in artifact and "reply_provenance" not in artifact
               and not log["reply_contracts"] and not log["reply_provenance"],
               "prospective evidence under a historical runner")
         return
     expected_harness = {"eval_runner.py", "eval_broker.py", "plugin_profile.py", "reply_provenance.py"}
-    if artifact["runner_version"] in ("6", "7"):
+    if artifact["runner_version"] in ("6", "7", "8"):
         expected_harness.add("telemetry.py")
     if artifact["runner_version"] == "7":
         expected_harness.add("patch_profile.py")
+    if artifact.get("schema_version") == 5:
+        expected_harness.add("warm_batch.py")
     check(set(artifact["harness"]) == expected_harness
           and all(isinstance(v, str) and HEX.fullmatch(v) for v in artifact["harness"].values())
           and artifact["harness"]["eval_broker.py"] == artifact["isolation"]["broker_sha256"],

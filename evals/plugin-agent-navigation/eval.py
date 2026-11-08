@@ -27,7 +27,7 @@ def sha(text):
     return hashlib.sha256(text.encode()).hexdigest()
 
 
-def check_treatment(artifact):
+def check_treatment(artifact, warm=False):
     treatment = artifact["treatment"]
     request = artifact["request"]
     if request["arm"] == "baseline":
@@ -76,23 +76,27 @@ def check_treatment(artifact):
     denied = json.loads(records[-1]["stdout"].splitlines()[-1])["result"]
     require(denied["isError"] is True and denied["structuredContent"]["code"] == "capability_denied",
             "actual host did not enforce ordinary maintenance refusal")
-    require(treatment["install_ms"] == artifact["timing"]["plugin_install_ms"]
+    reused = warm and artifact["batch"]["reused_installation"]
+    require((0 if reused else treatment["install_ms"]) == artifact["timing"]["plugin_install_ms"]
             and 0 <= treatment["install_ms"] <= request["setup_limits"]["wall_ms"], "setup clock differs")
     measured = sum(len(r["stdout"].encode()) + len(r["stderr"].encode()) for r in records)
-    require(measured == treatment["setup_output_bytes"] == artifact["setup_output_bytes"]
+    require(measured == treatment["setup_output_bytes"] and
+            (0 if reused else measured) == artifact["setup_output_bytes"]
             and measured <= request["setup_limits"]["output_bytes"], "setup output budget differs")
     require(treatment["index_setup"] == "agent-choice-cold", "index was prewarmed")
 
 
-def load_episode(directory, diagnostic=False):
+def load_episode(directory, diagnostic=False, *, warm=False):
     directory = Path(directory)
     artifact = runner.load_json(directory / "episode.json", 64 * 1024 * 1024)
     version = artifact.get("schema_version")
-    prospective = version in (3, 4)
+    prospective = version in (3, 4, 5)
+    require(version == 5 if warm else version in (2, 3, 4), "wrong cold/warm replay route")
     require(type(version) is int and version in plugin.PROFILES and artifact.get("kind") == plugin.RAW_KIND
             and artifact.get("profile") == plugin.PROFILES[version], "not a supported installed-plugin capture")
-    require((prospective and artifact.get("runner_version") == ("7" if version == 4 else "6")
-             and artifact.get("lifecycle_contract") == runner.LIFECYCLE_CONTRACTS["6"])
+    expected_runner = {3: "6", 4: "7", 5: "8"}.get(version)
+    require((prospective and artifact.get("runner_version") == expected_runner
+             and artifact.get("lifecycle_contract") == runner.LIFECYCLE_CONTRACTS[expected_runner])
             or (not prospective and "telemetry" not in artifact and
                 ((artifact.get("runner_version") == "2" and "lifecycle_contract" not in artifact)
             or (artifact.get("runner_version") in {"3", "4", "5"}
@@ -119,7 +123,7 @@ def load_episode(directory, diagnostic=False):
                 and (directory / name).stat().st_size == record["bytes"], "capture file hash/size differs")
         require(record["redactions"] == 0, "redacted capture cannot establish exact provenance")
     isolation = artifact["isolation"]
-    require(isolation["cold_start"] is True, "episode reused graph state")
+    require(warm or isolation["cold_start"] is True, "episode reused graph state")
     if not diagnostic:
         require(all(type(v) is int and v > 0 for v in artifact["resource_limits"].values())
                 and set(artifact["resource_limits"]) == {"memory.max", "pids.max"},
@@ -144,7 +148,7 @@ def load_episode(directory, diagnostic=False):
     require(artifact["inputs"]["head"]["content_revision"] == request["source_revision"]
             and artifact["inputs"]["base"]["content_revision"] == request["base_revision"],
             "source view differs")
-    check_treatment(artifact)
+    check_treatment(artifact, warm=warm)
     if artifact["treatment"]:
         require(runner.load_json(directory / "plugin-setup.json", 32 * 1024 * 1024)
                 == artifact["treatment"]["setup"], "installation log differs")
@@ -231,6 +235,7 @@ def replay(plan, directories, diagnostic=False):
                        "tool_calls": len(a["calls"]), "output_bytes": a["output_bytes"],
                        "usage": a["usage"]} for a in episodes],
             "limitation": "Provenance and behavior replay only; an independent frozen corpus/rubric is still required for effectiveness scoring."}
+    require(plan["schema_version"] in (2, 3, 4), "warm profiles use the batch replay route")
     if plan["schema_version"] in (3, 4):
         for cost, episode in zip(result["costs"], episodes):
             cost["telemetry"] = episode["telemetry"]
