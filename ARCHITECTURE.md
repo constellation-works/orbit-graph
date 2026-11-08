@@ -48,5 +48,5 @@ Each runs in `make ci` and in CI (`.github/workflows/ci.yml`):
 | `scripts/check-orphan-modules.sh` | STD-02 §R19 | a `src/**/tests/*.rs` file its `tests/mod.rs` does not declare, or a `tests/` directory its parent module does not declare |
 | `cargo deny --locked check` (`deny.toml`) | STD-02 §R23, STD-05 §R23/§R24 | an open advisory, a yanked crate, a license outside the allow-list, a registry other than crates.io, a git source |
 | `scripts/test-repo-gates.sh` | STD-04 §R10 | any of the three scripts above passing on a seeded violation or on an empty tree |
-| `crates/orbit-graph-changes/tests/derived_artifacts.rs` | STD-04 §R11, §R13 | the committed `direct-call` JSON sample differing from a fresh library-built report (regenerate with `UPDATE_GOLDENS=1`) |
+| `crates/orbit-graph-changes/src/report/tests/derived_artifacts.rs` | STD-04 §R11, §R13 | the committed `direct-call` JSON sample differing from a fresh library-built report (regenerate with `UPDATE_GOLDENS=1`) |
 | `docs/usage.md` doctest (`cargo test --doc`) | STD-04 §R14 | the library example in `docs/usage.md` no longer compiling |

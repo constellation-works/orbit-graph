@@ -11,12 +11,11 @@
 use std::path::PathBuf;
 
 use orbit_graph::GraphError;
-use orbit_graph_changes::analysis::{
-    self, AnalysisError, ChangesBounds, ChangesRange, ChangesRequest, DEFAULT_NODE_CAP,
+use orbit_graph_changes::{
+    AnalysisError, ChangesBounds, ChangesRange, ChangesRequest, ComparisonOptions,
+    DEFAULT_NODE_CAP, DEFAULT_TIME_BUDGET_MS, EVIDENCE_DEPTH, FilterSet, SnapshotError, analyse,
+    validate,
 };
-use orbit_graph_changes::evidence::{DEFAULT_TIME_BUDGET_MS, EVIDENCE_DEPTH};
-use orbit_graph_changes::filters::FilterSet;
-use orbit_graph_changes::snapshot::{ComparisonOptions, SnapshotError};
 use serde::Deserialize;
 use serde_json::{Value, json};
 
@@ -140,7 +139,7 @@ impl ChangesInput {
             },
             cache: ComparisonOptions::default(),
         };
-        analysis::validate(&request).map_err(invalid_input)?;
+        validate(&request).map_err(invalid_input)?;
         Ok(request)
     }
 }
@@ -178,7 +177,7 @@ pub(crate) fn execute(call: &ToolCall<'_>) -> Result<Value, ToolError> {
         }
     };
 
-    let mut document = analysis::analyse(&request).map_err(analysis_error)?;
+    let mut document = analyse(&request).map_err(analysis_error)?;
     document.notices.extend(notices);
     if !document.fit_to_bytes(MAX_RESULT_BYTES) {
         return Err(ToolError::graph(GraphError::invalid_data(

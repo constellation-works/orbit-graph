@@ -59,9 +59,11 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
+#[cfg(test)]
+use orbit_graph::check_state_file;
 use orbit_graph::{
     EXTRACTOR_VERSION, GraphError, STORE_SCHEMA_VERSION, StateAccess, atomic_write,
-    check_state_file, chosen_state_dir, create_private_dir_all, open_state_file, scratch_state_dir,
+    chosen_state_dir, create_private_dir_all, open_state_file, scratch_state_dir,
 };
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
@@ -283,6 +285,7 @@ enum KeyMatch {
 
 impl EntryMetadata {
     /// Whether this entry's key matches `commit_sha` and the running binary.
+    #[cfg(test)]
     pub fn matches(&self, commit_sha: &str) -> bool {
         self.key_match(commit_sha) == KeyMatch::Current
     }
@@ -324,6 +327,7 @@ pub struct CachedEntry {
 
 impl CachedEntry {
     /// Directory holding this entry.
+    #[cfg(test)]
     pub fn root(&self) -> &Path {
         self.root.as_path()
     }
@@ -407,6 +411,7 @@ fn db_path_in(root: &Path, commit_sha: &str) -> PathBuf {
 
 /// Whether a commit a cache entry indexes is still in the repository.
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg(test)]
 pub enum Liveness {
     /// The repository has the commit.
     Live,
@@ -418,6 +423,7 @@ pub enum Liveness {
 
 /// Whether `clean` reports its plan or carries it out.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg(test)]
 enum Mode {
     Plan,
     Apply,
@@ -436,6 +442,7 @@ impl SnapshotCache {
     /// `dir` is the caller's choice: its spelling is trusted up to its nearest
     /// existing ancestor, and every directory created below that is `0700`.
     /// The final directory must be a real directory the current user owns.
+    #[cfg(test)]
     pub fn open(dir: &Path) -> Result<Self, CacheError> {
         Self::adopt(dir, chosen_state_dir(dir, None, StateAccess::Write))
     }
@@ -478,13 +485,6 @@ impl SnapshotCache {
             })?;
         write_marker(dir.as_path())?;
         Ok(Self { dir })
-    }
-
-    /// Address an existing cache directory without creating or marking
-    /// anything, for [`SnapshotCache::clean_with_options`].
-    pub fn existing(dir: &Path) -> Self {
-        let dir = fs::canonicalize(dir).unwrap_or_else(|_| dir.to_path_buf());
-        Self { dir }
     }
 
     /// Directory holding this cache.
@@ -724,6 +724,7 @@ impl SnapshotCache {
     /// retention policy. Anything else is kept with its reason (STD-03 §R29).
     /// Existing cleanup reasons always take precedence over retention-policy
     /// reasons.
+    #[cfg(test)]
     pub fn clean_with_options(
         &self,
         is_live: &dyn Fn(&str) -> Liveness,
@@ -1166,6 +1167,7 @@ impl CleanReason {
 
 /// One directory `clean` considered.
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg(test)]
 pub struct CleanedEntry {
     /// Directory this decision applies to.
     pub path: PathBuf,
@@ -1177,6 +1179,7 @@ pub struct CleanedEntry {
     pub detail: Option<String>,
 }
 
+#[cfg(test)]
 impl CleanedEntry {
     fn new(path: PathBuf, reason: CleanReason, size_bytes: u64) -> Self {
         Self {
@@ -1190,6 +1193,7 @@ impl CleanedEntry {
 
 /// Retention policy and mode for [`SnapshotCache::clean_with_options`].
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
+#[cfg(test)]
 pub struct CleanOptions {
     /// Remove live entries unused longer than this duration.
     pub older_than: Option<Duration>,
@@ -1203,6 +1207,7 @@ pub struct CleanOptions {
 
 /// What one `clean` run would remove, or removed, and kept.
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg(test)]
 pub struct CleanReport {
     /// Cache directory that was scanned.
     pub cache_dir: PathBuf,
@@ -1215,6 +1220,7 @@ pub struct CleanReport {
     pub applied: bool,
 }
 
+#[cfg(test)]
 impl CleanReport {
     /// Total bytes represented by all entries considered by this clean run.
     pub fn total_size_bytes(&self) -> u64 {
@@ -1240,6 +1246,7 @@ fn lock_path(root: &Path, name: &str) -> PathBuf {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Create {
     Yes,
+    #[cfg(test)]
     No,
 }
 
@@ -1250,6 +1257,7 @@ fn open_lock(path: PathBuf, create: Create) -> Result<Option<fs::File>, CacheErr
     const OPERATION: &str = "open snapshot cache lock";
     let access = match create {
         Create::Yes => StateAccess::Write,
+        #[cfg(test)]
         Create::No => StateAccess::Read,
     };
     match open_state_file(path.as_path(), access) {
@@ -1316,6 +1324,7 @@ fn lock_shared_within(file: &fs::File, wait: Duration) -> std::io::Result<bool> 
 
 /// Whether another process holds `path`, checked without creating it: a lock
 /// file that does not exist is held by no one.
+#[cfg(test)]
 fn lock_is_held(path: PathBuf) -> Result<bool, CacheError> {
     let Some(lock) = open_lock(path.clone(), Create::No)? else {
         return Ok(false);
@@ -1385,6 +1394,7 @@ fn last_used_path(root: &Path) -> PathBuf {
 /// not a complete newline-terminated number: a torn or empty file (from a
 /// crash mid-write, or a binary that wrote it in place) counts as absent, so
 /// a truncated number is never read as a much older time.
+#[cfg(test)]
 fn read_last_used(root: &Path) -> Option<u64> {
     let path = last_used_path(root);
     let mut file = open_state_file(path.as_path(), StateAccess::Read).ok()??;
@@ -1403,6 +1413,7 @@ fn write_last_used(root: &Path, seconds: u64) -> Result<(), CacheError> {
         .map_err(|source| CacheError::io("write cache last-used time", path.as_path(), &source))
 }
 
+#[cfg(test)]
 fn entry_size(path: &Path) -> Result<u64, CacheError> {
     let metadata = fs::symlink_metadata(path)
         .map_err(|source| CacheError::io("read snapshot cache entry size", path, &source))?;

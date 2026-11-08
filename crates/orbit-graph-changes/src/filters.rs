@@ -23,8 +23,6 @@ pub enum FilterReason {
     ChangeKind,
     /// Excluded by the `scope` path-prefix filter.
     Scope,
-    /// Excluded because the item's file is not indexed in this snapshot.
-    Unindexed,
 }
 
 impl FilterReason {
@@ -35,7 +33,6 @@ impl FilterReason {
             Self::Language => "language",
             Self::ChangeKind => "change_kind",
             Self::Scope => "scope",
-            Self::Unindexed => "unindexed",
         }
     }
 
@@ -57,10 +54,6 @@ impl FilterReason {
             Self::Scope => {
                 "Excluded by the `scope` path prefix. Widen or drop `scope` to see these items."
             }
-            Self::Unindexed => {
-                "The item's file is not indexed in this snapshot, so it carries no symbol \
-                 evidence; it is reported as out of scope rather than as absent."
-            }
         }
     }
 }
@@ -74,7 +67,7 @@ pub struct FilteredOut {
     pub explanation: String,
     /// How many items the filter removed.
     pub count: usize,
-    /// Up to [`FILTERED_EXAMPLE_CAP`] examples of what was removed.
+    /// Up to `FILTERED_EXAMPLE_CAP` examples of what was removed.
     pub examples: Vec<String>,
 }
 
@@ -214,6 +207,7 @@ pub fn language_of(path: &str) -> Option<&'static str> {
 }
 
 /// Split a comma-separated filter value into its non-empty terms.
+#[cfg(test)]
 pub fn split_terms(raw: &str) -> Vec<String> {
     raw.split(',')
         .map(str::trim)

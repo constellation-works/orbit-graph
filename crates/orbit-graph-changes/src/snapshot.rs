@@ -46,13 +46,14 @@ use std::fmt::{Display, Formatter};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
-use std::time::{Duration, Instant};
 
 use git2::{ObjectType, Oid, Repository, RepositoryInitOptions, Status, StatusOptions, TreeEntry};
+#[cfg(test)]
+use orbit_graph::{Confidence, ImpactResult};
 use orbit_graph::{
-    Confidence, Graph, GraphError, ImpactResult, RefOpts, RefResult, Selector, SyncMode,
-    SyncObserver, SyncOutcome, SyncPhase, SyncPolicy, SyncProgress, atomic_write,
-    create_private_dir_all, write_new_private_file,
+    Graph, GraphError, RefOpts, RefResult, Selector, SyncMode, SyncObserver, SyncOutcome,
+    SyncPhase, SyncPolicy, SyncProgress, atomic_write, create_private_dir_all,
+    write_new_private_file,
 };
 use tempfile::TempDir;
 use thiserror::Error;
@@ -64,7 +65,9 @@ use crate::cache::{
 
 mod worktree;
 
-pub use worktree::{DefaultBase, WORKING_TREE_ID, default_base};
+#[cfg(test)]
+pub use worktree::WORKING_TREE_ID;
+pub use worktree::{DefaultBase, default_base};
 
 /// Largest blob materialized into a snapshot tree.
 ///
@@ -145,28 +148,6 @@ pub enum BuildState {
     Indexing,
     /// The side is indexed and queryable.
     Ready,
-    /// The build failed. [`Comparison::open_with_progress`] itself never
-    /// reports this state: it surfaces a failure as an `Err`, and a caller
-    /// that wants this state in its own status board, such as the explorer
-    /// service, sets it after catching that `Err`.
-    Failed,
-    /// [`ComparisonProgress::is_cancelled`] stopped the build before it
-    /// reached [`BuildState::Ready`].
-    Cancelled,
-}
-
-impl BuildState {
-    /// Stable label used in payloads and reports.
-    pub fn label(self) -> &'static str {
-        match self {
-            Self::Pending => "pending",
-            Self::Materializing => "materializing",
-            Self::Indexing => "indexing",
-            Self::Ready => "ready",
-            Self::Failed => "failed",
-            Self::Cancelled => "cancelled",
-        }
-    }
 }
 
 /// Finer-grained phase within [`BuildState::Materializing`] and
@@ -186,17 +167,6 @@ pub enum BuildPhase {
     Resolving,
 }
 
-impl BuildPhase {
-    /// Stable label used in payloads and reports.
-    pub fn label(self) -> &'static str {
-        match self {
-            Self::Materializing => "materializing",
-            Self::Extracting => "extracting",
-            Self::Resolving => "resolving",
-        }
-    }
-}
-
 /// `(done, total)` counters for the phase named by [`BuildStatus::phase`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct PhaseProgress {
@@ -208,10 +178,8 @@ pub struct PhaseProgress {
 
 /// Live progress for one side of a comparison build.
 ///
-/// [`Comparison::open_with_progress`] itself never reports
-/// [`BuildState::Failed`]: a build failure surfaces as an `Err` from that
-/// call, and a caller that wants the failure folded into its own status board
-/// sets that state itself after catching the `Err`, alongside the reason.
+/// A build failure surfaces as an `Err` from
+/// [`Comparison::open_with_progress`], never as a `failed` status here.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BuildStatus {
     /// Current phase of the build.
@@ -233,7 +201,7 @@ pub struct BuildStatus {
     /// progresses, not from the extractor that actually ran.
     pub languages: Vec<String>,
     /// Finer-grained phase within `state`, when one is known. `None` while
-    /// `state` is `pending`, `ready`, `failed`, or `cancelled`.
+    /// `state` is `pending` or `ready`.
     pub phase: Option<BuildPhase>,
     /// `(done, total)` counters for `phase`. `None` when `phase` has not yet
     /// produced a counter (materialization, and the moment indexing starts
@@ -547,6 +515,10 @@ pub enum SnapshotError {
 /// the tree must outlive every query against it. A cached tree therefore stays
 /// on disk when the snapshot is dropped; only a fallback temporary tree is
 /// removed with it.
+#[allow(
+    dead_code,
+    reason = "tree_root/db_path are read through test-gated accessors; storage is an RAII guard (cache-entry lock or temporary tree) held for its Drop"
+)]
 pub struct Snapshot {
     side: SnapshotSide,
     requested_ref: String,
@@ -561,10 +533,13 @@ pub struct Snapshot {
     files_indexed: usize,
     cache: CacheOutcome,
     cache_note: Option<String>,
-    prepared_in: Duration,
 }
 
 /// Where a snapshot's materialized tree lives, and who removes it.
+#[allow(
+    dead_code,
+    reason = "payloads are RAII guards (cache-entry lock, temporary tree); held for Drop, never inspected"
+)]
 enum SnapshotStorage {
     /// A cache entry. It outlives the snapshot: a later launch reuses it, and
     /// only `clean` removes it. Holding the entry holds its shared in-use lock,
@@ -591,28 +566,22 @@ impl Snapshot {
     }
 
     /// Root of the materialized tree backing this snapshot.
+    #[cfg(test)]
     pub fn root(&self) -> &Path {
         self.tree_root.as_path()
     }
 
     /// Database file backing this snapshot's index.
+    #[cfg(test)]
     pub fn db_path(&self) -> &Path {
         self.db_path.as_path()
-    }
-
-    /// Directory that owns the materialized tree: the cache entry when the
-    /// snapshot is cached, and the temporary directory otherwise.
-    pub fn storage_root(&self) -> &Path {
-        match &self.storage {
-            SnapshotStorage::Cached(entry) => entry.root(),
-            SnapshotStorage::Temporary(tree) => tree.path(),
-        }
     }
 
     /// Whether the tree backing this snapshot outlives the comparison.
     ///
     /// A cached tree is left on disk for the next launch; a temporary tree is
     /// removed when the snapshot is dropped.
+    #[cfg(test)]
     pub fn tree_is_cached(&self) -> bool {
         matches!(self.storage, SnapshotStorage::Cached(_))
     }
@@ -632,11 +601,6 @@ impl Snapshot {
     /// versions its database was built with.
     pub fn index_identity(&self) -> IndexIdentity {
         IndexIdentity::current()
-    }
-
-    /// Wall-clock time spent preparing this snapshot, cache lookup included.
-    pub fn prepared_in(&self) -> Duration {
-        self.prepared_in
     }
 
     /// Graph handle for this snapshot, for queries beyond the convenience
@@ -663,6 +627,7 @@ impl Snapshot {
     }
 
     /// Bounded impact set around `selector` within this snapshot.
+    #[cfg(test)]
     pub fn impact(
         &self,
         selector: &Selector,
@@ -697,7 +662,6 @@ impl Snapshot {
         scratch: Option<&Path>,
         progress: &dyn ComparisonProgress,
     ) -> Result<Option<Self>, SnapshotError> {
-        let started = Instant::now();
         let commit = resolve_commit(repo, requested_ref)?;
         let commit_sha = commit.to_string();
 
@@ -721,7 +685,6 @@ impl Snapshot {
             files_indexed: prepared.files_indexed,
             cache: prepared.cache,
             cache_note: prepared.cache_note,
-            prepared_in: started.elapsed(),
         }))
     }
 
@@ -985,8 +948,10 @@ impl Snapshot {
 /// cancels. Used by [`Comparison::open_with_options`], so it shares the exact
 /// build path [`Comparison::open_with_progress`] uses without asking any
 /// caller to observe progress.
+#[cfg(test)]
 struct NoopComparisonProgress;
 
+#[cfg(test)]
 impl ComparisonProgress for NoopComparisonProgress {
     fn on_status(&self, _side: SnapshotSide, _status: &BuildStatus) {}
 
@@ -1229,6 +1194,10 @@ pub struct ComparisonOptions {
 }
 
 /// A resolved base/head comparison with both snapshots indexed.
+#[allow(
+    dead_code,
+    reason = "cache_dir is read through its test-gated accessor"
+)]
 pub struct Comparison {
     repository: PathBuf,
     mode: ComparisonMode,
@@ -1237,7 +1206,6 @@ pub struct Comparison {
     working_tree: WorkingTreeState,
     cache_dir: Option<PathBuf>,
     cache_note: Option<String>,
-    prepared_in: Duration,
 }
 
 impl Comparison {
@@ -1248,6 +1216,7 @@ impl Comparison {
     /// The repository is opened read-only: nothing in the user's working tree,
     /// Git index, or object store is written, and the repository's own
     /// `.orbit-graph/*.db` index files are neither read nor written.
+    #[cfg(test)]
     pub fn open(repository: &Path, base_ref: &str, head_ref: &str) -> Result<Self, SnapshotError> {
         Self::open_with_options(
             repository,
@@ -1269,6 +1238,7 @@ impl Comparison {
         clippy::unreachable,
         reason = "a no-op progress never cancels (STD-02 §R13 invariant)"
     )]
+    #[cfg(test)]
     pub fn open_with_options(
         repository: &Path,
         base_ref: &str,
@@ -1341,7 +1311,6 @@ impl Comparison {
         options: &ComparisonOptions,
         progress: &dyn ComparisonProgress,
     ) -> Result<ComparisonOutcome, SnapshotError> {
-        let started = Instant::now();
         let repo = open_working_tree(repository)?;
         // Both refs are resolved before anything is materialized or indexed,
         // so a typo in either fails at once rather than after the other side
@@ -1438,11 +1407,11 @@ impl Comparison {
             working_tree,
             cache_dir: cache.map(|cache| cache.dir().to_path_buf()),
             cache_note,
-            prepared_in: started.elapsed(),
         })))
     }
 
     /// Cache directory both snapshots used, when caching was available.
+    #[cfg(test)]
     pub fn cache_dir(&self) -> Option<&Path> {
         self.cache_dir.as_deref()
     }
@@ -1450,11 +1419,6 @@ impl Comparison {
     /// Why caching was unavailable, when it was.
     pub fn cache_note(&self) -> Option<&str> {
         self.cache_note.as_deref()
-    }
-
-    /// Wall-clock time spent resolving and preparing both snapshots.
-    pub fn prepared_in(&self) -> Duration {
-        self.prepared_in
     }
 
     /// Working directory of the inspected repository.
@@ -1787,83 +1751,4 @@ fn anchor_git_discovery(root: &Path) -> Result<(), SnapshotError> {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn unsafe_entry_names_are_rejected() {
-        assert!(is_safe_entry_name("src"));
-        assert!(is_safe_entry_name("lib.rs"));
-        assert!(!is_safe_entry_name(""));
-        assert!(!is_safe_entry_name("."));
-        assert!(!is_safe_entry_name(".."));
-        assert!(!is_safe_entry_name("a/b"));
-        assert!(!is_safe_entry_name("a\\b"));
-        assert!(!is_safe_entry_name(".git"));
-        assert!(!is_safe_entry_name(".GIT"));
-    }
-
-    #[test]
-    fn clean_working_tree_has_no_notice() {
-        let state = WorkingTreeState::default();
-        assert!(!state.dirty);
-        assert_eq!(state.notice(), None);
-    }
-
-    #[test]
-    fn dirty_working_tree_notice_counts_entries() {
-        let state = WorkingTreeState {
-            dirty: true,
-            entries: vec![WorkingTreeEntry {
-                path: "src/lib.rs".to_string(),
-                change: WorkingTreeChange::Modified,
-            }],
-            truncated: false,
-        };
-        let notice = state.notice().expect("dirty state has a notice");
-        assert!(notice.contains("1 uncommitted change(s)"), "{notice}");
-    }
-
-    #[test]
-    fn graph_scratch_paths_are_not_uncommitted_work() {
-        assert!(is_graph_scratch(".orbit-graph"));
-        assert!(is_graph_scratch(
-            ".orbit-graph/explorer/snapshots/abc/tree/src/lib.rs"
-        ));
-        assert!(!is_graph_scratch("src/lib.rs"));
-        assert!(!is_graph_scratch(".orbit-graphics/lib.rs"));
-    }
-
-    #[test]
-    fn exclusion_reasons_round_trip_through_their_labels() {
-        for reason in [
-            ExclusionReason::Symlink,
-            ExclusionReason::Submodule,
-            ExclusionReason::UnsafeName,
-            ExclusionReason::UnsupportedKind,
-            ExclusionReason::OversizeBlob { bytes: 9 },
-        ] {
-            assert_eq!(
-                ExclusionReason::from_label(reason.label(), reason.bytes()),
-                reason
-            );
-        }
-        assert_eq!(
-            ExclusionReason::from_label("something-new", None),
-            ExclusionReason::UnsupportedKind
-        );
-    }
-
-    #[test]
-    fn labels_are_stable() {
-        assert_eq!(SnapshotSide::Base.label(), "base");
-        assert_eq!(SnapshotSide::Head.label(), "head");
-        assert_eq!(ComparisonMode::DirectBaseHead.label(), "direct_base_head");
-        assert_eq!(ExclusionReason::Symlink.label(), "symlink");
-        assert_eq!(
-            ExclusionReason::OversizeBlob { bytes: 1 }.label(),
-            "oversize_blob"
-        );
-        assert_eq!(WorkingTreeChange::Untracked.label(), "untracked");
-    }
-}
+mod tests;

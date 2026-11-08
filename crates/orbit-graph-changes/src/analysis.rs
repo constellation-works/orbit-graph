@@ -207,7 +207,7 @@ pub enum ChangesRange {
         head: String,
     },
     /// A base revision and the uncommitted working tree. `None` selects the
-    /// [`default_base`].
+    /// default base.
     WorkingTree {
         /// Base ref as supplied, when one was.
         base: Option<String>,
@@ -433,7 +433,7 @@ pub struct LabelledTest {
     /// Evidence category backing it.
     pub category: EvidenceCategory,
     /// Weakest `orbit_graph` confidence on its evidence path;
-    /// [`CONFIDENCE_FILE_IMPORT`] or [`CONFIDENCE_NAME_ONLY`] when no path
+    /// `CONFIDENCE_FILE_IMPORT` or `CONFIDENCE_NAME_ONLY` when no path
     /// backs it.
     pub confidence: String,
     /// The evidence path behind a `call_path` candidate.
@@ -508,7 +508,7 @@ pub struct TestSelection {
 /// The agent-facing change analysis.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct ChangesDocument {
-    /// Payload schema version: [`CHANGES_SCHEMA_VERSION`].
+    /// Payload schema version: `CHANGES_SCHEMA_VERSION`.
     pub schema_version: u32,
     /// When the document was generated (RFC 3339, UTC).
     pub generated_at: String,

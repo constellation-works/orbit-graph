@@ -18,7 +18,6 @@
 use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::time::Instant;
 
 use git2::{Repository, StatusOptions};
 use orbit_graph::atomic_write;
@@ -50,7 +49,6 @@ impl Snapshot {
         scratch: Option<&Path>,
         progress: &dyn ComparisonProgress,
     ) -> Result<Option<Self>, SnapshotError> {
-        let started = Instant::now();
         let prepared = Self::prepare_temporary_from(
             SnapshotSide::Head,
             WORKING_TREE_ID,
@@ -83,7 +81,6 @@ impl Snapshot {
             files_indexed,
             cache,
             cache_note: Some(NOT_CACHED_NOTE.to_string()),
-            prepared_in: started.elapsed(),
         }))
     }
 }

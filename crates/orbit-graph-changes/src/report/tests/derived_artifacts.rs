@@ -9,10 +9,10 @@
 use std::fs;
 use std::path::Path;
 
-use orbit_graph_changes::report::{ReportOptions, build_report};
-use orbit_graph_changes::snapshot::Comparison;
+use crate::report::{ReportOptions, build_report};
+use crate::snapshot::Comparison;
 
-mod common;
+use crate::test_fixtures as common;
 
 use common::corpus;
 

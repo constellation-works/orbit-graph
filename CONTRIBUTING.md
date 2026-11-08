@@ -59,7 +59,7 @@ The committed `direct-call` JSON sample under
 `evals/change-explorer/samples/` is checked against the change
 analysis library. After an intended report output change (including an
 `EXTRACTOR_VERSION` or crate version bump), regenerate it with
-`UPDATE_GOLDENS=1 cargo test -p orbit-graph-changes --test derived_artifacts --locked`
+`UPDATE_GOLDENS=1 cargo test -p orbit-graph-changes --lib --locked derived_artifacts`
 and review the diff.
 
 The canonical Orbit plugin lives entirely under `.orbit-plugin/`. Its

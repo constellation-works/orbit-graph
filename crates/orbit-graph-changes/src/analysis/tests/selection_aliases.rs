@@ -6,15 +6,15 @@
     reason = "the shared Git fixture writes source with fs::write"
 )]
 
+use crate::analysis::{ChangesRange, ChangesRequest, analyse};
+use crate::filters::FilterSet;
+use crate::report::{ReportLimits, ReportOptions, build_report_bounded};
+use crate::snapshot::{Comparison, ComparisonOptions};
 use git2::Repository;
 use orbit_graph::Confidence;
-use orbit_graph_changes::analysis::{ChangesRange, ChangesRequest, analyse};
-use orbit_graph_changes::filters::FilterSet;
-use orbit_graph_changes::report::{ReportLimits, ReportOptions, build_report_bounded};
-use orbit_graph_changes::snapshot::{Comparison, ComparisonOptions};
 use tempfile::TempDir;
 
-mod common;
+use crate::test_fixtures as common;
 
 fn check(base: &str, head: &str, requested: &str, expected: &[&str]) {
     let dir = TempDir::new().expect("fixture repository");

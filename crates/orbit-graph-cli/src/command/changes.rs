@@ -2,13 +2,11 @@ use std::path::PathBuf;
 
 use clap::{Args, ValueEnum};
 use orbit_graph::RefConfidence;
-use orbit_graph_changes::analysis::{
-    ChangesBounds, ChangesRange, ChangesRequest, DEFAULT_MAX_CALLERS, DEFAULT_MAX_ENTRY_POINTS,
-    DEFAULT_MAX_SYMBOLS, DEFAULT_MAX_TESTS, DEFAULT_NODE_CAP, analyse,
+use orbit_graph_changes::{
+    ChangesBounds, ChangesRange, ChangesRequest, ComparisonOptions, DEFAULT_MAX_CALLERS,
+    DEFAULT_MAX_ENTRY_POINTS, DEFAULT_MAX_SYMBOLS, DEFAULT_MAX_TESTS, DEFAULT_NODE_CAP,
+    DEFAULT_TIME_BUDGET_MS, EVIDENCE_DEPTH, FilterSet, analyse,
 };
-use orbit_graph_changes::evidence::{DEFAULT_TIME_BUDGET_MS, EVIDENCE_DEPTH};
-use orbit_graph_changes::filters::FilterSet;
-use orbit_graph_changes::snapshot::ComparisonOptions;
 use serde_json::{Value, json};
 
 use super::{CliError, CommandContext, display_value, json_value};
