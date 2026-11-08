@@ -79,7 +79,7 @@ production-latency certification follows. Orbit's semantic version alone does
 not prove `orbit.workflow.run.delivery` capability. Import remains bounded to
 named task/run pairs with partial coverage. Cold `changes` calls write their
 snapshot/scratch cache under the existing
-[D6 deviation](design/changes-command/4_decisions.md#d6-where-snapshots-are-cached);
+[D6 deviation](design/changes/4_decisions.md#d6-where-snapshots-are-cached);
 an older read-only-state check must not be extended to that tool.
 
 ## Repository and report checks

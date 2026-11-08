@@ -95,7 +95,7 @@ record per line. `--help` remains conventional text help, and a bare
   envelope on stdout; see [plugin.md](plugin.md).
 
 The grouped help layout, stream contracts, styling rules, and compatibility
-boundaries are documented in [the terminal-interface design](design/terminal-interface.md).
+boundaries are documented in [the terminal-interface design](design/terminal-interface/2_design.md).
 
 ## Index lifecycle and location
 
@@ -257,7 +257,7 @@ immutable Git tree differences supplied by the public delivery contract or from
 explicitly weaker first-parent Git sync evidence. It never reads task
 `context_files` or Orbit private state. Delivery, ingestion, task creation, and
 snapshot availability times remain distinct and carry explicit
-certainty/provenance. See [the design and v2 contract](design/change-recommendations.md).
+certainty/provenance. See [the design and v2 contract](design/changes/specs/change-recommendations.md).
 `recommend` also caches the symbols it extracts from a target revision beside
 that index, as `recommend-target.<extractor-version>.<tree-id>.json` (owner-only,
 a few recent entries kept). The cache is best effort, not index state: it is

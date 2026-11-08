@@ -1,3 +1,15 @@
+---
+title: "Change explorer: evidence contract and snapshot semantics"
+owner: maintainers
+last_updated: 2026-11-08
+status: Accepted
+stage: shipped
+next: "—"
+feature: changes
+doc_role: design
+summary: "Evidence contract, snapshot semantics, changed-symbol identity and bounds for change analysis in orbit-graph-changes."
+---
+
 # Change explorer: evidence contract and snapshot semantics
 
 Status: the analysis contract remains active in `orbit-graph-changes`. The
@@ -9,8 +21,9 @@ a release or any change to core graph query semantics.
 ORB-13255 retained the snapshot, changed-symbol, evidence and JSON report
 contracts in `orbit-graph-changes`. Decision D2 (loopback HTTP and embedded
 UI), the service surface, API reference and UI sketch below are retired
-historical notes. They do not describe a live executable or service. The
-follow-up CLI/plugin task will provide the new surface.
+historical notes. They do not describe a live executable or service. The CLI/plugin surface
+that superseded them shipped in ORB-13256 as `orbit-graph changes` and the
+`orbit.graph.changes` plugin tool; see [`4_decisions.md`](4_decisions.md).
 
 ## Purpose and boundaries
 
@@ -892,12 +905,12 @@ product-level boundary — bound defaults, cache behavior, and stated
 non-goals. It does not restate the resolver and language-coverage findings
 from real-repository evaluation: those nine findings, ordered by how much
 they distort an answer, live at
-[`evals/change-explorer/README.md#limitations-handoff`](../../evals/change-explorer/README.md#limitations-handoff)
+[`evals/change-explorer/README.md#limitations-handoff`](../../../evals/change-explorer/README.md#limitations-handoff)
 and are being actively revised by ORB-12422 against the resolver fixes in
 ORB-12416/ORB-12417; read that document directly rather than a copy of it.
 
 - **Extractor blind spots and language coverage.** See
-  [the evaluation's limitations](../../evals/change-explorer/README.md#limitations-handoff)
+  [the evaluation's limitations](../../../evals/change-explorer/README.md#limitations-handoff)
   for the current, evolving list — Rust cross-file resolution degrading to
   name-only matching, intra-file renames with body edits never paired, nested functions
   invisible to the graph, runtime/subprocess invocation associated by program
