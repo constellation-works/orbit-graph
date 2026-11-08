@@ -1,3 +1,5 @@
+use std::time::{Duration, Instant};
+
 use super::redact;
 
 // SQL writers in the two persistence modules are deliberately enumerated.
@@ -142,4 +144,62 @@ fn masks_credentials_and_preserves_identifiers() {
     ] {
         assert_eq!(redact(secret), "[REDACTED_SECRET]", "{secret}");
     }
+}
+
+#[test]
+fn footerless_pem_headers_redact_within_bound() {
+    // About 4 MB of headers and no footer. Searching the rest of the input for
+    // each header made this quadratic (STD-05 §R13).
+    let input = "-----BEGIN A PRIVATE KEY-----".repeat(140_000);
+    let started = Instant::now();
+    let output = redact(&input);
+    let elapsed = started.elapsed();
+    assert_eq!(output, input);
+    assert!(
+        elapsed < Duration::from_secs(1),
+        "redaction took {elapsed:?}"
+    );
+}
+
+#[test]
+fn footerless_pem_headers_with_distinct_labels_redact_within_bound() {
+    // Distinct labels have distinct footers, so memoizing one search per
+    // footer would still scan the input once per header.
+    let input: String = (0..100_000)
+        .map(|n| format!("-----BEGIN K{n} PRIVATE KEY-----"))
+        .collect();
+    let started = Instant::now();
+    let output = redact(&input);
+    let elapsed = started.elapsed();
+    assert_eq!(output, input);
+    assert!(
+        elapsed < Duration::from_secs(1),
+        "redaction took {elapsed:?}"
+    );
+}
+
+#[test]
+fn pem_block_footer_must_match_label_and_follow_header() {
+    // A footer for another label does not close the block.
+    assert_eq!(
+        redact("-----BEGIN A PRIVATE KEY-----\nabc\n-----END B PRIVATE KEY-----"),
+        "-----BEGIN A PRIVATE KEY-----\nabc\n-----END B PRIVATE KEY-----"
+    );
+    // A footer before the header does not close it.
+    assert_eq!(
+        redact("-----END A PRIVATE KEY-----\n-----BEGIN A PRIVATE KEY-----\nabc"),
+        "-----END A PRIVATE KEY-----\n-----BEGIN A PRIVATE KEY-----\nabc"
+    );
+    // A footer-less header does not hide a complete block after it.
+    assert_eq!(
+        redact(
+            "-----BEGIN B PRIVATE KEY-----\n-----BEGIN A PRIVATE KEY-----\nabc\n-----END A PRIVATE KEY-----"
+        ),
+        "-----BEGIN B PRIVATE KEY-----\n[REDACTED_SECRET]"
+    );
+    // A footer-less header's label is still scanned for credential shapes.
+    assert_eq!(
+        redact("-----BEGIN sk-123456789012345678901234 PRIVATE KEY-----"),
+        "-----BEGIN [REDACTED_SECRET] PRIVATE KEY-----"
+    );
 }
