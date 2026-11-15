@@ -4,6 +4,7 @@ use std::path::Path;
 use tempfile::TempDir;
 
 use super::*;
+use rusqlite::Connection;
 
 #[test]
 fn schema_statement_failure_leaves_no_partial_history_index() {
@@ -218,6 +219,94 @@ fn import_is_idempotent_and_preserves_multi_task_provenance() {
         .expect("resolve deleted symbol");
     assert_eq!(resolution.status, CurrentSymbolStatus::Deleted);
     assert!(resolution.matches.is_empty());
+}
+
+/// Rewrite every stored payload as one recorded before line lengths.
+fn strip_stored_line_lengths(index: &HistoryIndex) {
+    let conn = Connection::open(index.database_path()).expect("open history database");
+    let rows = conn
+        .prepare("SELECT delivery_id, payload_json FROM history_deliveries")
+        .expect("prepare payload read")
+        .query_map([], |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+        })
+        .expect("query payloads")
+        .collect::<Result<Vec<_>, _>>()
+        .expect("read payloads");
+    for (id, payload) in rows {
+        let mut change: DeliveredChange = serde_json::from_str(&payload).expect("decode payload");
+        change.files = without_line_lengths(change.files.as_slice());
+        conn.execute(
+            "UPDATE history_deliveries SET payload_json=?2 WHERE delivery_id=?1",
+            params![id, serde_json::to_string(&change).expect("encode payload")],
+        )
+        .expect("strip line lengths");
+    }
+}
+
+#[test]
+fn line_lengths_are_recorded_and_backfilled_into_older_payloads() {
+    let repo = fixture_repo();
+    write(
+        repo.path(),
+        "src/lib.rs",
+        "use std::fmt;\n\npub fn value() -> i32 {\n    1\n}\n",
+    );
+    commit(repo.path(), "before");
+    let before = head(repo.path());
+    write(
+        repo.path(),
+        "src/lib.rs",
+        "use std::fmt;\nuse std::io;\n\npub fn value() -> i32 {\n    2\n}\n",
+    );
+    commit(repo.path(), "after");
+    let after = head(repo.path());
+    let index = HistoryIndex::open(repo.path(), "main").expect("open history");
+    let delivery = fixture_delivery(&index, before, after, "verified-lines");
+    index.import(delivery.clone()).expect("import");
+    let recorded = index.deliveries().expect("load")[0].files.clone();
+    assert!(has_line_lengths(recorded.as_slice()));
+    let file = &recorded[0];
+    let before_lines = file.before_lines.as_ref().expect("before lines");
+    let after_lines = file.after_lines.as_ref().expect("after lines");
+    assert_eq!((before_lines.line_count, after_lines.line_count), (5, 6));
+    assert_eq!(
+        (
+            before_lines.named_symbol_covered_lines,
+            after_lines.named_symbol_covered_lines
+        ),
+        (3, 3)
+    );
+    let value = file
+        .symbols
+        .iter()
+        .find_map(|change| change.after.as_ref())
+        .expect("changed function");
+    assert_eq!(
+        (value.symbol.line_start, value.symbol.line_end),
+        (Some(4), Some(6))
+    );
+
+    // A payload stored before line lengths takes them on from an identical
+    // re-import instead of being refused as different content.
+    strip_stored_line_lengths(&index);
+    assert!(!has_line_lengths(
+        index.deliveries().expect("load")[0].files.as_slice()
+    ));
+    assert!(!index.import(delivery).expect("re-import").inserted);
+    assert_eq!(index.deliveries().expect("load")[0].files, recorded);
+
+    // Sync re-extracts the recorded sides of a stored payload without them.
+    strip_stored_line_lengths(&index);
+    let report = index.sync(Some(10)).expect("sync");
+    assert_eq!(report.line_lengths_backfilled, 1);
+    assert_eq!(report.line_lengths_missing, 0);
+    assert_eq!(index.deliveries().expect("load")[0].files, recorded);
+    let again = index.sync(Some(10)).expect("second sync");
+    assert_eq!(
+        (again.line_lengths_backfilled, again.line_lengths_missing),
+        (0, 0)
+    );
 }
 
 #[test]

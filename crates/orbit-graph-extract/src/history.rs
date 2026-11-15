@@ -489,6 +489,22 @@ pub struct SymbolIdentity {
     pub signature: Option<String>,
     /// Qualified enclosing symbol when available.
     pub parent: Option<String>,
+    /// One-based first line of the span. Absent in a payload recorded before
+    /// line spans were extracted; `history sync` backfills it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub line_start: Option<u32>,
+    /// One-based last line of the span, inclusive; absent like `line_start`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub line_end: Option<u32>,
+}
+
+impl SymbolIdentity {
+    /// Lines the span covers, `line_end - line_start + 1`, or `None` when the
+    /// payload predates line spans.
+    pub fn line_count(&self) -> Option<u32> {
+        let (start, end) = (self.line_start?, self.line_end?);
+        Some(end.saturating_sub(start).saturating_add(1))
+    }
 }
 
 /// Changed-line evidence attributed to the smallest enclosing named symbol.
@@ -534,6 +550,34 @@ pub struct FileChange {
     pub before_fallback: Option<FileFallbackReason>,
     /// Explicit reason for after-tree file-only evidence.
     pub after_fallback: Option<FileFallbackReason>,
+    /// Line lengths of the before side. Absent in a payload recorded before
+    /// line lengths were extracted; `history sync` backfills it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub before_lines: Option<FileSideLines>,
+    /// Line lengths of the after side; absent like `before_lines`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub after_lines: Option<FileSideLines>,
+}
+
+/// Line lengths of one side of a changed file, recorded so a ranking can
+/// weigh a change by how much of a symbol, a file or a file's remainder it
+/// touched without reading the blob again.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FileSideLines {
+    /// Lines in the file on this side; 0 when the side has no file, 1 for a
+    /// binary file.
+    pub line_count: u32,
+    /// Distinct lines covered by the union of the line spans of every named
+    /// symbol extracted from this side, changed or not; 0 when none was
+    /// extracted (unsupported language, binary, failed parse, no file).
+    pub named_symbol_covered_lines: u32,
+    /// Changed lines of this side whose change is whitespace only: a blank
+    /// line added or removed, or a line paired within its hunk with a line
+    /// of the other side that differs from it only in whitespace. They stay
+    /// in `changed_lines` and the file's counts; weighted rankings subtract
+    /// them.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub whitespace_only_lines: Vec<u32>,
 }
 
 /// Fully extracted, delivered change used by later ranking stages.
@@ -837,31 +881,43 @@ fn extract_tree_diff(
         let mut new_lines = BTreeSet::new();
         let mut additions = 0;
         let mut deletions = 0;
+        let mut old_whitespace = BTreeSet::new();
+        let mut new_whitespace = BTreeSet::new();
         if let Some(patch) = patch.as_ref() {
             for hunk_index in 0..patch.num_hunks() {
                 let (_, line_count) = patch
                     .hunk(hunk_index)
                     .map_err(git_error("read diff hunk"))?;
+                let mut removed = Vec::new();
+                let mut inserted = Vec::new();
                 for line_index in 0..line_count {
                     let line = patch
                         .line_in_hunk(hunk_index, line_index)
                         .map_err(git_error("read diff line"))?;
                     match line.origin() {
                         '-' => {
-                            if let Some(line) = line.old_lineno() {
-                                old_lines.insert(line);
+                            if let Some(number) = line.old_lineno() {
+                                old_lines.insert(number);
+                                removed.push((number, without_whitespace(line.content())));
                             }
                             deletions += 1;
                         }
                         '+' => {
-                            if let Some(line) = line.new_lineno() {
-                                new_lines.insert(line);
+                            if let Some(number) = line.new_lineno() {
+                                new_lines.insert(number);
+                                inserted.push((number, without_whitespace(line.content())));
                             }
                             additions += 1;
                         }
                         _ => {}
                     }
                 }
+                whitespace_only_changes(
+                    removed,
+                    inserted,
+                    &mut old_whitespace,
+                    &mut new_whitespace,
+                );
             }
         }
 
@@ -907,6 +963,14 @@ fn extract_tree_diff(
             symbols,
             before_fallback: before_attr.fallback,
             after_fallback: after_attr.fallback,
+            before_lines: Some(FileSideLines {
+                whitespace_only_lines: old_whitespace.into_iter().collect(),
+                ..before_attr.lines
+            }),
+            after_lines: Some(FileSideLines {
+                whitespace_only_lines: new_whitespace.into_iter().collect(),
+                ..after_attr.lines
+            }),
         });
     }
     changes.sort_by(|left, right| {
@@ -938,6 +1002,7 @@ struct SideAttribution {
     changed_symbols: Vec<SymbolAttribution>,
     all_symbols: Vec<SymbolAttribution>,
     fallback: Option<FileFallbackReason>,
+    lines: FileSideLines,
 }
 
 type SymbolRangeKey = (usize, usize, String, String);
@@ -950,27 +1015,26 @@ fn attribute_side(
     content: Option<&[u8]>,
     changed_lines: &BTreeSet<u32>,
 ) -> SideAttribution {
+    let file_only = |fallback, line_count| SideAttribution {
+        changed_symbols: Vec::new(),
+        all_symbols: Vec::new(),
+        fallback: Some(fallback),
+        lines: FileSideLines {
+            line_count,
+            ..FileSideLines::default()
+        },
+    };
     let (Some(path), Some(content)) = (path, content) else {
-        return SideAttribution {
-            changed_symbols: Vec::new(),
-            all_symbols: Vec::new(),
-            fallback: Some(FileFallbackReason::FileUnavailable),
-        };
+        return file_only(FileFallbackReason::FileUnavailable, 0);
     };
     if content.contains(&0) {
-        return SideAttribution {
-            changed_symbols: Vec::new(),
-            all_symbols: Vec::new(),
-            fallback: Some(FileFallbackReason::Binary),
-        };
+        // A binary file has no lines: it is recorded as a one-line file.
+        return file_only(FileFallbackReason::Binary, 1);
     }
+    let line_count = text_line_count(content);
     let extractors = languages::extractors();
     let Some(extractor) = extractors.iter().find(|extractor| extractor.supports(path)) else {
-        return SideAttribution {
-            changed_symbols: Vec::new(),
-            all_symbols: Vec::new(),
-            fallback: Some(FileFallbackReason::UnsupportedLanguage),
-        };
+        return file_only(FileFallbackReason::UnsupportedLanguage, line_count);
     };
     let extracted = extractor.extract(path, content);
     if extracted.symbols.is_empty() {
@@ -980,15 +1044,14 @@ fn attribute_side(
             || !extracted.strings.is_empty()
             || !extracted.configs.is_empty()
             || !extracted.commands.is_empty();
-        return SideAttribution {
-            changed_symbols: Vec::new(),
-            all_symbols: Vec::new(),
-            fallback: Some(if has_non_symbol_evidence {
+        return file_only(
+            if has_non_symbol_evidence {
                 FileFallbackReason::NoEnclosingNamedSymbol
             } else {
                 FileFallbackReason::ParseOrExtractionUncertain
-            }),
-        };
+            },
+            line_count,
+        );
     }
     let line_ranges = line_byte_ranges(content);
     let mut by_symbol: BTreeMap<SymbolRangeKey, AttributedLines> = BTreeMap::new();
@@ -1032,18 +1095,109 @@ fn attribute_side(
     let changed_symbols = by_symbol
         .into_values()
         .map(|(symbol, changed_lines)| {
-            symbol_attribution(revision, side, path, symbol, changed_lines)
+            symbol_attribution(revision, side, path, &line_ranges, symbol, changed_lines)
         })
-        .collect();
+        .collect::<Vec<_>>();
     let all_symbols = extracted
         .symbols
         .into_iter()
-        .map(|symbol| symbol_attribution(revision, side, path, symbol, Vec::new()))
-        .collect();
+        .map(|symbol| symbol_attribution(revision, side, path, &line_ranges, symbol, Vec::new()))
+        .collect::<Vec<_>>();
+    let named_symbol_covered_lines = covered_lines(
+        all_symbols
+            .iter()
+            .filter_map(|item| Some((item.symbol.line_start?, item.symbol.line_end?))),
+    );
     SideAttribution {
         changed_symbols,
         all_symbols,
         fallback: unmatched.then_some(FileFallbackReason::NoEnclosingNamedSymbol),
+        lines: FileSideLines {
+            line_count,
+            named_symbol_covered_lines,
+            whitespace_only_lines: Vec::new(),
+        },
+    }
+}
+
+/// Lines in a text blob: every newline ends one, and trailing text without a
+/// newline is one more.
+fn text_line_count(content: &[u8]) -> u32 {
+    let newlines = content.iter().filter(|byte| **byte == b'\n').count();
+    let trailing = usize::from(content.last().is_some_and(|byte| *byte != b'\n'));
+    u32::try_from(newlines + trailing).unwrap_or(u32::MAX)
+}
+
+/// One-based line holding byte `offset`.
+fn line_of(line_ranges: &[(usize, usize)], offset: usize) -> u32 {
+    let index = line_ranges
+        .partition_point(|(_, end)| *end <= offset)
+        .min(line_ranges.len().saturating_sub(1));
+    u32::try_from(index + 1).unwrap_or(u32::MAX)
+}
+
+/// Distinct lines in the union of inclusive line ranges.
+fn covered_lines(ranges: impl Iterator<Item = (u32, u32)>) -> u32 {
+    let mut ranges = ranges
+        .filter(|(start, end)| start <= end)
+        .collect::<Vec<_>>();
+    ranges.sort_unstable();
+    let mut covered = 0u32;
+    let mut current: Option<(u32, u32)> = None;
+    for (start, end) in ranges {
+        match current {
+            Some((open_start, open_end)) if start <= open_end.saturating_add(1) => {
+                current = Some((open_start, open_end.max(end)));
+            }
+            Some((open_start, open_end)) => {
+                covered = covered.saturating_add(open_end - open_start + 1);
+                current = Some((start, end));
+            }
+            None => current = Some((start, end)),
+        }
+    }
+    if let Some((start, end)) = current {
+        covered = covered.saturating_add(end - start + 1);
+    }
+    covered
+}
+
+/// A diff line's content with every whitespace character removed.
+fn without_whitespace(content: &[u8]) -> Vec<u8> {
+    content
+        .iter()
+        .copied()
+        .filter(|byte| !byte.is_ascii_whitespace())
+        .collect()
+}
+
+/// Mark the whitespace-only changes of one hunk: a removed or inserted line
+/// with nothing but whitespace, and each removed line paired, in order, with
+/// an inserted line of the same non-whitespace content.
+fn whitespace_only_changes(
+    removed: Vec<(u32, Vec<u8>)>,
+    inserted: Vec<(u32, Vec<u8>)>,
+    old_whitespace: &mut BTreeSet<u32>,
+    new_whitespace: &mut BTreeSet<u32>,
+) {
+    let mut unpaired: BTreeMap<Vec<u8>, Vec<u32>> = BTreeMap::new();
+    for (number, content) in inserted {
+        if content.is_empty() {
+            new_whitespace.insert(number);
+        } else {
+            unpaired.entry(content).or_default().push(number);
+        }
+    }
+    for list in unpaired.values_mut() {
+        list.reverse();
+    }
+    for (number, content) in removed {
+        if content.is_empty() {
+            old_whitespace.insert(number);
+        } else if let Some(partner) = unpaired.get_mut(&content).and_then(Vec::pop) {
+            old_whitespace.insert(number);
+            new_whitespace.insert(partner);
+        }
     }
 }
 
@@ -1051,9 +1205,15 @@ fn symbol_attribution(
     revision: &str,
     side: RevisionSide,
     path: &Path,
+    line_ranges: &[(usize, usize)],
     symbol: RawSymbol,
     changed_lines: Vec<u32>,
 ) -> SymbolAttribution {
+    let line_start = line_of(line_ranges, symbol.span_start);
+    let line_end = line_of(
+        line_ranges,
+        symbol.span_end.saturating_sub(1).max(symbol.span_start),
+    );
     SymbolAttribution {
         symbol: SymbolIdentity {
             revision: revision.to_string(),
@@ -1066,6 +1226,8 @@ fn symbol_attribution(
             span_end: symbol.span_end,
             signature: symbol.signature,
             parent: symbol.parent_symbol,
+            line_start: Some(line_start),
+            line_end: Some(line_end.max(line_start)),
         },
         changed_lines,
     }

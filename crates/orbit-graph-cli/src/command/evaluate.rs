@@ -152,22 +152,28 @@ pub(crate) fn output(document: Value) -> CommandOutput {
 
     let mut gates_table = TableView::new(vec![
         Column::text("gate"),
+        Column::text("option"),
         Column::text("status"),
         Column::text("scope"),
         Column::number("cases"),
         Column::text("keep"),
         Column::text("alternative"),
+        Column::text("selected setting"),
+        Column::text("kept setting"),
         Column::text("reason"),
     ]);
     let gates = &document["gates"];
     for gate in gates["results"].as_array().into_iter().flatten() {
         gates_table.push_row([
             display_value(&gate["gate"]),
+            display_value(&gate["option"]),
             display_value(&gate["status"]),
             display_value(&gates["scope"]),
             display_value(&gates["cases"]),
             display_value(&gate["keep"]),
             display_value(&gate["alternative"]),
+            display_value(&gate["selected_setting"]),
+            display_value(&gate["kept_setting"]),
             display_value(&gate["reason"]),
         ]);
     }
@@ -175,6 +181,7 @@ pub(crate) fn output(document: Value) -> CommandOutput {
     let mut sweep_table = TableView::new(vec![
         Column::number("cell"),
         Column::text("selected"),
+        Column::text("kept"),
         Column::text("options"),
         Column::number("selection file recall"),
         Column::number("selection symbol recall"),
@@ -186,6 +193,11 @@ pub(crate) fn output(document: Value) -> CommandOutput {
         sweep_table.push_row([
             display_value(&cell["cell"]),
             if sweep["selected_cell"] == cell["cell"] {
+                "yes".to_owned()
+            } else {
+                "-".to_owned()
+            },
+            if sweep["kept_cell"] == cell["cell"] {
                 "yes".to_owned()
             } else {
                 "-".to_owned()

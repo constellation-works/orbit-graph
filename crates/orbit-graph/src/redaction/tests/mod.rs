@@ -79,15 +79,22 @@ fn persisted_text_writer_inventory_is_explicit() {
             "history_scopes"
         ]
     );
+    // The line-length backfill rewrites a stored (already redacted) payload
+    // with freshly extracted files whose signatures are redacted first.
     assert_eq!(
         sql_targets(history, "UPDATE "),
         [
             "SET",
             "history_deliveries",
             "history_deliveries",
+            "history_deliveries",
             "SET",
             "SET"
         ]
+    );
+    assert!(
+        history.contains("redact_symbol_signatures(&mut fresh)"),
+        "backfilled symbol signatures must be redacted before the payload write (STD-05 §R13)"
     );
     assert!(history.contains("let change = &redacted;"));
     assert!(history.contains("redact_task(&mut snapshot)"));

@@ -208,7 +208,7 @@ fn folds_baselines_grid_and_gates_through_the_real_executable() {
         String::from_utf8_lossy(&output.stderr)
     );
     let report: Value = serde_json::from_slice(&output.stdout).expect("evaluation JSON");
-    assert_eq!(report["schema_version"], 3);
+    assert_eq!(report["schema_version"], 4);
     assert_eq!(report["baseline_text_fields"], "title_description_criteria");
     assert_eq!(report["coverage"]["cases_evaluated"], 2, "{report:#}");
 
@@ -281,7 +281,8 @@ fn folds_baselines_grid_and_gates_through_the_real_executable() {
         sweep["headline"]["metrics"].as_array().map(Vec::len),
         Some(18)
     );
-    // One headline case gives no interval, so neither gate can be read.
+    // One headline case gives no interval, so no gate can be read; the grid
+    // sweeps neither weighting option, so G4 is unevaluable for both.
     let gates = &report["gates"];
     assert_eq!(gates["scope"], "headline_folds");
     assert_eq!(gates["cases"], 1);
@@ -290,12 +291,23 @@ fn folds_baselines_grid_and_gates_through_the_real_executable() {
             .as_array()
             .expect("gate results")
             .iter()
-            .map(|gate| (gate["gate"].clone(), gate["status"].clone()))
+            .map(|gate| (
+                gate["gate"].clone(),
+                gate["option"].clone(),
+                gate["status"].clone()
+            ))
             .collect::<Vec<_>>(),
         vec![
-            (json!("G1"), json!("unevaluable")),
-            (json!("G2"), json!("unevaluable"))
+            (json!("G1"), json!(null), json!("unevaluable")),
+            (json!("G2"), json!(null), json!("unevaluable")),
+            (json!("G4"), json!("posting_weight"), json!("unevaluable")),
+            (json!("G4"), json!("added_weight"), json!("unevaluable"))
         ]
+    );
+    assert_eq!(sweep["kept_cell"], sweep["selected_cell"]);
+    assert_eq!(
+        gates["word_index_options"],
+        gates["selected_word_index_options"]
     );
 
     let table = run(

@@ -25,14 +25,16 @@ use crate::{
     DeliveryEvidence, DeliveryImport, Graph, GraphError, HistoryIndex, HybridTaskHit, Provenance,
     RecommendationEngine, RecommendationInput, RecommendationLevel, RecommendationRequest,
     RecommendationVariant, SyncMode, SyncPolicy, TaskAssociation, TemporalFact, TemporalStatus,
-    WordIndexOptions, WordIndexTextFields,
+    WordIndexOptions, WordIndexPostingWeight, WordIndexSmoothingUnit, WordIndexTextFields,
 };
 
 mod baselines;
 mod readout;
 
 use baselines::{Bm25Index, CodeTree, explicit_mentions};
-use readout::{CaseRun, CaseScores, LEVELS, WordIndexSource, level_index};
+use readout::{
+    CaseRun, CaseScores, LEVELS, OptionComparison, WordIndexOption, WordIndexSource, level_index,
+};
 pub use readout::{
     EvaluationMetrics, EvaluationVariant, GateReadout, GateResult, GateStatus, PairedDifference,
     PairedMetric, Readout, SplitMetrics,
@@ -47,7 +49,14 @@ pub use readout::{
 /// `word_index_plus_mentions` and `word_index_bm25_rrf` rows, per-row
 /// coverage and mean recall, the added-files split, paired differences,
 /// gates G1 and G2, folds and the optional word-index sweep.
-pub const EVALUATION_SCHEMA_VERSION: u32 = 3;
+///
+/// Version 4 adds the symbol-first, posting-weight, smoothing-unit and
+/// added-weight options to every echoed `word_index` options object, gate G4
+/// per option (with the `option`, `selected_setting` and `kept_setting`
+/// fields on every gate result), `gates.selected_word_index_options` and
+/// `sweep.kept_cell`; G1, G2 and the sweep's headline readout are read on the
+/// cell G4 keeps.
+pub const EVALUATION_SCHEMA_VERSION: u32 = 4;
 
 /// Version of the evaluation corpus (input) JSON contract. It moves
 /// independently of [`EVALUATION_SCHEMA_VERSION`]: the input shape did not
@@ -142,6 +151,21 @@ pub struct WordIndexGrid {
     pub smoothing: Vec<f64>,
     /// `max_term_share` values.
     pub max_term_share: Vec<f64>,
+    /// `symbol_first` values. This and the three option axes below are
+    /// omitted when empty, so a grid written before they existed digests
+    /// unchanged.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub symbol_first: Vec<bool>,
+    /// `posting_weight` values (design §5.4).
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub posting_weight: Vec<WordIndexPostingWeight>,
+    /// `smoothing_unit` values, crossed with the weighted `posting_weight`
+    /// settings; identical under `presence`.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub smoothing_unit: Vec<WordIndexSmoothingUnit>,
+    /// `added_weight` values from 0 to 1 (design §5.5).
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub added_weight: Vec<f64>,
 }
 
 /// One prospective task observation paired with later verified Git truth.
@@ -256,8 +280,12 @@ pub struct SweepReport {
     /// Index of the chosen cell, or `null` when no selection case had file
     /// truth to choose by.
     pub selected_cell: Option<usize>,
+    /// Index of the cell gate G4 leaves standing: the chosen cell with every
+    /// option that did not pass G4 set back to its baseline. `null` without a
+    /// chosen cell or when that configuration is not in the grid.
+    pub kept_cell: Option<usize>,
     /// Every ranking over the headline folds, with the word index and its
-    /// combinations on the chosen cell; `null` without a chosen cell.
+    /// combinations on the kept cell; `null` without one.
     pub headline: Option<Readout>,
 }
 
@@ -643,8 +671,22 @@ pub fn evaluate_corpus(
             GateReadout {
                 scope: "all_cases".to_string(),
                 word_index_options: Some(base_options),
+                selected_word_index_options: None,
                 cases: all.len(),
-                results: readout::gates(all.as_slice(), WordIndexSource::Base, corpus.k, None),
+                results: readout::gates(all.as_slice(), WordIndexSource::Base, corpus.k, None)
+                    .into_iter()
+                    .chain(WordIndexOption::ALL.map(|option| {
+                        readout::gate_four(
+                            all.as_slice(),
+                            option,
+                            None,
+                            OptionComparison::Unavailable(
+                                "G4 compares configurations of a word_index_grid read on its headline folds; this corpus has no grid".to_string(),
+                            ),
+                            corpus.k,
+                        )
+                    }))
+                    .collect(),
             },
         ),
     };
@@ -730,6 +772,12 @@ fn cached_tree(
 }
 
 /// Every cell of `grid` over `base`, or none without a grid.
+///
+/// The cells are every combination of the axes, earlier axes varying
+/// slowest. Under `presence` the two smoothing units are the same
+/// configuration, so such cells are kept once with `tasks`; a cell that sets
+/// `posting_weight` or `added_weight` away from its baseline without
+/// `symbol_first` is left out, as those options need symbol-first labels.
 fn grid_cells(
     base: &WordIndexOptions,
     grid: Option<&WordIndexGrid>,
@@ -737,29 +785,38 @@ fn grid_cells(
     let Some(grid) = grid else {
         return Ok(Vec::new());
     };
-    fn axis<T: Copy>(values: &[T], base: T) -> Vec<T> {
+    fn axis<T: Copy>(
+        cells: Vec<WordIndexOptions>,
+        values: &[T],
+        set: impl Fn(&mut WordIndexOptions, T),
+    ) -> Vec<WordIndexOptions> {
         if values.is_empty() {
-            vec![base]
-        } else {
-            values.to_vec()
+            return cells;
         }
+        let mut out = Vec::with_capacity(cells.len() * values.len());
+        for cell in cells {
+            for value in values {
+                let mut cell = cell;
+                set(&mut cell, *value);
+                out.push(cell);
+            }
+        }
+        out
     }
-    let text_fields = axis(grid.text_fields.as_slice(), base.text_fields);
-    let window_size = axis(grid.window_size.as_slice(), base.window_size);
-    let symbol_boost = axis(grid.symbol_boost.as_slice(), base.symbol_boost);
-    let min_support = axis(grid.min_support.as_slice(), base.min_support);
-    let smoothing = axis(grid.smoothing.as_slice(), base.smoothing);
-    let max_term_share = axis(grid.max_term_share.as_slice(), base.max_term_share);
     let count = [
-        text_fields.len(),
-        window_size.len(),
-        symbol_boost.len(),
-        min_support.len(),
-        smoothing.len(),
-        max_term_share.len(),
+        grid.text_fields.len(),
+        grid.window_size.len(),
+        grid.symbol_boost.len(),
+        grid.min_support.len(),
+        grid.smoothing.len(),
+        grid.max_term_share.len(),
+        grid.symbol_first.len(),
+        grid.posting_weight.len(),
+        grid.smoothing_unit.len(),
+        grid.added_weight.len(),
     ]
     .iter()
-    .try_fold(1usize, |total, len| total.checked_mul(*len));
+    .try_fold(1usize, |total, len| total.checked_mul((*len).max(1)));
     if count.is_none_or(|count| count > MAX_WORD_INDEX_GRID_CELLS) {
         return Err(GraphError::invalid_input(
             "validate word index grid",
@@ -767,30 +824,56 @@ fn grid_cells(
             format!("a grid may hold at most {MAX_WORD_INDEX_GRID_CELLS} cells"),
         ));
     }
-    let mut cells = Vec::new();
-    for &text_fields in &text_fields {
-        for &window_size in &window_size {
-            for &symbol_boost in &symbol_boost {
-                for &min_support in &min_support {
-                    for &smoothing in &smoothing {
-                        for &max_term_share in &max_term_share {
-                            let options = WordIndexOptions {
-                                text_fields,
-                                window_size,
-                                symbol_boost,
-                                min_support,
-                                smoothing,
-                                max_term_share,
-                            };
-                            options.validate()?;
-                            cells.push(options);
-                        }
-                    }
-                }
-            }
+    let mut cells = vec![*base];
+    cells = axis(cells, &grid.text_fields, |cell, value| {
+        cell.text_fields = value
+    });
+    cells = axis(cells, &grid.window_size, |cell, value| {
+        cell.window_size = value
+    });
+    cells = axis(cells, &grid.symbol_boost, |cell, value| {
+        cell.symbol_boost = value
+    });
+    cells = axis(cells, &grid.min_support, |cell, value| {
+        cell.min_support = value
+    });
+    cells = axis(cells, &grid.smoothing, |cell, value| cell.smoothing = value);
+    cells = axis(cells, &grid.max_term_share, |cell, value| {
+        cell.max_term_share = value;
+    });
+    cells = axis(cells, &grid.symbol_first, |cell, value| {
+        cell.symbol_first = value
+    });
+    cells = axis(cells, &grid.posting_weight, |cell, value| {
+        cell.posting_weight = value;
+    });
+    cells = axis(cells, &grid.smoothing_unit, |cell, value| {
+        cell.smoothing_unit = value;
+    });
+    cells = axis(cells, &grid.added_weight, |cell, value| {
+        cell.added_weight = value
+    });
+    let mut kept: Vec<WordIndexOptions> = Vec::new();
+    for cell in cells {
+        let cell = cell.normalized();
+        if !cell.symbol_first
+            && (cell.posting_weight != WordIndexPostingWeight::Presence || cell.added_weight != 1.0)
+        {
+            continue;
+        }
+        cell.validate()?;
+        if !kept.contains(&cell) {
+            kept.push(cell);
         }
     }
-    Ok(cells)
+    if kept.is_empty() {
+        return Err(GraphError::invalid_input(
+            "validate word index grid",
+            "word_index_grid",
+            "no cell remains: posting_weight and added_weight need symbol_first",
+        ));
+    }
+    Ok(kept)
 }
 
 /// The corpus's folds in cutoff order, and each case's fold position.
@@ -964,17 +1047,70 @@ fn sweep(
         }
     }
     let selected_cell = selected.map(|(cell, _, _)| cell);
-    let unavailable = match selected_cell {
-        None => Some("no selection-fold case has file truth to choose a grid cell by"),
-        Some(_) if headline.is_empty() => Some("no headline-fold case was evaluated"),
-        Some(_) => None,
+    let cell_of = |options: &WordIndexOptions| {
+        cells
+            .iter()
+            .position(|cell| cell.options == options.normalized())
     };
-    let source = WordIndexSource::Cell(selected_cell.unwrap_or_default());
+    // G4: each option of the chosen cell against the same cell with that
+    // option at its baseline, on the headline folds.
+    let selected_options = selected_cell.map(|cell| cells[cell].options);
+    let mut kept_options = selected_options;
+    let mut option_gates = Vec::new();
+    for option in WordIndexOption::ALL {
+        let swept = cells.iter().any(|cell| !option.is_baseline(&cell.options));
+        let comparison = match selected_options {
+            _ if !swept => OptionComparison::Unavailable(format!(
+                "the grid does not sweep {}: every cell holds its baseline",
+                option.name()
+            )),
+            None => OptionComparison::Unavailable(
+                "no selection-fold case has file truth to choose a grid cell by".to_string(),
+            ),
+            Some(_) if headline.is_empty() => {
+                OptionComparison::Unavailable("no headline-fold case was evaluated".to_string())
+            }
+            Some(options) if option.is_baseline(&options) => OptionComparison::AtBaseline,
+            Some(options) => match cell_of(&option.reset(options)) {
+                Some(baseline) => OptionComparison::Cells {
+                    selected: selected_cell.unwrap_or_default(),
+                    baseline,
+                },
+                None => OptionComparison::Unavailable(format!(
+                    "the grid has no cell equal to the chosen one with {} at its baseline",
+                    option.name()
+                )),
+            },
+        };
+        let gate = readout::gate_four(
+            headline.as_slice(),
+            option,
+            selected_options.as_ref(),
+            comparison,
+            k,
+        );
+        if gate.status != GateStatus::Passed {
+            kept_options = kept_options.map(|options| option.reset(options));
+        }
+        option_gates.push(gate);
+    }
+    let kept_cell = kept_options.as_ref().and_then(cell_of);
+    let unavailable = match (selected_cell, kept_cell) {
+        (None, _) => Some("no selection-fold case has file truth to choose a grid cell by"),
+        (Some(_), _) if headline.is_empty() => Some("no headline-fold case was evaluated"),
+        (Some(_), None) => Some("the configuration G4 keeps is not a cell of the grid"),
+        (Some(_), Some(_)) => None,
+    };
+    let source = WordIndexSource::Cell(kept_cell.unwrap_or_default());
     let gates = GateReadout {
         scope: "headline_folds".to_string(),
-        word_index_options: selected_cell.map(|cell| cells[cell].options),
+        word_index_options: kept_cell.map(|cell| cells[cell].options),
+        selected_word_index_options: selected_options,
         cases: headline.len(),
-        results: readout::gates(headline.as_slice(), source, k, unavailable),
+        results: readout::gates(headline.as_slice(), source, k, unavailable)
+            .into_iter()
+            .chain(option_gates)
+            .collect(),
     };
     let fold_ids = |range: std::ops::Range<usize>| {
         folds[range]
@@ -990,8 +1126,8 @@ fn sweep(
         selection_rule: "highest word_index mean file recall@k on the selection folds, then mean symbol recall@k, then the earlier cell".to_string(),
         cells,
         selected_cell,
-        headline: selected_cell
-            .map(|_| readout::readout(headline.as_slice(), source, k)),
+        kept_cell,
+        headline: kept_cell.map(|_| readout::readout(headline.as_slice(), source, k)),
     };
     (report, gates)
 }

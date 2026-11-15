@@ -5,6 +5,7 @@ use crate::{DeliveryImport, Provenance, TaskAssociation, TemporalFact};
 use tempfile::TempDir;
 
 mod word_index;
+mod word_index_options;
 
 #[test]
 fn lexical_similarity_is_directional_query_coverage() {

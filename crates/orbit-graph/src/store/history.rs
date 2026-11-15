@@ -105,6 +105,14 @@ pub struct HistorySyncReport {
     pub resume_from: Option<String>,
     /// True only when traversal reached the prior cursor or first parent root.
     pub complete: bool,
+    /// Stored deliveries recorded before line lengths were extracted that
+    /// this operation re-extracted from Git to fill them in (at most `limit`
+    /// per sync).
+    pub line_lengths_backfilled: usize,
+    /// Stored deliveries in this scope still without line lengths: beyond
+    /// this sync's bound, their commits absent from the local clone, or
+    /// their re-extraction no longer matching the stored record.
+    pub line_lengths_missing: usize,
 }
 
 /// Current state of one repository/landing-branch history scope.
@@ -889,6 +897,8 @@ impl HistoryIndex {
                     snapshot_tip: tip.to_string(),
                     resume_from: None,
                     complete: false,
+                    line_lengths_backfilled: 0,
+                    line_lengths_missing: self.missing_line_lengths()?.len(),
                 },
             });
         }
@@ -956,6 +966,8 @@ impl HistoryIndex {
                 snapshot_tip: tip.to_string(),
                 resume_from: None,
                 complete: true,
+                line_lengths_backfilled: 0,
+                line_lengths_missing: 0,
             },
         })
     }
@@ -1169,6 +1181,8 @@ impl HistoryIndex {
                 span_end: symbol.span_end,
                 signature: symbol.signature,
                 parent: symbol.parent_symbol,
+                line_start: None,
+                line_end: None,
             })
             .collect::<Vec<_>>();
         let (status, reason) = match matches.len() {
@@ -1278,6 +1292,9 @@ impl HistoryIndex {
         };
         tx.commit()
             .map_err(|source| GraphError::sqlite("commit history sync", source))?;
+        drop(_lock);
+        let (line_lengths_backfilled, line_lengths_missing) =
+            self.backfill_line_lengths(&repo, limit)?;
         Ok(HistorySyncReport {
             commits_indexed: extracted.len(),
             deliveries_inserted: inserted,
@@ -1286,7 +1303,83 @@ impl HistoryIndex {
             snapshot_tip: snapshot_tip.to_string(),
             resume_from: batch.resume_from.map(|oid| oid.to_string()),
             complete: batch.complete,
+            line_lengths_backfilled,
+            line_lengths_missing,
         })
+    }
+
+    /// Delivery IDs in this scope whose payload predates line lengths.
+    fn missing_line_lengths(&self) -> Result<Vec<String>, GraphError> {
+        if !self.db_path.is_file() {
+            return Ok(Vec::new());
+        }
+        Ok(self
+            .deliveries()?
+            .into_iter()
+            .filter(|change| !has_line_lengths(change.files.as_slice()))
+            .map(|change| change.delivery.delivery_id)
+            .collect())
+    }
+
+    /// Fill in the line lengths of at most `limit` stored deliveries recorded
+    /// before they were extracted, by re-extracting each delivery's recorded
+    /// sides from Git. A delivery whose commits are gone from the local clone,
+    /// or whose re-extraction differs from the stored record in anything but
+    /// the line lengths, is left as it is and counted as missing. Returns the
+    /// deliveries filled and those still missing.
+    fn backfill_line_lengths(
+        &self,
+        repo: &Repository,
+        limit: usize,
+    ) -> Result<(usize, usize), GraphError> {
+        let pending = self
+            .deliveries()?
+            .into_iter()
+            .filter(|change| !has_line_lengths(change.files.as_slice()))
+            .collect::<Vec<_>>();
+        let mut filled = Vec::new();
+        for stored in pending.iter().take(limit) {
+            let Ok(mut fresh) = extract_delivery(repo, stored.delivery.clone()) else {
+                continue;
+            };
+            redact_symbol_signatures(&mut fresh);
+            if without_line_lengths(fresh.files.as_slice())
+                != without_line_lengths(stored.files.as_slice())
+            {
+                continue;
+            }
+            let mut updated = stored.clone();
+            updated.files = fresh.files;
+            filled.push(updated);
+        }
+        if filled.is_empty() {
+            return Ok((0, pending.len()));
+        }
+        let _lock = HistoryLock::acquire(self.db_path.as_path(), "history line-length backfill")?;
+        let mut conn = self.open_connection()?;
+        let tx = conn
+            .transaction_with_behavior(TransactionBehavior::Immediate)
+            .map_err(|source| GraphError::sqlite("begin history line-length backfill", source))?;
+        let mut written = 0;
+        for change in &filled {
+            let payload = serde_json::to_string(change).map_err(|error| {
+                GraphError::invalid_data("encode backfilled history delivery", error.to_string())
+            })?;
+            written += tx
+                .execute(
+                    "UPDATE history_deliveries SET payload_json=?4 WHERE repository=?1 AND landing_branch=?2 AND delivery_id=?3",
+                    params![
+                        self.repository,
+                        self.landing_branch,
+                        change.delivery.delivery_id,
+                        payload
+                    ],
+                )
+                .map_err(|source| GraphError::sqlite("write backfilled history delivery", source))?;
+        }
+        tx.commit()
+            .map_err(|source| GraphError::sqlite("commit history line-length backfill", source))?;
+        Ok((written, pending.len() - written))
     }
 
     fn pending_batch(
@@ -1843,10 +1936,16 @@ fn insert_delivery(
             serde_json::from_str(&existing_payload).map_err(|error| {
                 GraphError::invalid_data("decode existing history delivery", error.to_string())
             })?;
+        // A payload stored before line lengths were extracted matches a fresh
+        // extraction that differs only by them, and takes them on.
+        let backfill = previous.files != change.files
+            && !has_line_lengths(previous.files.as_slice())
+            && without_line_lengths(previous.files.as_slice())
+                == without_line_lengths(change.files.as_slice());
         if before != delivery.before_revision
             || after != delivery.after_revision
             || previous.delivery != change.delivery
-            || previous.files != change.files
+            || (previous.files != change.files && !backfill)
         {
             return Err(GraphError::invalid_data(
                 "deduplicate history delivery",
@@ -1855,6 +1954,9 @@ fn insert_delivery(
                     delivery.delivery_id
                 ),
             ));
+        }
+        if backfill {
+            previous.files.clone_from(&change.files);
         }
         let mut additions = Vec::new();
         for snapshot in &change.supplied_snapshots {
@@ -1876,7 +1978,7 @@ fn insert_delivery(
                 additions.push(snapshot.clone());
             }
         }
-        if !additions.is_empty() {
+        if backfill || !additions.is_empty() {
             previous
                 .supplied_snapshots
                 .extend(additions.iter().cloned());
@@ -2114,6 +2216,41 @@ fn normalize_tasks(tasks: &mut Vec<TaskAssociation>) -> Result<(), GraphError> {
 ///
 /// Names, qualified names, kinds and paths are identifiers and are left
 /// unchanged. A signature with no credential shape is stored as extracted.
+/// Whether every file and changed-symbol side of a delivery carries the line
+/// lengths extracted since they were added to the payload.
+fn has_line_lengths(files: &[FileChange]) -> bool {
+    files.iter().all(|file| {
+        file.before_lines.is_some()
+            && file.after_lines.is_some()
+            && file.symbols.iter().all(|symbol| {
+                [symbol.before.as_ref(), symbol.after.as_ref()]
+                    .into_iter()
+                    .flatten()
+                    .all(|side| side.symbol.line_start.is_some() && side.symbol.line_end.is_some())
+            })
+    })
+}
+
+/// `files` with every line length cleared, to compare a payload recorded
+/// before line lengths with a fresh extraction.
+fn without_line_lengths(files: &[FileChange]) -> Vec<FileChange> {
+    let mut files = files.to_vec();
+    for file in &mut files {
+        file.before_lines = None;
+        file.after_lines = None;
+        for symbol in &mut file.symbols {
+            for side in [symbol.before.as_mut(), symbol.after.as_mut()]
+                .into_iter()
+                .flatten()
+            {
+                side.symbol.line_start = None;
+                side.symbol.line_end = None;
+            }
+        }
+    }
+    files
+}
+
 fn redact_symbol_signatures(change: &mut DeliveredChange) {
     for file in &mut change.files {
         for symbol in &mut file.symbols {

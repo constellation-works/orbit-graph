@@ -11,7 +11,10 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use serde::Serialize;
 
-use crate::{RecommendationLevel, RecommendationVariant, WordIndexOptions};
+use crate::{
+    RecommendationLevel, RecommendationVariant, WordIndexOptions, WordIndexPostingWeight,
+    WordIndexSmoothingUnit,
+};
 
 /// Reciprocal-rank-fusion constant: `score = Σ 1 / (RRF_K + rank)`.
 pub(super) const RRF_K: f64 = 60.0;
@@ -588,6 +591,15 @@ pub struct GateResult {
     /// G2: combinations that beat both the word index and each existing
     /// `recommend` ranking, so both parts would stay.
     pub combinations_beating_both: Vec<EvaluationVariant>,
+    /// G4: the option read, `posting_weight` (with its `smoothing_unit`) or
+    /// `added_weight`; `null` for the other gates.
+    pub option: Option<String>,
+    /// G4: the option's setting in the configuration chosen on the
+    /// selection folds, or `null` without one.
+    pub selected_setting: Option<String>,
+    /// G4: the setting the variant keeps: the selected one when the gate
+    /// passed, the baseline (`presence`, `added_weight` 1) otherwise.
+    pub kept_setting: Option<String>,
 }
 
 /// Gates G1 and G2 over one set of cases.
@@ -596,12 +608,17 @@ pub struct GateReadout {
     /// `all_cases` without a grid; `headline_folds` with one, read on the
     /// selected cell.
     pub scope: String,
-    /// Word-index options the gates were read with.
+    /// Word-index options G1 and G2 were read with: the configuration G4
+    /// keeps (`null` when it is not a grid cell or no cell was chosen).
     pub word_index_options: Option<WordIndexOptions>,
+    /// The configuration chosen on the selection folds, which G4 reads its
+    /// options from; `null` without a grid or a chosen cell.
+    pub selected_word_index_options: Option<WordIndexOptions>,
     /// Cases read.
     pub cases: usize,
-    /// G1 then G2. G3 needs pilot data and G4 option settings this
-    /// evaluation does not have, so neither is reported.
+    /// G1 and G2 on the configuration G4 keeps, then G4 for
+    /// `posting_weight` and for `added_weight`. G3 needs pilot data this
+    /// evaluation does not have, so it is not reported.
     pub results: Vec<GateResult>,
 }
 
@@ -625,6 +642,9 @@ fn unevaluable(gate: &str, reason: String) -> GateResult {
         keep: None,
         alternative: None,
         combinations_beating_both: Vec::new(),
+        option: None,
+        selected_setting: None,
+        kept_setting: None,
     }
 }
 
@@ -719,6 +739,9 @@ fn gate_one(cases: &[&CaseScores], source: WordIndexSource, k: usize) -> GateRes
         keep: None,
         alternative,
         combinations_beating_both: Vec::new(),
+        option: None,
+        selected_setting: None,
+        kept_setting: None,
     }
 }
 
@@ -799,7 +822,195 @@ fn gate_two(cases: &[&CaseScores], source: WordIndexSource, k: usize) -> GateRes
         keep,
         alternative: None,
         combinations_beating_both,
+        option: None,
+        selected_setting: None,
+        kept_setting: None,
     }
+}
+
+/// An option of design §5.4 and §5.5 that gate G4 reads.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum WordIndexOption {
+    /// `posting_weight` with its `smoothing_unit`.
+    PostingWeight,
+    /// `added_weight`.
+    AddedWeight,
+}
+
+impl WordIndexOption {
+    pub(super) const ALL: [Self; 2] = [Self::PostingWeight, Self::AddedWeight];
+
+    pub(super) const fn name(self) -> &'static str {
+        match self {
+            Self::PostingWeight => "posting_weight",
+            Self::AddedWeight => "added_weight",
+        }
+    }
+
+    /// The option's setting in `options`, in words.
+    pub(super) fn setting(self, options: &WordIndexOptions) -> String {
+        match self {
+            Self::PostingWeight if options.posting_weight == WordIndexPostingWeight::Presence => {
+                "presence".to_string()
+            }
+            Self::PostingWeight => format!(
+                "{} with smoothing_unit {}",
+                options.posting_weight.name(),
+                options.smoothing_unit.name()
+            ),
+            Self::AddedWeight => format!("{}", options.added_weight),
+        }
+    }
+
+    /// Whether `options` holds the option's baseline setting.
+    pub(super) fn is_baseline(self, options: &WordIndexOptions) -> bool {
+        match self {
+            Self::PostingWeight => options.posting_weight == WordIndexPostingWeight::Presence,
+            Self::AddedWeight => options.added_weight == 1.0,
+        }
+    }
+
+    /// `options` with this option set back to its baseline.
+    pub(super) fn reset(self, mut options: WordIndexOptions) -> WordIndexOptions {
+        match self {
+            Self::PostingWeight => {
+                options.posting_weight = WordIndexPostingWeight::Presence;
+                options.smoothing_unit = WordIndexSmoothingUnit::Tasks;
+            }
+            Self::AddedWeight => options.added_weight = 1.0,
+        }
+        options
+    }
+}
+
+/// The word index under grid cell `left` minus under cell `right`, per case.
+fn paired_cells(
+    cases: &[&CaseScores],
+    level: RecommendationLevel,
+    left: usize,
+    right: usize,
+    k: usize,
+) -> PairedStats {
+    let differences = cases
+        .iter()
+        .filter_map(|case| {
+            let run = |cell| {
+                case.run(
+                    EvaluationVariant::WordIndex,
+                    level,
+                    WordIndexSource::Cell(cell),
+                )
+            };
+            let left = CaseOutcome::new(case, &run(left), level, k);
+            let right = CaseOutcome::new(case, &run(right), level, k);
+            Some(left.recall()? - right.recall()?)
+        })
+        .collect::<Vec<_>>();
+    PairedStats {
+        cases: differences.len(),
+        mean: mean(differences.as_slice()),
+        interval: bootstrap_interval(differences.as_slice()),
+    }
+}
+
+/// Where gate G4 reads one option.
+pub(super) enum OptionComparison {
+    /// The numbers G4 needs do not exist, for the reason given.
+    Unavailable(String),
+    /// The selected configuration already holds the baseline setting.
+    AtBaseline,
+    /// The selected cell and the cell with the option set back to baseline.
+    Cells { selected: usize, baseline: usize },
+}
+
+/// Gate G4 for one option (design §10.5): the selected configuration minus
+/// the same configuration with the option at its baseline, per case. A
+/// non-baseline setting is kept only if file or symbol recall@10 is higher
+/// with the interval above zero and the other is not lower beyond its
+/// interval.
+pub(super) fn gate_four(
+    cases: &[&CaseScores],
+    option: WordIndexOption,
+    selected: Option<&WordIndexOptions>,
+    comparison: OptionComparison,
+    k: usize,
+) -> GateResult {
+    let baseline = option.reset(WordIndexOptions::default());
+    let mut result = GateResult {
+        gate: "G4".to_string(),
+        status: GateStatus::Unevaluable,
+        reason: String::new(),
+        keep: None,
+        alternative: None,
+        combinations_beating_both: Vec::new(),
+        option: Some(option.name().to_string()),
+        selected_setting: selected.map(|options| option.setting(options)),
+        kept_setting: Some(option.setting(&baseline)),
+    };
+    let comparison = match comparison {
+        OptionComparison::Unavailable(reason) => {
+            result.reason = reason;
+            return result;
+        }
+        _ if k != GATE_K => {
+            result.reason =
+                format!("the gates are defined on recall@{GATE_K}; this corpus scores k = {k}");
+            return result;
+        }
+        comparison => comparison,
+    };
+    let (selected_cell, baseline_cell) = match comparison {
+        OptionComparison::Cells { selected, baseline } => (selected, baseline),
+        _ => {
+            result.status = GateStatus::Failed;
+            result.reason = format!(
+                "the configuration chosen on the selection folds already uses the baseline {} ({}); no other setting is kept",
+                option.name(),
+                option.setting(&baseline)
+            );
+            return result;
+        }
+    };
+    let file = paired_cells(
+        cases,
+        RecommendationLevel::File,
+        selected_cell,
+        baseline_cell,
+        k,
+    );
+    let symbol = paired_cells(
+        cases,
+        RecommendationLevel::Symbol,
+        selected_cell,
+        baseline_cell,
+        k,
+    );
+    let numbers = format!(
+        "selected − baseline {} file recall@{k}: {}; symbol recall@{k}: {}",
+        option.name(),
+        describe(&file),
+        describe(&symbol)
+    );
+    if file.interval.is_none() || symbol.interval.is_none() {
+        result.reason =
+            format!("fewer than two cases with truth to pair at both levels; {numbers}");
+        return result;
+    }
+    let passed =
+        (file.above_zero() && !symbol.below_zero()) || (symbol.above_zero() && !file.below_zero());
+    if passed {
+        result.status = GateStatus::Passed;
+        result.kept_setting.clone_from(&result.selected_setting);
+        result.reason = format!(
+            "the selected setting raises recall with the interval above zero and the other level is not lower beyond its interval; it is kept: {numbers}"
+        );
+    } else {
+        result.status = GateStatus::Failed;
+        result.reason = format!(
+            "neither level is higher with the interval above zero while the other is not lower; the baseline stays and the losing setting's code is removed: {numbers}"
+        );
+    }
+    result
 }
 
 /// 95% percentile-bootstrap interval of the mean of `values`, or `None`

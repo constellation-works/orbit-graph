@@ -61,6 +61,22 @@ Options:
       --max-term-share <MAX_TERM_SHARE>
           word_index: window-stopword share, in (0, 1] (default: 0.3)
 
+      --symbol-first
+          word_index: symbol-first labels with line counts and status
+
+      --posting-weight <POSTING_WEIGHT>
+          word_index: posting weight; non-presence needs --symbol-first (default: presence)
+          
+          [possible values: presence, symbol_fraction, diff_share]
+
+      --smoothing-unit <SMOOTHING_UNIT>
+          word_index: smoothing unit for a weighted posting weight (default: tasks)
+          
+          [possible values: tasks, relative]
+
+      --added-weight <ADDED_WEIGHT>
+          word_index: weight of added contexts, 0 to 1; not 1 needs --symbol-first (default: 1)
+
       --format <MODE>
           Output mode: auto, table, json, or ndjson (default: auto). auto prints a headed table on a terminal but headerless tab-separated rows when piped; use table for a header or json/ndjson for named fields
 

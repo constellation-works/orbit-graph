@@ -6,7 +6,7 @@ use clap::{Args, ValueEnum};
 use orbit_graph::{
     GraphError, HybridTaskHit, RecommendationEngine, RecommendationInput, RecommendationLevel,
     RecommendationRequest, RecommendationVariant, TaskAssociation, WordIndexOptions,
-    WordIndexTextFields,
+    WordIndexPostingWeight, WordIndexSmoothingUnit, WordIndexTextFields,
 };
 
 use serde_json::{Value, json};
@@ -70,6 +70,18 @@ pub struct RecommendCommand {
     /// word_index: window-stopword share, in (0, 1] (default: 0.3).
     #[arg(long)]
     max_term_share: Option<f64>,
+    /// word_index: symbol-first labels with line counts and status.
+    #[arg(long)]
+    symbol_first: bool,
+    /// word_index: posting weight; non-presence needs --symbol-first (default: presence).
+    #[arg(long, value_enum)]
+    posting_weight: Option<PostingWeightArg>,
+    /// word_index: smoothing unit for a weighted posting weight (default: tasks).
+    #[arg(long, value_enum)]
+    smoothing_unit: Option<SmoothingUnitArg>,
+    /// word_index: weight of added contexts, 0 to 1; not 1 needs --symbol-first (default: 1).
+    #[arg(long)]
+    added_weight: Option<f64>,
 }
 
 impl RecommendCommand {
@@ -81,7 +93,11 @@ impl RecommendCommand {
             || self.symbol_boost.is_some()
             || self.min_support.is_some()
             || self.smoothing.is_some()
-            || self.max_term_share.is_some();
+            || self.max_term_share.is_some()
+            || self.symbol_first
+            || self.posting_weight.is_some()
+            || self.smoothing_unit.is_some()
+            || self.added_weight.is_some();
         if !any {
             return None;
         }
@@ -95,6 +111,14 @@ impl RecommendCommand {
             min_support: self.min_support.unwrap_or(defaults.min_support),
             smoothing: self.smoothing.unwrap_or(defaults.smoothing),
             max_term_share: self.max_term_share.unwrap_or(defaults.max_term_share),
+            symbol_first: self.symbol_first,
+            posting_weight: self
+                .posting_weight
+                .map_or(defaults.posting_weight, PostingWeightArg::into_graph),
+            smoothing_unit: self
+                .smoothing_unit
+                .map_or(defaults.smoothing_unit, SmoothingUnitArg::into_graph),
+            added_weight: self.added_weight.unwrap_or(defaults.added_weight),
         })
     }
 
@@ -277,6 +301,42 @@ impl TextFieldsArg {
         match self {
             Self::Title => WordIndexTextFields::Title,
             Self::TitleDescriptionCriteria => WordIndexTextFields::TitleDescriptionCriteria,
+        }
+    }
+}
+
+/// Word-index posting weights, spelled as the `posting_weight` option prints them.
+#[derive(Debug, Clone, Copy, ValueEnum)]
+#[clap(rename_all = "snake_case")]
+enum PostingWeightArg {
+    Presence,
+    SymbolFraction,
+    DiffShare,
+}
+
+impl PostingWeightArg {
+    fn into_graph(self) -> WordIndexPostingWeight {
+        match self {
+            Self::Presence => WordIndexPostingWeight::Presence,
+            Self::SymbolFraction => WordIndexPostingWeight::SymbolFraction,
+            Self::DiffShare => WordIndexPostingWeight::DiffShare,
+        }
+    }
+}
+
+/// Word-index smoothing units, spelled as the `smoothing_unit` option prints them.
+#[derive(Debug, Clone, Copy, ValueEnum)]
+#[clap(rename_all = "snake_case")]
+enum SmoothingUnitArg {
+    Tasks,
+    Relative,
+}
+
+impl SmoothingUnitArg {
+    fn into_graph(self) -> WordIndexSmoothingUnit {
+        match self {
+            Self::Tasks => WordIndexSmoothingUnit::Tasks,
+            Self::Relative => WordIndexSmoothingUnit::Relative,
         }
     }
 }
