@@ -438,6 +438,22 @@ fn is_joiner(ch: char) -> bool {
 ///    English stopwords. Window stopwords are applied by the caller.
 pub(crate) fn terms(text: &str) -> BTreeSet<String> {
     let mut out = BTreeSet::new();
+    each_term(text, &mut |term| {
+        out.insert(term);
+    });
+    out
+}
+
+/// Every term of `text` in order, repeats kept: the same tokeniser as
+/// [`terms`], for consumers that weigh term frequency (the evaluation's BM25
+/// baseline).
+pub(crate) fn term_sequence(text: &str) -> Vec<String> {
+    let mut out = Vec::new();
+    each_term(text, &mut |term| out.push(term));
+    out
+}
+
+fn each_term(text: &str, out: &mut impl FnMut(String)) {
     for raw in text.split(|ch: char| !(ch.is_alphanumeric() || is_joiner(ch))) {
         let token = raw.trim_matches(is_joiner);
         if token.is_empty()
@@ -447,12 +463,11 @@ pub(crate) fn terms(text: &str) -> BTreeSet<String> {
         {
             continue;
         }
-        add_token(token, &mut out);
+        add_token(token, out);
     }
-    out
 }
 
-fn add_token(token: &str, out: &mut BTreeSet<String>) {
+fn add_token(token: &str, out: &mut impl FnMut(String)) {
     let is_path = token.contains('/');
     let token = strip_extension(token, is_path);
     let parts = split_parts(token);
@@ -531,7 +546,7 @@ fn split_parts(token: &str) -> Vec<&str> {
     parts
 }
 
-fn push_term(value: &str, out: &mut BTreeSet<String>) {
+fn push_term(value: &str, out: &mut impl FnMut(String)) {
     let lower = value.to_lowercase();
     if STOPWORDS.contains(&lower.as_str()) || is_number(&lower) || is_hex_run(&lower) {
         return;
@@ -541,7 +556,7 @@ fn push_term(value: &str, out: &mut BTreeSet<String>) {
     if !(2..=40).contains(&length) || STOPWORDS.contains(&folded.as_str()) {
         return;
     }
-    out.insert(folded);
+    out(folded);
 }
 
 /// Fold a trailing plural `s` (`leases` → `lease`), leaving `-ss`, `-us` and

@@ -538,3 +538,30 @@ fn a_task_query_reads_only_the_title_by_default() {
             .any(|item| item.selector == "file:src/parser.rs")
     );
 }
+
+#[test]
+fn term_sequence_keeps_order_and_repeats_of_the_same_terms() {
+    let text = "Renew leases; renew the lease_store. See ORB-12 and src/lease.rs";
+    let sequence = word_index::term_sequence(text);
+    assert_eq!(
+        sequence,
+        [
+            "renew",
+            "lease",
+            "renew",
+            "lease",
+            "store",
+            "lease_store",
+            "see",
+            "src",
+            // A path gives its parts and then its stem.
+            "lease",
+            "lease"
+        ]
+    );
+    assert_eq!(
+        sequence.into_iter().collect::<BTreeSet<_>>(),
+        terms(text),
+        "the sequence holds exactly the tokeniser's terms"
+    );
+}

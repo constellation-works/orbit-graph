@@ -2072,7 +2072,7 @@ fn graph_sync_publishes_structure_that_recommend_applies_at_its_revision() {
 }
 
 #[test]
-fn chronological_evaluation_reports_five_variants_both_levels_and_no_stale_results() {
+fn chronological_evaluation_reports_every_ranking_both_levels_and_no_stale_results() {
     let fixture = evaluation_fixture();
     let repository = fixture.path().canonicalize().expect("canonical fixture");
     let target_revision = git_stdout(fixture.path(), ["rev-parse", "HEAD~2"]);
@@ -2145,7 +2145,7 @@ fn chronological_evaluation_reports_five_variants_both_levels_and_no_stale_resul
     );
     assert_eq!(report["coverage"]["cases_evaluated"], 1);
     assert_eq!(report["coverage"]["cases_excluded"], 0);
-    assert_eq!(report["metrics"].as_array().map(Vec::len), Some(10));
+    assert_eq!(report["metrics"].as_array().map(Vec::len), Some(18));
     let variants = report["metrics"]
         .as_array()
         .expect("metrics")
@@ -2155,11 +2155,15 @@ fn chronological_evaluation_reports_five_variants_both_levels_and_no_stale_resul
     assert_eq!(
         variants,
         std::collections::BTreeSet::from([
+            "bm25_code",
             "combined",
+            "explicit_mentions",
             "frequency",
             "graph_only",
             "task_search_only",
-            "word_index"
+            "word_index",
+            "word_index_bm25_rrf",
+            "word_index_plus_mentions"
         ])
     );
     assert!(
@@ -2281,18 +2285,24 @@ fn chronological_evaluation_reports_five_variants_both_levels_and_no_stale_resul
         .lines()
         .map(|line| serde_json::from_str::<Value>(line).expect("evaluation NDJSON record"))
         .collect::<Vec<_>>();
-    assert_eq!(records.len(), 12);
+    assert_eq!(records.len(), 52);
     assert_eq!(records[0]["record_type"], "evaluation_context");
     assert_eq!(records[0]["context"]["coverage"]["cases_evaluated"], 1);
     assert!(records[0]["context"].get("metrics").is_none());
+    assert!(records[0]["context"].get("paired_differences").is_none());
     assert!(records[0]["context"].get("cases").is_none());
     assert!(
-        records[1..11]
+        records[1..19]
             .iter()
             .all(|record| record["record_type"] == "evaluation_metric")
     );
-    assert_eq!(records[11]["record_type"], "evaluation_case");
-    assert!(records[11]["case"]["truth_coverage"].is_object());
+    assert!(
+        records[19..51]
+            .iter()
+            .all(|record| record["record_type"] == "evaluation_paired_difference")
+    );
+    assert_eq!(records[51]["record_type"], "evaluation_case");
+    assert!(records[51]["case"]["truth_coverage"].is_object());
     let future = run(
         fixture.path(),
         [
@@ -2486,16 +2496,18 @@ fn evaluation_rejects_unverified_pre_cutoff_and_unattested_hybrid_truth() {
     let report: Value = serde_json::from_slice(&output.stdout).expect("evaluation JSON");
     assert_eq!(report["coverage"]["cases_evaluated"], 0);
     // With every case excluded there is no data behind any metric: each one
-    // is null, not a measured 0.0 (STD-02 §R29; schema version 2).
-    assert_eq!(report["schema_version"], 2);
+    // is null, not a measured 0.0 (STD-02 §R29; since schema version 2).
+    assert_eq!(report["schema_version"], 3);
     let metrics = report["metrics"].as_array().expect("metrics");
-    assert_eq!(metrics.len(), 10);
+    assert_eq!(metrics.len(), 18);
     for metric in metrics {
         assert_eq!(metric["cases"], 0, "{metric}");
         assert_eq!(metric["returned"], 0, "{metric}");
         for field in [
             "recall_at_k",
             "precision_at_k",
+            "mean_recall_at_k",
+            "coverage",
             "stale_result_rate",
             "mean_latency_ms",
             "max_latency_ms",
@@ -2525,16 +2537,22 @@ fn evaluation_rejects_unverified_pre_cutoff_and_unattested_hybrid_truth() {
     assert!(human.status.success());
     let human = String::from_utf8_lossy(&human.stdout);
     assert!(human.contains("admission regression cases"));
+    // Metric rows only: the paired-difference table also starts rows with a
+    // variant name, and names its per-case metric.
     let metric_rows = human
         .lines()
-        .filter(|line| line.contains("task_search_only") || line.contains("frequency"))
+        .filter(|line| {
+            let line = line.trim_start();
+            (line.starts_with("task_search_only ") || line.starts_with("frequency "))
+                && !line.contains("_at_k")
+        })
         .collect::<Vec<_>>();
     assert_eq!(metric_rows.len(), 4, "{human}");
     for row in metric_rows {
         assert_eq!(
             row.matches("n/a").count(),
-            4,
-            "recall, precision, stale rate and latency print n/a, not 0.000: {row}"
+            6,
+            "recall, mean recall, precision, coverage, stale rate and latency print n/a, not 0.000: {row}"
         );
         assert!(!row.contains("0.000"), "{row}");
     }

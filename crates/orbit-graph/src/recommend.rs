@@ -32,6 +32,7 @@ pub use word_index::{
     WORD_INDEX_DEFAULT_SMOOTHING, WORD_INDEX_DEFAULT_SYMBOL_BOOST, WORD_INDEX_DEFAULT_WINDOW_SIZE,
     WORD_INDEX_TOKENIZER_VERSION, WordIndexOptions, WordIndexSummary, WordIndexTextFields,
 };
+pub(crate) use word_index::{excluded_path, term_sequence};
 
 /// Default number of ranked destinations returned by recommendation queries.
 pub const DEFAULT_RECOMMENDATION_LIMIT: usize = 10;
@@ -2761,26 +2762,11 @@ fn file_fallback_reason(file: &FileChange) -> String {
     }
 }
 
-fn split_symbol_selector(selector: &str) -> Option<(&str, &str, &str)> {
+pub(crate) fn split_symbol_selector(selector: &str) -> Option<(&str, &str, &str)> {
     let rest = selector.strip_prefix("symbol:")?;
     let (path, symbol_kind) = rest.split_once('#')?;
     let (qualified, kind) = symbol_kind.rsplit_once(':')?;
     Some((path, qualified, kind))
-}
-
-pub(crate) fn selector_is_live_at(
-    repo_root: &Path,
-    revision: &str,
-    selector: &str,
-) -> Result<bool, GraphError> {
-    let repo = Repository::open(repo_root)
-        .map_err(|error| GraphError::git("open selector validation repository", error))?;
-    let oid = Oid::from_str(revision).map_err(git_error("parse selector validation revision"))?;
-    let mut tree = TargetTree::load(&repo, oid)?;
-    if !selector.starts_with("file:") {
-        tree.ensure_symbols(&repo, None)?;
-    }
-    Ok(tree.selector_is_live(selector))
 }
 
 fn git_error(operation: &'static str) -> impl FnOnce(git2::Error) -> GraphError {
