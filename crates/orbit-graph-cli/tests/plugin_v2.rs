@@ -87,7 +87,7 @@ fn installed_v2_plugin_serves_every_tool_over_cli_and_mcp() {
     let serves_delivery = fixture.serves_run_delivery();
     assert!(
         serves_delivery || std::env::var_os(REQUIRE_RUN_DELIVERY_ENV).is_none(),
-        "{REQUIRE_RUN_DELIVERY_ENV} is set, but this Orbit has no orbit.workflow.run.delivery"
+        "{REQUIRE_RUN_DELIVERY_ENV} is set, but this Orbit's orbit.task.show does not serve field delivery"
     );
     if serves_delivery {
         // The host records a landed run and an unlanded one for the task. The
@@ -206,7 +206,7 @@ fn assert_hybrid_search(value: &Value) {
 }
 
 /// Set to fail, rather than narrow, the delivered-run proof on an Orbit that
-/// does not serve `orbit.workflow.run.delivery`.
+/// does not serve `orbit.task.show` with `field: "delivery"`.
 const REQUIRE_RUN_DELIVERY_ENV: &str = "ORBIT_GRAPH_TEST_REQUIRE_RUN_DELIVERY";
 
 /// Runs the host records for the fixture task.
@@ -263,12 +263,7 @@ fn assert_delivery_sync(value: &Value, task_id: &str, serves_delivery: bool, lan
     assert_eq!(value["coverage"]["failed"], 1, "{value}");
     assert_eq!(
         value["authority"]["interfaces"],
-        json!([
-            "orbit.workspace.list",
-            "orbit.task.show",
-            "orbit.workflow.run.delivery",
-            "git"
-        ]),
+        json!(["orbit.workspace.list", "orbit.task.show", "git"]),
         "{value}"
     );
     let landed = &value["outcomes"][0];
@@ -301,7 +296,7 @@ fn assert_delivery_sync(value: &Value, task_id: &str, serves_delivery: bool, lan
         "{value}"
     );
     assert_eq!(
-        foreign["error"]["orbit"]["tool"], "orbit.workflow.run.delivery",
+        foreign["error"]["orbit"]["tool"], "orbit.task.show",
         "{value}"
     );
     assert_eq!(value["status"]["verified_deliveries"], 1, "{value}");
@@ -666,14 +661,15 @@ impl Fixture {
             .expect("record the host run");
     }
 
-    /// Whether this Orbit serves the public task-scoped delivery read.
+    /// Whether this Orbit serves delivery evidence on `orbit.task.show`.
     fn serves_run_delivery(&self) -> bool {
-        self.command()
-            .args(["tool", "show", "orbit.workflow.run.delivery"])
+        let output = self
+            .command()
+            .args(["tool", "show", "orbit.task.show"])
             .output()
-            .expect("look up orbit.workflow.run.delivery")
-            .status
-            .success()
+            .expect("look up orbit.task.show");
+        output.status.success()
+            && String::from_utf8_lossy(&output.stdout).contains("field: \"delivery\"")
     }
 
     /// Point the task's current run at `run_id` through Orbit's own update.

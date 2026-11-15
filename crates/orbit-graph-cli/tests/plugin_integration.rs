@@ -3203,10 +3203,7 @@ fn public_adapter_enforces_callback_denials() {
     let error = &sync["outcomes"][0]["error"];
     assert_eq!(error["code"], "orbit_refused", "{sync}");
     assert_eq!(error["orbit"]["code"], "policy_denied", "{sync}");
-    assert_eq!(
-        error["orbit"]["tool"], "orbit.workflow.run.delivery",
-        "{sync}"
-    );
+    assert_eq!(error["orbit"]["tool"], "orbit.task.show", "{sync}");
     assert_eq!(error["retryable"], false, "{sync}");
     assert_eq!(sync["coverage"]["failed"], 1, "{sync}");
     assert_eq!(sync["coverage"]["excluded"], 0, "{sync}");
@@ -3227,13 +3224,10 @@ fn orbit_sync_preserves_diagnostic_prefixed_structured_refusals() {
         let error = &sync["outcomes"][0]["error"];
         assert_eq!(error["code"], "orbit_refused", "{sync}");
         assert_eq!(error["orbit"]["code"], "capability_denied", "{sync}");
-        assert_eq!(
-            error["orbit"]["tool"], "orbit.workflow.run.delivery",
-            "{sync}"
-        );
+        assert_eq!(error["orbit"]["tool"], "orbit.task.show", "{sync}");
         assert_eq!(
             error["message"],
-            "orbit.workflow.run.delivery refused: capability_denied: orbit_tools grant required",
+            "orbit.task.show refused: capability_denied: orbit_tools grant required",
             "{sync}"
         );
         assert_eq!(error["retryable"], false, "{sync}");
@@ -3713,12 +3707,7 @@ fn orbit_sync_imports_only_host_landed_deliveries_and_excludes_every_other_statu
     );
     assert_eq!(
         sync["authority"]["interfaces"],
-        json!([
-            "orbit.workspace.list",
-            "orbit.task.show",
-            "orbit.workflow.run.delivery",
-            "git"
-        ]),
+        json!(["orbit.workspace.list", "orbit.task.show", "git"]),
         "{sync}"
     );
     let stored = fixture.stored().expect("landed delivery");
@@ -3726,7 +3715,7 @@ fn orbit_sync_imports_only_host_landed_deliveries_and_excludes_every_other_statu
     assert_eq!(stored.delivery.after_revision, fixture.after);
     assert_eq!(
         stored.delivery.source.system,
-        "orbit.workflow.run.delivery+git"
+        "orbit.task.show.delivery+git"
     );
     assert_eq!(
         stored.delivery.delivered_at.status,
@@ -3739,7 +3728,7 @@ fn orbit_sync_imports_only_host_landed_deliveries_and_excludes_every_other_statu
     );
     assert_eq!(
         stored.delivery.delivered_at.source.system,
-        "orbit.workflow.run.delivery.landing.observed_at"
+        "orbit.task.show.delivery.landing.observed_at"
     );
 }
 
@@ -3809,7 +3798,7 @@ fn orbit_sync_reports_malformed_or_foreign_delivery_answers_as_failed() {
     assert_eq!(outcome["error"]["code"], "orbit_refused", "{sync}");
     assert_eq!(outcome["error"]["orbit"]["code"], "invalid_input", "{sync}");
     assert_eq!(
-        outcome["error"]["orbit"]["tool"], "orbit.workflow.run.delivery",
+        outcome["error"]["orbit"]["tool"], "orbit.task.show",
         "{sync}"
     );
 }
@@ -5261,7 +5250,7 @@ fn adapter_fixture() -> TempDir {
     let linger = fixture.path().join("linger.pid");
     // GRAPH_TEST_DISCOVERY selects the MCP server's behaviour (granted, denied
     // by the callback allowlist, refused before serving, lingering after EOF,
-    // or `github`: ws-test registered with FIXTURE_GITHUB_REMOTE). `orbit.workflow.run.delivery` answers RUN-1 for TASK-PRIOR with
+    // or `github`: ws-test registered with FIXTURE_GITHUB_REMOTE). `orbit.task.show` with `field: "delivery"` answers RUN-1 for TASK-PRIOR with
     // GRAPH_TEST_DELIVERY_FILE's JSON when set, else a local landing of the
     // fixture's delivery commit, and refuses every other pair as Orbit does;
     // GRAPH_TEST_DELIVERY=denied models a callback-allowlist refusal and
@@ -5271,7 +5260,7 @@ fn adapter_fixture() -> TempDir {
     // TASK-MISSING is always refused as `task_not_found`.
     let delivery_denied = json!({
         "code": "policy_denied",
-        "error": "plugin graph may not call orbit.workflow.run.delivery: not in permissions.orbit_tools"
+        "error": "plugin graph may not call orbit.task.show: not in permissions.orbit_tools"
     });
     let foreign_pair = json!({
         "code": "invalid_input",
@@ -5317,7 +5306,7 @@ case "$*" in
       printf '%s' "$$" > "{linger}"
       exec sleep {stuck}
     fi ;;
-  *"tool run orbit.workflow.run.delivery"*)
+  *"tool run orbit.task.show"*'"field":"delivery"'*)
     if [ -n "$GRAPH_TEST_TMPDIR_LOG" ]; then
       printf '%s\n' "$TMPDIR" >> "$GRAPH_TEST_TMPDIR_LOG"
     fi
@@ -5330,12 +5319,18 @@ case "$*" in
       exit 1
     fi
     case "$*" in
-      *'"run_id":"RUN-1","task_id":"TASK-PRIOR"'*)
-        if [ -n "$GRAPH_TEST_DELIVERY_FILE" ]; then
-          cat "$GRAPH_TEST_DELIVERY_FILE"
-        else
-          printf '%s\n' '{delivery}'
-        fi ;;
+      *'"id":"TASK-PRIOR"'*)
+        case "$*" in
+          *'"run_id":"RUN-1"'*)
+            if [ -n "$GRAPH_TEST_DELIVERY_FILE" ]; then
+              cat "$GRAPH_TEST_DELIVERY_FILE"
+            else
+              printf '%s\n' '{delivery}'
+            fi ;;
+          *)
+            printf '%s\n' '{foreign_pair}' >&2
+            exit 1 ;;
+        esac ;;
       *)
         printf '%s\n' '{foreign_pair}' >&2
         exit 1 ;;
@@ -5400,7 +5395,7 @@ esac
 const FIXTURE_REPOSITORY_IDENTITY: &str =
     "git:67de2f4554f73ccb49730c868722d8d7f238ce6ba0d68dcb4a94ac03a73d6d81";
 
-/// An `orbit.workflow.run.delivery` schema 1 answer for RUN-1 and TASK-PRIOR:
+/// An `orbit.task.show` `field: "delivery"` schema 1 answer for RUN-1 and TASK-PRIOR:
 /// a host commit of `before..after` landed by a local fast-forward, which
 /// records no landed SHA.
 fn fixture_run_delivery(before: &str, after: &str) -> Value {
