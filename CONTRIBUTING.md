@@ -97,3 +97,22 @@ library target. In-crate test modules live in a `tests/` directory with a
 
 When recovering more historical code, update `PROVENANCE.md` with an immutable
 commit, original path, license, and the exact adaptation boundary.
+
+For shared agent-evaluation or warm-batch changes, also run the installed-plugin
+fake-provider suites. Build the real executable first and use the SHA-256-pinned
+Orbit release from CI in a private scratch directory (no global install):
+
+```sh
+AGENT_EVAL_ORBIT=/absolute/path/to/pinned/orbit \
+AGENT_EVAL_ORBIT_GRAPH="$PWD/target/debug/orbit-graph" \
+  python3 -B -m unittest discover -s scripts/agent-eval/tests -v
+AGENT_EVAL_ORBIT=/absolute/path/to/pinned/orbit \
+AGENT_EVAL_ORBIT_GRAPH="$PWD/target/debug/orbit-graph" \
+  python3 -B -m unittest discover -s evals/warm-navigation-v1 -p 'test_*.py' -v
+```
+
+These qualify mechanics using a real private installed plugin, without model
+network calls. Nested sandbox tests report missing capabilities visibly; the
+root's strict qualification uses `WARM_REQUIRE_STRICT=1` and fails instead of
+skipping. Root owns strict/actual-client rehearsal and later study admission;
+see [the proposed warm protocol](evals/warm-navigation-v1/PROTOCOL.md).

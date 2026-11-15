@@ -1,0 +1,8 @@
+{
+  "schema_version": 1,
+  "purpose": "test-only source fixtures; authored before candidate queries; never a study corpus",
+  "files": {
+    "fixtures/edited/src/lib.rs": "080592237b4e619c3bf2821b060768f7581eb75e402f5b1d15a5bf4e71a225e0",
+    "fixtures/initial/src/lib.rs": "b578c4d34883254fec97f27b14d80234361f82c58a219ae8cc4d30de0637c4ae"
+  }
+}

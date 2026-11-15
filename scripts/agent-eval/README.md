@@ -877,3 +877,11 @@ The independent stage runs only after a sealed capture. See
 [`evals/patch-effectiveness-v1/README.md`](../../evals/patch-effectiveness-v1/README.md)
 for qualification, exact freeze/run/evaluate/score commands and limitations.
 Historical navigation requests and captures retain their original contracts.
+
+Prospective warm navigation uses request schema 5 / runner 8 and
+`installed-plugin-warm-batch-v1`, through `run-batch`. It keeps declared private
+product state across a frozen ordered batch while each provider session and
+runtime stays fresh. It is separate from cold profiles and schema-4 patch
+submission. [Warm navigation v1](../../evals/warm-navigation-v1/README.md)
+documents source-only qualification, pre-output freeze, original all-slot
+replay/scoring, strict root rehearsal and the proposed-only admission boundary.

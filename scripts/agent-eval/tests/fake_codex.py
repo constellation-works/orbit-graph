@@ -264,7 +264,8 @@ def run_exec(options, script):
     if marker:
         with open(marker, "w") as stream:
             stream.write("exec started\n")
-    sys.stdin.read()
+    prompt = sys.stdin.read()
+    script = dict(script, **script.get("slot_scripts", {}).get(prompt, {}))
     server = "mcp_servers.eval_broker"
     client = Client(options["config"][f"{server}.command"], options["config"][f"{server}.args"])
     emit({"type": "thread.started", "thread_id": "fake-thread"})
@@ -306,6 +307,16 @@ def run_exec(options, script):
         elif "emit_raw" in step:
             sys.stdout.write(step["emit_raw"] + ("\n" if step.get("newline", True) else ""))
             sys.stdout.flush()
+        elif "signal_parent" in step:
+            os.kill(os.getppid(), signal.SIGTERM)
+        elif "write_state" in step:
+            with open(client.config_path) as stream:
+                config = json.load(stream)
+            from pathlib import Path
+            root = Path(config["plugin"]["home"])
+            target = root / step["write_state"]["path"]
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_text(step["write_state"]["text"])
         elif "sleep" in step:
             time.sleep(step["sleep"])
         elif "spawn_sleeper" in step:

@@ -64,6 +64,13 @@ def check_treatment(artifact):
             "treatment context hash differs")
     require("developer_instructions=" + json.dumps(context) in artifact["provider"]["argv"],
             "provider did not receive the declared skill context")
+    if request["schema_version"] == 5 and artifact["warm"]["installation_reused"]:
+        require(treatment["setup"] == [] and treatment["install_ms"] == 0
+                and artifact["setup_output_bytes"] == treatment["setup_output_bytes"] == 0
+                and artifact["timing"]["plugin_install_ms"] == 0
+                and treatment["binary_staging_bytes"] == 0, "reused installation costs differ")
+        require(treatment["index_setup"] == "agent-choice-batch", "warm index policy differs")
+        return
     records = treatment["setup"]
     require([r["role"] for r in records] == ["verify-plugin-commit", "export-plugin", "workspace-init", "plugin-add",
                                             "plugin-enable", "tools-list", "maintenance-authority-negative"],
@@ -81,17 +88,18 @@ def check_treatment(artifact):
     measured = sum(len(r["stdout"].encode()) + len(r["stderr"].encode()) for r in records)
     require(measured == treatment["setup_output_bytes"] == artifact["setup_output_bytes"]
             and measured <= request["setup_limits"]["output_bytes"], "setup output budget differs")
-    require(treatment["index_setup"] == "agent-choice-cold", "index was prewarmed")
+    require(treatment["index_setup"] == ("agent-choice-batch" if request["schema_version"] == 5
+                                               else "agent-choice-cold"), "index policy differs")
 
 
 def load_episode(directory, diagnostic=False):
     directory = Path(directory)
     artifact = runner.load_json(directory / "episode.json", 64 * 1024 * 1024)
     version = artifact.get("schema_version")
-    prospective = version in (3, 4)
+    prospective = version in (3, 4, 5)
     require(type(version) is int and version in plugin.PROFILES and artifact.get("kind") == plugin.RAW_KIND
             and artifact.get("profile") == plugin.PROFILES[version], "not a supported installed-plugin capture")
-    require((prospective and artifact.get("runner_version") == ("7" if version == 4 else "6")
+    require((prospective and artifact.get("runner_version") == ("8" if version == 5 else "7" if version == 4 else "6")
              and artifact.get("lifecycle_contract") == runner.LIFECYCLE_CONTRACTS["6"])
             or (not prospective and "telemetry" not in artifact and
                 ((artifact.get("runner_version") == "2" and "lifecycle_contract" not in artifact)
@@ -119,7 +127,8 @@ def load_episode(directory, diagnostic=False):
                 and (directory / name).stat().st_size == record["bytes"], "capture file hash/size differs")
         require(record["redactions"] == 0, "redacted capture cannot establish exact provenance")
     isolation = artifact["isolation"]
-    require(isolation["cold_start"] is True, "episode reused graph state")
+    if version != 5:
+        require(isolation["cold_start"] is True, "episode reused graph state")
     if not diagnostic:
         require(all(type(v) is int and v > 0 for v in artifact["resource_limits"].values())
                 and set(artifact["resource_limits"]) == {"memory.max", "pids.max"},
@@ -191,7 +200,7 @@ def load_episode(directory, diagnostic=False):
 
 def replay(plan, directories, diagnostic=False):
     require(set(plan) == {"schema_version", "profile", "model", "provider_binary_sha256", "harness", "requests"}
-            and type(plan["schema_version"]) is int and plan["schema_version"] in plugin.PROFILES
+            and type(plan["schema_version"]) is int and plan["schema_version"] in (2, 3, 4)
             and plan["profile"] == plugin.PROFILES[plan["schema_version"]],
             "unsupported preregistration contract")
     episodes = [load_episode(directory, diagnostic) for directory in directories]
