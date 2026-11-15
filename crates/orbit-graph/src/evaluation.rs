@@ -15,6 +15,7 @@ use crate::{
     DeliveryEvidence, DeliveryImport, Graph, GraphError, HistoryIndex, HybridTaskHit, Provenance,
     RecommendationEngine, RecommendationInput, RecommendationLevel, RecommendationRequest,
     RecommendationVariant, SyncMode, SyncPolicy, TaskAssociation, TemporalFact, TemporalStatus,
+    WordIndexOptions,
 };
 
 /// Version of the chronological evaluation report JSON contract.
@@ -51,6 +52,11 @@ pub struct EvaluationCorpus {
     pub training_deliveries: Vec<DeliveryImport>,
     /// Chronologically held-out prospective cases.
     pub cases: Vec<EvaluationCase>,
+    /// Parameters of the `word_index` variant for every case. Omitted, the
+    /// design's defaults apply (title text, window 4,000, boost 1.5,
+    /// min_support 2, smoothing 1, window-stopword share 0.3).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub word_index: Option<WordIndexOptions>,
 }
 
 /// One prospective task observation paired with later verified Git truth.
@@ -99,6 +105,8 @@ pub struct EvaluationReport {
     pub corpus_digest: String,
     /// Declared collection completeness and limitations.
     pub coverage: EvaluationCoverage,
+    /// Parameters the `word_index` rows were scored with.
+    pub word_index_options: WordIndexOptions,
     /// One row for every ranking variant and destination level.
     pub metrics: Vec<EvaluationMetrics>,
     /// Per-case admission or exclusion evidence.
@@ -208,7 +216,11 @@ struct MetricAccumulator {
     latency_micros: Vec<u128>,
 }
 
-/// Evaluate all four ranking variants without importing held-out deliveries.
+/// Evaluate all five ranking variants without importing held-out deliveries.
+///
+/// Every variant, `word_index` included, ranks from the case's isolated
+/// history index under the case's strict cutoff, so only deliveries landed
+/// before the cutoff contribute evidence.
 pub fn evaluate_corpus(
     repo_root: &Path,
     corpus: &EvaluationCorpus,
@@ -283,6 +295,8 @@ pub fn evaluate_corpus(
                             hybrid_hits: case.hybrid_hits.clone(),
                             commit_text_weight: None,
                             commit_text_exponent: None,
+                            word_index: (variant == RecommendationVariant::WordIndex)
+                                .then(|| corpus.word_index.unwrap_or_default()),
                         })?;
                         if matches!(
                             variant,
@@ -378,6 +392,7 @@ pub fn evaluate_corpus(
         evaluated_at_revision: revision,
         source: corpus.source.clone(),
         corpus_digest: digest,
+        word_index_options: corpus.word_index.unwrap_or_default(),
         coverage: EvaluationCoverage {
             source_complete: corpus.complete,
             note: corpus.coverage_note.clone(),
@@ -419,6 +434,9 @@ fn validate_corpus(corpus: &EvaluationCorpus) -> Result<(), GraphError> {
             "corpus",
             "repository, landing_branch, source.system, and 1..=100 k are required",
         ));
+    }
+    if let Some(options) = corpus.word_index.as_ref() {
+        options.validate()?;
     }
     Ok(())
 }
@@ -628,12 +646,13 @@ fn increment(counts: &mut BTreeMap<String, usize>, reason: &str) {
     *counts.entry(reason.to_string()).or_default() += 1;
 }
 
-fn variants() -> [RecommendationVariant; 4] {
+fn variants() -> [RecommendationVariant; 5] {
     [
         RecommendationVariant::Combined,
         RecommendationVariant::TaskSearchOnly,
         RecommendationVariant::GraphOnly,
         RecommendationVariant::Frequency,
+        RecommendationVariant::WordIndex,
     ]
 }
 
@@ -647,6 +666,7 @@ fn variant_key(variant: RecommendationVariant) -> u8 {
         RecommendationVariant::TaskSearchOnly => 1,
         RecommendationVariant::GraphOnly => 2,
         RecommendationVariant::Frequency => 3,
+        RecommendationVariant::WordIndex => 4,
     }
 }
 
@@ -663,6 +683,7 @@ fn variant_name(variant: RecommendationVariant) -> &'static str {
         RecommendationVariant::TaskSearchOnly => "task_search_only",
         RecommendationVariant::GraphOnly => "graph_only",
         RecommendationVariant::Frequency => "frequency",
+        RecommendationVariant::WordIndex => "word_index",
     }
 }
 

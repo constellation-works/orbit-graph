@@ -2072,7 +2072,7 @@ fn graph_sync_publishes_structure_that_recommend_applies_at_its_revision() {
 }
 
 #[test]
-fn chronological_evaluation_reports_four_variants_both_levels_and_no_stale_results() {
+fn chronological_evaluation_reports_five_variants_both_levels_and_no_stale_results() {
     let fixture = evaluation_fixture();
     let repository = fixture.path().canonicalize().expect("canonical fixture");
     let target_revision = git_stdout(fixture.path(), ["rev-parse", "HEAD~2"]);
@@ -2145,7 +2145,7 @@ fn chronological_evaluation_reports_four_variants_both_levels_and_no_stale_resul
     );
     assert_eq!(report["coverage"]["cases_evaluated"], 1);
     assert_eq!(report["coverage"]["cases_excluded"], 0);
-    assert_eq!(report["metrics"].as_array().map(Vec::len), Some(8));
+    assert_eq!(report["metrics"].as_array().map(Vec::len), Some(10));
     let variants = report["metrics"]
         .as_array()
         .expect("metrics")
@@ -2158,7 +2158,8 @@ fn chronological_evaluation_reports_four_variants_both_levels_and_no_stale_resul
             "combined",
             "frequency",
             "graph_only",
-            "task_search_only"
+            "task_search_only",
+            "word_index"
         ])
     );
     assert!(
@@ -2180,6 +2181,57 @@ fn chronological_evaluation_reports_four_variants_both_levels_and_no_stale_resul
         "{:#}",
         report["metrics"]
     );
+    // word_index rows use the design's defaults unless the corpus sets them.
+    assert_eq!(report["word_index_options"]["text_fields"], "title");
+    assert_eq!(report["word_index_options"]["window_size"], 4000);
+    assert_eq!(report["word_index_options"]["symbol_boost"], 1.5);
+    let tuned_path = fixture.path().join("evaluation-word-index.json");
+    let mut tuned = corpus.clone();
+    tuned["word_index"] = json!({"text_fields": "title_description_criteria", "min_support": 1});
+    fs::write(
+        &tuned_path,
+        serde_json::to_vec_pretty(&tuned).expect("encode tuned corpus"),
+    )
+    .expect("write tuned corpus");
+    let tuned_output = run(
+        fixture.path(),
+        ["evaluate", "--input", tuned_path.to_string_lossy().as_ref()],
+    );
+    assert!(
+        tuned_output.status.success(),
+        "tuned evaluation failed: {}",
+        String::from_utf8_lossy(&tuned_output.stderr)
+    );
+    let tuned_report: Value =
+        serde_json::from_slice(&tuned_output.stdout).expect("tuned evaluation JSON");
+    assert_eq!(
+        tuned_report["word_index_options"]["text_fields"],
+        "title_description_criteria"
+    );
+    assert_eq!(tuned_report["word_index_options"]["min_support"], 1);
+    assert_eq!(tuned_report["word_index_options"]["smoothing"], 1.0);
+    assert!(
+        tuned_report["metrics"]
+            .as_array()
+            .expect("tuned metrics")
+            .iter()
+            .filter(|metric| metric["variant"] == "word_index")
+            .all(|metric| metric["cases"] == 1),
+        "{:#}",
+        tuned_report["metrics"]
+    );
+    tuned["word_index"] = json!({"window_size": 0});
+    fs::write(
+        &tuned_path,
+        serde_json::to_vec_pretty(&tuned).expect("encode invalid corpus"),
+    )
+    .expect("write invalid corpus");
+    let invalid = run(
+        fixture.path(),
+        ["evaluate", "--input", tuned_path.to_string_lossy().as_ref()],
+    );
+    assert!(!invalid.status.success(), "a zero window must be refused");
+    assert!(String::from_utf8_lossy(&invalid.stderr).contains("window_size"));
     let status = run(fixture.path(), ["history", "status", "--branch", "main"]);
     assert!(status.status.success());
     let status: Value = serde_json::from_slice(&status.stdout).expect("history status JSON");
@@ -2229,18 +2281,18 @@ fn chronological_evaluation_reports_four_variants_both_levels_and_no_stale_resul
         .lines()
         .map(|line| serde_json::from_str::<Value>(line).expect("evaluation NDJSON record"))
         .collect::<Vec<_>>();
-    assert_eq!(records.len(), 10);
+    assert_eq!(records.len(), 12);
     assert_eq!(records[0]["record_type"], "evaluation_context");
     assert_eq!(records[0]["context"]["coverage"]["cases_evaluated"], 1);
     assert!(records[0]["context"].get("metrics").is_none());
     assert!(records[0]["context"].get("cases").is_none());
     assert!(
-        records[1..9]
+        records[1..11]
             .iter()
             .all(|record| record["record_type"] == "evaluation_metric")
     );
-    assert_eq!(records[9]["record_type"], "evaluation_case");
-    assert!(records[9]["case"]["truth_coverage"].is_object());
+    assert_eq!(records[11]["record_type"], "evaluation_case");
+    assert!(records[11]["case"]["truth_coverage"].is_object());
     let future = run(
         fixture.path(),
         [
@@ -2264,6 +2316,46 @@ fn chronological_evaluation_reports_four_variants_both_levels_and_no_stale_resul
             .as_array()
             .is_some_and(Vec::is_empty),
         "future task and delivery evidence leaked across the cutoff: {future}"
+    );
+    let future_words = run(
+        fixture.path(),
+        [
+            "recommend",
+            "--query",
+            "future_secret",
+            "--variant",
+            "word_index",
+            "--min-support",
+            "1",
+            "--max-term-share",
+            "1",
+            "--revision",
+            "HEAD",
+            "--cutoff",
+            "unix:20",
+            "--branch",
+            "main",
+        ],
+    );
+    assert!(
+        future_words.status.success(),
+        "{}",
+        String::from_utf8_lossy(&future_words.stderr)
+    );
+    let future_words: Value =
+        serde_json::from_slice(&future_words.stdout).expect("future word-index JSON");
+    assert!(
+        future_words["recommendations"]
+            .as_array()
+            .is_some_and(Vec::is_empty),
+        "a delivery after the cutoff reached the word index: {future_words}"
+    );
+    // The operational index holds only the held-out delivery, landed after
+    // the cutoff, so the window is empty.
+    assert_eq!(future_words["word_index"]["window_tasks"], 0);
+    assert_eq!(
+        future_words["word_index"]["empty_reason"],
+        "no_window_tasks"
     );
 }
 
@@ -2397,7 +2489,7 @@ fn evaluation_rejects_unverified_pre_cutoff_and_unattested_hybrid_truth() {
     // is null, not a measured 0.0 (STD-02 §R29; schema version 2).
     assert_eq!(report["schema_version"], 2);
     let metrics = report["metrics"].as_array().expect("metrics");
-    assert_eq!(metrics.len(), 8);
+    assert_eq!(metrics.len(), 10);
     for metric in metrics {
         assert_eq!(metric["cases"], 0, "{metric}");
         assert_eq!(metric["returned"], 0, "{metric}");

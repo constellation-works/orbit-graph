@@ -5,7 +5,8 @@ use clap::{Args, ValueEnum};
 
 use orbit_graph::{
     GraphError, HybridTaskHit, RecommendationEngine, RecommendationInput, RecommendationLevel,
-    RecommendationRequest, RecommendationVariant, TaskAssociation,
+    RecommendationRequest, RecommendationVariant, TaskAssociation, WordIndexOptions,
+    WordIndexTextFields,
 };
 
 use serde_json::{Value, json};
@@ -51,9 +52,52 @@ pub struct RecommendCommand {
     /// JSON file containing an array of externally ranked hybrid task hits.
     #[arg(long)]
     hybrid_hits: Option<PathBuf>,
+    /// word_index: task text indexed and queried (default: title).
+    #[arg(long, value_enum)]
+    text_fields: Option<TextFieldsArg>,
+    /// word_index: newest eligible deliveries in the window (default: 4000).
+    #[arg(long)]
+    window_size: Option<usize>,
+    /// word_index: symbol boost b, at least 1 (default: 1.5).
+    #[arg(long)]
+    symbol_boost: Option<f64>,
+    /// word_index: smallest posting that scores, at least 1 (default: 2).
+    #[arg(long)]
+    min_support: Option<usize>,
+    /// word_index: smoothing constant, greater than 0 (default: 1).
+    #[arg(long)]
+    smoothing: Option<f64>,
+    /// word_index: window-stopword share, in (0, 1] (default: 0.3).
+    #[arg(long)]
+    max_term_share: Option<f64>,
 }
 
 impl RecommendCommand {
+    /// Options when any word-index flag is set; the library rejects them
+    /// for any other variant.
+    fn word_index_options(&self) -> Option<WordIndexOptions> {
+        let any = self.text_fields.is_some()
+            || self.window_size.is_some()
+            || self.symbol_boost.is_some()
+            || self.min_support.is_some()
+            || self.smoothing.is_some()
+            || self.max_term_share.is_some();
+        if !any {
+            return None;
+        }
+        let defaults = WordIndexOptions::default();
+        Some(WordIndexOptions {
+            text_fields: self
+                .text_fields
+                .map_or(defaults.text_fields, TextFieldsArg::into_graph),
+            window_size: self.window_size.unwrap_or(defaults.window_size),
+            symbol_boost: self.symbol_boost.unwrap_or(defaults.symbol_boost),
+            min_support: self.min_support.unwrap_or(defaults.min_support),
+            smoothing: self.smoothing.unwrap_or(defaults.smoothing),
+            max_term_share: self.max_term_share.unwrap_or(defaults.max_term_share),
+        })
+    }
+
     pub(crate) fn run(&self, context: &CommandContext) -> Result<serde_json::Value, CliError> {
         let input = match (&self.query, &self.task_id) {
             (Some(query), None) => RecommendationInput::Query(query.clone()),
@@ -97,6 +141,7 @@ impl RecommendCommand {
             hybrid_hits,
             commit_text_weight: None,
             commit_text_exponent: None,
+            word_index: self.word_index_options(),
         };
         let engine = RecommendationEngine::open(context.worktree_root(), self.branch.as_str())?;
         json_value(engine.recommend(&request)?)
@@ -204,6 +249,7 @@ enum VariantArg {
     #[value(alias = "graph-only")]
     GraphOnly,
     Frequency,
+    WordIndex,
 }
 
 impl VariantArg {
@@ -213,6 +259,24 @@ impl VariantArg {
             Self::TaskSearchOnly => RecommendationVariant::TaskSearchOnly,
             Self::GraphOnly => RecommendationVariant::GraphOnly,
             Self::Frequency => RecommendationVariant::Frequency,
+            Self::WordIndex => RecommendationVariant::WordIndex,
+        }
+    }
+}
+
+/// Word-index text sources, spelled as the `text_fields` option prints them.
+#[derive(Debug, Clone, Copy, ValueEnum)]
+#[clap(rename_all = "snake_case")]
+enum TextFieldsArg {
+    Title,
+    TitleDescriptionCriteria,
+}
+
+impl TextFieldsArg {
+    fn into_graph(self) -> WordIndexTextFields {
+        match self {
+            Self::Title => WordIndexTextFields::Title,
+            Self::TitleDescriptionCriteria => WordIndexTextFields::TitleDescriptionCriteria,
         }
     }
 }

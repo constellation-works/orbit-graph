@@ -20,7 +20,7 @@ use std::time::{Duration, Instant};
 #[cfg(unix)]
 use std::os::fd::{FromRawFd, OwnedFd};
 
-use serde_json::Value;
+use serde_json::{Value, json};
 use tempfile::TempDir;
 
 use orbit_graph::{
@@ -314,6 +314,7 @@ fn every_printed_variant_level_confidence_and_kind_token_is_accepted_back() {
         RecommendationVariant::TaskSearchOnly,
         RecommendationVariant::GraphOnly,
         RecommendationVariant::Frequency,
+        RecommendationVariant::WordIndex,
     ]);
     let mut levels = tokens([RecommendationLevel::File, RecommendationLevel::Symbol]);
     let mut confidences = tokens([
@@ -750,6 +751,79 @@ fn fixture_repository() -> TempDir {
 }
 
 /// A committed, synced fixture with an empty history index.
+#[test]
+fn word_index_recommendations_echo_their_options_and_explain_an_empty_answer() {
+    let fixture = synced_fixture();
+    let document = json(
+        fixture.path(),
+        &[
+            "recommend",
+            "--query",
+            "helper",
+            "--variant",
+            "word_index",
+            "--text-fields",
+            "title_description_criteria",
+            "--window-size",
+            "10",
+            "--symbol-boost",
+            "2",
+            "--min-support",
+            "1",
+            "--smoothing",
+            "0.5",
+            "--max-term-share",
+            "1",
+        ],
+    );
+    assert_eq!(document["variant"], "word_index");
+    assert_eq!(document["structure_applied"], false);
+    let options = &document["word_index"]["options"];
+    assert_eq!(options["text_fields"], "title_description_criteria");
+    assert_eq!(options["window_size"], 10);
+    assert_eq!(options["symbol_boost"], 2.0);
+    assert_eq!(options["min_support"], 1);
+    assert_eq!(options["smoothing"], 0.5);
+    assert_eq!(options["max_term_share"], 1.0);
+    // An empty history gives an empty answer with a reason, never padding.
+    assert_eq!(document["recommendations"], json!([]));
+    assert_eq!(document["word_index"]["empty_reason"], "no_window_tasks");
+    assert!(
+        document["fallbacks"]
+            .as_array()
+            .expect("fallbacks")
+            .iter()
+            .any(|fallback| fallback["kind"] == "word_index_empty"),
+        "{document:#}"
+    );
+
+    // Defaults apply without flags; other variants carry no word-index summary.
+    let defaults = json(
+        fixture.path(),
+        &["recommend", "--query", "helper", "--variant", "word_index"],
+    );
+    assert_eq!(defaults["word_index"]["options"]["text_fields"], "title");
+    assert_eq!(defaults["word_index"]["options"]["window_size"], 4000);
+    let combined = json(fixture.path(), &["recommend", "--query", "helper"]);
+    assert!(combined.get("word_index").is_none());
+
+    // Word-index options belong to the word_index variant only.
+    let refused = run(
+        fixture.path(),
+        &[
+            "--format",
+            "json",
+            "recommend",
+            "--query",
+            "helper",
+            "--window-size",
+            "10",
+        ],
+    );
+    assert!(!refused.status.success());
+    assert!(String::from_utf8_lossy(&refused.stderr).contains("word_index"));
+}
+
 fn synced_fixture() -> TempDir {
     let fixture = fixture_repository();
     json(fixture.path(), &["sync", "--full"]);

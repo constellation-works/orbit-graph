@@ -19,7 +19,7 @@ Options:
           Ranking strategy (primarily useful for evaluation and diagnosis)
           
           [default: combined]
-          [possible values: combined, task_search_only, graph_only, frequency]
+          [possible values: combined, task_search_only, graph_only, frequency, word_index]
 
       --limit <LIMIT>
           Maximum recommendations (1..=100)
@@ -40,6 +40,26 @@ Options:
 
       --hybrid-hits <HYBRID_HITS>
           JSON file containing an array of externally ranked hybrid task hits
+
+      --text-fields <TEXT_FIELDS>
+          word_index: task text indexed and queried (default: title)
+          
+          [possible values: title, title_description_criteria]
+
+      --window-size <WINDOW_SIZE>
+          word_index: newest eligible deliveries in the window (default: 4000)
+
+      --symbol-boost <SYMBOL_BOOST>
+          word_index: symbol boost b, at least 1 (default: 1.5)
+
+      --min-support <MIN_SUPPORT>
+          word_index: smallest posting that scores, at least 1 (default: 2)
+
+      --smoothing <SMOOTHING>
+          word_index: smoothing constant, greater than 0 (default: 1)
+
+      --max-term-share <MAX_TERM_SHARE>
+          word_index: window-stopword share, in (0, 1] (default: 0.3)
 
       --format <MODE>
           Output mode: auto, table, json, or ndjson (default: auto). auto prints a headed table on a terminal but headerless tab-separated rows when piped; use table for a header or json/ndjson for named fields

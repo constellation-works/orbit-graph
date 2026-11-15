@@ -563,6 +563,7 @@ fn recommend(call: &ToolCall<'_>, input: RecommendToolInput) -> Result<Value, To
         hybrid_hits,
         commit_text_weight: None,
         commit_text_exponent: None,
+        word_index: None,
     })?;
     serde_json::to_value(json!({
         "schema_version": PLUGIN_SCHEMA_VERSION,

@@ -4,6 +4,8 @@ use std::fs;
 use crate::{DeliveryImport, Provenance, TaskAssociation, TemporalFact};
 use tempfile::TempDir;
 
+mod word_index;
+
 #[test]
 fn lexical_similarity_is_directional_query_coverage() {
     assert_eq!(
@@ -216,6 +218,7 @@ fn task_mode_excludes_self_and_future_and_resolves_renamed_live_destinations() {
             hybrid_hits: Vec::new(),
             commit_text_weight: None,
             commit_text_exponent: None,
+            word_index: None,
         })
         .expect("recommend target");
     assert_eq!(result.resolved_target_revision, target_revision);
@@ -266,6 +269,7 @@ fn task_mode_excludes_self_and_future_and_resolves_renamed_live_destinations() {
             hybrid_hits: Vec::new(),
             commit_text_weight: None,
             commit_text_exponent: None,
+            word_index: None,
         })
         .expect("recommend symbols");
     assert!(symbols.recommendations.iter().any(|item| {
@@ -285,6 +289,7 @@ fn task_mode_excludes_self_and_future_and_resolves_renamed_live_destinations() {
             hybrid_hits: Vec::new(),
             commit_text_weight: None,
             commit_text_exponent: None,
+            word_index: None,
         })
         .expect("recommend current");
     assert!(current.recommendations.iter().all(|item| {
@@ -327,6 +332,7 @@ fn query_request(query: &str, target: &str, cutoff: Option<&str>) -> Recommendat
         hybrid_hits: Vec::new(),
         commit_text_weight: None,
         commit_text_exponent: None,
+        word_index: None,
     }
 }
 
@@ -1309,6 +1315,7 @@ fn git_only_commit_text_ranks_touched_files_in_live_mode_only() {
             hybrid_hits: Vec::new(),
             commit_text_weight: None,
             commit_text_exponent: None,
+            word_index: None,
         })
         .expect("task-ID request");
     assert!(
