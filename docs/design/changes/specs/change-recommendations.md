@@ -655,13 +655,143 @@ unsupported, and otherwise unresolved truth omitted from each denominator. All d
 uncertain-time deliveries pass through the same cutoff filter as production
 ranking.
 
-Five explicit variants are evaluated: combined evidence; direct similar-task
-change evidence; current-tree lexical plus bounded graph structure;
-query-independent eligible delivery frequency; and the word index, built for
-each case only from the deliveries before that case's cutoff, with the
-corpus's optional `word_index` options (echoed as `word_index_options`). Reports contain separate file
-and symbol recall/precision@K, stale-result rate, mean/maximum latency,
-coverage/exclusions, exact revisions, source provenance, and a normalized input
-digest. The recorded real cohort in `evals/` is intentionally small
-and has no eligible historical training text, so it supports no superiority
-claim.
+Five `recommend` variants are evaluated: combined evidence; direct
+similar-task change evidence; current-tree lexical plus bounded graph
+structure; query-independent eligible delivery frequency; and the word index,
+built for each case only from the deliveries before that case's cutoff, with
+the corpus's optional `word_index` options (echoed as `word_index_options`).
+Beside them the evaluator scores the baselines and combinations of section
+10.5 of the context-index design (`docs/design/context-index/2_design.md` in
+the Orbit repository), so every case is ranked nine ways. Reports contain
+separate file and symbol recall/precision@K, stale-result rate, mean/maximum
+latency, coverage/exclusions, exact revisions, source provenance, and a
+normalized input digest. The recorded real cohort in `evals/` is
+intentionally small and has no eligible historical training text, so it
+supports no superiority claim.
+
+### Folds
+
+The corpus may declare `folds`, each `{id, cutoff, revision}`: a rolling-origin
+fold whose cases were first dispatched after `cutoff`, and the full commit
+that was the landing branch's tip then. Every case then names its `fold`. A
+case naming no declared fold is excluded (`fold_missing_or_undeclared`), as
+is one cut before its fold (`fold_cutoff_after_case_cutoff`) or whose target
+revision is neither the fold's revision nor a descendant of it
+(`fold_revision_not_ancestor_of_target`): BM25 may never read a tree later
+than the case's own. A fold with a duplicate or empty id, or a revision that
+is not a full commit ID in the repository, refuses the corpus. Without
+`folds`, each case is its own fold, cut at its own cutoff and target
+revision, and a case that names a fold is excluded. Folds are read in cutoff
+order (then id); the report's `folds` lists each with its role, its evaluated
+cases and the BM25 documents it indexed.
+
+### Baselines and combinations
+
+| Row | What it ranks |
+|---|---|
+| `bm25_code` | The task text as a query against the tree of the case's fold revision, ranked by SQLite FTS5 `bm25` (best first, ties by selector). At file level the documents are the files (path and content columns); at symbol level they are the symbols the language extractors find (name and qualified name, signature, body). No history is read |
+| `explicit_mentions` | The paths and symbol names the task text writes that resolve at the case's target revision, in the order written |
+| `word_index_plus_mentions` | Explicit mentions first, then the word index's ranking without repeats |
+| `word_index_bm25_rrf` | The word index and `bm25_code` fused by reciprocal rank: each selector scores `Σ 1 / (60 + rank)` over the two rankings, each read 50 deep (or K when deeper) |
+
+Both baselines read the task text the corpus's `baseline_text_fields` names
+(`title` or `title_description_criteria`, the default: the text as filed),
+through the word index's tokeniser so a term means the same to every ranking.
+BM25 indexes pre-tokenised text (each term in order, repeats kept), so its
+term frequencies are the tokeniser's; a query matches any of its terms. A
+lockfile or changelog (the word index's path exclusions), a binary blob or a
+blob over 1 MiB is not a document, and the fold reports how many were left
+out by reason. BM25 indexes the tree at the fold's cutoff commit, not at each
+case's own target; with implicit folds the two are the same.
+
+Explicit mentions read a token as a path when it has a `/` or a file
+extension: it resolves to the file with that exact path, else to the one
+file whose path ends with it at a `/` (an ambiguous name resolves to none).
+`file:` and `symbol:` selectors, `./` prefixes and `:line` suffixes are
+accepted. Any other token is read as a symbol name only when it is shaped
+like code (it has a `_`, a `::` or `.` qualifier, or an uppercase letter
+after its first character), so ordinary words never match. It resolves to
+every symbol with that short name (and, when qualified, a qualified name
+ending with it), unless more than five symbols match. At file level the row
+lists the mentioned files and the files of mentioned symbols; at symbol level
+the mentioned symbols.
+
+A combination's latency is the sum of its parts'. Stale results are counted
+against the case's target tree for every row; BM25 can return a file the
+fold's tree has and the target does not.
+
+### Readout
+
+Every metric row adds `cases_with_truth`, `mean_recall_at_k` (recall at K
+per case, averaged over the cases with truth at that level), `cases_answered`
+and `coverage` (the share of evaluated cases with a non-empty answer), beside
+the pooled `recall_at_k`. `split_metrics` repeats the rows for
+`mostly_added_files` (more than half of the held-out delivery's changed files
+were added, so most of its work is outside any truth) and
+`mostly_existing_files`; each case reports `mostly_added_files`.
+
+`paired_differences` holds, for every other row, level and per-case metric
+(`recall_at_k` over the cases with truth, `precision_at_k` over every case),
+the mean of `word_index − baseline` over the same cases and its 95%
+percentile-bootstrap interval (2,000 resamples, fixed seed, so a rerun gives
+the same interval). The verdict is `word_index_higher` or `baseline_higher`
+when the interval excludes zero, `no_difference_shown` when it includes it,
+and `unevaluable` with fewer than two paired cases.
+
+### Gates
+
+`gates` states G1 and G2 of design section 10.5 as `passed`, `failed` or
+`unevaluable`, with the numbers behind each. Both are read on file
+`mean_recall_at_k` paired differences at K = 10; a corpus with another K, or
+fewer than two cases with file truth, leaves both `unevaluable`, and an
+unevaluable gate counts as not passed.
+
+- **G1, keep the index:** passed when `word_index − frequency` and
+  `word_index − bm25_code` both have intervals above zero and the word
+  index's file coverage is at least 0.5. Otherwise failed, and `alternative`
+  names whichever of `bm25_code`, `word_index_plus_mentions` and
+  `word_index_bm25_rrf` has the highest mean file recall, the candidate for
+  the slot instead.
+- **G2, which ranking the plugin keeps:** passed, `keep: word_index`, when
+  the word index beats both `combined` and `task_search_only` with intervals
+  above zero. Failed otherwise: `keep` names an existing ranking that beats
+  the word index (the larger difference when both do), or is `null` when no
+  difference is shown. `combinations_beating_both` lists the combinations
+  that beat the word index and each existing ranking, in which case both
+  parts would stay. No combination of the word index with `recommend`'s own
+  rankings is scored, so this reads the two scored combinations.
+
+G3 needs pilot data from Orbit and G4 the posting-weight and added-versus-
+modified options the word index does not implement yet; neither is reported.
+Without a grid the gates read every evaluated case (`scope: all_cases`).
+
+### Parameter grid
+
+`word_index_grid` sweeps the word index's options:
+`{selection_folds, text_fields, window_size, symbol_boost, min_support,
+smoothing, max_term_share}`. Each axis is a list; an empty or omitted axis
+holds the corpus's `word_index` value, and the cells are every combination
+(at most 256; each must be valid options). `selection_folds` must be at least
+1 and fewer than the folds: the first that many folds in cutoff order choose
+the cell and the rest report the headline numbers, as design section 10.4
+chooses on the first five weekly cutoffs and reports on the last three.
+
+Every case is ranked once more per cell, at both levels. The report's
+`sweep` lists each cell's options and its `word_index` file and symbol rows
+over the selection folds and over the headline folds, and `selected_cell`:
+the highest selection-fold mean file recall@K, then mean symbol recall@K,
+then the earlier cell (`null` when no selection case has file truth).
+`sweep.headline` reads every row, split and paired difference over the
+headline folds with the word index and its combinations on the selected
+cell, and the gates are read there (`scope: headline_folds`). The top-level
+`metrics`, `split_metrics` and `paired_differences` stay over every case
+with the corpus's own `word_index` options.
+
+### Report version
+
+The report is schema version 3: version 2 plus the four rows above, the
+per-row coverage and mean-recall fields, `baseline_text_fields`, `folds`,
+`split_metrics`, `paired_differences`, `gates`, `sweep`, and each case's
+`fold` and `mostly_added_files`. The corpus stays version 1: `folds`, a
+case's `fold`, `baseline_text_fields` and `word_index_grid` are optional, and
+a corpus without them has the same digest as before.

@@ -80,8 +80,11 @@ pub use store::history::{
 };
 
 pub use evaluation::{
-    EVALUATION_CORPUS_SCHEMA_VERSION, EVALUATION_SCHEMA_VERSION, EvaluationCorpus,
-    EvaluationReport, evaluate_corpus,
+    EVALUATION_CORPUS_SCHEMA_VERSION, EVALUATION_SCHEMA_VERSION, EvaluationCase,
+    EvaluationCaseResult, EvaluationCorpus, EvaluationCoverage, EvaluationFold,
+    EvaluationFoldResult, EvaluationMetrics, EvaluationReport, EvaluationVariant, GateReadout,
+    GateResult, GateStatus, MAX_WORD_INDEX_GRID_CELLS, PairedDifference, PairedMetric, Readout,
+    SplitMetrics, SweepCell, SweepReport, TruthCoverage, WordIndexGrid, evaluate_corpus,
 };
 pub use live_evaluation::{LiveGitEvaluation, LiveGitReport, evaluate_live_git};
 pub use query::{

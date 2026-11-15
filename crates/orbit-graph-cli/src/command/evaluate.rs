@@ -100,29 +100,102 @@ pub(crate) fn output(document: Value) -> CommandOutput {
         display_value(&coverage["note"]),
     ]);
 
-    let mut metrics_table = TableView::new(vec![
-        Column::text("variant"),
-        Column::text("level"),
-        Column::number("k"),
+    let metrics = metrics_table(&document["metrics"]);
+
+    let mut folds_table = TableView::new(vec![
+        Column::text("fold"),
+        Column::text("role"),
+        Column::text("cutoff"),
+        Column::text("revision"),
         Column::number("cases"),
-        Column::number("recall"),
-        Column::number("precision"),
-        Column::number("stale rate"),
-        Column::number("mean (ms)"),
+        Column::number("bm25 files"),
+        Column::number("bm25 symbols"),
     ]);
-    if let Some(metrics) = document["metrics"].as_array() {
-        for metric in metrics {
-            metrics_table.push_row([
-                display_value(&metric["variant"]),
-                display_value(&metric["level"]),
-                display_value(&metric["k"]),
-                display_value(&metric["cases"]),
-                decimal(&metric["recall_at_k"]),
-                decimal(&metric["precision_at_k"]),
-                decimal(&metric["stale_result_rate"]),
-                decimal(&metric["mean_latency_ms"]),
-            ]);
-        }
+    for fold in document["folds"].as_array().into_iter().flatten() {
+        folds_table.push_row([
+            display_value(&fold["id"]),
+            display_value(&fold["role"]),
+            display_value(&fold["cutoff"]),
+            display_value(&fold["revision"]),
+            display_value(&fold["cases_evaluated"]),
+            display_value(&fold["bm25_file_documents"]),
+            display_value(&fold["bm25_symbol_documents"]),
+        ]);
+    }
+
+    let mut paired_table = TableView::new(vec![
+        Column::text("word_index vs"),
+        Column::text("level"),
+        Column::text("metric"),
+        Column::number("cases"),
+        Column::number("difference"),
+        Column::number("low"),
+        Column::number("high"),
+        Column::text("verdict"),
+    ]);
+    for row in document["paired_differences"]
+        .as_array()
+        .into_iter()
+        .flatten()
+    {
+        paired_table.push_row([
+            display_value(&row["baseline"]),
+            display_value(&row["level"]),
+            display_value(&row["metric"]),
+            display_value(&row["cases"]),
+            decimal(&row["mean_difference"]),
+            decimal(&row["interval_low"]),
+            decimal(&row["interval_high"]),
+            display_value(&row["verdict"]),
+        ]);
+    }
+
+    let mut gates_table = TableView::new(vec![
+        Column::text("gate"),
+        Column::text("status"),
+        Column::text("scope"),
+        Column::number("cases"),
+        Column::text("keep"),
+        Column::text("alternative"),
+        Column::text("reason"),
+    ]);
+    let gates = &document["gates"];
+    for gate in gates["results"].as_array().into_iter().flatten() {
+        gates_table.push_row([
+            display_value(&gate["gate"]),
+            display_value(&gate["status"]),
+            display_value(&gates["scope"]),
+            display_value(&gates["cases"]),
+            display_value(&gate["keep"]),
+            display_value(&gate["alternative"]),
+            display_value(&gate["reason"]),
+        ]);
+    }
+
+    let mut sweep_table = TableView::new(vec![
+        Column::number("cell"),
+        Column::text("selected"),
+        Column::text("options"),
+        Column::number("selection file recall"),
+        Column::number("selection symbol recall"),
+        Column::number("headline file recall"),
+        Column::number("headline symbol recall"),
+    ]);
+    let sweep = &document["sweep"];
+    for cell in sweep["cells"].as_array().into_iter().flatten() {
+        sweep_table.push_row([
+            display_value(&cell["cell"]),
+            if sweep["selected_cell"] == cell["cell"] {
+                "yes".to_owned()
+            } else {
+                "-".to_owned()
+            },
+            display_value(&cell["options"]),
+            decimal(&cell["selection"][0]["mean_recall_at_k"]),
+            decimal(&cell["selection"][1]["mean_recall_at_k"]),
+            decimal(&cell["headline"][0]["mean_recall_at_k"]),
+            decimal(&cell["headline"][1]["mean_recall_at_k"]),
+        ]);
     }
 
     let mut cases_table = TableView::new(vec![
@@ -150,46 +223,99 @@ pub(crate) fn output(document: Value) -> CommandOutput {
         }
     }
 
-    let view = View::Blocks(vec![
+    let mut blocks = vec![
         ViewBlock::table(coverage_table.with_plain_record_type("evaluation_coverage")),
+        ViewBlock::table(folds_table.with_plain_record_type("evaluation_fold")),
         ViewBlock::table(
-            metrics_table
+            metrics
                 .with_plain_record_type("evaluation_metric")
                 .with_empty_message("no evaluation metrics"),
         ),
         ViewBlock::table(
-            cases_table
-                .with_plain_record_type("evaluation_case")
-                .with_empty_message("no evaluation cases"),
+            paired_table
+                .with_plain_record_type("evaluation_paired_difference")
+                .with_empty_message("no paired differences"),
         ),
-    ]);
+        ViewBlock::table(gates_table.with_plain_record_type("evaluation_gate")),
+    ];
+    if sweep.is_object() {
+        blocks.push(ViewBlock::table(
+            sweep_table
+                .with_plain_record_type("evaluation_sweep_cell")
+                .with_empty_message("no sweep cells"),
+        ));
+        if !sweep["headline"].is_null() {
+            blocks.push(ViewBlock::table(
+                metrics_table(&sweep["headline"]["metrics"])
+                    .with_plain_record_type("evaluation_headline_metric")
+                    .with_empty_message("no headline metrics"),
+            ));
+        }
+    }
+    blocks.push(ViewBlock::table(
+        cases_table
+            .with_plain_record_type("evaluation_case")
+            .with_empty_message("no evaluation cases"),
+    ));
+    let view = View::Blocks(blocks);
     let mut context = document.clone();
-    let (metrics, cases) = context.as_object_mut().map_or_else(
-        || (Vec::new(), Vec::new()),
-        |object| {
-            let metrics = object
-                .remove("metrics")
-                .and_then(|value| value.as_array().cloned())
-                .unwrap_or_default();
-            let cases = object
-                .remove("cases")
-                .and_then(|value| value.as_array().cloned())
-                .unwrap_or_default();
-            (metrics, cases)
-        },
-    );
+    let take = |key: &str, context: &mut Value| {
+        context
+            .as_object_mut()
+            .and_then(|object| object.remove(key))
+            .and_then(|value| value.as_array().cloned())
+            .unwrap_or_default()
+    };
+    let metric_rows = take("metrics", &mut context);
+    let paired = take("paired_differences", &mut context);
+    let cases = take("cases", &mut context);
     let mut records = vec![json!({"record_type": "evaluation_context", "context": context})];
     records.extend(
-        metrics
+        metric_rows
             .into_iter()
             .map(|metric| json!({"record_type": "evaluation_metric", "metric": metric})),
     );
+    records.extend(paired.into_iter().map(
+        |difference| json!({"record_type": "evaluation_paired_difference", "difference": difference}),
+    ));
     records.extend(
         cases
             .into_iter()
             .map(|case| json!({"record_type": "evaluation_case", "case": case})),
     );
     CommandOutput::with_view(document, view).with_ndjson_records(records)
+}
+
+/// One row per variant and level: pooled recall and precision, per-case mean
+/// recall, coverage, stale rate and latency.
+fn metrics_table(metrics: &Value) -> TableView {
+    let mut table = TableView::new(vec![
+        Column::text("variant"),
+        Column::text("level"),
+        Column::number("k"),
+        Column::number("cases"),
+        Column::number("recall"),
+        Column::number("mean recall"),
+        Column::number("precision"),
+        Column::number("coverage"),
+        Column::number("stale rate"),
+        Column::number("mean (ms)"),
+    ]);
+    for metric in metrics.as_array().into_iter().flatten() {
+        table.push_row([
+            display_value(&metric["variant"]),
+            display_value(&metric["level"]),
+            display_value(&metric["k"]),
+            display_value(&metric["cases"]),
+            decimal(&metric["recall_at_k"]),
+            decimal(&metric["mean_recall_at_k"]),
+            decimal(&metric["precision_at_k"]),
+            decimal(&metric["coverage"]),
+            decimal(&metric["stale_result_rate"]),
+            decimal(&metric["mean_latency_ms"]),
+        ]);
+    }
+    table
 }
 
 fn live_output(document: Value) -> CommandOutput {

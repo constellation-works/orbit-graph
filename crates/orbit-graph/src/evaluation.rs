@@ -1,7 +1,17 @@
 //! Leakage-safe chronological evaluation over versioned public delivery data.
+//!
+//! Each case is ranked by every `recommend` variant and by two history-free
+//! baselines ([`baselines`]): BM25 over the tree at the case's fold cutoff
+//! commit, and the paths and symbols the task text names. Two combinations of
+//! the word index with them are derived from the same rankings, and
+//! [`readout`] turns the per-case rankings into metrics, paired differences
+//! and the context-index design's gates G1 and G2. An optional grid re-ranks
+//! every case under each word-index configuration, chooses one on the earlier
+//! folds and reads the headline numbers on the later ones.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
+use std::rc::Rc;
 use std::time::Instant;
 
 use git2::{Oid, Repository};
@@ -10,24 +20,48 @@ use orbit_graph_extract::history::{
 };
 use serde::{Deserialize, Serialize};
 
-use crate::recommend::selector_is_live_at;
+use crate::recommend::MAX_RECOMMENDATION_LIMIT;
 use crate::{
     DeliveryEvidence, DeliveryImport, Graph, GraphError, HistoryIndex, HybridTaskHit, Provenance,
     RecommendationEngine, RecommendationInput, RecommendationLevel, RecommendationRequest,
     RecommendationVariant, SyncMode, SyncPolicy, TaskAssociation, TemporalFact, TemporalStatus,
-    WordIndexOptions,
+    WordIndexOptions, WordIndexTextFields,
+};
+
+mod baselines;
+mod readout;
+
+use baselines::{Bm25Index, CodeTree, explicit_mentions};
+use readout::{CaseRun, CaseScores, LEVELS, WordIndexSource, level_index};
+pub use readout::{
+    EvaluationMetrics, EvaluationVariant, GateReadout, GateResult, GateStatus, PairedDifference,
+    PairedMetric, Readout, SplitMetrics,
 };
 
 /// Version of the chronological evaluation report JSON contract.
 ///
 /// Version 2 reports `null` rather than `0.0` for a metric with no data: an
 /// empty denominator or no latency samples (STD-02 §R29).
-pub const EVALUATION_SCHEMA_VERSION: u32 = 2;
+///
+/// Version 3 adds the `bm25_code`, `explicit_mentions`,
+/// `word_index_plus_mentions` and `word_index_bm25_rrf` rows, per-row
+/// coverage and mean recall, the added-files split, paired differences,
+/// gates G1 and G2, folds and the optional word-index sweep.
+pub const EVALUATION_SCHEMA_VERSION: u32 = 3;
 
 /// Version of the evaluation corpus (input) JSON contract. It moves
 /// independently of [`EVALUATION_SCHEMA_VERSION`]: the input shape did not
-/// change when the report did.
+/// change when the report did, and the optional `folds`, `fold`,
+/// `baseline_text_fields` and `word_index_grid` fields leave every earlier
+/// corpus valid with the same digest.
 pub const EVALUATION_CORPUS_SCHEMA_VERSION: u32 = 1;
+
+/// The deepest ranking a combination reads: the word index and BM25 are
+/// ranked this deep, and their own rows cut at K.
+const COMBINATION_DEPTH: usize = 50;
+
+/// Most word-index configurations one grid may hold.
+pub const MAX_WORD_INDEX_GRID_CELLS: usize = 256;
 
 /// Reproducible evaluation input composed only of public envelopes and observations.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -57,6 +91,57 @@ pub struct EvaluationCorpus {
     /// min_support 2, smoothing 1, window-stopword share 0.3).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub word_index: Option<WordIndexOptions>,
+    /// Rolling-origin folds, each with the cutoff commit BM25 indexes. Every
+    /// case then names its fold. Omitted, each case is its own fold, cut at
+    /// its own cutoff and target revision.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub folds: Vec<EvaluationFold>,
+    /// Task text BM25 and explicit mentions read. Omitted, the title,
+    /// description and acceptance criteria: the task text as filed.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub baseline_text_fields: Option<WordIndexTextFields>,
+    /// A parameter grid for the word index, chosen on the earlier folds and
+    /// read on the later ones.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub word_index_grid: Option<WordIndexGrid>,
+}
+
+/// One rolling-origin fold: the cases first dispatched after `cutoff`,
+/// ranked against the tree of the `revision` that was current then.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct EvaluationFold {
+    /// Fold identifier the cases name.
+    pub id: String,
+    /// The fold's cutoff; no case of the fold may cut earlier.
+    pub cutoff: String,
+    /// The full commit that was the landing branch's tip at `cutoff`. BM25
+    /// indexes its tree; it must be the target revision of each of the
+    /// fold's cases or an ancestor of it.
+    pub revision: String,
+}
+
+/// Word-index parameters to sweep. An empty or omitted axis holds the
+/// corpus's `word_index` value; the cells are every combination of the
+/// axes.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct WordIndexGrid {
+    /// The first this many folds, in cutoff order, choose the cell; the rest
+    /// report the headline numbers. At least 1 and fewer than the folds.
+    pub selection_folds: usize,
+    /// `text_fields` values.
+    pub text_fields: Vec<WordIndexTextFields>,
+    /// `window_size` values.
+    pub window_size: Vec<usize>,
+    /// `symbol_boost` values.
+    pub symbol_boost: Vec<f64>,
+    /// `min_support` values.
+    pub min_support: Vec<usize>,
+    /// `smoothing` values.
+    pub smoothing: Vec<f64>,
+    /// `max_term_share` values.
+    pub max_term_share: Vec<f64>,
 }
 
 /// One prospective task observation paired with later verified Git truth.
@@ -86,6 +171,10 @@ pub struct EvaluationCase {
     /// Public retriever/export provenance for supplied hybrid hits.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub hybrid_hits_source: Option<Provenance>,
+    /// The corpus fold this case belongs to; required when the corpus
+    /// declares folds and refused when it does not.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub fold: Option<String>,
     /// Provenance for the task observation and delivery association.
     pub source: Provenance,
 }
@@ -107,10 +196,83 @@ pub struct EvaluationReport {
     pub coverage: EvaluationCoverage,
     /// Parameters the `word_index` rows were scored with.
     pub word_index_options: WordIndexOptions,
-    /// One row for every ranking variant and destination level.
+    /// Task text BM25 and explicit mentions read.
+    pub baseline_text_fields: WordIndexTextFields,
+    /// Folds in cutoff order, with the BM25 index built for each.
+    pub folds: Vec<EvaluationFoldResult>,
+    /// One row for every ranking and destination level, over every
+    /// evaluated case, with the corpus's word-index options.
     pub metrics: Vec<EvaluationMetrics>,
+    /// The same rows over each side of the added-files split.
+    pub split_metrics: Vec<SplitMetrics>,
+    /// `word_index` minus every other ranking, per case, with a 95%
+    /// bootstrap interval.
+    pub paired_differences: Vec<PairedDifference>,
+    /// Gates G1 and G2 of the context-index design (§10.5): over every case
+    /// without a grid, over the headline folds on the selected cell with one.
+    pub gates: GateReadout,
+    /// The word-index grid, when the corpus asks for one.
+    pub sweep: Option<SweepReport>,
     /// Per-case admission or exclusion evidence.
     pub cases: Vec<EvaluationCaseResult>,
+}
+
+/// One fold as evaluated.
+#[derive(Debug, Clone, Serialize)]
+pub struct EvaluationFoldResult {
+    /// Fold identifier (the case ID for an implicit per-case fold).
+    pub id: String,
+    /// Fold cutoff.
+    pub cutoff: String,
+    /// Cutoff commit whose tree BM25 indexed.
+    pub revision: String,
+    /// `selection` or `headline` under a grid, otherwise `all`.
+    pub role: String,
+    /// Evaluated cases in the fold.
+    pub cases_evaluated: usize,
+    /// File documents BM25 indexed, or `null` when no case reached ranking.
+    pub bm25_file_documents: Option<usize>,
+    /// Symbol documents BM25 indexed, or `null` when no case reached ranking.
+    pub bm25_symbol_documents: Option<usize>,
+    /// Blobs left out of the BM25 file documents, by reason.
+    pub bm25_skipped: BTreeMap<String, usize>,
+}
+
+/// The word-index grid and the readout on its chosen cell.
+#[derive(Debug, Clone, Serialize)]
+pub struct SweepReport {
+    /// Folds that chose the cell.
+    pub selection_folds: Vec<String>,
+    /// Folds the headline numbers are read on.
+    pub headline_folds: Vec<String>,
+    /// Evaluated cases in the selection folds.
+    pub selection_cases: usize,
+    /// Evaluated cases in the headline folds.
+    pub headline_cases: usize,
+    /// How the cell was chosen.
+    pub selection_rule: String,
+    /// Every cell with its word-index rows on each side.
+    pub cells: Vec<SweepCell>,
+    /// Index of the chosen cell, or `null` when no selection case had file
+    /// truth to choose by.
+    pub selected_cell: Option<usize>,
+    /// Every ranking over the headline folds, with the word index and its
+    /// combinations on the chosen cell; `null` without a chosen cell.
+    pub headline: Option<Readout>,
+}
+
+/// One grid cell.
+#[derive(Debug, Clone, Serialize)]
+pub struct SweepCell {
+    /// Position in the grid.
+    pub cell: usize,
+    /// The cell's word-index options.
+    pub options: WordIndexOptions,
+    /// `word_index` file and symbol rows over the selection folds.
+    pub selection: Vec<EvaluationMetrics>,
+    /// `word_index` file and symbol rows over the headline folds. Reported
+    /// for every cell; only the chosen cell's are headline numbers.
+    pub headline: Vec<EvaluationMetrics>,
 }
 
 /// Corpus and case coverage accounting.
@@ -134,37 +296,6 @@ pub struct EvaluationCoverage {
     pub isolated_indexes: bool,
 }
 
-/// Aggregate metrics for one ranking variant and destination level.
-#[derive(Debug, Clone, Serialize)]
-pub struct EvaluationMetrics {
-    /// Ranking strategy.
-    pub variant: RecommendationVariant,
-    /// File or symbol destination level.
-    pub level: RecommendationLevel,
-    /// Requested K.
-    pub k: usize,
-    /// Cases contributing truth.
-    pub cases: usize,
-    /// Relevant destinations in held-out truth.
-    pub relevant: usize,
-    /// Correct recommendations within K.
-    pub true_positives: usize,
-    /// Recommendations returned across all cases: the stale-rate denominator.
-    pub returned: usize,
-    /// Micro-averaged recall at K; `None` (`null`) when `relevant` is 0.
-    pub recall_at_k: Option<f64>,
-    /// Precision at K, with K slots per evaluated case as denominator;
-    /// `None` (`null`) when `cases` is 0.
-    pub precision_at_k: Option<f64>,
-    /// Recommendations absent from the immutable target tree divided by
-    /// returned results; `None` (`null`) when `returned` is 0.
-    pub stale_result_rate: Option<f64>,
-    /// Mean query latency in milliseconds; `None` (`null`) with no queries.
-    pub mean_latency_ms: Option<f64>,
-    /// Maximum query latency in milliseconds; `None` (`null`) with no queries.
-    pub max_latency_ms: Option<f64>,
-}
-
 /// Admission result for one prospective case.
 #[derive(Debug, Clone, Serialize)]
 pub struct EvaluationCaseResult {
@@ -176,8 +307,13 @@ pub struct EvaluationCaseResult {
     pub exclusions: Vec<String>,
     /// Immutable target revision used for recommendation.
     pub target_revision: String,
+    /// Fold the case was read in, or `null` when it names no valid fold.
+    pub fold: Option<String>,
     /// Held-out delivery identifier when available.
     pub held_out_delivery_id: Option<String>,
+    /// Whether more than half of the delivery's changed files were added;
+    /// `null` when no truth was derived.
+    pub mostly_added_files: Option<bool>,
     /// Frozen target-tree graph provenance used by graph-bearing variants,
     /// or `null` when none was used.
     pub graph_snapshot: Option<Provenance>,
@@ -206,21 +342,30 @@ pub struct TruthCoverage {
     pub symbol_truth_omitted: BTreeMap<String, usize>,
 }
 
-#[derive(Debug, Default)]
-struct MetricAccumulator {
-    cases: usize,
-    relevant: usize,
-    true_positives: usize,
-    predictions: usize,
-    stale: usize,
-    latency_micros: Vec<u128>,
+/// One fold as resolved from the corpus.
+struct Fold {
+    id: String,
+    cutoff: String,
+    cutoff_time: orbit_graph_extract::history::Timestamp,
+    revision: Oid,
+    /// Explicitly declared (`false` for an implicit per-case fold).
+    declared: bool,
 }
 
-/// Evaluate all five ranking variants without importing held-out deliveries.
+/// BM25 index of the fold whose cases are being ranked.
+struct FoldIndex {
+    fold: usize,
+    tree: Rc<CodeTree>,
+    index: Bm25Index,
+}
+
+/// Evaluate every ranking without importing held-out deliveries.
 ///
-/// Every variant, `word_index` included, ranks from the case's isolated
-/// history index under the case's strict cutoff, so only deliveries landed
-/// before the cutoff contribute evidence.
+/// Every `recommend` variant, `word_index` included, ranks from the case's
+/// isolated history index under the case's strict cutoff, so only deliveries
+/// landed before the cutoff contribute evidence. BM25 reads the tree of the
+/// case's fold cutoff commit and explicit mentions the case's target tree;
+/// neither reads history.
 pub fn evaluate_corpus(
     repo_root: &Path,
     corpus: &EvaluationCorpus,
@@ -245,15 +390,50 @@ pub fn evaluate_corpus(
     )
     .to_hex()
     .to_string();
-    let mut aggregates: BTreeMap<(u8, u8), MetricAccumulator> = BTreeMap::new();
-    let mut case_results = Vec::new();
-    for case in &corpus.cases {
+    let base_options = corpus.word_index.unwrap_or_default();
+    let baseline_text_fields = corpus
+        .baseline_text_fields
+        .unwrap_or(WordIndexTextFields::TitleDescriptionCriteria);
+    let cells = grid_cells(&base_options, corpus.word_index_grid.as_ref())?;
+    let (folds, case_folds) = resolve_folds(&source_repo, corpus)?;
+    if let Some(grid) = corpus.word_index_grid.as_ref()
+        && (grid.selection_folds == 0 || grid.selection_folds >= folds.len())
+    {
+        return Err(GraphError::invalid_input(
+            "validate word index grid",
+            "word_index_grid.selection_folds",
+            format!(
+                "selection_folds must be at least 1 and fewer than the {} fold(s), leaving headline folds",
+                folds.len()
+            ),
+        ));
+    }
+    // `k` is at most 100 (`validate_corpus`), the recommendation limit.
+    let depth = corpus.k.clamp(COMBINATION_DEPTH, MAX_RECOMMENDATION_LIMIT);
+
+    // Cases run fold by fold so one BM25 index is held at a time; results
+    // keep the corpus order.
+    let mut order = (0..corpus.cases.len()).collect::<Vec<_>>();
+    order.sort_by_key(|&index| (case_folds[index].unwrap_or(usize::MAX), index));
+    let mut case_results: Vec<Option<EvaluationCaseResult>> = vec![None; corpus.cases.len()];
+    let mut scores = Vec::new();
+    let mut target_cache: Option<Rc<CodeTree>> = None;
+    let mut fold_cache: Option<FoldIndex> = None;
+    let mut fold_indexes: BTreeMap<usize, (usize, usize, BTreeMap<String, usize>)> =
+        BTreeMap::new();
+    for index in order {
+        let case = &corpus.cases[index];
+        let fold = case_folds[index];
         let mut exclusions = validate_case(repo_root, corpus, case)?;
-        let mut truth = BTreeMap::new();
+        match fold {
+            None => exclusions.push("fold_missing_or_undeclared".to_string()),
+            Some(fold) => exclusions.extend(validate_case_fold(&source_repo, &folds[fold], case)?),
+        }
         let mut truth_coverage = TruthCoverage::default();
         let mut graph_structure_applied = BTreeMap::new();
         let mut graph_snapshot = None;
-        if exclusions.is_empty() {
+        let mut mostly_added_files = None;
+        if let (true, Some(fold)) = (exclusions.is_empty(), fold) {
             let workspace = EvaluationWorkspace::create(
                 repo_root,
                 corpus.repository.as_str(),
@@ -269,118 +449,229 @@ pub fn evaluate_corpus(
                 system: "git.detached_target_tree+isolated_orbit_graph".to_string(),
                 record_id: Some(case.target_revision.clone()),
             });
+            let target = Oid::from_str(case.target_revision.as_str())
+                .map_err(|error| GraphError::git("parse evaluation target revision", error))?;
+            let target_tree = cached_tree(
+                &source_repo,
+                target,
+                &mut target_cache,
+                fold_cache.as_ref().map(|cached| &cached.tree),
+            )?;
+            let mut truth = [BTreeSet::new(), BTreeSet::new()];
             if let Some(held_out) = case.held_out_delivery.clone() {
                 let extracted = index.preview(held_out)?;
-                let outcome =
-                    held_out_truth(workspace.path(), case.target_revision.as_str(), &extracted)?;
+                let outcome = held_out_truth(&target_tree, &extracted);
                 truth = outcome.truth;
                 truth_coverage = outcome.coverage;
+                let added = truth_coverage
+                    .file_truth_omitted
+                    .get("added_file_absent_at_target")
+                    .copied()
+                    .unwrap_or_default();
+                mostly_added_files = Some(added * 2 > truth_coverage.file_changes_total);
             }
-            if truth.values().all(std::collections::BTreeSet::is_empty) {
+            if truth.iter().all(BTreeSet::is_empty) {
                 exclusions.push("held_out_delivery_has_no_target-resolvable_truth".to_string());
             } else {
+                if fold_cache.as_ref().is_none_or(|cached| cached.fold != fold) {
+                    // Release the previous fold's index before building the next.
+                    drop(fold_cache.take());
+                    let tree = cached_tree(
+                        &source_repo,
+                        folds[fold].revision,
+                        &mut None,
+                        Some(&target_tree),
+                    )?;
+                    let index = Bm25Index::build(&source_repo, &tree)?;
+                    fold_indexes.insert(
+                        fold,
+                        (
+                            index.file_documents,
+                            index.symbol_documents,
+                            index.skipped.clone(),
+                        ),
+                    );
+                    fold_cache = Some(FoldIndex { fold, tree, index });
+                }
+                let bm25 = fold_cache
+                    .as_ref()
+                    .map(|cached| &cached.index)
+                    .ok_or_else(|| {
+                        GraphError::invalid_data("rank evaluation BM25", "fold index was not built")
+                    })?;
                 let engine =
                     RecommendationEngine::open(workspace.path(), corpus.landing_branch.as_str())?;
-                for variant in variants() {
-                    for level in levels() {
-                        let started = Instant::now();
-                        let result = engine.recommend(&RecommendationRequest {
-                            input: RecommendationInput::TaskId(case.task_snapshot.task_id.clone()),
+                let mut case_scores = CaseScores {
+                    fold,
+                    mostly_added: mostly_added_files.unwrap_or(false),
+                    truth,
+                    ..CaseScores::default()
+                };
+                let rank = |variant: RecommendationVariant,
+                            level: RecommendationLevel,
+                            limit: usize,
+                            options: Option<WordIndexOptions>|
+                 -> Result<(CaseRun, bool), GraphError> {
+                    let started = Instant::now();
+                    let result = engine.recommend(&RecommendationRequest {
+                        input: RecommendationInput::TaskId(case.task_snapshot.task_id.clone()),
+                        level,
+                        variant,
+                        limit: Some(limit),
+                        target_revision: Some(case.target_revision.clone()),
+                        cutoff: Some(case.cutoff.clone()),
+                        task_snapshot: Some(case.task_snapshot.clone()),
+                        hybrid_hits: case.hybrid_hits.clone(),
+                        commit_text_weight: None,
+                        commit_text_exponent: None,
+                        word_index: options,
+                    })?;
+                    let latency_micros = started.elapsed().as_micros();
+                    Ok((
+                        CaseRun {
+                            selectors: result
+                                .recommendations
+                                .into_iter()
+                                .map(|recommendation| recommendation.selector)
+                                .collect(),
+                            latency_micros,
+                        },
+                        result.structure_applied,
+                    ))
+                };
+                for variant in EvaluationVariant::ALL {
+                    let Some(recommendation) = variant.recommendation() else {
+                        continue;
+                    };
+                    for level in LEVELS {
+                        let word_index = recommendation == RecommendationVariant::WordIndex;
+                        let (run, structure_applied) = rank(
+                            recommendation,
                             level,
-                            variant,
-                            limit: Some(corpus.k),
-                            target_revision: Some(case.target_revision.clone()),
-                            cutoff: Some(case.cutoff.clone()),
-                            task_snapshot: Some(case.task_snapshot.clone()),
-                            hybrid_hits: case.hybrid_hits.clone(),
-                            commit_text_weight: None,
-                            commit_text_exponent: None,
-                            word_index: (variant == RecommendationVariant::WordIndex)
-                                .then(|| corpus.word_index.unwrap_or_default()),
-                        })?;
+                            if word_index { depth } else { corpus.k },
+                            word_index.then_some(base_options),
+                        )?;
                         if matches!(
-                            variant,
+                            recommendation,
                             RecommendationVariant::Combined | RecommendationVariant::GraphOnly
                         ) {
                             graph_structure_applied.insert(
-                                format!("{}:{}", variant_name(variant), level_name(level)),
-                                result.structure_applied,
+                                format!("{}:{}", variant.name(), level_name(level)),
+                                structure_applied,
                             );
                         }
-                        let elapsed = started.elapsed().as_micros();
-                        let expected = truth.get(&level_key(level)).ok_or_else(|| {
-                            GraphError::invalid_data(
-                                "evaluate held-out truth",
-                                "missing initialized destination level",
-                            )
-                        })?;
-                        let accumulator = aggregates
-                            .entry((variant_key(variant), level_key(level)))
-                            .or_default();
-                        accumulator.cases += 1;
-                        accumulator.relevant += expected.len();
-                        accumulator.latency_micros.push(elapsed);
-                        for recommendation in &result.recommendations {
-                            accumulator.predictions += 1;
-                            if expected.contains(recommendation.selector.as_str()) {
-                                accumulator.true_positives += 1;
-                            }
-                            if !selector_is_live_at(
-                                workspace.path(),
-                                case.target_revision.as_str(),
-                                recommendation.selector.as_str(),
-                            )? {
-                                accumulator.stale += 1;
-                            }
-                        }
+                        case_scores.runs.insert((variant, level_index(level)), run);
                     }
                 }
+                let text = baseline_text_fields.text(&case.task_snapshot);
+                for level in LEVELS {
+                    let started = Instant::now();
+                    let selectors = bm25.rank(level, text.as_str(), depth)?;
+                    case_scores.runs.insert(
+                        (EvaluationVariant::Bm25Code, level_index(level)),
+                        CaseRun {
+                            selectors,
+                            latency_micros: started.elapsed().as_micros(),
+                        },
+                    );
+                }
+                let started = Instant::now();
+                let mentions = explicit_mentions(text.as_str(), &target_tree);
+                let latency_micros = started.elapsed().as_micros();
+                for level in LEVELS {
+                    case_scores.runs.insert(
+                        (EvaluationVariant::ExplicitMentions, level_index(level)),
+                        CaseRun {
+                            selectors: mentions.level(level).to_vec(),
+                            latency_micros,
+                        },
+                    );
+                }
+                for options in &cells {
+                    let mut cell = [CaseRun::default(), CaseRun::default()];
+                    for level in LEVELS {
+                        cell[level_index(level)] = rank(
+                            RecommendationVariant::WordIndex,
+                            level,
+                            depth,
+                            Some(*options),
+                        )?
+                        .0;
+                    }
+                    case_scores.grid.push(cell);
+                }
+                case_scores.not_live = case_scores
+                    .runs
+                    .values()
+                    .chain(case_scores.grid.iter().flatten())
+                    .flat_map(|run| run.selectors.iter())
+                    .filter(|selector| !target_tree.is_live(selector))
+                    .cloned()
+                    .collect();
+                scores.push(case_scores);
             }
         }
-        let evaluated = exclusions.is_empty();
-        case_results.push(EvaluationCaseResult {
+        case_results[index] = Some(EvaluationCaseResult {
             id: case.id.clone(),
-            evaluated,
+            evaluated: exclusions.is_empty(),
             exclusions,
             target_revision: case.target_revision.clone(),
+            fold: fold.map(|fold| folds[fold].id.clone()),
             held_out_delivery_id: case
                 .held_out_delivery
                 .as_ref()
                 .map(|delivery| delivery.delivery_id.clone()),
+            mostly_added_files,
             graph_snapshot,
             graph_structure_applied,
             truth_coverage,
             source: case.source.clone(),
         });
     }
+    drop(fold_cache);
+    let case_results = case_results.into_iter().flatten().collect::<Vec<_>>();
+
+    let all = scores.iter().collect::<Vec<_>>();
+    let base = readout::readout(all.as_slice(), WordIndexSource::Base, corpus.k);
+    let (sweep, gates) = match corpus.word_index_grid.as_ref() {
+        Some(grid) => {
+            let (sweep, gates) = sweep(all.as_slice(), &folds, &cells, grid, corpus.k);
+            (Some(sweep), gates)
+        }
+        None => (
+            None,
+            GateReadout {
+                scope: "all_cases".to_string(),
+                word_index_options: Some(base_options),
+                cases: all.len(),
+                results: readout::gates(all.as_slice(), WordIndexSource::Base, corpus.k, None),
+            },
+        ),
+    };
+    let folds = folds
+        .iter()
+        .enumerate()
+        .map(|(position, fold)| {
+            let indexed = fold_indexes.remove(&position);
+            EvaluationFoldResult {
+                id: fold.id.clone(),
+                cutoff: fold.cutoff.clone(),
+                revision: fold.revision.to_string(),
+                role: match corpus.word_index_grid.as_ref() {
+                    Some(grid) if position < grid.selection_folds => "selection",
+                    Some(_) => "headline",
+                    None => "all",
+                }
+                .to_string(),
+                cases_evaluated: scores.iter().filter(|case| case.fold == position).count(),
+                bm25_file_documents: indexed.as_ref().map(|indexed| indexed.0),
+                bm25_symbol_documents: indexed.as_ref().map(|indexed| indexed.1),
+                bm25_skipped: indexed.map(|indexed| indexed.2).unwrap_or_default(),
+            }
+        })
+        .collect();
 
     let evaluated = case_results.iter().filter(|case| case.evaluated).count();
-    let mut metrics = Vec::new();
-    for variant in variants() {
-        for level in levels() {
-            let value = aggregates
-                .remove(&(variant_key(variant), level_key(level)))
-                .unwrap_or_default();
-            metrics.push(EvaluationMetrics {
-                variant,
-                level,
-                k: corpus.k,
-                cases: value.cases,
-                relevant: value.relevant,
-                true_positives: value.true_positives,
-                returned: value.predictions,
-                recall_at_k: ratio(value.true_positives, value.relevant),
-                precision_at_k: ratio(value.true_positives, value.cases * corpus.k),
-                stale_result_rate: ratio(value.stale, value.predictions),
-                mean_latency_ms: mean_latency_ms(value.latency_micros.as_slice()),
-                max_latency_ms: value
-                    .latency_micros
-                    .iter()
-                    .max()
-                    .map(|micros| *micros as f64 / 1_000.0),
-            });
-        }
-    }
     let revision = source_repo
         .head()
         .and_then(|head| head.peel_to_commit())
@@ -392,7 +683,8 @@ pub fn evaluate_corpus(
         evaluated_at_revision: revision,
         source: corpus.source.clone(),
         corpus_digest: digest,
-        word_index_options: corpus.word_index.unwrap_or_default(),
+        word_index_options: base_options,
+        baseline_text_fields,
         coverage: EvaluationCoverage {
             source_complete: corpus.complete,
             note: corpus.coverage_note.clone(),
@@ -407,9 +699,301 @@ pub fn evaluate_corpus(
             },
             isolated_indexes: true,
         },
-        metrics,
+        folds,
+        metrics: base.metrics,
+        split_metrics: base.split_metrics,
+        paired_differences: base.paired_differences,
+        gates,
+        sweep,
         cases: case_results,
     })
+}
+
+/// The code tree at `revision`: the cached one when it matches, else the
+/// `shared` tree when that matches, else a fresh load (which replaces the
+/// cache).
+fn cached_tree(
+    repo: &Repository,
+    revision: Oid,
+    cache: &mut Option<Rc<CodeTree>>,
+    shared: Option<&Rc<CodeTree>>,
+) -> Result<Rc<CodeTree>, GraphError> {
+    if let Some(tree) = cache.as_ref().filter(|tree| tree.revision() == revision) {
+        return Ok(Rc::clone(tree));
+    }
+    let tree = match shared.filter(|tree| tree.revision() == revision) {
+        Some(tree) => Rc::clone(tree),
+        None => Rc::new(CodeTree::load(repo, revision)?),
+    };
+    *cache = Some(Rc::clone(&tree));
+    Ok(tree)
+}
+
+/// Every cell of `grid` over `base`, or none without a grid.
+fn grid_cells(
+    base: &WordIndexOptions,
+    grid: Option<&WordIndexGrid>,
+) -> Result<Vec<WordIndexOptions>, GraphError> {
+    let Some(grid) = grid else {
+        return Ok(Vec::new());
+    };
+    fn axis<T: Copy>(values: &[T], base: T) -> Vec<T> {
+        if values.is_empty() {
+            vec![base]
+        } else {
+            values.to_vec()
+        }
+    }
+    let text_fields = axis(grid.text_fields.as_slice(), base.text_fields);
+    let window_size = axis(grid.window_size.as_slice(), base.window_size);
+    let symbol_boost = axis(grid.symbol_boost.as_slice(), base.symbol_boost);
+    let min_support = axis(grid.min_support.as_slice(), base.min_support);
+    let smoothing = axis(grid.smoothing.as_slice(), base.smoothing);
+    let max_term_share = axis(grid.max_term_share.as_slice(), base.max_term_share);
+    let count = [
+        text_fields.len(),
+        window_size.len(),
+        symbol_boost.len(),
+        min_support.len(),
+        smoothing.len(),
+        max_term_share.len(),
+    ]
+    .iter()
+    .try_fold(1usize, |total, len| total.checked_mul(*len));
+    if count.is_none_or(|count| count > MAX_WORD_INDEX_GRID_CELLS) {
+        return Err(GraphError::invalid_input(
+            "validate word index grid",
+            "word_index_grid",
+            format!("a grid may hold at most {MAX_WORD_INDEX_GRID_CELLS} cells"),
+        ));
+    }
+    let mut cells = Vec::new();
+    for &text_fields in &text_fields {
+        for &window_size in &window_size {
+            for &symbol_boost in &symbol_boost {
+                for &min_support in &min_support {
+                    for &smoothing in &smoothing {
+                        for &max_term_share in &max_term_share {
+                            let options = WordIndexOptions {
+                                text_fields,
+                                window_size,
+                                symbol_boost,
+                                min_support,
+                                smoothing,
+                                max_term_share,
+                            };
+                            options.validate()?;
+                            cells.push(options);
+                        }
+                    }
+                }
+            }
+        }
+    }
+    Ok(cells)
+}
+
+/// The corpus's folds in cutoff order, and each case's fold position.
+fn resolve_folds(
+    repo: &Repository,
+    corpus: &EvaluationCorpus,
+) -> Result<(Vec<Fold>, Vec<Option<usize>>), GraphError> {
+    let mut folds = Vec::new();
+    if corpus.folds.is_empty() {
+        for case in &corpus.cases {
+            folds.push(Fold {
+                id: case.id.clone(),
+                cutoff: case.cutoff.clone(),
+                cutoff_time: parse_timestamp("evaluation cutoff", case.cutoff.as_str())?,
+                revision: Oid::from_str(case.target_revision.as_str())
+                    .map_err(|error| GraphError::git("parse evaluation target revision", error))?,
+                declared: false,
+            });
+        }
+    } else {
+        let mut ids = BTreeSet::new();
+        for fold in &corpus.folds {
+            if fold.id.trim().is_empty() || !ids.insert(fold.id.as_str()) {
+                return Err(GraphError::invalid_input(
+                    "validate evaluation folds",
+                    "folds",
+                    "every fold needs a non-empty, unique id",
+                ));
+            }
+            let revision = Oid::from_str(fold.revision.as_str())
+                .ok()
+                .filter(|oid| oid.to_string() == fold.revision)
+                .filter(|oid| repo.find_commit(*oid).is_ok())
+                .ok_or_else(|| {
+                    GraphError::invalid_input(
+                        "validate evaluation folds",
+                        "folds.revision",
+                        format!(
+                            "fold {} revision must be a full commit ID in the repository",
+                            fold.id
+                        ),
+                    )
+                })?;
+            folds.push(Fold {
+                id: fold.id.clone(),
+                cutoff: fold.cutoff.clone(),
+                cutoff_time: parse_timestamp("evaluation fold cutoff", fold.cutoff.as_str())?,
+                revision,
+                declared: true,
+            });
+        }
+    }
+    let mut positions = (0..folds.len()).collect::<Vec<_>>();
+    positions.sort_by(|&a, &b| {
+        folds[a]
+            .cutoff_time
+            .cmp(&folds[b].cutoff_time)
+            .then_with(|| folds[a].id.cmp(&folds[b].id))
+            .then_with(|| a.cmp(&b))
+    });
+    let mut rank = vec![0; folds.len()];
+    for (sorted, &original) in positions.iter().enumerate() {
+        rank[original] = sorted;
+    }
+    let case_folds = corpus
+        .cases
+        .iter()
+        .enumerate()
+        .map(|(index, case)| {
+            if corpus.folds.is_empty() {
+                case.fold.is_none().then_some(rank[index])
+            } else {
+                case.fold.as_deref().and_then(|id| {
+                    folds
+                        .iter()
+                        .position(|fold| fold.id == id)
+                        .map(|original| rank[original])
+                })
+            }
+        })
+        .collect();
+    let mut slots = folds.into_iter().map(Some).collect::<Vec<_>>();
+    let ordered = positions
+        .into_iter()
+        .filter_map(|original| slots[original].take())
+        .collect();
+    Ok((ordered, case_folds))
+}
+
+/// Exclusions from a case's place in its fold: BM25 must not index a tree
+/// later than the case's own, nor a fold cut after the case.
+fn validate_case_fold(
+    repo: &Repository,
+    fold: &Fold,
+    case: &EvaluationCase,
+) -> Result<Vec<String>, GraphError> {
+    let mut exclusions = Vec::new();
+    if !fold.declared {
+        return Ok(exclusions);
+    }
+    let cutoff = parse_timestamp("evaluation cutoff", case.cutoff.as_str())?;
+    if fold.cutoff_time > cutoff {
+        exclusions.push("fold_cutoff_after_case_cutoff".to_string());
+    }
+    let target = Oid::from_str(case.target_revision.as_str())
+        .map_err(|error| GraphError::git("parse evaluation target revision", error))?;
+    if target != fold.revision
+        && !repo
+            .graph_descendant_of(target, fold.revision)
+            .map_err(|error| GraphError::git("check fold revision ancestry", error))?
+    {
+        exclusions.push("fold_revision_not_ancestor_of_target".to_string());
+    }
+    Ok(exclusions)
+}
+
+/// Choose a grid cell on the selection folds and read every ranking, and the
+/// gates, on the headline folds with it.
+fn sweep(
+    cases: &[&CaseScores],
+    folds: &[Fold],
+    cells: &[WordIndexOptions],
+    grid: &WordIndexGrid,
+    k: usize,
+) -> (SweepReport, GateReadout) {
+    let selection = cases
+        .iter()
+        .copied()
+        .filter(|case| case.fold < grid.selection_folds)
+        .collect::<Vec<_>>();
+    let headline = cases
+        .iter()
+        .copied()
+        .filter(|case| case.fold >= grid.selection_folds)
+        .collect::<Vec<_>>();
+    let rows = |side: &[&CaseScores], cell: usize| {
+        LEVELS
+            .map(|level| {
+                readout::metrics(
+                    side,
+                    EvaluationVariant::WordIndex,
+                    level,
+                    WordIndexSource::Cell(cell),
+                    k,
+                )
+            })
+            .to_vec()
+    };
+    let cells = cells
+        .iter()
+        .enumerate()
+        .map(|(cell, options)| SweepCell {
+            cell,
+            options: *options,
+            selection: rows(selection.as_slice(), cell),
+            headline: rows(headline.as_slice(), cell),
+        })
+        .collect::<Vec<_>>();
+    let mut selected: Option<(usize, f64, f64)> = None;
+    for cell in &cells {
+        let Some(file) = cell.selection[0].mean_recall_at_k else {
+            continue;
+        };
+        let symbol = cell.selection[1]
+            .mean_recall_at_k
+            .unwrap_or(f64::NEG_INFINITY);
+        if selected.is_none_or(|(_, best_file, best_symbol)| {
+            file > best_file || (file == best_file && symbol > best_symbol)
+        }) {
+            selected = Some((cell.cell, file, symbol));
+        }
+    }
+    let selected_cell = selected.map(|(cell, _, _)| cell);
+    let unavailable = match selected_cell {
+        None => Some("no selection-fold case has file truth to choose a grid cell by"),
+        Some(_) if headline.is_empty() => Some("no headline-fold case was evaluated"),
+        Some(_) => None,
+    };
+    let source = WordIndexSource::Cell(selected_cell.unwrap_or_default());
+    let gates = GateReadout {
+        scope: "headline_folds".to_string(),
+        word_index_options: selected_cell.map(|cell| cells[cell].options),
+        cases: headline.len(),
+        results: readout::gates(headline.as_slice(), source, k, unavailable),
+    };
+    let fold_ids = |range: std::ops::Range<usize>| {
+        folds[range]
+            .iter()
+            .map(|fold| fold.id.clone())
+            .collect::<Vec<_>>()
+    };
+    let report = SweepReport {
+        selection_folds: fold_ids(0..grid.selection_folds),
+        headline_folds: fold_ids(grid.selection_folds..folds.len()),
+        selection_cases: selection.len(),
+        headline_cases: headline.len(),
+        selection_rule: "highest word_index mean file recall@k on the selection folds, then mean symbol recall@k, then the earlier cell".to_string(),
+        cells,
+        selected_cell,
+        headline: selected_cell
+            .map(|_| readout::readout(headline.as_slice(), source, k)),
+    };
+    (report, gates)
 }
 
 fn validate_corpus(corpus: &EvaluationCorpus) -> Result<(), GraphError> {
@@ -568,11 +1152,7 @@ fn validate_case(
     Ok(exclusions)
 }
 
-fn held_out_truth(
-    repo_root: &Path,
-    target_revision: &str,
-    delivery: &crate::DeliveredChange,
-) -> Result<TruthOutcome, GraphError> {
+fn held_out_truth(tree: &CodeTree, delivery: &crate::DeliveredChange) -> TruthOutcome {
     let mut files = BTreeSet::new();
     let mut symbols = BTreeSet::new();
     let mut coverage = TruthCoverage::default();
@@ -580,7 +1160,7 @@ fn held_out_truth(
         coverage.file_changes_total += 1;
         if let Some(path) = file.old_path.as_deref() {
             let selector = format!("file:{path}");
-            if selector_is_live_at(repo_root, target_revision, selector.as_str())? {
+            if tree.is_live(selector.as_str()) {
                 files.insert(selector);
                 coverage.file_truth_eligible += 1;
             } else {
@@ -611,7 +1191,7 @@ fn held_out_truth(
                     "symbol:{}#{}:{}",
                     symbol.file_path, symbol.qualified, symbol.kind
                 );
-                if selector_is_live_at(repo_root, target_revision, selector.as_str())? {
+                if tree.is_live(selector.as_str()) {
                     symbols.insert(selector);
                     coverage.symbol_truth_eligible += 1;
                 } else {
@@ -628,17 +1208,15 @@ fn held_out_truth(
             }
         }
     }
-    Ok(TruthOutcome {
-        truth: BTreeMap::from([
-            (level_key(RecommendationLevel::File), files),
-            (level_key(RecommendationLevel::Symbol), symbols),
-        ]),
+    TruthOutcome {
+        truth: [files, symbols],
         coverage,
-    })
+    }
 }
 
 struct TruthOutcome {
-    truth: BTreeMap<u8, BTreeSet<String>>,
+    /// Truth by level ([`level_index`]).
+    truth: [BTreeSet<String>; 2],
     coverage: TruthCoverage,
 }
 
@@ -646,67 +1224,11 @@ fn increment(counts: &mut BTreeMap<String, usize>, reason: &str) {
     *counts.entry(reason.to_string()).or_default() += 1;
 }
 
-fn variants() -> [RecommendationVariant; 5] {
-    [
-        RecommendationVariant::Combined,
-        RecommendationVariant::TaskSearchOnly,
-        RecommendationVariant::GraphOnly,
-        RecommendationVariant::Frequency,
-        RecommendationVariant::WordIndex,
-    ]
-}
-
-fn levels() -> [RecommendationLevel; 2] {
-    [RecommendationLevel::File, RecommendationLevel::Symbol]
-}
-
-fn variant_key(variant: RecommendationVariant) -> u8 {
-    match variant {
-        RecommendationVariant::Combined => 0,
-        RecommendationVariant::TaskSearchOnly => 1,
-        RecommendationVariant::GraphOnly => 2,
-        RecommendationVariant::Frequency => 3,
-        RecommendationVariant::WordIndex => 4,
-    }
-}
-
-fn level_key(level: RecommendationLevel) -> u8 {
-    match level {
-        RecommendationLevel::File => 0,
-        RecommendationLevel::Symbol => 1,
-    }
-}
-
-fn variant_name(variant: RecommendationVariant) -> &'static str {
-    match variant {
-        RecommendationVariant::Combined => "combined",
-        RecommendationVariant::TaskSearchOnly => "task_search_only",
-        RecommendationVariant::GraphOnly => "graph_only",
-        RecommendationVariant::Frequency => "frequency",
-        RecommendationVariant::WordIndex => "word_index",
-    }
-}
-
 fn level_name(level: RecommendationLevel) -> &'static str {
     match level {
         RecommendationLevel::File => "file",
         RecommendationLevel::Symbol => "symbol",
     }
-}
-
-/// `numerator / denominator`, or `None` when there is nothing to divide by:
-/// "no data" is not a measured 0 (STD-02 §R29).
-fn ratio(numerator: usize, denominator: usize) -> Option<f64> {
-    (denominator != 0).then(|| numerator as f64 / denominator as f64)
-}
-
-/// Mean of the latency samples in milliseconds, or `None` with no samples.
-fn mean_latency_ms(samples_micros: &[u128]) -> Option<f64> {
-    if samples_micros.is_empty() {
-        return None;
-    }
-    let total: u128 = samples_micros.iter().sum();
-    Some(total as f64 / samples_micros.len() as f64 / 1_000.0)
 }
 
 /// An isolated clone for one evaluation case.
@@ -788,3 +1310,6 @@ impl EvaluationWorkspace {
         self.path.as_path()
     }
 }
+
+#[cfg(test)]
+mod tests;

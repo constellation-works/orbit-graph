@@ -46,7 +46,7 @@ record per line. `--help` remains conventional text help, and a bare
   | `clean` | `clean_summary`, `clean_database` (action is the next field) |
   | `overview` | `overview_summary`, `overview_language`, `overview_symbol_kind`, `overview_file`, `overview_symbol` (full detail) |
   | `changes` | `changed_symbol`, `candidate_test` |
-  | `evaluate` | `evaluation_coverage`, `evaluation_metric`, `evaluation_case` |
+  | `evaluate` | `evaluation_coverage`, `evaluation_fold`, `evaluation_metric`, `evaluation_paired_difference`, `evaluation_gate`, `evaluation_sweep_cell` and `evaluation_headline_metric` (with a grid), `evaluation_case` |
   | `evaluate --live` | `live_git_context`, `live_git_metric`, `live_git_case` |
 
   Cells escape backslashes, tabs, newlines and terminal controls; each record
@@ -283,7 +283,7 @@ their stored envelopes and retained unless `--discard-verified` is explicit.
 | `history status --branch <name>` | Report history versions, cursor, evidence, and association counts. |
 | `history rebuild --branch <name> [--limit <n>] [--confirm] [--discard-verified]` | Preview one scope, then atomically re-extract Git-only history while retaining verified deliveries by default. |
 | `recommend --query <text>\|--task-id <id> [--level file\|symbol] [--variant <variant>] [--limit <n>] [--branch <name>] [--revision <rev>] [--cutoff <cutoff>] [--task-snapshot <path>] [--hybrid-hits <path>] [--text-fields title\|title_description_criteria] [--window-size <n>] [--symbol-boost <b>] [--min-support <n>] [--smoothing <k>] [--max-term-share <share>]` | Rank current destinations with evidence and freshness. The last six flags set `word_index` options and are refused with any other variant. |
-| `evaluate --input <corpus.json> [--k <n>]` | Compare five ranking variants chronologically; the corpus's optional `word_index` object sets that variant's options. `--input` is required unless `--live` is set. |
+| `evaluate --input <corpus.json> [--k <n>]` | Compare the five `recommend` variants, BM25 over code, explicit mentions and two word-index combinations chronologically, with paired differences and gates G1 and G2; the corpus's optional `word_index`, `folds`, `baseline_text_fields` and `word_index_grid` fields set the word-index options, the folds and a parameter sweep. `--input` is required unless `--live` is set. |
 | `evaluate --live [--branch <name>] [--limit <n>] [--k <n>] [--revision <rev>]` | Hold out first-parent commits and score Git-only commit-text relevance. Requires `history sync` first. |
 | `search <query> [--kind symbol\|string\|config] [--lang <id>] [--limit <n>]` | Full-text search indexed definitions, strings, or config keys. |
 | `show <selector> [--max-bytes <n>]` | Return metadata and a bounded source slice. `source` is the slice as text, or `null` when it is not UTF-8; then `source_bytes` carries the raw bytes and `source_encoding` is `bytes` (otherwise `utf-8`). |
@@ -399,7 +399,10 @@ prints a `changes_context` record, then one `changed_symbol` and one
 ## Chronological evaluation
 
 `orbit-graph evaluate` consumes a versioned public corpus and runs combined,
-task-search-only, graph-only, and frequency ranking at file and symbol levels.
+task-search-only, graph-only, frequency and word-index ranking at file and
+symbol levels, beside two history-free baselines (BM25 over the code of each
+fold's cutoff tree, and the paths and symbols the task text names) and two
+combinations of the word index with them.
 Each case runs in a disposable clone with an isolated history index and a graph
 materialized from the exact target tree; operational indexes and the caller
 checkout are never read or mutated. Held-out delivery diffs are previewed as
@@ -411,8 +414,15 @@ recall@K, precision@K, stale-result rate, mean/maximum latency, coverage,
 per-level omitted-truth reasons, exclusions, source provenance, input digest,
 and exact graph revisions. A metric with no data behind it (no relevant truth,
 no evaluated case, no returned result or no query) is `null` in the JSON
-report (schema version 2) and `n/a` in the table, never `0`. The corpus input
-keeps its own schema version, 1.
+report (schema version 3) and `n/a` in the table, never `0`. The corpus input
+keeps its own schema version, 1. Each row also reports per-case mean recall
+and coverage (the share of cases with any answer); the report adds the same
+rows split by whether a delivery mostly added files, the word index's paired
+difference against every other ranking with a bootstrap interval, gates G1
+and G2 of the context-index design, and, with a `word_index_grid`, every
+grid cell chosen on the earlier folds and read on the later ones. The
+[change-recommendations spec](design/changes/specs/change-recommendations.md#stage-3-chronological-evaluation)
+defines each.
 
 The synthetic adversarial executable fixture runs in CI. The bounded real Orbit
 prospective input, measured result, and its no-superiority limitation are
