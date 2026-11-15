@@ -4,6 +4,7 @@
 //! Uses workspace serde_norway/toml/serde_json for real parsing + line scan fallback for positions.
 //! Kinds: yaml|toml|json|env|serde per spec §6.2.
 
+use crate::languages::common::walk_limit;
 use std::collections::HashMap;
 use std::path::Path;
 
@@ -393,6 +394,7 @@ impl<'a> FlowKeyLines<'a> {
     }
 
     fn collect(&mut self, parent: &[String]) {
+        walk_limit!();
         self.skip_space();
         if self.text.as_bytes().get(self.cursor) != Some(&b'{') {
             return;
@@ -544,6 +546,7 @@ impl<'a> JsonKeyLines<'a> {
     }
 
     fn value(&mut self, parent: Option<&[String]>) {
+        walk_limit!();
         self.whitespace();
         match self.source.as_bytes().get(self.cursor) {
             Some(b'{') => {
@@ -610,6 +613,7 @@ fn collect_toml_keys(
     path: &Path,
     kind: &str,
 ) {
+    walk_limit!();
     let file_path = normalize_path(path);
     for (k, v) in table {
         let mut full = prefix.to_vec();
@@ -634,6 +638,7 @@ fn collect_yaml_keys(
     path: &Path,
     kind: &str,
 ) {
+    walk_limit!();
     let file_path = normalize_path(path);
     if let serde_norway::Value::Mapping(map) = value {
         for (k, v) in map {
@@ -660,6 +665,7 @@ fn collect_json_keys(
     path: &Path,
     kind: &str,
 ) {
+    walk_limit!();
     let file_path = normalize_path(path);
     if let serde_json::Value::Object(map) = value {
         for (k, v) in map {

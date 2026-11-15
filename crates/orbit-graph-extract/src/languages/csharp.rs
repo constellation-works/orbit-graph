@@ -1,5 +1,6 @@
 //! C# tree-sitter extraction.
 
+use crate::languages::common::walk_limit;
 use std::path::Path;
 
 use tree_sitter::{Node, Parser};
@@ -152,6 +153,7 @@ impl ExtractionState {
 }
 
 fn extract_children(node: Node, source: &str, parent: Option<&str>, state: &mut ExtractionState) {
+    walk_limit!();
     let mut scoped_parent = parent.map(str::to_string);
     let mut cursor = node.walk();
 

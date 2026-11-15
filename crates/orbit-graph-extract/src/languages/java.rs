@@ -1,5 +1,6 @@
 //! Java tree-sitter extraction.
 
+use crate::languages::common::walk_limit;
 use std::path::Path;
 
 use tree_sitter::{Node, Parser};
@@ -145,6 +146,7 @@ impl ExtractionState {
 }
 
 fn extract_children(node: Node, source: &str, parent: Option<&str>, state: &mut ExtractionState) {
+    walk_limit!();
     let mut cursor = node.walk();
     for child in node.named_children(&mut cursor) {
         extract_node(child, source, parent, state);

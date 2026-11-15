@@ -1,5 +1,6 @@
 //! Ruby tree-sitter extraction.
 
+use crate::languages::common::walk_limit;
 use std::path::Path;
 
 use tree_sitter::{Node, Parser};
@@ -133,6 +134,7 @@ fn extract_children(
     parent_symbol: Option<&str>,
     state: &mut ExtractionState,
 ) {
+    walk_limit!();
     let mut cursor = node.walk();
     for child in node.named_children(&mut cursor) {
         match child.kind() {
@@ -160,6 +162,7 @@ fn extract_scope(
     kind: &'static str,
     state: &mut ExtractionState,
 ) {
+    walk_limit!();
     let Some(name) = get_name(node, source) else {
         return;
     };
@@ -311,6 +314,7 @@ fn collect_expression_refs(
     parent_symbol: Option<&str>,
     state: &mut ExtractionState,
 ) {
+    walk_limit!();
     match node.kind() {
         "call" => {
             handle_call(node, source, parent_symbol, state);

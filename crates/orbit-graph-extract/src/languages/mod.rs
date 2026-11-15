@@ -29,7 +29,7 @@ pub use rust::RustExtractor;
 pub use typescript::TypeScriptExtractor;
 
 #[doc(hidden)]
-pub use common::with_parse_timeout;
+pub use common::{ExtractionLimits, with_extraction_limits};
 
 use crate::Extractor;
 

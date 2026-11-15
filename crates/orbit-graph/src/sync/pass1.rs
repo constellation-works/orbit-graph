@@ -460,10 +460,10 @@ impl ExtractorBackend for DefaultExtractorBackend {
                 )
                 .with_kind("unsupported")
             })?;
-        let (rows, deadline_exceeded) = languages::with_parse_timeout(self.parse_timeout, || {
+        let (rows, limits) = languages::with_extraction_limits(self.parse_timeout, || {
             extractor.extract(rel_path, &bytes)
         });
-        if deadline_exceeded {
+        if limits.deadline_exceeded {
             return Err(ExtractFileError::new(
                 "parse source file",
                 format!(
@@ -472,6 +472,14 @@ impl ExtractorBackend for DefaultExtractorBackend {
                 ),
             )
             .with_kind("parse_timeout"));
+        }
+        if limits.walk_depth_exceeded {
+            // The rows are partial: the walk stopped before reaching every node.
+            return Err(ExtractFileError::new(
+                "walk syntax tree",
+                "syntax tree nests deeper than the extractor's walk limit",
+            )
+            .with_kind("walk_depth"));
         }
         Ok(ExtractedSourceFile {
             path: rel_path.to_path_buf(),
