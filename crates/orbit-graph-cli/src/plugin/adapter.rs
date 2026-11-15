@@ -34,10 +34,15 @@ const POLL_INTERVAL: Duration = Duration::from_millis(10);
 const MCP_PROTOCOL_VERSION: &str = "2025-06-18";
 const MCP_INITIALIZE_ID: u64 = 1;
 const MCP_CALL_ID: u64 = 2;
-/// Orbit's public task-scoped delivery read.
-pub(super) const DELIVERY_TOOL: &str = "orbit.workflow.run.delivery";
-/// The `orbit.workflow.run.delivery` wire version this adapter reads.
+/// Orbit tool that returns one task's delivery evidence.
+pub(super) const DELIVERY_TOOL: &str = "orbit.task.show";
+/// `field` on [`DELIVERY_TOOL`] that selects the delivery observation.
+const DELIVERY_FIELD: &str = "delivery";
+/// Delivery-observation wire version this adapter reads (`RunDeliveryObservation`
+/// schema 1, returned by [`DELIVERY_TOOL`] with [`DELIVERY_FIELD`]).
 const RUN_DELIVERY_SCHEMA_VERSION: u64 = 1;
+/// Provenance system for that observation, before the local Git check.
+const DELIVERY_EVIDENCE_SYSTEM: &str = "orbit.task.show.delivery";
 
 pub(super) struct OrbitAdapter<'a> {
     repository: &'a Path,
@@ -316,8 +321,8 @@ impl<'a> OrbitAdapter<'a> {
         })
     }
 
-    /// Judge one requested task/run pair through Orbit's public task-scoped
-    /// delivery read, `orbit.workflow.run.delivery`, and local Git.
+    /// Judge one requested task/run pair through Orbit's public delivery
+    /// read, `orbit.task.show` with `field: "delivery"`, and local Git.
     ///
     /// The task read binds the pair to its public workspace owner first; the
     /// delivery read is routed to that same workspace and must answer for
@@ -340,8 +345,9 @@ impl<'a> OrbitAdapter<'a> {
         let value = self.tool_run(
             DELIVERY_TOOL,
             json!({
+                "id": task_id,
+                "field": DELIVERY_FIELD,
                 "run_id": run_id,
-                "task_id": task_id,
                 "workspace": route.workspace_id,
                 "model": "codex",
             }),
@@ -378,17 +384,17 @@ impl<'a> OrbitAdapter<'a> {
             (Some(timestamp), _) => (
                 TemporalStatus::Uncertain,
                 Some(timestamp),
-                "orbit.workflow.run.delivery.landing.observed_at",
+                "orbit.task.show.delivery.landing.observed_at",
             ),
             (None, Some(timestamp)) => (
                 TemporalStatus::Uncertain,
                 Some(timestamp),
-                "orbit.workflow.run.delivery.run_finished_at",
+                "orbit.task.show.delivery.run_finished_at",
             ),
             (None, None) => (
                 TemporalStatus::Unavailable,
                 None,
-                "orbit.workflow.run.delivery",
+                "orbit.task.show.delivery",
             ),
         };
         Ok(RunVerdict::Deliverable(Box::new(VerifiedDelivery {
@@ -401,7 +407,7 @@ impl<'a> OrbitAdapter<'a> {
                 delivery_id: format!("orbit-run:{run_id}:{task_id}"),
                 evidence: DeliveryEvidence::VerifiedDelivery,
                 source: Provenance {
-                    system: format!("{DELIVERY_TOOL}+git"),
+                    system: format!("{DELIVERY_EVIDENCE_SYSTEM}+git"),
                     record_id: Some(run_id.to_string()),
                 },
                 delivered_at: TemporalFact {
@@ -1117,10 +1123,11 @@ fn task_snapshot_from_value(task: &Value, workspace: &str) -> Result<TaskAssocia
     })
 }
 
-/// The `orbit.workflow.run.delivery` schema version 1 answer, decoded from
-/// its published JSON shape (Orbit's `RunDeliveryObservation`) without linking
-/// any Orbit crate. Only the fields this adapter judges are read; every enum is
-/// closed, so a value this adapter does not know is malformed, never guessed.
+/// The `orbit.task.show` `field: "delivery"` schema version 1 answer, decoded
+/// from its published JSON shape (Orbit's `RunDeliveryObservation`) without
+/// linking any Orbit crate. Only the fields this adapter judges are read; every
+/// enum is closed, so a value this adapter does not know is malformed, never
+/// guessed.
 #[derive(Debug, Deserialize)]
 struct RunDeliveryObservation {
     workspace_id: String,
@@ -1160,6 +1167,8 @@ enum CommitStatus {
     AlreadyCommitted,
     VerifiedNoDiff,
     VerifiedAlreadyLanded,
+    /// A claimed leaf found its pinned base already resolves the task.
+    VerifiedAlreadyResolved,
     SkippedNoDiffExpected,
     Pending,
     NotReached,
@@ -1218,7 +1227,7 @@ fn decode_run_delivery(
     task_id: &str,
     run_id: &str,
 ) -> Result<RunDeliveryObservation, GraphError> {
-    const OPERATION: &str = "decode orbit.workflow.run.delivery";
+    const OPERATION: &str = "decode orbit.task.show delivery";
     match value.get("schema_version").and_then(Value::as_u64) {
         Some(RUN_DELIVERY_SCHEMA_VERSION) => {}
         version => {

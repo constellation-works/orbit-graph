@@ -713,7 +713,7 @@ impl MaintainToolInput {
 }
 
 /// One run Orbit recorded delivering one task: the only unit Orbit's public
-/// delivery read, `orbit.workflow.run.delivery`, answers for.
+/// delivery read, `orbit.task.show` with `field: "delivery"`, answers for.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct TaskRun {
@@ -1150,7 +1150,7 @@ fn sync_orbit(
         "branch": branch,
         "authority": {
             "workspace": input.workspace,
-            "interfaces": ["orbit.workspace.list", "orbit.task.show", adapter::DELIVERY_TOOL, "git"],
+            "interfaces": ["orbit.workspace.list", "orbit.task.show", "git"],
         },
         "coverage": {
             "complete": false,
@@ -1163,7 +1163,7 @@ fn sync_orbit(
             "excluded": outcomes.excluded,
             "failed": outcomes.failed,
             "truncated": truncated,
-            "note": "Only explicit task_runs pairs and each requested task's current job_run_id are examined, one run for one task through orbit.workflow.run.delivery. Orbit exposes no public run listing or cursor-paginated delivery feed, so older retries and unlisted tasks are not claimed as covered. Only a host-verified landing whose commits Git reaches on the landing branch is imported. excluded counts pairs examined and judged ineligible; failed counts tasks and pairs that could not be examined.",
+            "note": "Only explicit task_runs pairs and each requested task's current job_run_id are examined, one run for one task through orbit.task.show field delivery. Orbit exposes no public run listing or cursor-paginated delivery feed, so older retries and unlisted tasks are not claimed as covered. Only a host-verified landing whose commits Git reaches on the landing branch is imported. excluded counts pairs examined and judged ineligible; failed counts tasks and pairs that could not be examined.",
             "resume": "resubmit omitted or failed task_runs or task_ids; delivery IDs are idempotent",
         },
         "outcomes": outcomes.entries,

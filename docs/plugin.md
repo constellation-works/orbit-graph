@@ -106,7 +106,7 @@ orbit plugin enable graph --scope workspace --workspace /absolute/path/to/regist
 Workspace enable never records grants and is refused while the host plugin is
 disabled. Neither scope grants ordinary callers permission to run mutating tools.
 Activity authority still applies to `maintain`. The plugin needs no operator capability: it reads
-run deliveries through the task-scoped public `orbit.workflow.run.delivery`.
+run deliveries through `orbit.task.show` with `field: "delivery"`.
 
 For a tagged first-party release, build the matching executable first. Only
 after the operator authorizes host installation, install and bundle it so each
@@ -168,8 +168,8 @@ thirteen-tool surface. The opt-in installed-plugin test
 task in the disposable Orbit store, imports it, replays it as
 `already_indexed`, and checks that an unlanded run, a foreign task/run pair and
 bare `run_ids` are not imported. The run is seeded as the host's stored run
-record rather than produced by a live pipeline. That proof needs an Orbit that
-serves `orbit.workflow.run.delivery`, which landed after the 0.25.1 release.
+record rather than produced by a live pipeline. That proof needs an Orbit whose
+`orbit.task.show` serves `field: "delivery"`, which landed after the 0.25.1 release.
 Against CI's pinned 0.25.0 the test checks only that nothing is imported;
 `ORBIT_GRAPH_TEST_REQUIRE_RUN_DELIVERY=1` makes a host without the read a test
 failure.
@@ -300,8 +300,8 @@ from result order. The source is named `orbit.search_lexical_rank` in
 `adapter.hybrid_search`. Malformed hits are counted and warned about; a refused
 call or invalid results array uses local lexical fallback with the cause in
 `adapter.warnings`.
-The calling activity must allow `orbit.workspace.list`, `orbit.task.show`,
-`orbit.search`, and `orbit.workflow.run.delivery` for the callback operations it
+The calling activity must allow `orbit.workspace.list`, `orbit.task.show`, and
+`orbit.search` for the callback operations it
 uses; the adapter does not bypass Orbit policy. `orbit.workspace.list` is served
 only over MCP, so the adapter reaches it through a short-lived, bounded
 `orbit mcp serve` stdio session and binds the requested repository to the
@@ -573,8 +573,8 @@ activity calls `graph_sync` with the default budget. A run that reports
 whose incremental build fits the budget (see the timing note in the
 `graph_sync` response's `result.timings`).
 
-`orbit_sync` reads only public `orbit.workspace.list`, `orbit.task.show`, and
-`orbit.workflow.run.delivery` tool responses, then verifies the delivery in the
+`orbit_sync` reads only public `orbit.workspace.list` and `orbit.task.show`
+responses (task text, and `field: "delivery"` for a run), then verifies the delivery in the
 explicitly routed Git repository. It never reads `orbit.workflow.run.show`,
 checkpoint indexes, agent envelopes or task prose.
 
@@ -586,11 +586,12 @@ Orbit read binds a run to its task, so Graph cannot ask the delivery read about
 it without guessing the owner. Duplicate pairs are examined once, and `limit`
 (1 to 100, default 25) bounds the distinct pairs, explicit pairs first.
 
-`orbit_sync` needs an Orbit host that serves `orbit.workflow.run.delivery`.
-No release includes it yet; it landed after 0.25.1. On an older host every
+`orbit_sync` needs an Orbit host whose `orbit.task.show` accepts
+`field: "delivery"`. Orbit 0.25.0 and 0.25.1 do not. On an older host every
 pair is reported `failed` and nothing is imported.
 
-Orbit answers `orbit.workflow.run.delivery` (schema version 1) only for a pair
+Orbit answers `orbit.task.show` with `field: "delivery"` (observation schema
+version 1) only for a pair
 whose run was submitted with that task; any other pair is refused and reported
 `failed` with `orbit_refused`. Graph also fails closed when the answer names a
 different task, run or workspace, has another `schema_version`, is malformed,

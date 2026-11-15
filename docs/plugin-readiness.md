@@ -76,7 +76,7 @@ Neither is a new live executor-delivery certification of this export.
 
 No broader macOS, dashboard, scheduler, official `git+` installation or optimized
 production-latency certification follows. Orbit's semantic version alone does
-not prove `orbit.workflow.run.delivery` capability. Import remains bounded to
+not prove that `orbit.task.show` serves `field: "delivery"`. Import remains bounded to
 named task/run pairs with partial coverage. Cold `changes` calls write their
 snapshot/scratch cache under the existing
 [D6 deviation](design/changes/4_decisions.md#d6-where-snapshots-are-cached);
@@ -160,7 +160,7 @@ test -z "$(git status --short)"
 git diff --exit-code "$binary_source" "$candidate" -- \
   crates Cargo.toml Cargo.lock .orbit-plugin scripts/bundle-plugin-binary.sh
 printf '%s  %s\n' 81ffdbdaa935faee1dbe311cf3494e5b24f2c268d132be24725dcf89593c0227 "$binary" | sha256sum -c -
-orbit tool show orbit.workflow.run.delivery --format json
+orbit tool show orbit.task.show --format json
 # Stop at 80% before each new export, worktree or build directory.
 test "$(df --output=pcent . | tail -n 1 | tr -dc '0-9')" -lt 80
 mkdir -p .orbit/tmp

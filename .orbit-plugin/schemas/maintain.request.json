@@ -53,7 +53,7 @@
       }
     },
     "task_runs": {
-      "description": "orbit_sync only: explicit pairs of a task and a workflow run Orbit recorded delivering it, each read through orbit.workflow.run.delivery. Refused for every other operation.",
+      "description": "orbit_sync only: explicit pairs of a task and a workflow run Orbit recorded delivering it, each read through orbit.task.show with field delivery. Refused for every other operation.",
       "type": "array",
       "items": {
         "type": "object",

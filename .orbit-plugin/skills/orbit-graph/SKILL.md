@@ -142,8 +142,8 @@ Maintenance is deliberate. `orbit.graph.maintain` supports:
 - `import`: one public DeliveryImport v2 envelope;
 - `orbit_sync`: bounded explicit `task_runs` pairs (`{"task_id", "run_id"}`)
   and/or `task_ids` (each task's current `job_run_id`), read through public
-  `orbit.workspace.list`, `orbit.task.show` and the task-scoped
-  `orbit.workflow.run.delivery`, then checked against Git. Bare `run_ids` are
+  `orbit.workspace.list` and `orbit.task.show` (`field: "delivery"` for a
+  run), then checked against Git. Bare `run_ids` are
   retired and refused: no public read binds a run to its task.
 - `graph_sync`: build the code-graph index within `budget_ms` (1000-110000,
   default 90000) and publish it only when complete. Incremental by default;
@@ -162,8 +162,8 @@ verified deliveries are preserved and re-extracted by default.
 `--discard-verified` requires `--confirm` and explicitly removes them.
 
 The calling activity must allow the callback tools it uses:
-`orbit.workspace.list`, `orbit.task.show`, `orbit.search`, and
-`orbit.workflow.run.delivery`. Orbit's policy still applies to the adapter's
+`orbit.workspace.list`, `orbit.task.show`, and `orbit.search`. Delivery
+evidence is `orbit.task.show` with `field: "delivery"`. Orbit's policy still applies to the adapter's
 nested public calls. For offline strict replay, pass an eligible earlier public
 `task_snapshot` with `cutoff` and use lexical hits. A live supplied snapshot
 still requires task/workspace authority; it cannot bypass a refused callback.
