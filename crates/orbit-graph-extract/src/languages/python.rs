@@ -1,5 +1,6 @@
 //! Python tree-sitter extraction.
 
+use crate::languages::common::walk_limit;
 use std::collections::BTreeMap;
 use std::ops::Range;
 use std::path::Path;
@@ -217,6 +218,7 @@ fn extract_children(
     reference_parent_symbol: Option<&str>,
     state: &mut ExtractionState,
 ) {
+    walk_limit!();
     let mut cursor = node.walk();
     for child in node.named_children(&mut cursor) {
         match child.kind() {
@@ -243,6 +245,7 @@ fn extract_decorated(
     parent_is_class: bool,
     state: &mut ExtractionState,
 ) {
+    walk_limit!();
     if let Some(definition) = node.child_by_field_name("definition") {
         match definition.kind() {
             "function_definition" => {
@@ -605,6 +608,7 @@ fn collect_function_type_refs(node: Node, source: &str, state: &mut ExtractionSt
 }
 
 fn collect_parameter_type_refs(node: Node, source: &str, state: &mut ExtractionState) {
+    walk_limit!();
     if let Some(type_node) = node.child_by_field_name("type") {
         collect_type_refs(type_node, source, state);
     }
@@ -616,6 +620,7 @@ fn collect_parameter_type_refs(node: Node, source: &str, state: &mut ExtractionS
 }
 
 fn collect_type_refs(node: Node, source: &str, state: &mut ExtractionState) {
+    walk_limit!();
     if let Some(target) = type_reference_text(node, source)
         && !target.is_empty()
         && !is_ignored_name(&target)
@@ -643,6 +648,7 @@ fn collect_expression_refs(
     parent_symbol: Option<&str>,
     state: &mut ExtractionState,
 ) {
+    walk_limit!();
     match node.kind() {
         "call" => {
             collect_call_ref(node, source, parent_symbol, state);
@@ -893,6 +899,7 @@ fn last_script_reference(
     source: &str,
     script_constants: &BTreeMap<String, String>,
 ) -> Option<String> {
+    walk_limit!(None);
     let found = match node.kind() {
         "string" => python_string_literal_value(&node_text(node, source))
             .filter(|literal| literal.ends_with(".py")),
@@ -1158,6 +1165,7 @@ fn import_leaf_name(name: &str) -> String {
 }
 
 fn type_reference_text(node: Node, source: &str) -> Option<String> {
+    walk_limit!(None);
     match node.kind() {
         "identifier" | "dotted_name" | "attribute" => {
             Some(normalize_qualified_name(&node_text(node, source)))
@@ -1170,6 +1178,7 @@ fn type_reference_text(node: Node, source: &str) -> Option<String> {
 }
 
 fn first_type_reference_child(node: Node, source: &str) -> Option<String> {
+    walk_limit!(None);
     let mut cursor = node.walk();
     for child in node.named_children(&mut cursor) {
         if let Some(text) = type_reference_text(child, source)
@@ -1182,6 +1191,7 @@ fn first_type_reference_child(node: Node, source: &str) -> Option<String> {
 }
 
 fn type_span_node<'tree>(node: Node<'tree>, source: &str) -> Node<'tree> {
+    walk_limit!(node);
     let mut cursor = node.walk();
     for child in node.named_children(&mut cursor) {
         if matches!(child.kind(), "identifier" | "dotted_name" | "attribute") {

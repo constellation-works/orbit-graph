@@ -62,7 +62,7 @@ pub struct SyncFailure {
     /// `read file for content hash`.
     pub operation: String,
     /// Stable class of the error: `permission_denied`, `not_found`, `io`,
-    /// `invalid_data`, `parse_timeout`, `unsupported` or `panic`.
+    /// `invalid_data`, `parse_timeout`, `walk_depth`, `unsupported` or `panic`.
     pub error_kind: String,
     /// The error as reported, for diagnosis.
     pub message: String,

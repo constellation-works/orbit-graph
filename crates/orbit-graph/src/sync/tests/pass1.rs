@@ -597,6 +597,50 @@ fn parse_past_its_deadline_is_an_extraction_failure() {
 }
 
 #[test]
+fn walk_past_its_depth_cap_is_an_extraction_failure() {
+    let worktree = TestWorktree::new("walk-depth");
+    drop(Graph::open(worktree.path(), SyncPolicy::Manual).expect("open graph"));
+    // 100k nested parentheses is about 200 KB, far under the scanner's byte
+    // cap, and would overflow a 2 MiB rayon worker stack without a walk cap.
+    let depth = 100_000;
+    worktree.write(
+        "src/deep.py",
+        &format!(
+            "def f():\n    value = {}1{}\n",
+            "(".repeat(depth),
+            ")".repeat(depth)
+        ),
+    );
+    worktree.write("src/ok.rs", "pub fn ok() {}\n");
+    let diff = Diff {
+        new: vec![PathBuf::from("src/deep.py"), PathBuf::from("src/ok.rs")],
+        ..Diff::default()
+    };
+
+    let output = super::run_with_backend(
+        graph_db_path(worktree.path()).as_path(),
+        worktree.path(),
+        SyncMode::Auto,
+        &diff,
+        &DefaultExtractorBackend::default(),
+        None,
+        Pass1Limits::default(),
+    )
+    .expect("pass1 records the deep file as a failure and indexes the rest");
+
+    let conn = open_test_connection(worktree.path());
+    assert_eq!(output.files_written, 1);
+    assert_eq!(file_count(&conn, "src/deep.py"), 0, "no rows for it");
+    assert_eq!(file_count(&conn, "src/ok.rs"), 1);
+    let failed = output
+        .failed
+        .iter()
+        .map(|failure| (failure.path.as_str(), failure.error_kind.as_str()))
+        .collect::<Vec<_>>();
+    assert_eq!(failed, [("src/deep.py", "walk_depth")]);
+}
+
+#[test]
 fn extraction_refuses_a_file_that_grew_past_the_byte_cap() {
     let worktree = TestWorktree::new("extract-byte-cap");
     let oversize = "a".repeat(usize::try_from(MAX_FILE_BYTES).expect("cap fits usize") + 1);
