@@ -92,7 +92,11 @@ pub use recommend::{
     DEFAULT_RECOMMENDATION_LIMIT, HybridTaskHit, Recommendation, RecommendationAssociation,
     RecommendationCounts, RecommendationEngine, RecommendationFallback, RecommendationFreshness,
     RecommendationFreshnessStatus, RecommendationInput, RecommendationLevel, RecommendationReason,
-    RecommendationRequest, RecommendationResult, RecommendationVariant, current_observation_cutoff,
+    RecommendationRequest, RecommendationResult, RecommendationVariant,
+    WORD_INDEX_DEFAULT_MAX_TERM_SHARE, WORD_INDEX_DEFAULT_MIN_SUPPORT,
+    WORD_INDEX_DEFAULT_SMOOTHING, WORD_INDEX_DEFAULT_SYMBOL_BOOST, WORD_INDEX_DEFAULT_WINDOW_SIZE,
+    WORD_INDEX_TOKENIZER_VERSION, WordIndexOptions, WordIndexSummary, WordIndexTextFields,
+    current_observation_cutoff,
 };
 // Hidden helpers the `orbit-graph` CLI's plugin protocol needs for its own
 // per-repository state directory; see each item's documentation.

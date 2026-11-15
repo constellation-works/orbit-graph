@@ -25,6 +25,14 @@ use serde::{Deserialize, Serialize};
 use crate::store::history::PathLineageStep;
 use crate::{Graph, GraphError, HistoryIndex};
 
+mod word_index;
+
+pub use word_index::{
+    WORD_INDEX_DEFAULT_MAX_TERM_SHARE, WORD_INDEX_DEFAULT_MIN_SUPPORT,
+    WORD_INDEX_DEFAULT_SMOOTHING, WORD_INDEX_DEFAULT_SYMBOL_BOOST, WORD_INDEX_DEFAULT_WINDOW_SIZE,
+    WORD_INDEX_TOKENIZER_VERSION, WordIndexOptions, WordIndexSummary, WordIndexTextFields,
+};
+
 /// Default number of ranked destinations returned by recommendation queries.
 pub const DEFAULT_RECOMMENDATION_LIMIT: usize = 10;
 #[cfg(test)]
@@ -57,6 +65,9 @@ pub enum RecommendationVariant {
     GraphOnly,
     /// Query-independent historical destination frequency.
     Frequency,
+    /// Inverted index from past task wording to the files and symbols those
+    /// tasks changed, scored by smoothed positive pointwise mutual information.
+    WordIndex,
 }
 
 impl RecommendationVariant {
@@ -65,7 +76,7 @@ impl RecommendationVariant {
     const fn uses_structure(self) -> bool {
         match self {
             Self::Combined | Self::GraphOnly => true,
-            Self::TaskSearchOnly | Self::Frequency => false,
+            Self::TaskSearchOnly | Self::Frequency | Self::WordIndex => false,
         }
     }
 }
@@ -128,6 +139,10 @@ pub struct RecommendationRequest {
     /// production exponent. Must be finite and non-negative.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub commit_text_exponent: Option<f64>,
+    /// Parameters of the [`RecommendationVariant::WordIndex`] variant; valid
+    /// only with it. `None` uses every default.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub word_index: Option<WordIndexOptions>,
 }
 
 /// History-index freshness relative to the resolved target revision.
@@ -252,6 +267,10 @@ pub struct RecommendationResult {
     pub total: Option<usize>,
     /// Whether `total` exceeds the destinations returned.
     pub truncated: bool,
+    /// How the word index was built and queried; present only for the
+    /// [`RecommendationVariant::WordIndex`] variant.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub word_index: Option<WordIndexSummary>,
 }
 
 /// Repository-scoped recommendation engine.
@@ -378,20 +397,40 @@ impl RecommendationEngine {
         let freshness = freshness(&repo, status.cursor, target);
         let deliveries = index.deliveries()?;
         let lineage_steps = index.path_lineage()?;
+        let word_index_options = (request.variant == RecommendationVariant::WordIndex)
+            .then(|| request.word_index.unwrap_or_default());
         let mut resolver = TargetTree::load(&repo, target)?;
-        if request.level == RecommendationLevel::Symbol || request.variant.uses_structure() {
+        if request.level == RecommendationLevel::Symbol
+            || request.variant.uses_structure()
+            || word_index_options.is_some_and(|options| options.symbol_boost > 1.0)
+        {
             resolver.ensure_symbols(&repo, index.database_path().parent())?;
         }
         let strict_replay = request.cutoff.is_some();
         let commit_text = commit_text_policy(request)?;
-        let query = resolve_query(&deliveries, request, &cutoff, strict_replay, &repo, target)?;
+        let query_text = |task: &TaskAssociation| match word_index_options {
+            Some(options) => options.text_fields.text(task),
+            None => task_text(task),
+        };
+        let query = resolve_query(
+            &deliveries,
+            request,
+            &cutoff,
+            strict_replay,
+            &repo,
+            target,
+            &query_text,
+        )?;
         let hybrid = normalized_hybrid_hits(request.hybrid_hits.as_slice())?;
         let target_task = match &request.input {
             RecommendationInput::TaskId(id) => Some(id.as_str()),
             RecommendationInput::Query(_) => None,
         };
         let mut fallbacks = Vec::new();
-        if query.is_empty() && matches!(&request.input, RecommendationInput::TaskId(_)) {
+        if query.is_empty()
+            && word_index_options.is_none()
+            && matches!(&request.input, RecommendationInput::TaskId(_))
+        {
             fallbacks.push(RecommendationFallback {
                 kind: "target_task_text_external".to_string(),
                 reason: "the target task has no eligible local snapshot; supplied hybrid task hits provide relevance without reading target delivery output".to_string(),
@@ -407,6 +446,52 @@ impl RecommendationEngine {
             &mut fallbacks,
         )?;
         let mut lineage = PathLineage::new(&repo, target, &visible, lineage_steps)?;
+        if let Some(options) = word_index_options {
+            let (window, excluded) = word_index_window(
+                &repo,
+                &resolver,
+                &mut lineage,
+                eligible.as_slice(),
+                &cutoff,
+                strict_replay,
+                &options,
+            )?;
+            let outcome = word_index::score(
+                window.as_slice(),
+                excluded,
+                query.as_str(),
+                request.level,
+                &options,
+            );
+            fallbacks.extend(lineage.fallbacks());
+            if let Some(reason) = outcome.summary.empty_reason.as_deref() {
+                fallbacks.push(RecommendationFallback {
+                    kind: "word_index_empty".to_string(),
+                    reason: word_index_empty_reason(reason, &outcome.summary),
+                });
+            }
+            let limit = request.limit.unwrap_or(DEFAULT_RECOMMENDATION_LIMIT);
+            let mut recommendations = finalize(outcome.scored, outcome.summary.window_tasks);
+            let ranked = recommendations.len();
+            recommendations.truncate(limit);
+            for (index, recommendation) in recommendations.iter_mut().enumerate() {
+                recommendation.rank = index + 1;
+            }
+            return Ok(RecommendationResult {
+                input: request.input.clone(),
+                level: request.level,
+                variant: request.variant,
+                resolved_target_revision: target.to_string(),
+                effective_cutoff,
+                source_freshness: freshness,
+                structure_applied: false,
+                fallbacks,
+                truncated: ranked > recommendations.len(),
+                recommendations,
+                total: Some(ranked),
+                word_index: Some(outcome.summary),
+            });
+        }
         let mut scored = score_history(
             &repo,
             &resolver,
@@ -556,8 +641,155 @@ impl RecommendationEngine {
             truncated: ranked > recommendations.len(),
             recommendations,
             total: Some(ranked),
+            word_index: None,
         })
     }
+}
+
+/// Human-readable explanation of an empty word-index answer.
+fn word_index_empty_reason(code: &str, summary: &WordIndexSummary) -> String {
+    let detail = match code {
+        "no_window_tasks" => "no eligible delivery with exactly one task, task text and 1 to 20 live changed files precedes the cutoff".to_string(),
+        "no_query_terms" => "the query text has no index terms after tokenising".to_string(),
+        "no_known_terms" => format!(
+            "no query term occurs in the {}-task window outside the window stopwords ({})",
+            summary.window_tasks,
+            summary.window_stopwords.join(", ")
+        ),
+        _ => format!(
+            "no posting of the known terms ({}) reached min_support {} with a positive association",
+            summary.known_terms.join(", "),
+            summary.options.min_support
+        ),
+    };
+    format!("{code}: {detail}; the word index never pads an empty answer")
+}
+
+/// The newest `window_size` eligible deliveries, nearest the target first,
+/// with their task terms and live labels.
+///
+/// A delivery enters when exactly one of its tasks is eligible under the
+/// request's cutoff rule and its label, after path exclusions, holds 1 to
+/// [`word_index::WORD_INDEX_MAX_LABEL_FILES`] live files. Deliveries with no
+/// eligible task, several tasks, or an empty or oversized label are counted
+/// by reason and left out; they do not take a window slot.
+fn word_index_window(
+    repo: &Repository,
+    resolver: &TargetTree,
+    lineage: &mut PathLineage,
+    deliveries: &[EligibleDelivery],
+    cutoff: &Timestamp,
+    strict_replay: bool,
+    options: &WordIndexOptions,
+) -> Result<(Vec<word_index::WindowTask>, BTreeMap<String, usize>), GraphError> {
+    let mut ordered = Vec::with_capacity(deliveries.len());
+    for eligible in deliveries {
+        let after = Oid::from_str(eligible.change.delivery.after_revision.as_str()).map_err(
+            git_error("parse delivery revision for the word-index window"),
+        )?;
+        ordered.push((lineage.distance(repo, after)?, after, eligible));
+    }
+    ordered.sort_by(|left, right| {
+        left.0.cmp(&right.0).then_with(|| {
+            left.2
+                .change
+                .delivery
+                .delivery_id
+                .cmp(&right.2.change.delivery.delivery_id)
+        })
+    });
+    let mut excluded: BTreeMap<String, usize> = BTreeMap::new();
+    let mut window = Vec::new();
+    for (_, after, eligible) in ordered {
+        if window.len() == options.window_size {
+            break;
+        }
+        let delivery = &eligible.change;
+        let tasks = delivery
+            .delivery
+            .tasks
+            .iter()
+            .filter(|task| task_is_eligible(task, cutoff, strict_replay))
+            .collect::<Vec<_>>();
+        let task_ids = delivery
+            .delivery
+            .tasks
+            .iter()
+            .map(|task| task.task_id.as_str())
+            .collect::<BTreeSet<_>>();
+        if task_ids.len() > 1 {
+            *excluded.entry("several_tasks".to_string()).or_default() += 1;
+            continue;
+        }
+        let Some(task) = tasks.first() else {
+            *excluded
+                .entry("no_eligible_task_text".to_string())
+                .or_default() += 1;
+            continue;
+        };
+        let mut entry = word_index::WindowTask {
+            task_id: task.task_id.clone(),
+            delivery_id: delivery.delivery.delivery_id.clone(),
+            terms: word_index::terms(options.text_fields.text(task).as_str()),
+            ..word_index::WindowTask::default()
+        };
+        for file in &delivery.files {
+            let Some(historical_path) = file.new_path.as_deref() else {
+                continue;
+            };
+            if word_index::excluded_path(historical_path) {
+                continue;
+            }
+            let Some(path) = lineage.resolve(repo, resolver, after, historical_path)? else {
+                continue;
+            };
+            if word_index::excluded_path(path.as_str()) {
+                continue;
+            }
+            entry.files.insert(format!("file:{path}"));
+            let mut found_symbol = false;
+            if resolver.symbols.is_some() {
+                for change in &file.symbols {
+                    let Some(after_side) = change.after.as_ref().filter(|_| change.live_after)
+                    else {
+                        continue;
+                    };
+                    if let Some(symbol) = resolver.resolve_symbol(&after_side.symbol, path.as_str())
+                    {
+                        entry.leaves.insert(
+                            format!(
+                                "symbol:{}#{}:{}",
+                                symbol.file_path, symbol.qualified, symbol.kind
+                            ),
+                            LocationMeta::default(),
+                        );
+                        found_symbol = true;
+                    }
+                }
+            }
+            if !found_symbol {
+                entry.leaves.insert(
+                    format!("file:{path}"),
+                    LocationMeta {
+                        file_fallback: true,
+                        fallback_reason: Some(file_fallback_reason(file)),
+                    },
+                );
+            }
+        }
+        if entry.files.is_empty() {
+            *excluded.entry("no_live_label".to_string()).or_default() += 1;
+            continue;
+        }
+        if entry.files.len() > word_index::WORD_INDEX_MAX_LABEL_FILES {
+            *excluded
+                .entry("label_over_max_files".to_string())
+                .or_default() += 1;
+            continue;
+        }
+        window.push(entry);
+    }
+    Ok((window, excluded))
 }
 
 /// The current time as an RFC 3339 UTC timestamp with nanosecond precision
@@ -628,6 +860,16 @@ fn validate_request(request: &RecommendationRequest) -> Result<(), GraphError> {
         }
     }
     commit_text_policy(request)?;
+    if let Some(options) = request.word_index.as_ref() {
+        if request.variant != RecommendationVariant::WordIndex {
+            return Err(GraphError::invalid_input(
+                "validate recommendation request",
+                "word_index",
+                "word index options require the word_index variant",
+            ));
+        }
+        options.validate()?;
+    }
     Ok(())
 }
 
@@ -705,6 +947,7 @@ fn resolve_query(
     strict_replay: bool,
     repo: &Repository,
     target: Oid,
+    text: &dyn Fn(&TaskAssociation) -> String,
 ) -> Result<String, GraphError> {
     let task_id = match &request.input {
         RecommendationInput::Query(query) => return Ok(query.trim().to_string()),
@@ -719,7 +962,7 @@ fn resolve_query(
                 ),
             ));
         }
-        return Ok(task_text(snapshot));
+        return Ok(text(snapshot));
     }
     let mut snapshots = deliveries
         .iter()
@@ -735,7 +978,7 @@ fn resolve_query(
         .collect::<Vec<_>>();
     snapshots.sort_by(|left, right| left.captured_at.cmp(&right.captured_at));
     if let Some(task) = snapshots.first() {
-        Ok(task_text(task))
+        Ok(text(task))
     } else if !request.hybrid_hits.is_empty() {
         Ok(String::new())
     } else {

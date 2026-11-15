@@ -77,7 +77,8 @@ record per line. `--help` remains conventional text help, and a bare
   an empty query and `--limit 0` (exit 2).
 - **Tokens round-trip.** Every `variant`, `level`, `confidence` and `kind`
   value printed in JSON is accepted by the matching flag. `--variant` takes
-  `combined`, `task_search_only`, `graph_only` and `frequency`; the
+  `combined`, `task_search_only`, `graph_only`, `frequency` and
+  `word_index`; the
   kebab-case spellings `task-search-only` and `graph-only` remain accepted.
 - **Errors.** A failure keeps stdout empty and exits 1, or 2 for a usage
   error (an unknown flag, a missing or invalid argument, a conflicting mode).
@@ -281,8 +282,8 @@ their stored envelopes and retained unless `--discard-verified` is explicit.
 | `history sync --branch <name> [--limit <n>]` | Atomically index new first-parent commits as Git-only evidence. |
 | `history status --branch <name>` | Report history versions, cursor, evidence, and association counts. |
 | `history rebuild --branch <name> [--limit <n>] [--confirm] [--discard-verified]` | Preview one scope, then atomically re-extract Git-only history while retaining verified deliveries by default. |
-| `recommend --query <text>\|--task-id <id> [--level file\|symbol] [--variant <variant>] [--limit <n>] [--branch <name>] [--revision <rev>] [--cutoff <cutoff>] [--task-snapshot <path>] [--hybrid-hits <path>]` | Rank current destinations with evidence and freshness. |
-| `evaluate --input <corpus.json> [--k <n>]` | Compare four ranking variants chronologically. `--input` is required unless `--live` is set. |
+| `recommend --query <text>\|--task-id <id> [--level file\|symbol] [--variant <variant>] [--limit <n>] [--branch <name>] [--revision <rev>] [--cutoff <cutoff>] [--task-snapshot <path>] [--hybrid-hits <path>] [--text-fields title\|title_description_criteria] [--window-size <n>] [--symbol-boost <b>] [--min-support <n>] [--smoothing <k>] [--max-term-share <share>]` | Rank current destinations with evidence and freshness. The last six flags set `word_index` options and are refused with any other variant. |
+| `evaluate --input <corpus.json> [--k <n>]` | Compare five ranking variants chronologically; the corpus's optional `word_index` object sets that variant's options. `--input` is required unless `--live` is set. |
 | `evaluate --live [--branch <name>] [--limit <n>] [--k <n>] [--revision <rev>]` | Hold out first-parent commits and score Git-only commit-text relevance. Requires `history sync` first. |
 | `search <query> [--kind symbol\|string\|config] [--lang <id>] [--limit <n>]` | Full-text search indexed definitions, strings, or config keys. |
 | `show <selector> [--max-bytes <n>]` | Return metadata and a bounded source slice. `source` is the slice as text, or `null` when it is not UTF-8; then `source_bytes` carries the raw bytes and `source_encoding` is `bytes` (otherwise `utf-8`). |

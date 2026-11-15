@@ -82,7 +82,7 @@ fn corpus_input_evaluates_a_prospective_case_in_every_output_mode() {
                         .is_empty()
                 );
                 let metrics = report["metrics"].as_array().expect("variant metrics");
-                assert_eq!(metrics.len(), 8);
+                assert_eq!(metrics.len(), 10);
                 assert!(metrics.iter().all(|metric| metric["cases"] == 1));
             }
             "ndjson" => {
@@ -90,10 +90,10 @@ fn corpus_input_evaluates_a_prospective_case_in_every_output_mode() {
                     .lines()
                     .map(|line| serde_json::from_str::<Value>(line).expect("evaluation NDJSON"))
                     .collect::<Vec<_>>();
-                assert_eq!(records.len(), 10);
+                assert_eq!(records.len(), 12);
                 assert_eq!(records[0]["record_type"], "evaluation_context");
-                assert_eq!(records[9]["record_type"], "evaluation_case");
-                assert_eq!(records[9]["case"]["evaluated"], true);
+                assert_eq!(records[11]["record_type"], "evaluation_case");
+                assert_eq!(records[11]["case"]["evaluated"], true);
             }
             _ => {
                 let text = String::from_utf8_lossy(&output.stdout);

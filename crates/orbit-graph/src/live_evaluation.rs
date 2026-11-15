@@ -550,6 +550,7 @@ fn evaluate_case(
             hybrid_hits: Vec::new(),
             commit_text_weight: spec.weight,
             commit_text_exponent: spec.exponent,
+            word_index: None,
         })?;
         let latency_ms = started.elapsed().as_secs_f64() * 1_000.0;
         let cited = cited_ids(&result, scope.known_delivery_ids);

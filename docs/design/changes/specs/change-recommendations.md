@@ -1,7 +1,7 @@
 ---
 title: "Change recommendation history foundation"
 owner: maintainers
-last_updated: 2026-11-08
+last_updated: 2026-11-14
 status: Accepted
 stage: shipped
 next: "—"
@@ -486,6 +486,103 @@ grace; liveness is read from `/proc`, and where that is unavailable the file
 only ages out) or once they are an hour old. Of the current version's entries,
 the one just written and the three most recently used others are kept.
 
+### Word-index variant
+
+`variant: word_index` ranks destinations with an inverted index from past
+task wording to what those tasks changed. It is the fifth variant beside
+`combined`, `task_search_only`, `graph_only` and `frequency`, follows sections
+2 to 7 of the context-index design (`docs/design/context-index/2_design.md` in
+the Orbit repository, ORB-24844) and departs from it in the text it reads
+(below). The index is built in memory for every request; there are no
+persisted generations, routine or pilot hook yet.
+
+**Evidence.** Only the history store. A delivery's words come from its task's
+text, and its labels are the live files and symbols its recorded diff changed,
+followed through path lineage to the target tree exactly as the other variants
+do. No plan, execution summary, comment, Git commit message, tag or task type
+is read on either side, and no current-tree lexical or structural evidence is
+added (`structure_applied` is always `false`). Hybrid task hits are ignored.
+
+**Text source.** `text_fields` selects the text on the index side and the
+query side together. The default, `title`, indexes each delivery's task title
+and queries with the target task's title (a `--query` string is used as given).
+`title_description_criteria` switches both sides to the title, description and
+acceptance criteria, so `evaluate` can measure what the wider text adds. The
+design indexes the wider text; the title-only default is Daniel's decision of
+2026-11-14 (ORB-24852).
+
+**Window.** The window is the newest `window_size` (`n`) eligible deliveries
+on the target's ancestry, nearest the target first (commit distance, then
+delivery ID). Eligibility is the request's own rule: with a `cutoff`, only
+deliveries landed strictly before it, whose task text was available before it,
+and never the target task's own delivery; under `evaluate` every case is such a
+replay. A delivery is left out, without taking a window slot, when it names
+several tasks (its diff cannot be divided between them), has no eligible task
+text, or has no live file or more than 20 live files after path exclusions
+(lockfiles and `CHANGELOG.md`). The window is rebuilt from the stored labels on
+every request; no count is ever decremented. The response's `word_index`
+object reports the window size `N` and the exclusions by reason.
+
+**Tokeniser** (version `1`). Text is split on whitespace and on punctuation
+other than the identifier joiners `_ - . / :`. URLs, task IDs (`ORB-123`),
+hexadecimal runs of seven or more characters containing a digit, and bare
+numbers are dropped. An identifier is split at joiners and case changes and
+keeps its parts and its lowercased whole (`context_files` gives `context`,
+`file`, `context_file`; `widenContextFiles` gives `widen`, `context`, `file`,
+`widencontextfile`); a path keeps its parts and its directory-free stem, and a
+file extension is dropped. Terms are lowercased and a trailing plural `s` is
+folded (not after `ss`, `us` or `is`). Terms shorter than 2 or longer than 40
+characters and a fixed English stopword list are dropped. A term counts once
+per task. Query terms present in more than `max_term_share` of the window's
+tasks are window stopwords and are dropped.
+
+**Scoring.** For a query term `w` and a context `c` (a file, or at symbol
+level a symbol or file-fallback leaf), with `N` window tasks, `df(w)` tasks
+containing `w`, `T(c)` tasks touching `c` and `t(w,c)` tasks with both:
+
+```text
+E(w,c)        = df(w) · T(c) / N
+assoc(w,c)    = max(0, ln((t(w,c) + κ) / (E(w,c) + κ)))      only when t(w,c) >= min_support
+score(c)      = Σ over query terms w of assoc(w,c)
+file_score(F) = score(F) + (b − 1) · max over symbols S in F of score(S)
+```
+
+Rare words count more, a context every task touches scores nothing beyond its
+base rate, and one co-occurrence scores at most `ln 2` with `κ = 1`. At file
+level each file is ranked by `file_score`; at symbol level symbols are ranked
+by their own `score`, with the same `file:` fallback leaves as the other
+variants for changed files without a live symbol. Each result's `reasons`
+name every contributing term (`word_index_term`: posting, `df`, `T` and the
+expected count) and the boost (`word_index_symbol_boost`). Results are the
+same live `file:`/`symbol:` selectors as the other variants.
+
+**Empty answers.** The variant never pads. When nothing scores the response
+has no recommendations, a `word_index_empty` fallback, and
+`word_index.empty_reason`: `no_window_tasks`, `no_query_terms`,
+`no_known_terms` (no query term in the window outside window stopwords) or
+`below_min_support` (no posting reached `min_support` with a positive
+association).
+
+**Parameters.** The request's optional `word_index` object (CLI flags
+`--text-fields`, `--window-size`, `--symbol-boost`, `--min-support`,
+`--smoothing`, `--max-term-share`; the evaluation corpus's optional
+`word_index` object) is refused with any other variant:
+
+| Field | Default | Range |
+|---|---|---|
+| `text_fields` | `title` | `title`, `title_description_criteria` |
+| `window_size` (`n`) | 4000 | at least 1 |
+| `symbol_boost` (`b`) | 1.5 | at least 1; 1 is no boost |
+| `min_support` | 2 | at least 1 |
+| `smoothing` (`κ`) | 1 | greater than 0 |
+| `max_term_share` | 0.3 | greater than 0, at most 1 |
+
+The response echoes the options with the tokeniser version, `N`, the query
+terms, the known terms and the window stopwords. Posting weights other than
+presence, the added-versus-modified option, file remainders, title weighting,
+configurable path exclusions and the file emission rule of design §5.2 are
+not implemented in this version.
+
 ## Stage 3 Orbit adapter and plugin
 
 The shipped integration is an Orbit external tool, not a private control-plane
@@ -558,9 +655,11 @@ unsupported, and otherwise unresolved truth omitted from each denominator. All d
 uncertain-time deliveries pass through the same cutoff filter as production
 ranking.
 
-Four explicit variants are evaluated: combined evidence; direct similar-task
-change evidence; current-tree lexical plus bounded graph structure; and
-query-independent eligible delivery frequency. Reports contain separate file
+Five explicit variants are evaluated: combined evidence; direct similar-task
+change evidence; current-tree lexical plus bounded graph structure;
+query-independent eligible delivery frequency; and the word index, built for
+each case only from the deliveries before that case's cutoff, with the
+corpus's optional `word_index` options (echoed as `word_index_options`). Reports contain separate file
 and symbol recall/precision@K, stale-result rate, mean/maximum latency,
 coverage/exclusions, exact revisions, source provenance, and a normalized input
 digest. The recorded real cohort in `evals/` is intentionally small
