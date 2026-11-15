@@ -273,17 +273,24 @@ rebuild command. Run `history rebuild --branch <name>` to inspect the scope,
 then add `--confirm` to repair it. Verified deliveries are re-extracted from
 their stored envelopes and retained unless `--discard-verified` is explicit.
 
+Deliveries recorded before per-side line lengths were extracted stay readable
+but lack them, and the word index's `--symbol-first` mode leaves them out of
+its window. `history sync` fills them in by re-extracting up to `--limit` such
+deliveries from Git each run and reports `line_lengths_backfilled` and
+`line_lengths_missing`; re-importing an envelope also fills them in, and a
+confirmed rebuild records them everywhere.
+
 ## Commands
 
 | Command | Purpose |
 | --- | --- |
 | `sync [--full]` | Incrementally update or fully rebuild the index. |
 | `history import [--input <path\|->]` | Import a validated v2 delivery JSON envelope (`--input` defaults to `-`, stdin). |
-| `history sync --branch <name> [--limit <n>]` | Atomically index new first-parent commits as Git-only evidence. |
+| `history sync --branch <name> [--limit <n>]` | Atomically index new first-parent commits as Git-only evidence, then backfill line lengths of up to `--limit` older deliveries. |
 | `history status --branch <name>` | Report history versions, cursor, evidence, and association counts. |
 | `history rebuild --branch <name> [--limit <n>] [--confirm] [--discard-verified]` | Preview one scope, then atomically re-extract Git-only history while retaining verified deliveries by default. |
-| `recommend --query <text>\|--task-id <id> [--level file\|symbol] [--variant <variant>] [--limit <n>] [--branch <name>] [--revision <rev>] [--cutoff <cutoff>] [--task-snapshot <path>] [--hybrid-hits <path>] [--text-fields title\|title_description_criteria] [--window-size <n>] [--symbol-boost <b>] [--min-support <n>] [--smoothing <k>] [--max-term-share <share>]` | Rank current destinations with evidence and freshness. The last six flags set `word_index` options and are refused with any other variant. |
-| `evaluate --input <corpus.json> [--k <n>]` | Compare the five `recommend` variants, BM25 over code, explicit mentions and two word-index combinations chronologically, with paired differences and gates G1 and G2; the corpus's optional `word_index`, `folds`, `baseline_text_fields` and `word_index_grid` fields set the word-index options, the folds and a parameter sweep. `--input` is required unless `--live` is set. |
+| `recommend --query <text>\|--task-id <id> [--level file\|symbol] [--variant <variant>] [--limit <n>] [--branch <name>] [--revision <rev>] [--cutoff <cutoff>] [--task-snapshot <path>] [--hybrid-hits <path>] [--text-fields title\|title_description_criteria] [--window-size <n>] [--symbol-boost <b>] [--min-support <n>] [--smoothing <k>] [--max-term-share <share>] [--symbol-first] [--posting-weight presence\|symbol_fraction\|diff_share] [--smoothing-unit tasks\|relative] [--added-weight <α>]` | Rank current destinations with evidence and freshness. The last ten flags set `word_index` options and are refused with any other variant; `--posting-weight` other than `presence` and `--added-weight` other than 1 need `--symbol-first`. |
+| `evaluate --input <corpus.json> [--k <n>]` | Compare the five `recommend` variants, BM25 over code, explicit mentions and two word-index combinations chronologically, with paired differences and gates G1, G2 and G4; the corpus's optional `word_index`, `folds`, `baseline_text_fields` and `word_index_grid` fields set the word-index options, the folds and a parameter sweep. `--input` is required unless `--live` is set. |
 | `evaluate --live [--branch <name>] [--limit <n>] [--k <n>] [--revision <rev>]` | Hold out first-parent commits and score Git-only commit-text relevance. Requires `history sync` first. |
 | `search <query> [--kind symbol\|string\|config] [--lang <id>] [--limit <n>]` | Full-text search indexed definitions, strings, or config keys. |
 | `show <selector> [--max-bytes <n>]` | Return metadata and a bounded source slice. `source` is the slice as text, or `null` when it is not UTF-8; then `source_bytes` carries the raw bytes and `source_encoding` is `bytes` (otherwise `utf-8`). |
@@ -414,13 +421,15 @@ recall@K, precision@K, stale-result rate, mean/maximum latency, coverage,
 per-level omitted-truth reasons, exclusions, source provenance, input digest,
 and exact graph revisions. A metric with no data behind it (no relevant truth,
 no evaluated case, no returned result or no query) is `null` in the JSON
-report (schema version 3) and `n/a` in the table, never `0`. The corpus input
+report (schema version 4) and `n/a` in the table, never `0`. The corpus input
 keeps its own schema version, 1. Each row also reports per-case mean recall
 and coverage (the share of cases with any answer); the report adds the same
 rows split by whether a delivery mostly added files, the word index's paired
 difference against every other ranking with a bootstrap interval, gates G1
 and G2 of the context-index design, and, with a `word_index_grid`, every
-grid cell chosen on the earlier folds and read on the later ones. The
+grid cell chosen on the earlier folds and read on the later ones, with gate
+G4 per weighting option (`posting_weight`, `added_weight`) deciding which
+setting is kept before G1 and G2 are read. The
 [change-recommendations spec](design/changes/specs/change-recommendations.md#stage-3-chronological-evaluation)
 defines each.
 

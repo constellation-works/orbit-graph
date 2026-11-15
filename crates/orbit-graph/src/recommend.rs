@@ -30,7 +30,8 @@ mod word_index;
 pub use word_index::{
     WORD_INDEX_DEFAULT_MAX_TERM_SHARE, WORD_INDEX_DEFAULT_MIN_SUPPORT,
     WORD_INDEX_DEFAULT_SMOOTHING, WORD_INDEX_DEFAULT_SYMBOL_BOOST, WORD_INDEX_DEFAULT_WINDOW_SIZE,
-    WORD_INDEX_TOKENIZER_VERSION, WordIndexOptions, WordIndexSummary, WordIndexTextFields,
+    WORD_INDEX_TOKENIZER_VERSION, WordIndexOptions, WordIndexPostingWeight, WordIndexSmoothingUnit,
+    WordIndexSummary, WordIndexTextFields,
 };
 pub(crate) use word_index::{excluded_path, term_sequence};
 
@@ -734,49 +735,13 @@ fn word_index_window(
             terms: word_index::terms(options.text_fields.text(task).as_str()),
             ..word_index::WindowTask::default()
         };
-        for file in &delivery.files {
-            let Some(historical_path) = file.new_path.as_deref() else {
-                continue;
-            };
-            if word_index::excluded_path(historical_path) {
+        if options.symbol_first {
+            if !symbol_first_label(repo, resolver, lineage, after, &delivery.files, &mut entry)? {
+                *excluded.entry("no_line_lengths".to_string()).or_default() += 1;
                 continue;
             }
-            let Some(path) = lineage.resolve(repo, resolver, after, historical_path)? else {
-                continue;
-            };
-            if word_index::excluded_path(path.as_str()) {
-                continue;
-            }
-            entry.files.insert(format!("file:{path}"));
-            let mut found_symbol = false;
-            if resolver.symbols.is_some() {
-                for change in &file.symbols {
-                    let Some(after_side) = change.after.as_ref().filter(|_| change.live_after)
-                    else {
-                        continue;
-                    };
-                    if let Some(symbol) = resolver.resolve_symbol(&after_side.symbol, path.as_str())
-                    {
-                        entry.leaves.insert(
-                            format!(
-                                "symbol:{}#{}:{}",
-                                symbol.file_path, symbol.qualified, symbol.kind
-                            ),
-                            LocationMeta::default(),
-                        );
-                        found_symbol = true;
-                    }
-                }
-            }
-            if !found_symbol {
-                entry.leaves.insert(
-                    format!("file:{path}"),
-                    LocationMeta {
-                        file_fallback: true,
-                        fallback_reason: Some(file_fallback_reason(file)),
-                    },
-                );
-            }
+        } else {
+            live_label(repo, resolver, lineage, after, &delivery.files, &mut entry)?;
         }
         if entry.files.is_empty() {
             *excluded.entry("no_live_label".to_string()).or_default() += 1;
@@ -791,6 +756,141 @@ fn word_index_window(
         window.push(entry);
     }
     Ok((window, excluded))
+}
+
+/// The live labels of one delivery outside symbol-first mode: every live file
+/// it changed, and as leaves the live symbols it changed (after side), or a
+/// `file:` fallback for a file with none. Every record counts by presence.
+fn live_label(
+    repo: &Repository,
+    resolver: &TargetTree,
+    lineage: &mut PathLineage,
+    after: Oid,
+    files: &[FileChange],
+    entry: &mut word_index::WindowTask,
+) -> Result<(), GraphError> {
+    for file in files {
+        let Some(historical_path) = file.new_path.as_deref() else {
+            continue;
+        };
+        if word_index::excluded_path(historical_path) {
+            continue;
+        }
+        let Some(path) = lineage.resolve(repo, resolver, after, historical_path)? else {
+            continue;
+        };
+        if word_index::excluded_path(path.as_str()) {
+            continue;
+        }
+        entry
+            .files
+            .insert(format!("file:{path}"), word_index::ContextRecord::default());
+        let mut found_symbol = false;
+        if resolver.symbols.is_some() {
+            for change in &file.symbols {
+                let Some(after_side) = change.after.as_ref().filter(|_| change.live_after) else {
+                    continue;
+                };
+                if let Some(symbol) = resolver.resolve_symbol(&after_side.symbol, path.as_str()) {
+                    entry.leaves.insert(
+                        format!(
+                            "symbol:{}#{}:{}",
+                            symbol.file_path, symbol.qualified, symbol.kind
+                        ),
+                        word_index::Leaf::default(),
+                    );
+                    found_symbol = true;
+                }
+            }
+        }
+        if !found_symbol {
+            entry.leaves.insert(
+                format!("file:{path}"),
+                word_index::Leaf {
+                    meta: LocationMeta {
+                        file_fallback: true,
+                        fallback_reason: Some(file_fallback_reason(file)),
+                    },
+                    record: word_index::ContextRecord::default(),
+                },
+            );
+        }
+    }
+    Ok(())
+}
+
+/// The symbol-first labels of one delivery (design §2.4): for every live
+/// file its rolled-up record, and as leaves the live symbols it changed (the
+/// after side, resolved at the target) and the file's remainder. Changed
+/// lines of files and symbols that are not live still count in the task's
+/// `diff_share` totals. Returns `false`, leaving `entry` partly filled, when
+/// a file's payload predates line lengths.
+fn symbol_first_label(
+    repo: &Repository,
+    resolver: &TargetTree,
+    lineage: &mut PathLineage,
+    after: Oid,
+    files: &[FileChange],
+    entry: &mut word_index::WindowTask,
+) -> Result<bool, GraphError> {
+    for file in files {
+        let Some(historical_path) = file.new_path.as_deref().or(file.old_path.as_deref()) else {
+            continue;
+        };
+        if word_index::excluded_path(historical_path) {
+            continue;
+        }
+        let Some(label) = word_index::file_label(file) else {
+            return Ok(false);
+        };
+        let path = match file.new_path.as_deref() {
+            Some(new_path) => lineage.resolve(repo, resolver, after, new_path)?,
+            None => None,
+        };
+        if path.as_deref().is_some_and(word_index::excluded_path) {
+            // Excluded under its name at the target: outside every total.
+            continue;
+        }
+        entry.count_file(&label.file);
+        entry.count_leaf(&label.remainder);
+        for (_, record) in &label.symbols {
+            entry.count_leaf(record);
+        }
+        let Some(path) = path else {
+            continue;
+        };
+        entry.files.insert(format!("file:{path}"), label.file);
+        if resolver.symbols.is_some() {
+            for (index, record) in &label.symbols {
+                let change = &file.symbols[*index];
+                let Some(after_side) = change.after.as_ref().filter(|_| change.live_after) else {
+                    continue;
+                };
+                if let Some(symbol) = resolver.resolve_symbol(&after_side.symbol, path.as_str()) {
+                    entry.add_leaf(
+                        format!(
+                            "symbol:{}#{}:{}",
+                            symbol.file_path, symbol.qualified, symbol.kind
+                        ),
+                        word_index::Leaf {
+                            meta: LocationMeta::default(),
+                            record: *record,
+                        },
+                    );
+                }
+            }
+        }
+        if label.remainder.changed() > 0 {
+            entry.add_leaf(
+                format!("{}{path}", word_index::REMAINDER_PREFIX),
+                word_index::Leaf {
+                    meta: LocationMeta::default(),
+                    record: label.remainder,
+                },
+            );
+        }
+    }
+    Ok(true)
 }
 
 /// The current time as an RFC 3339 UTC timestamp with nanosecond precision

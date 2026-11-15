@@ -2497,7 +2497,7 @@ fn evaluation_rejects_unverified_pre_cutoff_and_unattested_hybrid_truth() {
     assert_eq!(report["coverage"]["cases_evaluated"], 0);
     // With every case excluded there is no data behind any metric: each one
     // is null, not a measured 0.0 (STD-02 §R29; since schema version 2).
-    assert_eq!(report["schema_version"], 3);
+    assert_eq!(report["schema_version"], 4);
     let metrics = report["metrics"].as_array().expect("metrics");
     assert_eq!(metrics.len(), 18);
     for metric in metrics {

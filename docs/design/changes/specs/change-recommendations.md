@@ -150,6 +150,28 @@ Whitespace-only changes are retained. Line additions/deletions, paths, change
 kind, immutable revision, byte spans, signatures, parents, and changed line
 numbers are preserved.
 
+### Line lengths (extracted output, additive)
+
+So the word index can weigh a change by how much of a context it touched
+(design §2.5), extraction also records, all as optional fields that are
+omitted when absent:
+
+| Field | Where | Meaning |
+|---|---|---|
+| `line_start`, `line_end` | `SymbolIdentity` | One-based first and last (inclusive) line of the symbol's span on its side; its length is `line_end − line_start + 1` |
+| `before_lines`, `after_lines` | `FileChange` | A `FileSideLines` for each side |
+| `line_count` | `FileSideLines` | Lines in the file on that side: 0 when the side has no file, 1 for a binary blob, and a last line without a newline counts |
+| `named_symbol_covered_lines` | `FileSideLines` | Distinct lines covered by the union of the spans of every named symbol extracted from that side, changed or not; 0 for an unsupported, binary, unparseable or absent side. `line_count − named_symbol_covered_lines` is the file's remainder length |
+| `whitespace_only_lines` | `FileSideLines` | Changed lines of that side whose change is whitespace only: a blank line added or removed, or a line paired within its hunk with a line of the other side that differs from it only in whitespace. They stay in `changed_lines` and in the additions/deletions; a consumer that ignores whitespace-only changes subtracts them |
+
+These fields are extracted output, not import-contract input: a
+`DeliveryImport` envelope is unchanged (still version 2) and the extractor
+derives them from Git for every import, sync and rebuild. The
+`CHANGE_EXTRACTOR_VERSION` is unchanged, so existing indexes stay readable; a
+payload recorded before these fields decodes with them absent, and the word
+index's symbol-first mode leaves such a delivery out of its window
+(`no_line_lengths`) until it is backfilled (below).
+
 Cross-revision identity is deliberately conservative:
 
 1. a unique equal qualified name and kind is `exact`;
@@ -201,6 +223,20 @@ before opening its replacement transaction, then recreates that scope atomically
 It re-extracts retained verified deliveries from their stored import envelopes;
 only `--discard-verified` removes them. The report counts any verified rows
 removed. Rebuild refuses the `agent-main` branch.
+
+**Line-length backfill.** After its cursor work, `history sync` re-extracts up
+to `--limit` stored deliveries of the scope that lack line lengths, from their
+own recorded boundaries (verified and caller-attested ones included). When the
+fresh extraction equals the stored record in everything but the line lengths,
+the stored payload is rewritten with them in one immediate transaction; its
+signatures are redacted first, as on import. A delivery whose commits are gone
+from the local clone, or whose re-extraction differs otherwise, is left as it
+is. The sync report counts `line_lengths_backfilled` and
+`line_lengths_missing` (still without them); repeated syncs drain the rest. A
+re-import of an envelope already stored without line lengths fills them in the
+same way instead of reporting a conflict. A rebuild preview reports the scope's
+`line_lengths_missing`; a confirmed rebuild re-extracts everything and so
+records them for every delivery, on any branch but `agent-main`.
 
 ## CLI contract
 
@@ -565,7 +601,7 @@ association).
 
 **Parameters.** The request's optional `word_index` object (CLI flags
 `--text-fields`, `--window-size`, `--symbol-boost`, `--min-support`,
-`--smoothing`, `--max-term-share`; the evaluation corpus's optional
+`--smoothing`, `--max-term-share` and the four below; the evaluation corpus's optional
 `word_index` object) is refused with any other variant:
 
 | Field | Default | Range |
@@ -577,11 +613,66 @@ association).
 | `smoothing` (`κ`) | 1 | greater than 0 |
 | `max_term_share` | 0.3 | greater than 0, at most 1 |
 
+| `symbol_first` | `false` | `true` or `false` |
+| `posting_weight` | `presence` | `presence`, `symbol_fraction`, `diff_share`; other than `presence` needs `symbol_first` |
+| `smoothing_unit` | `tasks` | `tasks`, `relative`; identical under `presence`, where it is reported as `tasks` |
+| `added_weight` (`α`) | 1 | from 0 to 1; other than 1 needs `symbol_first` |
+
+The CLI flags for the last four are `--symbol-first`, `--posting-weight`,
+`--smoothing-unit` and `--added-weight`. An option at its default is omitted
+from the echoed options, so a default request's output and an evaluation
+corpus's digest are unchanged.
+
 The response echoes the options with the tokeniser version, `N`, the query
-terms, the known terms and the window stopwords. Posting weights other than
-presence, the added-versus-modified option, file remainders, title weighting,
-configurable path exclusions and the file emission rule of design §5.2 are
-not implemented in this version.
+terms, the known terms and the window stopwords. Title weighting, configurable
+path exclusions and the file emission rule of design §5.2 are not implemented
+in this version. Nothing is indexed, stored or reported by task type or tag.
+
+**Symbol-first mode** (`symbol_first`, design §2.4). Each changed line belongs
+to its smallest enclosing named symbol, or else to its file's remainder;
+whitespace-only changes are not changed lines. Each task then holds a record
+per context — a live symbol, a file's remainder and the live file itself —
+with its added and deleted lines, its length on each side (a symbol's span; a
+remainder's `line_count − named_symbol_covered_lines`; a file's
+`line_count`; 0 on a side where it does not exist) and its status: `added`
+(only after), `modified` (both sides) or `deleted` (only before). A file's
+status is its Git change kind (added or copied, deleted, otherwise modified)
+and its record is its rolled-up lines. A file the delivery changed no line of
+(a pure rename or mode change) has a record with no changed lines and no
+leaves; a binary side is one changed line of a one-line file. The leaf level
+holds the symbols and the remainders; a remainder (internally
+`remainder:<path>`) is scored but is never returned as a selector and never
+earns the symbol boost: at file level, a positive remainder score is shown as a
+`word_index_remainder` reason with contribution 0. The file level scores each
+file from its own rolled-up record; the boost uses its best named symbol.
+There is no `file:` fallback leaf in this mode. A delivery whose payload has
+no line lengths is left out of the window (`no_line_lengths`) under every
+weight, so all symbol-first configurations share one window.
+
+**Posting weights** (design §5.4). A task `d` gives context `c` a weight
+`x(d,c)`; the counts of the scoring formulas become masses:
+`t(w,c) = Σ x(d,c)` over window tasks with `w`, `T(c) = Σ x(d,c)` over all
+window tasks, and `E(w,c) = df(w) · T(c) / N`. The number of tasks with both
+stays an integer for `min_support` and for the evidence.
+
+```text
+presence         x = 1
+symbol_fraction  x = min(1, changed / (len_before + len_after))   (1 when the length is 0 and changed > 0)
+diff_share       x = changed / Σ over the task's records at the same level of α·changed if added else changed
+```
+
+`changed` is added plus deleted lines. Under `diff_share` the leaf level and
+the file level each have their own total, which counts every record of the
+task at that level, live or not, and is taken after `added_weight` is applied.
+With `smoothing_unit: relative` each weight is divided by the context's mean
+weight over the window (its mass divided by the number of tasks touching it), so `κ` keeps the meaning of one
+typical task; with `tasks` it is one task of weight 1.
+
+**Added versus modified** (design §5.5). A record whose status is `added` is
+multiplied by `added_weight` after the relative normalization, so `α = 0`
+learns only from modifications and deletions. Each `word_index_term` reason
+then gives the posting's and the context's weight and how many tasks modified
+and created the context.
 
 ## Stage 3 Orbit adapter and plugin
 
@@ -761,17 +852,36 @@ unevaluable gate counts as not passed.
   parts would stay. No combination of the word index with `recommend`'s own
   rankings is scored, so this reads the two scored combinations.
 
-G3 needs pilot data from Orbit and G4 the posting-weight and added-versus-
-modified options the word index does not implement yet; neither is reported.
+- **G4, which weighting options stay** (one result per option, `option`
+  `posting_weight` — with its `smoothing_unit` — or `added_weight`): read on
+  the headline folds as the cell chosen on the selection folds minus the grid
+  cell equal to it with that option at its baseline (`presence`, or `α = 1`),
+  per case, for file and symbol mean recall@10. Passed when one level's
+  interval is above zero and the other's is not below zero; the selected
+  setting is then kept. Failed when neither holds, or when the chosen cell
+  already holds the baseline. Unevaluable without a grid, when the grid does
+  not sweep the option, when it has no matching baseline cell, without a
+  chosen cell or headline cases, off K = 10, or with fewer than two paired
+  cases at either level. Each result gives `selected_setting` and
+  `kept_setting`; an option that does not pass is set back to its baseline.
+
+G1 and G2 are read on the configuration G4 keeps (`word_index_options`; the
+chosen one is `selected_word_index_options`), so an option that fails G4
+never reaches them. G3 needs pilot data from Orbit and is not reported.
 Without a grid the gates read every evaluated case (`scope: all_cases`).
 
 ### Parameter grid
 
 `word_index_grid` sweeps the word index's options:
 `{selection_folds, text_fields, window_size, symbol_boost, min_support,
-smoothing, max_term_share}`. Each axis is a list; an empty or omitted axis
+smoothing, max_term_share, symbol_first, posting_weight, smoothing_unit,
+added_weight}`. Each axis is a list; an empty or omitted axis
 holds the corpus's `word_index` value, and the cells are every combination
-(at most 256; each must be valid options). `selection_folds` must be at least
+(at most 256 before deduplication; each must be valid options). A cell under
+`presence` is normalized to `smoothing_unit: tasks` and duplicates are kept
+once; a cell that sets `posting_weight` or `added_weight` away from its
+baseline without `symbol_first` is left out, and a grid with no cell left is
+refused. `selection_folds` must be at least
 1 and fewer than the folds: the first that many folds in cutoff order choose
 the cell and the rest report the headline numbers, as design section 10.4
 chooses on the first five weekly cutoffs and reports on the last three.
@@ -781,17 +891,22 @@ Every case is ranked once more per cell, at both levels. The report's
 over the selection folds and over the headline folds, and `selected_cell`:
 the highest selection-fold mean file recall@K, then mean symbol recall@K,
 then the earlier cell (`null` when no selection case has file truth).
+`kept_cell` is the cell G4 keeps: the selected cell with every option that
+did not pass G4 set back to its baseline (`null` when that is not a cell).
 `sweep.headline` reads every row, split and paired difference over the
-headline folds with the word index and its combinations on the selected
-cell, and the gates are read there (`scope: headline_folds`). The top-level
+headline folds with the word index and its combinations on the kept cell,
+and the gates are read there (`scope: headline_folds`). The top-level
 `metrics`, `split_metrics` and `paired_differences` stay over every case
 with the corpus's own `word_index` options.
 
 ### Report version
 
-The report is schema version 3: version 2 plus the four rows above, the
-per-row coverage and mean-recall fields, `baseline_text_fields`, `folds`,
-`split_metrics`, `paired_differences`, `gates`, `sweep`, and each case's
-`fold` and `mostly_added_files`. The corpus stays version 1: `folds`, a
+The report is schema version 4: version 3 plus gate G4 (each gate result's
+`option`, `selected_setting` and `kept_setting`, `null` for G1 and G2),
+`gates.selected_word_index_options` and `sweep.kept_cell`. Version 3 was
+version 2 plus the four rows above, the per-row coverage and mean-recall
+fields, `baseline_text_fields`, `folds`, `split_metrics`,
+`paired_differences`, `gates`, `sweep`, and each case's `fold` and
+`mostly_added_files`. The corpus stays version 1: `folds`, a
 case's `fold`, `baseline_text_fields` and `word_index_grid` are optional, and
 a corpus without them has the same digest as before.

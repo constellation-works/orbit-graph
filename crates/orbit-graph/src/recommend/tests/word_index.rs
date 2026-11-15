@@ -1,5 +1,5 @@
 use super::*;
-use crate::recommend::word_index::{self, WindowTask, association, terms};
+use crate::recommend::word_index::{self, ContextRecord, Leaf, WindowTask, association, terms};
 
 /// A window task with `words` as its terms and `files` as its file label.
 fn task(index: usize, words: &[&str], files: &[&str]) -> WindowTask {
@@ -7,11 +7,15 @@ fn task(index: usize, words: &[&str], files: &[&str]) -> WindowTask {
         task_id: format!("T-{index}"),
         delivery_id: format!("D-{index}"),
         terms: words.iter().map(|word| (*word).to_string()).collect(),
-        files: files.iter().map(|file| format!("file:{file}")).collect(),
+        files: files
+            .iter()
+            .map(|file| (format!("file:{file}"), ContextRecord::default()))
+            .collect(),
         leaves: files
             .iter()
-            .map(|file| (format!("file:{file}"), LocationMeta::default()))
+            .map(|file| (format!("file:{file}"), Leaf::default()))
             .collect(),
+        ..WindowTask::default()
     }
 }
 
@@ -166,7 +170,7 @@ fn the_symbol_boost_adds_the_best_symbol_score_to_its_file() {
         let mut entry = task(index, &["parser"], &["src/parser.rs"]);
         entry.leaves = BTreeMap::from([(
             "symbol:src/parser.rs#parse:function".to_string(),
-            LocationMeta::default(),
+            Leaf::default(),
         )]);
         window.push(entry);
     }

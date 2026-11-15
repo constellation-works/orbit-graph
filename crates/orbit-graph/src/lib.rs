@@ -68,9 +68,9 @@ pub use orbit_graph_extract::history::now_rfc3339;
 pub use orbit_graph_extract::history::{
     CHANGE_EXTRACTOR_VERSION, CurrentRevisionResolution, CurrentSymbolStatus,
     DEFAULT_HISTORY_SYNC_LIMIT, DELIVERY_IMPORT_SCHEMA_VERSION, DeliveredChange, DeliveryEvidence,
-    DeliveryImport, FileChange, FileChangeKind, FileFallbackReason, Provenance, RevisionSide,
-    SymbolAttribution, SymbolChange, SymbolIdentity, SymbolMatchConfidence, TaskAssociation,
-    TaskTextAvailability, TemporalFact, TemporalStatus,
+    DeliveryImport, FileChange, FileChangeKind, FileFallbackReason, FileSideLines, Provenance,
+    RevisionSide, SymbolAttribution, SymbolChange, SymbolIdentity, SymbolMatchConfidence,
+    TaskAssociation, TaskTextAvailability, TemporalFact, TemporalStatus,
 };
 #[doc(inline)]
 pub use orbit_graph_extract::{ExtractError, Selector, SelectorParseError};
@@ -98,8 +98,8 @@ pub use recommend::{
     RecommendationRequest, RecommendationResult, RecommendationVariant,
     WORD_INDEX_DEFAULT_MAX_TERM_SHARE, WORD_INDEX_DEFAULT_MIN_SUPPORT,
     WORD_INDEX_DEFAULT_SMOOTHING, WORD_INDEX_DEFAULT_SYMBOL_BOOST, WORD_INDEX_DEFAULT_WINDOW_SIZE,
-    WORD_INDEX_TOKENIZER_VERSION, WordIndexOptions, WordIndexSummary, WordIndexTextFields,
-    current_observation_cutoff,
+    WORD_INDEX_TOKENIZER_VERSION, WordIndexOptions, WordIndexPostingWeight, WordIndexSmoothingUnit,
+    WordIndexSummary, WordIndexTextFields, current_observation_cutoff,
 };
 // Hidden helpers the `orbit-graph` CLI's plugin protocol needs for its own
 // per-repository state directory; see each item's documentation.

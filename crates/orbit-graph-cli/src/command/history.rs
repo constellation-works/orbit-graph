@@ -115,6 +115,14 @@ fn sync_rows(operation: &'static str, document: &Value) -> Vec<(&'static str, St
         ("snapshot tip", display_value(&document["snapshot_tip"])),
         ("resume from", display_value(&document["resume_from"])),
         ("complete", display_value(&document["complete"])),
+        (
+            "line lengths backfilled",
+            display_value(&document["line_lengths_backfilled"]),
+        ),
+        (
+            "line lengths missing",
+            display_value(&document["line_lengths_missing"]),
+        ),
     ]
 }
 

@@ -382,6 +382,128 @@ fn body_only_insertions_and_deletions_retain_surviving_function_identity() {
 }
 
 #[test]
+fn line_lengths_spans_and_whitespace_only_lines_are_recorded_per_side() {
+    let repo = fixture_repo();
+    write(
+        repo.path(),
+        "lib.rs",
+        "use std::fmt;\n\npub fn alpha() -> i32 {\n    let x = 1;\n    x\n}\n",
+    );
+    write(repo.path(), "notes.txt", "one\ntwo\n");
+    write(repo.path(), "blob.bin", "a\0b");
+    commit(repo.path(), "before");
+    let before = head(repo.path());
+    write(
+        repo.path(),
+        "lib.rs",
+        "use std::fmt;\nuse std::io;\n\npub fn alpha() -> i32 {\n        let x = 1;\n    x + 1\n}\n\n",
+    );
+    write(repo.path(), "notes.txt", "one\ntwo\nthree");
+    write(repo.path(), "blob.bin", "a\0c");
+    commit(repo.path(), "after");
+    let after = head(repo.path());
+    let repository = Repository::open(repo.path()).expect("open repository");
+    let change = extract_delivery(&repository, delivery(&repository, before, after, "lines"))
+        .expect("extract");
+    let file = |path: &str| {
+        change
+            .files
+            .iter()
+            .find(|file| file.new_path.as_deref() == Some(path))
+            .expect("changed file")
+    };
+
+    let lib = file("lib.rs");
+    let before_lines = lib.before_lines.as_ref().expect("before lines");
+    let after_lines = lib.after_lines.as_ref().expect("after lines");
+    assert_eq!(before_lines.line_count, 6);
+    assert_eq!(after_lines.line_count, 8);
+    // `alpha` spans lines 3–6 before and 4–7 after; `use` is not a symbol.
+    assert_eq!(before_lines.named_symbol_covered_lines, 4);
+    assert_eq!(after_lines.named_symbol_covered_lines, 4);
+    // The re-indented `let` pairs across the sides; the added trailing blank
+    // line is whitespace only; `x` → `x + 1` and the new `use` are not.
+    assert_eq!(before_lines.whitespace_only_lines, [4]);
+    assert_eq!(after_lines.whitespace_only_lines, [5, 8]);
+    let alpha = lib
+        .symbols
+        .iter()
+        .find(|change| {
+            change
+                .after
+                .as_ref()
+                .is_some_and(|side| side.symbol.name == "alpha")
+        })
+        .expect("alpha changed");
+    let (old, new) = (
+        &alpha.before.as_ref().expect("before side").symbol,
+        &alpha.after.as_ref().expect("after side").symbol,
+    );
+    assert_eq!(
+        (old.line_start, old.line_end, old.line_count()),
+        (Some(3), Some(6), Some(4))
+    );
+    assert_eq!(
+        (new.line_start, new.line_end, new.line_count()),
+        (Some(4), Some(7), Some(4))
+    );
+
+    // Unsupported text: lines counted, no named symbol covers any. The last
+    // line has no newline and still counts.
+    let notes = file("notes.txt");
+    assert_eq!(
+        notes.before_lines.as_ref().map(|lines| lines.line_count),
+        Some(2)
+    );
+    assert_eq!(
+        notes.after_lines.as_ref().map(|lines| lines.line_count),
+        Some(3)
+    );
+    assert_eq!(
+        notes
+            .after_lines
+            .as_ref()
+            .map(|lines| lines.named_symbol_covered_lines),
+        Some(0)
+    );
+
+    // A binary side is a one-line file.
+    let blob = file("blob.bin");
+    assert_eq!(
+        blob.before_lines.as_ref().map(|lines| lines.line_count),
+        Some(1)
+    );
+    assert_eq!(
+        blob.after_lines.as_ref().map(|lines| lines.line_count),
+        Some(1)
+    );
+}
+
+#[test]
+fn an_added_file_has_an_empty_before_side() {
+    let repo = fixture_repo();
+    write(repo.path(), "keep.rs", "pub fn keep() {}\n");
+    commit(repo.path(), "before");
+    let before = head(repo.path());
+    write(repo.path(), "fresh.rs", "pub fn fresh() {}\n");
+    commit(repo.path(), "after");
+    let after = head(repo.path());
+    let repository = Repository::open(repo.path()).expect("open repository");
+    let change = extract_delivery(&repository, delivery(&repository, before, after, "added"))
+        .expect("extract");
+    let fresh = &change.files[0];
+    assert_eq!(fresh.before_lines, Some(FileSideLines::default()));
+    let after_lines = fresh.after_lines.as_ref().expect("after lines");
+    assert_eq!(
+        (
+            after_lines.line_count,
+            after_lines.named_symbol_covered_lines
+        ),
+        (1, 1)
+    );
+}
+
+#[test]
 fn same_line_siblings_are_all_attributed_without_implicating_parent() {
     let repo = fixture_repo();
     write(
