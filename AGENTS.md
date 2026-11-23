@@ -6,7 +6,7 @@
 
 - Keep the workspace standalone and independent of Orbit control-plane crates, configuration, and runtime state: [CONTRIBUTING.md](CONTRIBUTING.md) lists the dependencies it forbids.
 - Keep graph scratch files under .orbit-graph/, the git-ignored runtime directory that [docs/usage.md](docs/usage.md) describes under "Index lifecycle and location".
-- Preserve the behavior and tests of recovered code. Record further historical code in [PROVENANCE.md](PROVENANCE.md), as [CONTRIBUTING.md](CONTRIBUTING.md) describes.
+- Preserve the behavior and tests of recovered code. Historical code recovery requirements are in [CONTRIBUTING.md](CONTRIBUTING.md) and [PROVENANCE.md](PROVENANCE.md).
 - Leave releases, tags, publishing, and agent-review automation to maintainers.
 
 ## Gates
