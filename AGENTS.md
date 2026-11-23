@@ -4,24 +4,24 @@
 
 ## Rules
 
-- Keep the workspace standalone and independent of Orbit: [CONTRIBUTING.md](CONTRIBUTING.md) lists the dependencies it forbids.
-- Keep graph scratch state in the git-ignored runtime directory that [docs/usage.md](docs/usage.md) describes under "Index lifecycle and location".
-- Preserve the behavior and tests of recovered code. Record further historical code in [PROVENANCE.md](PROVENANCE.md), as [CONTRIBUTING.md](CONTRIBUTING.md) describes.
+- Dependency policy: see the opening paragraph of [CONTRIBUTING.md](CONTRIBUTING.md).
+- Scratch-state location: see [Index lifecycle and location](docs/usage.md#index-lifecycle-and-location).
+- Preserve the behavior and tests of recovered code. Historical-code record requirements are in the final paragraph of [CONTRIBUTING.md](CONTRIBUTING.md) and [PROVENANCE.md](PROVENANCE.md).
 - Leave releases, tags, publishing, and agent-review automation to maintainers.
 
 ## Gates
 
-- Before handoff, run `make ci`, which runs the full validation sequence in [CONTRIBUTING.md](CONTRIBUTING.md).
+- Handoff validation sequence: see [CONTRIBUTING.md](CONTRIBUTING.md); `make ci` runs it.
 
 ## Code
 
 - Prefer focused changes over broad refactors.
 - Do not suppress broad lint categories to make validation pass.
-- Crate roles and the allowed dependency edges are in [ARCHITECTURE.md](ARCHITECTURE.md), which names the gate that enforces them.
+- Crate roles and allowed dependency edges: see [Crates](ARCHITECTURE.md#crates), which names the enforcing gate.
 
 ## Tests
 
-- CLI tests: the rule that they run the real built executable, and where they live, is in [CONTRIBUTING.md](CONTRIBUTING.md).
+- CLI test invocation and location: see the CLI testing paragraph of [CONTRIBUTING.md](CONTRIBUTING.md).
 
 <!-- constellation-standards:begin -->
 <!-- Managed by the constellation's operations/scripts/sync-standards.sh; edits inside this block are overwritten. -->
