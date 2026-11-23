@@ -4,15 +4,15 @@ orbit-graph is a standalone Cargo workspace that builds a local SQLite index of 
 
 ## Rules
 
-- Keep the workspace independent of Orbit control-plane crates, configuration and runtime state; [CONTRIBUTING.md](CONTRIBUTING.md) names the forbidden dependencies.
-- Graph scratch files belong under `.orbit-graph/`, which git ignores; [docs/usage.md](docs/usage.md) describes its layout.
+- Workspace dependency boundaries are in [CONTRIBUTING.md](CONTRIBUTING.md) and [PROVENANCE.md](PROVENANCE.md).
+- The graph scratch-state location and lifecycle are in [docs/usage.md](docs/usage.md#index-lifecycle-and-location).
 - Preserve the behavior and tests of recovered code.
-- Record newly recovered code in [PROVENANCE.md](PROVENANCE.md), as [CONTRIBUTING.md](CONTRIBUTING.md) describes.
+- Recovery record requirements are in [CONTRIBUTING.md](CONTRIBUTING.md); the records are in [PROVENANCE.md](PROVENANCE.md).
 - Leave releases, tags, publishing, and agent-review automation to maintainers.
 
 ## Gates
 
-- Before opening a pull request, run `make ci`, which runs the full validation sequence that [CONTRIBUTING.md](CONTRIBUTING.md) lists.
+- Before opening a pull request, follow the validation gate in [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## Code
 
@@ -22,7 +22,7 @@ orbit-graph is a standalone Cargo workspace that builds a local SQLite index of 
 
 ## Tests
 
-- Exercise CLI behavior through the real `orbit-graph` executable; [CONTRIBUTING.md](CONTRIBUTING.md) says where those tests live.
+- Follow [CONTRIBUTING.md](CONTRIBUTING.md) for CLI test requirements and location.
 
 <!-- constellation-standards:begin -->
 <!-- Managed by the constellation's operations/scripts/sync-standards.sh; edits inside this block are overwritten. -->
