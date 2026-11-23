@@ -15,13 +15,14 @@ fails CI on any edit; changes come only from a re-sync.
 | STD-03 | 2 | Concurrency and process safety — locks, channels, durable writes, state evolution, subprocess lifecycles, destructive operations, remote effects, test containment and resource bounds | [STD-03-concurrency-and-process-safety/STD-03.md](STD-03-concurrency-and-process-safety/STD-03.md) |
 | STD-04 | 2 | Testing and verification — test design, hermetic tests, honest gates, docs as contracts, and evidence-based verification conduct | [STD-04-testing-and-verification/STD-04.md](STD-04-testing-and-verification/STD-04.md) |
 | STD-05 | 1 | Security boundaries — authority, filesystem containment, child environments, redaction, local network surfaces, supply chain and consent | [STD-05-security-boundaries/STD-05.md](STD-05-security-boundaries/STD-05.md) |
+| STD-11 | 2 | Agent skills — a short router and core procedure in SKILL.md, with everything else in task-sized references it links by condition | [STD-11-agent-skills/STD-11.md](STD-11-agent-skills/STD-11.md) |
 
 Each standard is a directory. `STD-nn.md` holds its rules, where they apply and how to
 deviate: read it first. `why.md` explains each rule, `checks.md` names the gate that
 enforces it, `exemplars.md` points at worked examples in Orbit, and `CHANGELOG.md`
 records its versions.
 
-Source: the constellation umbrella `docs/standards/` at commit `a293520adfa301429d0fac25ca7ab431c2310bfa`.
+Source: the constellation umbrella `docs/standards/` at commit `dc91b5eb060f7790c70f39b0bea254ecb0906e36`.
 
 ## Normative
 

@@ -1,6 +1,6 @@
 # Setting up orbit-graph
 
-## Contents
+Contents:
 
 - [Check what is installed](#1-check-what-is-installed)
 - [Install the plugin](#2-install-the-plugin)
