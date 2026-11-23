@@ -35,4 +35,3 @@ the source before acting on them. When `complete` is false, the budget ran out:
 `incomplete` says where, and `not_analysed` lists what was skipped. Every cut
 is in `truncation`: narrow with `symbols` (selectors of changed symbols),
 `scope` or `language` before raising `max_*`.
-

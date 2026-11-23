@@ -36,4 +36,3 @@ raising limits.
 `callees` omits unresolved calls with no indexed definition
 (standard-library calls such as `map_err`) and counts them in
 `hidden_unresolved`; pass `include_unresolved: true` to see them.
-
