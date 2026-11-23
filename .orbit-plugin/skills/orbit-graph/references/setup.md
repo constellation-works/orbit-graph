@@ -1,5 +1,15 @@
 # Setting up orbit-graph
 
+## Contents
+
+- [Check what is installed](#1-check-what-is-installed)
+- [Install the plugin](#2-install-the-plugin)
+- [Build the indexes](#3-build-the-indexes)
+- [Verify](#4-verify)
+- [Keep the indexes fresh](#5-keep-the-indexes-fresh)
+- [Standalone CLI](#standalone-cli)
+- [Failure codes](#failure-codes)
+
 Read this when the `orbit.graph.*` tools are missing or return
 `incompatible_binary`, or when every query fails with `index_missing`. Also read
 it when preparing a repository for code navigation and recommendations.
@@ -14,8 +24,11 @@ orbit tool run orbit.graph.version --input '{}' --full
 ```
 
 A verified first-party install registers `orbit.graph.*` (MCP `orbit_graph_*`).
+
 A copy installed from any other source registers bare `graph.*`. Use whichever
-spelling your tool list shows. `version` reports the crate version, the
+spelling your tool list shows.
+
+`version` reports the crate version, the
 `extractor_version` and the `plugin_schema_version`. An `incompatible_binary`
 error names the executable the launcher found: either it was built from a
 different tag, or its SHA-256 is not the `--backend-sha256` the manifest binds
@@ -26,7 +39,9 @@ different tag, or its SHA-256 is not the `--backend-sha256` the manifest binds
 
 Use the full procedure in [docs/plugin.md](https://github.com/constellation-works/orbit-graph/blob/main/docs/plugin.md#install)
 and check [the Linux readiness report](https://github.com/constellation-works/orbit-graph/blob/main/docs/plugin-readiness.md)
-for the tested candidate and remaining gaps. Prepare an export and binary from
+for the tested candidate and remaining gaps.
+
+Prepare an export and binary from
 the same immutable revision before changing host state. For a local export,
 remove `metadata.origin` and bundle with the default SHA-256 binding before
 installation; tools then register as `graph.*`.
