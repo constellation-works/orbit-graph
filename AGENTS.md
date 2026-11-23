@@ -1,18 +1,27 @@
 # Agent guidance
 
-- This repository is a standalone Cargo workspace: `crates/orbit-graph-extract`
-  (the language extractors and Git history extraction), `crates/orbit-graph`
-  (the library), `crates/orbit-graph-cli` (the `orbit-graph` JSON CLI), and
-  `crates/orbit-graph-changes` (the change analysis library).
-- Keep it independent of Orbit control-plane crates, configuration, and runtime
-  state. Graph scratch files belong under `.orbit-graph/`.
-- Preserve recovered behavior and tests. Record any additional historical code
-  in `PROVENANCE.md` with an immutable commit and original path.
-- Prefer focused changes over broad refactors. Do not suppress broad lint
-  categories to make validation pass.
-- Run the complete validation sequence in `CONTRIBUTING.md`; CLI behavior must
-  be exercised through the real executable.
+`orbit-graph` is a standalone Cargo workspace that builds a local SQLite index of a source tree and answers graph queries through a Rust library and a CLI. `CLAUDE.md` imports this file, so Claude Code loads these rules; edit them here only.
+
+## Rules
+
+- Keep the workspace standalone and independent of Orbit: [CONTRIBUTING.md](CONTRIBUTING.md) lists the dependencies it forbids.
+- Keep graph scratch state in the git-ignored runtime directory that [docs/usage.md](docs/usage.md) describes under "Index lifecycle and location".
+- Preserve the behavior and tests of recovered code. Record further historical code in [PROVENANCE.md](PROVENANCE.md), as [CONTRIBUTING.md](CONTRIBUTING.md) describes.
 - Leave releases, tags, publishing, and agent-review automation to maintainers.
+
+## Gates
+
+- Before handoff, run `make ci`, which runs the full validation sequence in [CONTRIBUTING.md](CONTRIBUTING.md).
+
+## Code
+
+- Prefer focused changes over broad refactors.
+- Do not suppress broad lint categories to make validation pass.
+- Crate roles and the allowed dependency edges are in [ARCHITECTURE.md](ARCHITECTURE.md), which names the gate that enforces them.
+
+## Tests
+
+- CLI tests: the rule that they run the real built executable, and where they live, is in [CONTRIBUTING.md](CONTRIBUTING.md).
 
 <!-- constellation-standards:begin -->
 <!-- Managed by the constellation's operations/scripts/sync-standards.sh; edits inside this block are overwritten. -->
