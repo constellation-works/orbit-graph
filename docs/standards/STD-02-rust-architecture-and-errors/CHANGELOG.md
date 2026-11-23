@@ -4,6 +4,10 @@ Version history of [STD-02](STD-02.md). Adopting repos pin the `version:` in its
 frontmatter as `STD-02@<version>`; a version changes only when a rule is added,
 removed or changed in meaning.
 
+- **Editorial (2026-11-22, version unchanged):** `checks.md` now points at the Rust CLI
+  template repository `constellation-works/rust-cli-template` (checkout
+  `codebases/rust-cli-template`) instead of `operations/templates/rust-cli/`. No rule
+  changed. ORB-26696.
 - **4** (2026-10-28, Daniel; adopted from the BeautifulRust agent skills, reviewed
   2026-10-28).
   - Normative, new cluster "Idiom and naming", binding new and changed code: R36 no boolean
@@ -57,3 +61,4 @@ removed or changed in meaning.
     baseline), a stream grep guard and a manifest-only dependency-direction variant. The
     lint baseline block is unchanged.
 - **1** (2026-09-26). First publication: R1–R23.
+- **Editorial (2026-11-23, version unchanged):** the frontmatter drops `status`, which nothing read (ORB-27289).
