@@ -698,5 +698,4 @@ The CLI's `--format json` errors use the same classes under their CLI names
 both.
 
 
-The bundled agent guidance is in
-[`orbit-graph/SKILL.md`](../.orbit-plugin/skills/orbit-graph/SKILL.md).
+The bundled agent guidance is the [graph-orbit-graph skill](../.orbit-plugin/skills/orbit-graph/SKILL.md).

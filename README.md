@@ -20,6 +20,9 @@ analyses a change for affected callers and tests to run; see
 [docs/plugin.md](docs/plugin.md). The installable source plugin is the
 `.orbit-plugin/` directory.
 
+The source plugin bundles the [graph-orbit-graph skill](.orbit-plugin/skills/orbit-graph/SKILL.md)
+for agent code navigation, change analysis, and recommendations.
+
 ## Quick start
 
 ```sh
