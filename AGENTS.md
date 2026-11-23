@@ -1,18 +1,28 @@
 # Agent guidance
 
-- This repository is a standalone Cargo workspace: `crates/orbit-graph-extract`
-  (the language extractors and Git history extraction), `crates/orbit-graph`
-  (the library), `crates/orbit-graph-cli` (the `orbit-graph` JSON CLI), and
-  `crates/orbit-graph-changes` (the change analysis library).
-- Keep it independent of Orbit control-plane crates, configuration, and runtime
-  state. Graph scratch files belong under `.orbit-graph/`.
-- Preserve recovered behavior and tests. Record any additional historical code
-  in `PROVENANCE.md` with an immutable commit and original path.
-- Prefer focused changes over broad refactors. Do not suppress broad lint
-  categories to make validation pass.
-- Run the complete validation sequence in `CONTRIBUTING.md`; CLI behavior must
-  be exercised through the real executable.
+orbit-graph is a standalone Cargo workspace that builds a local SQLite index of a source tree, answers graph queries from a library and the `orbit-graph` CLI, and provides change analysis. `CLAUDE.md` imports this file, so edit only `AGENTS.md`.
+
+## Rules
+
+- Keep the workspace independent of Orbit control-plane crates, configuration and runtime state; [CONTRIBUTING.md](CONTRIBUTING.md) names the forbidden dependencies.
+- Graph scratch files belong under `.orbit-graph/`, which git ignores; [docs/usage.md](docs/usage.md) describes its layout.
+- Preserve the behavior and tests of recovered code.
+- Record newly recovered code in [PROVENANCE.md](PROVENANCE.md), as [CONTRIBUTING.md](CONTRIBUTING.md) describes.
 - Leave releases, tags, publishing, and agent-review automation to maintainers.
+
+## Gates
+
+- Before opening a pull request, run `make ci`, which runs the full validation sequence that [CONTRIBUTING.md](CONTRIBUTING.md) lists.
+
+## Code
+
+- Prefer focused changes over broad refactors.
+- Do not suppress broad lint categories to make validation pass.
+- Layers and crate dependency edges are in [ARCHITECTURE.md](ARCHITECTURE.md), which also names the gates that enforce them.
+
+## Tests
+
+- Exercise CLI behavior through the real `orbit-graph` executable; [CONTRIBUTING.md](CONTRIBUTING.md) says where those tests live.
 
 <!-- constellation-standards:begin -->
 <!-- Managed by the constellation's operations/scripts/sync-standards.sh; edits inside this block are overwritten. -->
