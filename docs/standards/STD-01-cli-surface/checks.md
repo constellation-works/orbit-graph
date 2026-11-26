@@ -1,13 +1,8 @@
 # Machine checks — STD-01 CLI surface
 
-The gate that enforces each rule in [STD-01](STD-01.md), or `review-only`. Ship a change
-with the gate its rule names, or say it is review-only.
+The gate that enforces each rule in [STD-01](STD-01.md), or `review-only`. Ship a change with the gate its rule names, or say it is review-only.
 
-The **Gate** column names what an adopting repo wires up. The **Orbit instance** column
-names where Orbit already has that gate. A rule marked `review-only` has no mechanical
-gate that is worth its false-positive rate, so reviewers check it against the rule text.
-For a new Rust CLI, `assert_cmd` for exit codes and streams, plus `insta` or `trycmd` for
-goldens, covers most of this table.
+The **Gate** column names what an adopting repo wires up. The **Orbit instance** column names where Orbit already has that gate. A rule marked `review-only` has no mechanical gate that is worth its false-positive rate, so reviewers check it against the rule text. For a new Rust CLI, `assert_cmd` for exit codes and streams, plus `insta` or `trycmd` for goldens, covers most of this table.
 
 | Rule | Gate | Orbit instance |
 |---|---|---|
@@ -44,6 +39,6 @@ goldens, covers most of this table.
 | R22 | Help goldens make every help change visible in the diff; quality is review-only | `make goldens` |
 | R23 | Test that renders the whole help tree recursively and rejects tracker-ID patterns | `command/tests/mod.rs#recursive_cli_help_uses_only_placeholder_artifact_ids` |
 | R24 | Help and output golden suite in CI, with an explicit update switch | `make goldens` → `scripts/check-goldens.sh` (`ORBIT_UPDATE_HELP_GOLDENS`, `ORBIT_UPDATE_OUTPUT_GOLDENS`, `ORBIT_MCP_UPDATE_SNAPSHOT`) |
-| R25 | review-only for a single-surface CLI; with several surfaces, a test that derives each surface from the declaration and compares it to a snapshot | `command/tests/operation_args.rs`; `tests/snapshots/mcp_tools_list.json` |
+| R25 | Golden test: the table of environment variables generated from the constant list equals the usage doc, and fails when they differ, refreshed with the R24 update switch. Reads only through the constants are review-only. With several surfaces, keep the derivation test. | `command/tests/operation_args.rs`; `tests/snapshots/mcp_tools_list.json` |
 | R35 | Test: a deprecated flag or key still parses and warns by name; once its window closes, a test that it is rejected (exit 2 or a load error); help goldens (R24) show the removal | `orbit-config/src/tests/layering.rs#removed_pilot_max_complexity_warns_once_…`; `command/tests/mod.rs#cli_parses_web_serve_global_as_deprecated_noop`; `command/run/tests/ship.rs#ship_rejects_removed_local_subcommand_form` |
 | R36 | Parity test: every advertised operation and parameter is invoked with a probe input and must reach its implementation; review-only for a single-surface clap CLI | `orbit-tools/…/tests/search.rs#search_schema_advertises_only_lexical_inputs`; `tests/mcp_roundtrip/plugins.rs#an_enabled_plugin_tool_is_advertised_and_callable_…`; `orbit-mcp/src/federated/tests/capability.rs#the_locked_mapping_covers_exactly_the_advertised_surface` |
