@@ -131,6 +131,7 @@ structure:
 	scripts/check-dependency-direction.sh
 	scripts/check-terminal-guard.sh
 	scripts/check-orphan-modules.sh
+	scripts/check-env-vars.sh
 	scripts/test-repo-gates.sh
 
 # Supply chain (STD-02 R23, STD-05 R23/R24): advisories, yanked crates,

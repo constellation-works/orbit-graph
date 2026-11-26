@@ -19,9 +19,10 @@ case_dir=""
 # fresh_copy: a scratch copy of the files the gates read.
 fresh_copy() {
   case_dir="$scratch/case$((passed + failed))"
-  mkdir -p "$case_dir/scripts" "$case_dir/crates"
+  mkdir -p "$case_dir/scripts" "$case_dir/crates" "$case_dir/docs"
   cp "$ROOT"/scripts/check-*.sh "$case_dir/scripts/"
   cp "$ROOT/ARCHITECTURE.md" "$case_dir/"
+  cp "$ROOT/docs/usage.md" "$case_dir/docs/"
   local crate
   for crate in "$ROOT"/crates/*/; do
     crate=$(basename "$crate")
@@ -201,6 +202,28 @@ fresh_copy; mkdir -p "$case_dir/crates/orbit-graph/src/store/history/tests/neste
 expect fail $G "a nested directory inside tests/" 'store/history/tests/nested is a directory inside'
 fresh_copy; rm "$case_dir/crates/orbit-graph-cli/src/output/tests/mod.rs"
 expect fail $G "a tests/ directory without mod.rs" 'output/tests has no mod.rs'
+fresh_copy; rm -rf "$case_dir"/crates/*
+expect fail $G "an empty tree" 'nothing was checked'
+
+# --- environment variables (STD-01@4 §R25) ----------------------------------
+G=check-env-vars.sh
+fresh_copy; expect pass $G "the current tree"
+fresh_copy; append crates/orbit-graph-cli/src/main.rs 'fn seeded() { let _ = std::env::var("SEEDED_ENV"); }'
+expect fail $G "a literal env::var call" 'crates/orbit-graph-cli/src/main.rs:[0-9]+:'
+fresh_copy; append crates/orbit-graph-cli/src/output/sink.rs 'fn seeded() { let _ = read_var("SEEDED_ENV"); }'
+expect fail $G "a literal read_var call" 'crates/orbit-graph-cli/src/output/sink.rs:[0-9]+:'
+fresh_copy; append crates/orbit-graph-cli/src/output/log.rs 'fn seeded() { let _ = EnvFilter::try_from_default_env(); }'
+expect fail $G "an implicit try_from_default_env call" 'try_from_default_env\(\) reads RUST_LOG implicitly'
+fresh_copy; append crates/orbit-graph-cli/src/main.rs 'fn seeded() { const LOCAL: &str = "LOCAL"; let _ = std::env::var(LOCAL); }'
+expect fail $G "an env::var call with an undocumented constant" 'must pass a documented constant'
+fresh_copy; edit docs/usage.md 's/`ORBIT_GRAPH_FORMAT`/`DRIFTED_FORMAT`/'
+expect fail $G "a usage.md table disagreeing with environment.rs" 'environment table disagrees'
+fresh_copy; edit crates/orbit-graph-cli/src/environment.rs 's/Default: `auto`/Default: `json`/'
+expect fail $G "a constant doc disagreeing with usage.md" 'environment table disagrees'
+fresh_copy; append crates/orbit-graph-cli/src/environment.rs 'pub const UNDOCUMENTED_ENV: &str = "UNDOC";'
+expect fail $G "an undocumented env constant" 'is missing a meaning doc comment'
+fresh_copy; append crates/orbit-graph-cli/src/main.rs '// std::env::var("COMMENT_ONLY")'
+expect pass $G "a comment that mentions env::var"
 fresh_copy; rm -rf "$case_dir"/crates/*
 expect fail $G "an empty tree" 'nothing was checked'
 

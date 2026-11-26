@@ -19,16 +19,21 @@ use serde::Serialize;
 use serde_json::{Value, json};
 
 use crate::command::Cli;
+use crate::environment::{
+    BACKEND_OVERRIDE_ENV, FAULT_INJECT_ENV, LOCK_TIMEOUT_ENV, ORBIT_TIMEOUT_ENV, PLUGIN_STATE_ENV,
+    TOOL_NAME_ENV,
+};
 use crate::error::{CliError, ToolError};
 use crate::output::json::write_plugin_response;
 use crate::output::{
     OutputSink, emit_error, emit_help, emit_notice, emit_to_process, init_logging,
     requested_format_from_args, requested_output,
 };
-use crate::plugin::{ORBIT_TIMEOUT_ENV, PLUGIN_STATE_ENV, PluginConfig, PluginEnvironment};
+use crate::plugin::{PluginConfig, PluginEnvironment};
 use orbit_graph::{DEFAULT_LOCK_TIMEOUT, RuntimeConfig, SyncFaultPoint};
 
 mod command;
+mod environment;
 mod error;
 mod output;
 mod plugin;
@@ -40,13 +45,6 @@ mod tests;
 /// detail spelling (STD-01 §R35).
 const LEGACY_DETAIL_WARNING: &str =
     "warning: `overview --format summary|full` is deprecated; use `overview --detail summary|full`";
-
-/// `ORBIT_GRAPH_LOCK_TIMEOUT_MS`: how long a graph or history lock is
-/// waited for, in whole milliseconds; `0` tries once.
-const LOCK_TIMEOUT_ENV: &str = "ORBIT_GRAPH_LOCK_TIMEOUT_MS";
-/// `ORBIT_GRAPH_FAULT_INJECT`: test hook naming a sync point that aborts
-/// the process.
-const FAULT_INJECT_ENV: &str = "ORBIT_GRAPH_FAULT_INJECT";
 
 /// Bound the complete plugin request before JSON decoding, including its
 /// context and config. Tool inputs contain selectors and query parameters,
@@ -68,12 +66,12 @@ fn main() -> ExitCode {
     // only then is stdin read as a request envelope. It cannot be combined
     // with command-line arguments: one of the two would be ignored (STD-01
     // §R28).
-    if let Ok(tool_name) = std::env::var("ORBIT_TOOL_NAME") {
+    if let Ok(tool_name) = std::env::var(TOOL_NAME_ENV) {
         if args.len() > 1 {
             let error = CliError::Usage(format!(
-                "ORBIT_TOOL_NAME={tool_name:?} selects the Orbit plugin protocol, which reads \
+                "{TOOL_NAME_ENV}={tool_name:?} selects the Orbit plugin protocol, which reads \
                  its request from stdin and takes no arguments, but arguments were given; \
-                 unset ORBIT_TOOL_NAME to run the command, or drop the arguments to run the \
+                 unset {TOOL_NAME_ENV} to run the command, or drop the arguments to run the \
                  plugin tool"
             ));
             emit_error(
@@ -145,14 +143,6 @@ fn main() -> ExitCode {
         }
     }
 }
-
-/// Set by the plugin launcher (`bin/orbit-graph`) when the manifest's named
-/// `--allow-unbound-backend` override ran this executable without a recorded
-/// SHA-256; the value is the executable's path. Every response then carries
-/// it as `backend_override`, so an override call is never indistinguishable
-/// from a bound one (STD-05 §R4). It only labels the response: it grants
-/// nothing.
-const BACKEND_OVERRIDE_ENV: &str = "ORBIT_GRAPH_BACKEND_OVERRIDE";
 
 /// Resolve the library's process settings from `argv[0]` and the raw
 /// values of [`LOCK_TIMEOUT_ENV`] and [`FAULT_INJECT_ENV`]; a malformed
@@ -310,7 +300,7 @@ fn decode_external_tool_request(
             return Err(CliError::Tool(ToolError::invalid_request(
                 "select Orbit external tool",
                 format!(
-                    "ORBIT_TOOL_NAME {environment_tool:?} does not match envelope tool {envelope_tool:?}"
+                    "{TOOL_NAME_ENV} {environment_tool:?} does not match envelope tool {envelope_tool:?}"
                 ),
             )));
         }
@@ -356,7 +346,7 @@ fn decode_external_tool_request(
     if crate::plugin::find_tool(tool_name).is_none() {
         return Err(CliError::Tool(ToolError::invalid_request(
             "select Orbit external tool",
-            format!("unsupported ORBIT_TOOL_NAME {tool_name:?}"),
+            format!("unsupported {TOOL_NAME_ENV} {tool_name:?}"),
         )));
     }
     emit_notice(

@@ -158,10 +158,7 @@ impl ToolCall<'_> {
     }
 }
 
-/// `ORBIT_PLUGIN_STATE`: the plugin state root Orbit grants a plugin tool.
-pub const PLUGIN_STATE_ENV: &str = "ORBIT_PLUGIN_STATE";
-/// `GRAPH_ORBIT_TIMEOUT_SECONDS`: the bound on each Orbit callback.
-pub const ORBIT_TIMEOUT_ENV: &str = "GRAPH_ORBIT_TIMEOUT_SECONDS";
+pub use crate::environment::{ORBIT_TIMEOUT_ENV, PLUGIN_STATE_ENV, TOOL_NAME_ENV};
 const DEFAULT_ORBIT_TIMEOUT_SECONDS: u64 = 10;
 const MAX_ORBIT_TIMEOUT_SECONDS: u64 = 60;
 
@@ -296,7 +293,7 @@ pub fn execute_external_tool(
     let tool = find_tool(name).ok_or_else(|| {
         ToolError::invalid_request(
             "dispatch Orbit external tool",
-            format!("unsupported ORBIT_TOOL_NAME {name:?}"),
+            format!("unsupported {TOOL_NAME_ENV} {name:?}"),
         )
     })?;
     (tool.handler)(&ToolCall {

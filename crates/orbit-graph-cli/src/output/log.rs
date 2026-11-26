@@ -9,9 +9,11 @@ use std::io;
 
 use tracing_subscriber::EnvFilter;
 
+use crate::environment::RUST_LOG_ENV;
+
 /// Install the process-wide log subscriber once, before anything logs.
 pub fn init_logging() {
-    let filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("warn"));
+    let filter = EnvFilter::try_from_env(RUST_LOG_ENV).unwrap_or_else(|_| EnvFilter::new("warn"));
     let _ = tracing_subscriber::fmt()
         .with_env_filter(filter)
         .with_writer(io::stderr)
