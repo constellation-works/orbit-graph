@@ -120,6 +120,19 @@ identical, every cache write is best effort, and on a read-only directory the
 write fails silently and the request succeeds unchanged. Moving the cache out
 of the index directory is left to a follow-up.
 
+
+## Graph store D7. Defer a total domain-module order until the path cycle is removed
+
+**Deviation, `STD-02@8 §R39`.** The `orbit-graph` domain crate currently has a
+reciprocal path dependency: `db_path::resolve_worktree_db_path` calls
+`store::resolve_worktree_db_path`, while
+`store::existing_legacy_db_path_for_branch` calls `db_path::legacy_db_path`.
+There is no topological order for these two units, so `ARCHITECTURE.md` does
+not claim a total internal order yet. This existing workspace records the
+deviation until a restructuring removes one edge; then the resulting order
+will be documented in the domain section. The remaining observed relations
+still put `lock` above `runtime` and `state_dir`, and `store` above `lock`.
+
 **Sync bounds: context.**
 Decisions for ORB-13156, which makes a graph sync finish or fail within
 stated bounds (`STD-03 §R2`, `§R4`, `§R7`, `§R15`, `§R22`; `STD-05 §R10`).
