@@ -1,4 +1,4 @@
-//! Raw graph row types produced by extractors before storage.
+//! Defines raw file, symbol and edge records without importing sibling units.
 
 /// Extracted graph rows for a single file.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]

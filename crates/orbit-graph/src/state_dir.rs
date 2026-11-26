@@ -1,5 +1,4 @@
-//! Local state that repository content can neither redirect nor pre-populate,
-//! created owner-only, and the one durable write path.
+//! Creates private state directories and writes durable files using graph errors.
 //!
 //! Every directory and file orbit-graph keeps between runs is reached through
 //! this module (`STD-05 §R6`–`§R9`):

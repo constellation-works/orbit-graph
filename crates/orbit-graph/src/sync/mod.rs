@@ -1,4 +1,5 @@
-//! Graph synchronization orchestration.
+//! Scans, indexes and resolves changed files using graph connections, storage, extraction,
+//! locking, redaction, runtime settings and graph errors.
 
 pub(crate) mod pass1;
 pub(crate) mod pass2;

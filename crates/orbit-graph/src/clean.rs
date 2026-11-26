@@ -1,3 +1,6 @@
+//! Plans and removes obsolete database families using the store, lock, state directory, graph
+//! errors and extractor version.
+
 use std::fs;
 use std::path::{Path, PathBuf};
 

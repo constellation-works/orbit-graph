@@ -1,3 +1,6 @@
+//! Manages graph handles and their sync policy using database paths, errors, queries, storage,
+//! synchronization and extraction selectors.
+
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};

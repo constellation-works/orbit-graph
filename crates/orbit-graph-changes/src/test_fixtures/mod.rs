@@ -1,4 +1,5 @@
-//! Shared deterministic Git fixtures for change-analysis unit tests.
+//! Builds deterministic Git repositories for change-analysis tests without importing sibling
+//! units.
 //!
 //! Three builders live here. [`build_fixture`] creates a two-commit throwaway
 //! repository used by the snapshot tests, and

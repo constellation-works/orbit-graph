@@ -1,4 +1,5 @@
-//! Bounded change report: the JSON export.
+//! Assembles bounded change reports using changes, evidence, filters, selection, snapshots and
+//! graph queries.
 //!
 //! A report answers what
 //! changed, what it affects, and what tests are plausibly connected in

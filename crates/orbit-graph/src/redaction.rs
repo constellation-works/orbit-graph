@@ -1,4 +1,5 @@
-//! Conservative value redaction at graph, history and report durability boundaries.
+//! Redacts sensitive values before they reach graph records or reports without importing
+//! sibling units.
 
 use std::borrow::Cow;
 use std::collections::HashMap;

@@ -1,4 +1,5 @@
-//! Language-specific tree-sitter extractors.
+//! Parses source files into graph rows using the extracted records and the crate's extractor
+//! contracts.
 
 pub mod c;
 mod common;

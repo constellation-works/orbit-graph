@@ -1,4 +1,5 @@
-//! Resolve caller aliases once, using each snapshot's public graph identity.
+//! Resolves requested symbol aliases using snapshots, evidence and the graph library's
+//! selectors.
 
 use std::collections::BTreeSet;
 

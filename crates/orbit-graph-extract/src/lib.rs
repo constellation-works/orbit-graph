@@ -1,3 +1,12 @@
+//! Defines extraction contracts and exports the language extractors, selectors and Git history
+//! types without dependencies on other workspace crates.
+//!
+//! This crate owns the language-neutral `ExtractedFile` shape, the trait
+//! implemented by language-specific tree-sitter extractors, and the Git-tree
+//! change extraction behind the delivery-history index. It intentionally
+//! avoids storage, sync, query, and filesystem traversal concerns; the
+//! `orbit-graph` library builds the index on top of it.
+
 // A library prints nothing (STD-02 §R15).
 #![deny(clippy::print_stderr, clippy::print_stdout)]
 // Test fixtures write files with `fs::write`, which `clippy.toml` bans from
@@ -6,14 +15,6 @@
     test,
     allow(clippy::expect_used, clippy::unwrap_used, clippy::disallowed_methods)
 )]
-
-//! Pure extraction contracts for the Orbit graph backend.
-//!
-//! This crate owns the language-neutral `ExtractedFile` shape, the trait
-//! implemented by language-specific tree-sitter extractors, and the Git-tree
-//! change extraction behind the delivery-history index. It intentionally
-//! avoids storage, sync, query, and filesystem traversal concerns; the
-//! `orbit-graph` library builds the index on top of it.
 
 use std::path::Path;
 

@@ -42,7 +42,7 @@ help:
 	@echo "  make ci-fast      Check formatting, source gates, evaluation smoke and diff whitespace"
 	@echo "  make ci-lint      Run clippy gate"
 	@echo "  make standards-check Verify vendored docs/standards"
-	@echo "  make structure    Dependency direction, stream guard, orphan tests (no build)"
+	@echo "  make structure    Check crate dependencies, unit map, streams, tests and env keys (no build)"
 	@echo "  make deny         Supply-chain check with cargo-deny (deny.toml)"
 	@echo "  make install      Install binary (INSTALL_PROFILE=debug optional)"
 	@echo "  make uninstall    Remove binary from INSTALL_BIN_DIR"
@@ -123,12 +123,11 @@ agent-evaluation-check:
 standards-check:
 	sh docs/standards/check.sh
 
-# Source-only repository gates (see ARCHITECTURE.md): dependency direction
-# (STD-02 R1-R7, R9), std-stream ownership (STD-02 R15) and unit-test module
-# reachability (STD-02 R19), plus a self-test that seeds a violation for each
-# and requires it to fail (STD-04 R10).
+# ARCHITECTURE.md maps each source gate to its standard. The self-test
+# requires each gate to reject a seeded violation (STD-04 R10).
 structure:
 	scripts/check-dependency-direction.sh
+	scripts/check-unit-map.sh
 	scripts/check-terminal-guard.sh
 	scripts/check-orphan-modules.sh
 	scripts/check-env-vars.sh

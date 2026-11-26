@@ -1,4 +1,4 @@
-//! Presentation filters and the explanation every filtered response carries.
+//! Defines report filters and accounts for omitted results without importing sibling units.
 //!
 //! A filter never changes the underlying evidence: it decides what a response
 //! shows. Because a reader cannot tell a filtered-out row from a row that never

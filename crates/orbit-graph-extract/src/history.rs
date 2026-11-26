@@ -1,4 +1,4 @@
-//! Git-tree change extraction for the rebuildable delivery-history index.
+//! Extracts Git history, file changes and delivery evidence using the crate's error type.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;

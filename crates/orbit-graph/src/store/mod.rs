@@ -1,4 +1,5 @@
-//! SQLite connection setup for the graph store.
+//! Opens SQLite graph and history storage using database paths, errors, locks, redaction, state
+//! directory access and extraction contracts.
 
 pub(crate) mod history;
 pub(crate) mod schema;

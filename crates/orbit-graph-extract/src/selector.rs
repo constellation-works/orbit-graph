@@ -1,4 +1,5 @@
-//! Selector parsing and filesystem-anchor helpers for graph queries.
+//! Parses graph selectors and resolves their filesystem anchors without importing sibling
+//! units.
 //!
 //! The parser recognizes `dir:`, `file:`, `symbol:`, `module:`, and `command:`
 //! selectors. It was recovered from Orbit's shared selector utility; see

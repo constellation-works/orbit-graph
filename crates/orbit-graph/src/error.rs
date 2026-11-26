@@ -1,3 +1,5 @@
+//! Defines graph failures and their public classes using extraction errors.
+
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
