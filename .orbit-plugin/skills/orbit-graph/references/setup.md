@@ -129,12 +129,13 @@ The indexes are ready when `code_index.state` is `ready`, `code_index.fresh` is
 ## 5. Keep the indexes fresh
 
 Queries never refresh an index. Enabling the plugin seeds two disabled
-routines into the workspace:
+routines into the workspace (created at enable time, absent from a fresh
+checkout):
 
 | Routine file | Runs | Schedule |
 |---|---|---|
-| `.orbit/routines/graph-history-sync.yaml` | `history_sync` | 03:00 daily |
-| `.orbit/routines/graph-code-sync.yaml` | `graph_sync` | 03:30 daily |
+| `<workspace>/.orbit/routines/graph-history-sync.yaml` | `history_sync` | 03:00 daily |
+| `<workspace>/.orbit/routines/graph-code-sync.yaml` | `graph_sync` | 03:30 daily |
 
 To turn one on, set `enabled: true` in its file. Only enable the code-sync
 routine for a repository whose incremental build fits the default budget. Check
