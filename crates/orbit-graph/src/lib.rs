@@ -1,3 +1,10 @@
+//! Exposes graph indexing, SQLite storage, query and recommendation operations using the
+//! extraction crate.
+//!
+//! This crate owns the durable graph database path contract, sync policy, and
+//! public query surface. It can be embedded as a library or used through the
+//! `orbit-graph` JSON command-line interface.
+
 // A library prints nothing: diagnostics go through `tracing` (STD-02 §R15).
 #![deny(clippy::print_stderr, clippy::print_stdout)]
 // Test fixtures write files with `fs::write`, which `clippy.toml` bans from
@@ -6,12 +13,6 @@
     test,
     allow(clippy::expect_used, clippy::unwrap_used, clippy::disallowed_methods)
 )]
-
-//! SQLite-backed source-code graph store and query API.
-//!
-//! This crate owns the durable graph database path contract, sync policy, and
-//! public query surface. It can be embedded as a library or used through the
-//! `orbit-graph` JSON command-line interface.
 
 mod clean;
 mod db_path;

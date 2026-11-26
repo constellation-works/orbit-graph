@@ -1,4 +1,5 @@
-//! On-disk cache of materialized snapshot trees and their indexes.
+//! Caches immutable snapshot trees and indexes using the graph library's version and state
+//! directory APIs.
 //!
 //! A cache entry holds exactly one commit: the materialized tree and the graph
 //! database built from it. An entry is addressed by commit SHA and keyed by

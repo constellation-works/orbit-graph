@@ -1,3 +1,5 @@
+//! Resolves worktree database identities and legacy paths using the store and graph errors.
+
 use std::path::{Path, PathBuf};
 
 use crate::{GraphError, STORE_SCHEMA_VERSION, store};

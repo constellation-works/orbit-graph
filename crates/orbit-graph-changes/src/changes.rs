@@ -1,4 +1,4 @@
-//! The changed-symbol slice of a [`Comparison`].
+//! Pairs changed symbols across snapshots using filters and the graph library.
 //!
 //! This module answers one question — *which symbols changed between the two
 //! named revisions* — and answers it with two independent sources of evidence

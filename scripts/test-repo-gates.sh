@@ -1,9 +1,6 @@
 #!/usr/bin/env bash
-# scripts/test-repo-gates.sh — STD-04 §R10: a gate that ran nothing or
-# asserted nothing must fail, and a gate that cannot fail proves nothing. Each repository gate script runs against a scratch copy of this
-# tree, first unchanged (it must pass), then with one seeded violation at a
-# time (it must fail and name the violation), then with nothing to check (it
-# must fail rather than pass on zero inputs).
+# STD-04 §R10: exercise each repository gate against a valid scratch tree,
+# then require it to fail and name each seeded violation.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 ROOT=$PWD
@@ -145,6 +142,57 @@ awk '!done && $0 == "tempfile.workspace = true" { print "tempfile = \"3.1\""; do
 expect fail $G "one member declaring a shared dependency locally (§R9)" 'tempfile is used by 4 members but declared locally by orbit-graph-changes'
 fresh_copy; rm -rf "$case_dir"/crates/*
 expect fail $G "an empty tree" 'nothing was checked'
+
+# --- unit map (STD-02 §R43) --------------------------------------------------
+# Use a real, dependency-free Cargo workspace to exercise metadata discovery.
+G=check-unit-map.sh
+case_dir="$scratch/unit-map"
+mkdir -p "$case_dir/scripts" "$case_dir/crates/index/src"
+cp "$ROOT/scripts/$G" "$case_dir/scripts/"
+cat >"$case_dir/Cargo.toml" <<'EOF'
+[workspace]
+members = ["crates/*"]
+resolver = "2"
+EOF
+cat >"$case_dir/crates/index/Cargo.toml" <<'EOF'
+[package]
+name = "index"
+version = "0.1.0"
+edition = "2021"
+EOF
+printf '//! Index.\npub mod query;\n' >"$case_dir/crates/index/src/lib.rs"
+printf '//! Query.\n' >"$case_dir/crates/index/src/query.rs"
+cat >"$case_dir/ARCHITECTURE.md" <<'EOF'
+## `index`
+
+| Unit | Owns |
+| --- | --- |
+| `lib.rs` | Index. |
+| `query.rs` | Query. |
+EOF
+expect pass "$G" "the mapped fixture" 'ok \(1 crate'
+mkdir -p "$case_dir/crates/new-index/src"
+sed 's/^name = "index"$/name = "new-index"/' "$case_dir/crates/index/Cargo.toml" >"$case_dir/crates/new-index/Cargo.toml"
+printf '//! Additional index.\n' >"$case_dir/crates/new-index/src/lib.rs"
+expect fail "$G" "a new workspace crate without a section" 'crate `new-index` .* has no section'
+append ARCHITECTURE.md '## `new-index`'
+append ARCHITECTURE.md '| `lib.rs` | Additional index. |'
+cp "$case_dir/ARCHITECTURE.md" "$case_dir/complete-map.md"
+edit ARCHITECTURE.md '/^| `query.rs` |/d'
+expect fail "$G" "a module absent from its crate row" 'index.*does not name module `query`'
+append ARCHITECTURE.md '| `query.rs` | Misplaced row. |'
+expect fail "$G" "a module named only in another crate section" 'index.*does not name module `query`'
+cp "$case_dir/complete-map.md" "$case_dir/ARCHITECTURE.md"
+append ARCHITECTURE.md '`src/missing.rs`'
+expect fail "$G" "a stale documented path" 'src/missing.rs.*does not exist'
+edit ARCHITECTURE.md '/missing.rs/d'
+prepend crates/index/src/lib.rs '// no crate doc'
+expect fail "$G" "a crate root missing an opening doc comment" 'src/lib.rs.*does not begin with'
+edit crates/index/src/lib.rs '1d'
+prepend crates/index/src/query.rs '// no module doc'
+expect fail "$G" "a module missing an opening doc comment" 'src/query.rs.*does not begin with'
+edit crates/index/src/query.rs '1d'
+expect pass "$G" "both crates after repairing the map" 'ok \(2 crate'
 
 # --- terminal guard (STD-02 §R15) --------------------------------------------
 G=check-terminal-guard.sh

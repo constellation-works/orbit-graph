@@ -1,4 +1,5 @@
-//! Deadline-bounded advisory file locks with a diagnostic holder record.
+//! Acquires bounded database and directory locks using runtime settings, state directory
+//! access, extraction timestamps and graph errors.
 //!
 //! Exclusive locks on shared on-disk state use [`FileLockGuard`] (`STD-03
 //! §R6`, `§R7`). Sidecar locks use [`FileLockGuard::acquire`]:
