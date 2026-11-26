@@ -1,4 +1,5 @@
-//! Read-only graph query implementations.
+//! Reads indexed symbols and relationships using the graph handle, sync and extraction
+//! contracts, and graph errors.
 
 use std::path::{Component, Path, PathBuf};
 

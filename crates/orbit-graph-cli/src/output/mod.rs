@@ -1,4 +1,5 @@
-//! Shared terminal output policy and rendering boundary.
+//! Renders human and machine output and configures streams and logging using CLI environment
+//! keys and errors.
 //!
 //! Commands return a JSON document plus a [`View`]. The document is the stable
 //! machine contract; the view describes the human rendering without reading

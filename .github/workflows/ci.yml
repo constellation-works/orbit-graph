@@ -43,6 +43,7 @@ jobs:
       # Source-only repository gates (ARCHITECTURE.md) and their seeded-
       # violation self-test.
       - run: scripts/check-dependency-direction.sh
+      - run: scripts/check-unit-map.sh
       - run: scripts/check-terminal-guard.sh
       - run: scripts/check-orphan-modules.sh
       - run: scripts/check-env-vars.sh

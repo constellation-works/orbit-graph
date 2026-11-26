@@ -1,4 +1,5 @@
-//! Leakage-safe live evaluation of Git-only commit-text relevance.
+//! Evaluates held-out Git commits using extraction history, the history store, recommendations
+//! and graph errors.
 //!
 //! Each held-out commit `C` on a landing branch's first-parent chain is scored
 //! by querying `C`'s subject at target `C^` with no chronological cutoff, which

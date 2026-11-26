@@ -1,5 +1,5 @@
-//! One bounded answer to "what does this change affect, and which tests
-//! should run?", shaped for agents.
+//! Builds the agent-facing change analysis using changes, evidence, filters, reports,
+//! selection, snapshots and the graph library.
 //!
 //! [`analyse`] opens a comparison (two revisions, or a base and the working
 //! tree), builds the [`report`](crate::report) over it under explicit bounds

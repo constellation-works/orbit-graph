@@ -1,4 +1,5 @@
-//! Orbit external-tool protocol and public-authority adapter.
+//! Implements the Orbit external-tool protocol using CLI environment keys, errors and the graph
+//! and change-analysis libraries.
 
 use std::collections::BTreeSet;
 use std::ffi::OsString;

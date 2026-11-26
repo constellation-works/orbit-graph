@@ -1,4 +1,5 @@
-//! Explainable destination recommendations learned from verified change history.
+//! Ranks change destinations using graph queries, history storage, extraction, redaction, state
+//! directory writes and graph errors.
 //!
 //! The engine consumes only delivered changes from [`HistoryIndex`](crate::HistoryIndex).
 //! Planned context-file selectors are deliberately absent from the request contract.

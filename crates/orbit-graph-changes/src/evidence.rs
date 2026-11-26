@@ -1,4 +1,5 @@
-//! Relationship evidence and candidate tests for one changed symbol.
+//! Finds evidence paths and candidate tests for changed symbols using changes, filters,
+//! snapshots and graph queries.
 //!
 //! Two products, both scoped to exactly one snapshot:
 //!

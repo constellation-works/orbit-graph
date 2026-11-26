@@ -1,3 +1,5 @@
+//! Represents failures during Git history extraction without importing sibling units.
+
 use std::path::PathBuf;
 
 /// Failure raised while extracting history from a Git repository.

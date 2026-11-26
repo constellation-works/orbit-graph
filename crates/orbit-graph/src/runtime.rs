@@ -1,5 +1,4 @@
-//! Process settings the composition layer resolves once and hands to the
-//! library before its first call (STD-02 §R3).
+//! Stores process settings supplied by the caller without importing sibling units.
 //!
 //! The library reads no environment variable, argument or other process
 //! input itself: the `orbit-graph` CLI resolves these values from its

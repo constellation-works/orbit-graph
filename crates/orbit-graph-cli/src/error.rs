@@ -1,4 +1,5 @@
-//! CLI and plugin failure types and the one graph-error translator.
+//! Maps graph and change-analysis failures to CLI and plugin errors without importing CLI
+//! siblings.
 //!
 //! Foundation module for `command`, `output` and `plugin` (STD-02 §R1): it
 //! owns [`CliError`], the [`report_graph_error`] translator, the plugin

@@ -1,3 +1,6 @@
+//! Configures and dispatches the command-line and plugin surfaces using the graph and
+//! change-analysis libraries.
+
 // Unit tests use unwrap/expect for fixture setup; production call sites remain linted.
 // Test fixtures write files with `fs::write`, which `clippy.toml` bans from
 // shipped code in favour of `orbit_graph::atomic_write` (STD-03 §R5).
@@ -5,8 +8,6 @@
     test,
     allow(clippy::expect_used, clippy::unwrap_used, clippy::disallowed_methods)
 )]
-
-//! Command-line interface for the standalone graph index.
 
 use std::ffi::OsString;
 use std::io::{self, Read};

@@ -1,13 +1,4 @@
-// A library prints nothing: diagnostics go through `tracing` (STD-02 §R15).
-#![deny(clippy::print_stderr, clippy::print_stdout)]
-// Test fixtures write files with `fs::write`, which `clippy.toml` bans from
-// shipped code in favour of `orbit_graph::atomic_write` (STD-03 §R5).
-#![cfg_attr(
-    test,
-    allow(clippy::expect_used, clippy::unwrap_used, clippy::disallowed_methods)
-)]
-
-//! Change-analysis library built on the public `orbit_graph` API.
+//! Exposes bounded change analysis and its report types using the public graph library.
 //!
 //! The one public operation is [`analyse`]: it resolves two refs to
 //! immutable commits and indexes each one in isolation, so every answer is
@@ -36,6 +27,15 @@
 //!
 //! The crate never reads Orbit control-plane state and never executes content
 //! from the repository under inspection.
+
+// A library prints nothing: diagnostics go through `tracing` (STD-02 §R15).
+#![deny(clippy::print_stderr, clippy::print_stdout)]
+// Test fixtures write files with `fs::write`, which `clippy.toml` bans from
+// shipped code in favour of `orbit_graph::atomic_write` (STD-03 §R5).
+#![cfg_attr(
+    test,
+    allow(clippy::expect_used, clippy::unwrap_used, clippy::disallowed_methods)
+)]
 
 pub(crate) mod analysis;
 pub(crate) mod cache;

@@ -1,4 +1,5 @@
-//! Leakage-safe chronological evaluation over versioned public delivery data.
+//! Evaluates recommendation variants against dated delivery corpora using extraction, graph,
+//! store, sync, recommendation, runtime and error contracts.
 //!
 //! Each case is ranked by every `recommend` variant and by two history-free
 //! baselines ([`baselines`]): BM25 over the tree at the case's fold cutoff

@@ -1,4 +1,4 @@
-//! Documented process environment variables read by `orbit-graph`.
+//! Declares process environment keys and their documentation without importing sibling units.
 //!
 //! Each variable the CLI reads is declared once here with its meaning, default
 //! value, and overridden flag (STD-01 §R25). `scripts/check-env-vars.sh`

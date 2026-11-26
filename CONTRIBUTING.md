@@ -12,6 +12,7 @@ Before opening a pull request, run:
 ```sh
 sh docs/standards/check.sh
 scripts/check-dependency-direction.sh
+scripts/check-unit-map.sh
 scripts/check-terminal-guard.sh
 scripts/check-orphan-modules.sh
 scripts/check-env-vars.sh

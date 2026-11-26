@@ -1,4 +1,5 @@
-//! Argument declarations and dispatch for every `orbit-graph` subcommand.
+//! Parses and dispatches graph commands using CLI errors, output views and the graph and
+//! change-analysis libraries.
 //!
 //! [`Cli`] is the parsed command line. Each subcommand lives in its own
 //! module, parses its arguments, makes one library call through a

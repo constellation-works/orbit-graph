@@ -1,4 +1,5 @@
-//! Immutable base/head snapshots of a Git repository.
+//! Materializes and indexes revision and working-tree snapshots using the cache and graph
+//! library.
 //!
 //! A [`Comparison`] resolves two user-supplied refs to immutable commit SHAs,
 //! materializes each commit into its own task-owned temporary tree, and indexes
