@@ -1,7 +1,7 @@
 ---
 title: "Graph store: decisions"
 owner: maintainers
-last_updated: 2026-11-08
+last_updated: 2026-11-25
 status: Accepted
 stage: shipped
 next: "—"
@@ -381,3 +381,28 @@ The CLI tests run the binary through `sh -c 'umask 0002; exec "$@"'`. The
 snapshot-cache umask test re-executes its own test binary through the same
 shell with a marker variable, and the child builds the cache and checks the
 modes.
+
+
+## Graph store D11. The store resolves its own database path (deviation from `STD-02@8 §R40`)
+
+**Deviation, `STD-02@8 §R40`.** The persistence unit (`crates/orbit-graph/src/store/`)
+owns how records reach durable storage, including locking and upgrades, but it
+also resolves database paths and state roots itself instead of receiving them as
+resolved values: `store/mod.rs` discovers the worktree's branch and commit
+(`GitContext::for_worktree`), selects the database (`resolve_db_path_for_commit`,
+`crate::db_path::legacy_db_path`), and creates and checks index directories (`create_index_dir` resolves via
+`scratch_state_dir` and `private_state_dir`, opens via `open_state_file`,
+checks via `check_state_file`); `store/history.rs`
+does the same for the history index through `crate::state_dir`. Path and root
+discovery are neither record nor contract types. `lock` and `error` are allowed
+under R40, and the store imports no application unit, port or feature rules
+(`clean`, `query`, `recommend`, `evaluation` and `sync` are never imported).
+
+Moving path and root resolution to the caller (the application unit or
+composition) so the store takes only resolved values is a restructure: the
+SQLite open path entangles resolution with identity checks, legacy-database
+selection, directory creation and permission repair under the setup and
+observation locks. This repository adopts `STD-02@4`, which has no R40; the
+restructure binds when v5 is adopted. Until then the store keeps resolving its
+own paths, and the state-containment rules above (D1–D4) still decide every
+state path.
