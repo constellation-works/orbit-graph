@@ -355,6 +355,24 @@ module:<qualified-name>
 command:<name>
 ```
 
+## Environment
+
+Generated from the documented constants in `crates/orbit-graph-cli/src/environment.rs` (`scripts/check-env-vars.sh --update`).
+
+<!-- env-table:begin -->
+| Variable | Default | Overridden flag | Meaning |
+| --- | --- | --- | --- |
+| `ORBIT_TOOL_NAME` | unset | none | Orbit external-tool plugin protocol signal; when set, stdin is read as an Orbit plugin JSON request and no CLI arguments are permitted. |
+| `ORBIT_GRAPH_BACKEND_OVERRIDE` | unset | none | Executable path set by the plugin launcher under `--allow-unbound-backend`; attaches `backend_override` to every plugin JSON response. |
+| `ORBIT_GRAPH_LOCK_TIMEOUT_MS` | `30000` | none | Lock wait timeout for graph and history databases in whole milliseconds (`0` tries once). |
+| `ORBIT_GRAPH_FAULT_INJECT` | unset | none | Test hook naming a sync fault point (`after-pass1` or `mid-pass2`) that aborts the process during `sync`. |
+| `ORBIT_PLUGIN_STATE` | unset | none | Plugin state root directory granted to plugin tools for the code-graph index and snapshot cache. |
+| `GRAPH_ORBIT_TIMEOUT_SECONDS` | `10` | none | Per-call timeout in whole seconds (`1`–`60`) for nested Orbit callbacks. |
+| `COLUMNS` | terminal width (`TIOCGWINSZ`, else `0`) | none | Terminal column width override (positive integer) used only when stdout is a terminal. |
+| `ORBIT_GRAPH_FORMAT` | `auto` | `--format`, `--json` | Standalone output mode override (`auto`, `table`, `json`, or `ndjson`); unrecognized values fall back to `auto`. |
+| `RUST_LOG` | `warn` | none | Tracing diagnostic log filter written to stderr (for example `orbit_graph=debug`). |
+<!-- env-table:end -->
+
 ## Change analysis
 
 `orbit-graph changes` answers "what else could this change break?" and "which

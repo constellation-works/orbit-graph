@@ -14,6 +14,7 @@ use std::io::{self, IsTerminal};
 use clap::builder::{PossibleValue, PossibleValuesParser, TypedValueParser};
 use clap::{Arg, ArgAction, ArgMatches, Command, ValueEnum};
 
+use crate::environment::{COLUMNS_ENV, FORMAT_ENV};
 use crate::error::CliError;
 
 const FORMAT_ARG_ID: &str = "output-format";
@@ -107,8 +108,8 @@ impl SinkEnvironment {
     /// Read the sink-related process environment once.
     pub fn from_process() -> Self {
         Self {
-            columns: read_var("COLUMNS"),
-            format: read_var("ORBIT_GRAPH_FORMAT"),
+            columns: std::env::var(COLUMNS_ENV).ok(),
+            format: std::env::var(FORMAT_ENV).ok(),
         }
     }
 }
@@ -329,10 +330,6 @@ fn format_name(format: FormatArg) -> &'static str {
         FormatArg::Json => "json",
         FormatArg::Ndjson => "ndjson",
     }
-}
-
-fn read_var(key: &str) -> Option<String> {
-    std::env::var(key).ok()
 }
 
 #[cfg(unix)]

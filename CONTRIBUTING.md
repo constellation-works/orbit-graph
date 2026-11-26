@@ -14,6 +14,7 @@ sh docs/standards/check.sh
 scripts/check-dependency-direction.sh
 scripts/check-terminal-guard.sh
 scripts/check-orphan-modules.sh
+scripts/check-env-vars.sh
 scripts/test-repo-gates.sh
 python3 -B evals/agent-navigation/eval.py check
 cargo deny --locked check
