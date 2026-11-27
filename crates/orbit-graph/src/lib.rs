@@ -28,6 +28,7 @@ mod runtime;
 mod state_dir;
 mod store;
 mod sync;
+mod worktree_sync;
 
 #[cfg(test)]
 mod tests;
@@ -62,6 +63,7 @@ pub use sync::report::{
     SyncFailure, SyncMode, SyncObserver, SyncOutcome, SyncPhase, SyncPolicy, SyncProgress,
     SyncReport, SyncSkip,
 };
+pub use worktree_sync::sync_worktree;
 
 #[doc(inline)]
 pub use orbit_graph_extract::history::now_rfc3339;

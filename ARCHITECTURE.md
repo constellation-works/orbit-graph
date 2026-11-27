@@ -10,7 +10,7 @@ script fails when the crate table below and its policy disagree.
 | Tier | Unit | Owns | May depend on |
 |------|------|------|---------------|
 | 1. Extraction | `orbit-graph-extract` (library) | Extraction contracts (`ExtractedFile`, the raw rows, `Selector`), the `Extractor` trait and every tree-sitter language extractor (`languages`), and the Git-tree change extraction behind the history index (`history`). A leaf: it knows nothing of the store, sync or queries, and prints nothing. | nothing internal |
-| 2. Domain | `orbit-graph` (library) | The SQLite store and its schema (`store`), sync and the file watcher (`sync`), queries (`query`), recommendations (`recommend`), and evaluation (`evaluation`), built on tier 1; it re-exports the extraction types its public API names. Embeddable; it prints nothing (`#![deny(clippy::print_stdout, clippy::print_stderr)]`), reads no environment variable (the CLI installs its process settings once with `install_runtime`) and starts no Orbit processes. Its public `GraphError` is `#[non_exhaustive]`; `GraphError::class()` is the exhaustive class the CLI's one translator maps to CLI and plugin codes. | tier 1 |
+| 2. Domain | `orbit-graph` (library) | The SQLite store and its schema (`store`), sync and the file watcher (`sync`), the worktree sync operation (`sync_worktree`, in `worktree_sync`), queries (`query`), recommendations (`recommend`), and evaluation (`evaluation`), built on tier 1; it re-exports the extraction types its public API names. Embeddable; it prints nothing (`#![deny(clippy::print_stdout, clippy::print_stderr)]`), reads no environment variable (the CLI installs its process settings once with `install_runtime`) and starts no Orbit processes. Its public `GraphError` is `#[non_exhaustive]`; `GraphError::class()` is the exhaustive class the CLI's one translator maps to CLI and plugin codes. | tier 1 |
 | 3. Change analysis | `orbit-graph-changes` (library) | Immutable base/head snapshots (a head may be the working tree), snapshot caching, changed-symbol pairing, evidence paths, filters, JSON reports and the bounded agent-facing analysis (`analysis`), through the public `orbit-graph` API only (D1). No HTTP service or terminal output. | tier 2 |
 | 4. Surfaces | `orbit-graph-cli` (binary `orbit-graph`) | Argument parsing, one library call per command, rendering and process exit code; also the Orbit plugin tool protocol. The CLI's `src/output/` is its output layer, with temporary exceptions listed by `scripts/check-terminal-guard.sh`. | tiers 2 and 3 |
 
@@ -67,6 +67,7 @@ than one member uses is declared once in `[workspace.dependencies]`
 | `state_dir.rs` | Creates private state directories and writes durable files using graph errors. |
 | `store/` | Opens SQLite graph and history storage using database paths, errors, locks, redaction, state directory access and extraction contracts. |
 | `sync/` | Scans, indexes and resolves changed files using graph connections, storage, extraction, locking, redaction, runtime settings and graph errors. |
+| `worktree_sync.rs` | Runs the worktree sync operation using graph handles, obsolete database cleanup, sync contracts and graph errors. |
 
 ## `orbit-graph-changes`
 

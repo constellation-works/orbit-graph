@@ -35,9 +35,10 @@ pub fn plan_clean_old_databases(worktree_root: &Path) -> Result<CleanReport, Gra
 /// unreachable; any other Git error keeps it and reports why (STD-03 §R29).
 /// The active database is never touched and is not created.
 ///
-/// Only the writing commands, `orbit-graph sync` and `orbit-graph clean
-/// --confirm`, call this; opening a graph removes nothing, and
-/// [`plan_clean_old_databases`] reports the same decisions without acting.
+/// Only the writing commands call this: `orbit-graph sync`, through
+/// [`crate::sync_worktree`], and `orbit-graph clean --confirm`. Opening a
+/// graph removes nothing, and [`plan_clean_old_databases`] reports the same
+/// decisions without acting.
 pub fn clean_old_databases(worktree_root: &Path) -> Result<CleanReport, GraphError> {
     let active = store::resolve_worktree_db_path(worktree_root)?;
     clean_old_databases_excluding(worktree_root, active.path(), CleanMode::Apply)
