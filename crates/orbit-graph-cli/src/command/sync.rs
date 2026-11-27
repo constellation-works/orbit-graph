@@ -1,7 +1,7 @@
 use std::time::Duration;
 
 use clap::Args;
-use orbit_graph::{GraphError, SyncFailure, SyncMode, SyncReport, SyncSkip, clean_old_databases};
+use orbit_graph::{SyncFailure, SyncMode, SyncReport, SyncSkip, sync_worktree};
 use serde::Serialize;
 use serde_json::Value;
 
@@ -17,43 +17,14 @@ pub struct SyncCommand {
 
 impl SyncCommand {
     pub(crate) fn run(&self, context: &CommandContext) -> Result<serde_json::Value, CliError> {
-        let graph = context.open_graph_for_sync()?;
-        // Sync is a writing command, so it removes strictly older extractor
-        // versions whose lock is free; queries never remove anything.
-        clean_old_databases(context.worktree_root())?;
-        let report = graph.sync(if self.full {
+        let mode = if self.full {
             SyncMode::Full
         } else {
             SyncMode::Auto
-        })?;
-        // Isolated failures are reported, not fatal, while anything was
-        // indexed (STD-02 §R32); with nothing indexed the sync did not happen
-        // (STD-01 §R30).
-        if !report.failed.is_empty() && report.files_indexed == 0 {
-            return Err(CliError::Graph(nothing_indexed(&report)));
-        }
+        };
+        let report = sync_worktree(context.worktree_root(), mode)?;
         json_value(SyncOutput::from(report))
     }
-}
-
-fn nothing_indexed(report: &SyncReport) -> GraphError {
-    let first = report
-        .failed
-        .first()
-        .map(|failure| {
-            format!(
-                "; first: {} ({}: {})",
-                failure.path, failure.operation, failure.message
-            )
-        })
-        .unwrap_or_default();
-    GraphError::invalid_data(
-        "sync graph",
-        format!(
-            "indexed no file: {} path(s) failed{first}",
-            report.failed.len()
-        ),
-    )
 }
 
 #[derive(Debug, Serialize)]

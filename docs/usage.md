@@ -496,7 +496,10 @@ archive, font, PDF, and lock files are skipped.
 ## Library
 
 The crate exposes `Graph`, `Selector`, synchronization policies, and typed query
-results. It also exposes `HistoryIndex`, the v2 import/provenance and extracted
+results. `sync_worktree` runs what `orbit-graph sync` runs: it opens the
+worktree's graph, removes obsolete databases, indexes, and fails when paths
+failed and nothing is indexed; `Graph::sync` only indexes. The crate also
+exposes `HistoryIndex`, the v2 import/provenance and extracted
 change types, including explicit temporal certainty and pre-execution task-text
 availability, current-symbol resolution, and independent schema/extractor
 version constants. Chronological consumers must use only task snapshots marked

@@ -1,7 +1,7 @@
 ---
 title: "Graph store: decisions"
 owner: maintainers
-last_updated: 2026-11-25
+last_updated: 2026-11-27
 status: Accepted
 stage: shipped
 next: "—"
@@ -35,11 +35,11 @@ open history with `HistoryIndex::open_read_only`. Neither opener creates a
 directory, a database or a sidecar; a missing file is `GraphError::IndexMissing`
 with the command that builds it. `Graph::open` and `open_with_revision` no
 longer clean up either: `orbit-graph sync` runs `clean_old_databases` before
-syncing, and `orbit-graph clean --confirm` runs it on request; `orbit-graph
-clean` without `--confirm` runs `plan_clean_old_databases`, which applies the
-same predicates and reports them without writing anything (`STD-01 §R5`).
-Cleanup resolves the active database without opening it, so it creates
-nothing.
+syncing (inside `sync_worktree`, D12), and `orbit-graph clean --confirm` runs
+it on request; `orbit-graph clean` without `--confirm` runs
+`plan_clean_old_databases`, which applies the same predicates and reports them
+without writing anything (`STD-01 §R5`). Cleanup resolves the active database
+without opening it, so it creates nothing.
 
 Cleanup removes a database family (`.db`, `-wal`, `-shm`, `.db.lock`) only
 when its extractor version is strictly older and `File::try_lock` on its
@@ -419,3 +419,24 @@ observation locks. This repository adopts `STD-02@4`, which has no R40; the
 restructure binds when v5 is adopted. Until then the store keeps resolving its
 own paths, and the state-containment rules above (D1–D4) still decide every
 state path.
+
+
+## Graph store D12. `sync_worktree` is the one worktree sync operation
+
+2026-11-27, ORB-28788 (`STD-02@8 §R2`). The `sync` command used to open the
+writable graph, run `clean_old_databases`, call `Graph::sync` and decide
+whether the result was fatal. `orbit_graph::sync_worktree`
+(`crates/orbit-graph/src/worktree_sync.rs`) now holds that sequence in the same
+order, and the command parses `--full`, calls it and renders the report.
+`Graph::sync` still only indexes, so library callers that open their own
+database (snapshots, evaluation checkouts, the watcher) remove nothing.
+
+The boundary stops at the command's own operation:
+
+- `history sync` and `history rebuild` share no step with it. Each handler
+  checks the parsed limit, so a refused one creates nothing
+  (`STD-02 §R34`), opens a `HistoryIndex` and calls one method that owns the
+  traversal and its failures. They are unchanged.
+- The plugin's `graph_sync` is a different operation: it builds and publishes
+  a code-graph generation under its own lock and retires its own generations.
+  It does not call `sync_worktree`. Where that adapter lives is ORB-28719.

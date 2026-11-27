@@ -10,7 +10,7 @@ use std::env;
 use std::path::PathBuf;
 
 use clap::{CommandFactory, Parser, Subcommand};
-use orbit_graph::{Graph, SyncPolicy};
+use orbit_graph::Graph;
 use serde::Serialize;
 use serde_json::Value;
 
@@ -287,11 +287,6 @@ impl CommandContext {
     /// worktree fails with `index_missing`.
     pub(crate) fn open_graph(&self) -> Result<Graph, CliError> {
         Graph::open_existing_read_only(self.worktree_root.as_path()).map_err(CliError::Graph)
-    }
-
-    /// Open, creating when needed, the worktree's graph index for `sync`.
-    pub(crate) fn open_graph_for_sync(&self) -> Result<Graph, CliError> {
-        Graph::open(self.worktree_root.as_path(), SyncPolicy::Manual).map_err(CliError::Graph)
     }
 
     pub(crate) fn worktree_root(&self) -> &std::path::Path {
